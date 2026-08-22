@@ -133,12 +133,12 @@ platform/reuse/
 
 > 每阶段产出 = 任务清单 + 行为规格测试 + 全绿门禁。完成勾选更新本表。
 
-### Phase 0：领域模型与复用引擎重写（本轮）
-- [ ] 3.1-3.3 全新 core 模型（UrlSanitizer/UrlPolicy、DuplicateIndex/KeeperPolicy、SiteKey/HostRules/SiteResolver/SiteGrouping）
-- [ ] 3.5 全新复用引擎（AllowanceLedger/ReusePolicy/ReuseCoordinator）
-- [ ] 3.4 TabSyncService 接入 tabStore（适配）
-- [ ] 行为规格测试重写（tests/core/*，Given/When/Then，无 Tabstead 引用）
-- [ ] 门禁：test/typecheck/lint/build 全绿
+### Phase 0：领域模型与复用引擎重写（✅ 已完成 2026-08-22）
+- [x] 3.1-3.3 全新 core 模型（UrlInspector、DuplicateIndex/KeeperPolicy、SiteKey/HostRules/SiteResolver/SiteGrouping）
+- [x] 3.5 全新复用引擎（AllowanceLedger/ReusePolicy/ReuseCoordinator）
+- [x] 3.4 TabSyncService 接入 tabStore（适配）
+- [x] 行为规格测试重写（47 例，无 Tabstead 引用）
+- [x] 门禁：test/typecheck/lint/build（标准+兼容）全绿
 
 ### Phase 1：标签视图与交互基座
 - [ ] 视图模型（原生组 section / 站点 section / 未分组 section + 空态）
