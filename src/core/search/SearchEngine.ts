@@ -1,4 +1,4 @@
-import fuzzysort from 'fuzzysort';
+import { highlight, prepare, single, type Prepared, type Result } from 'fuzzysort';
 import { pinyin } from 'pinyin-pro';
 
 /**
@@ -28,9 +28,9 @@ export interface SearchHit {
 
 interface PreparedTarget {
   tab: SearchableTab;
-  title: Fuzzysort.Prepared;
-  url: Fuzzysort.Prepared;
-  pinyinFirst: Fuzzysort.Prepared;
+  title: Prepared;
+  url: Prepared;
+  pinyinFirst: Prepared;
 }
 
 const URL_WEIGHT = 8;
@@ -50,9 +50,9 @@ export class SearchEngine {
   constructor(tabs: readonly SearchableTab[]) {
     this.targets = tabs.map((tab) => ({
       tab,
-      title: fuzzysort.prepare(tab.title),
-      url: fuzzysort.prepare(tab.url),
-      pinyinFirst: fuzzysort.prepare(firstLetterPinyin(tab.title))
+      title: prepare(tab.title),
+      url: prepare(tab.url),
+      pinyinFirst: prepare(firstLetterPinyin(tab.title))
     }));
   }
 
@@ -61,14 +61,14 @@ export class SearchEngine {
     const query = input.trim().toLowerCase();
     if (!query) return [];
 
-    const hits: Array<{ tab: SearchableTab; score: number; title?: Fuzzysort.Result; url?: Fuzzysort.Result }> = [];
+    const hits: Array<{ tab: SearchableTab; score: number; title?: Result; url?: Result }> = [];
 
     for (const target of this.targets) {
-      const titleResult = fuzzysort.single(query, target.title);
-      const urlResult = fuzzysort.single(query, target.url);
-      const pinyinResult = fuzzysort.single(query, target.pinyinFirst);
+      const titleResult = single(query, target.title);
+      const urlResult = single(query, target.url);
+      const pinyinResult = single(query, target.pinyinFirst);
 
-      const candidates: Array<{ score: number; title?: Fuzzysort.Result; url?: Fuzzysort.Result }> = [];
+      const candidates: Array<{ score: number; title?: Result; url?: Result }> = [];
       if (titleResult) candidates.push({ score: titleResult.score, title: titleResult });
       if (urlResult) candidates.push({ score: urlResult.score - URL_WEIGHT, url: urlResult });
       if (pinyinResult) candidates.push({ score: pinyinResult.score - PINYIN_WEIGHT });
@@ -91,9 +91,9 @@ export class SearchEngine {
     return hits.slice(0, limit).map((hit) => ({
       tabId: hit.tab.id,
       titleMarkup:
-        (hit.title && fuzzysort.highlight(hit.title, '<b class="bg-amber-200">', '</b>')) ||
+        (hit.title && highlight(hit.title, '<b class="bg-amber-200">', '</b>')) ||
         escapeText(hit.tab.title),
-      urlMarkup: hit.url ? fuzzysort.highlight(hit.url, '<b class="bg-amber-200">', '</b>') : undefined
+      urlMarkup: hit.url ? highlight(hit.url, '<b class="bg-amber-200">', '</b>') : undefined
     }));
   }
 }

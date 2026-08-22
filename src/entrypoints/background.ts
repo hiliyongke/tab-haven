@@ -57,7 +57,7 @@ export default defineBackground(() => {
   browser.commands?.onCommand.addListener(async (command) => {
     if (command !== 'focus-search') return;
     if (browser.sidePanel?.open) {
-      const [window] = await browser.windows.query({ lastFocused: true, type: 'normal' });
+      const [window] = await browser.windows.getAll({ lastFocused: true, type: 'normal' });
       if (window?.id !== undefined) {
         await browser.sidePanel.open({ windowId: window.id }).catch(() => {});
       }
