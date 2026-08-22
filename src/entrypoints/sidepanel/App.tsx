@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
@@ -14,9 +14,13 @@ import { SettingsSync } from '@/ui/common/SettingsSync';
 import { StatusToast } from '@/ui/common/StatusToast';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
-import { SearchOverlay } from '@/ui/search/SearchOverlay';
 import { SelectionBar } from '@/ui/tabs/SelectionBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
+
+// 搜索模块懒加载：fuzzysort/pinyin-pro 进入独立 chunk，不占主包（性能预算）
+const LazySearchOverlay = lazy(() =>
+  import('@/ui/search/SearchOverlay').then((module) => ({ default: module.SearchOverlay }))
+);
 
 export default function App() {
   const { t } = useTranslation();
@@ -122,7 +126,9 @@ export default function App() {
       <SettingsSync />
       <PinnedStrip />
       <FixedArea />
-      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <Suspense fallback={null}>
+        {searchOpen && <LazySearchOverlay open onClose={() => setSearchOpen(false)} />}
+      </Suspense>
       <StatusToast />
       <div className="flex-1 overflow-y-auto p-2">
         {tabs.length === 0 ? (

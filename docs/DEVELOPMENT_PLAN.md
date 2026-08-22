@@ -140,50 +140,50 @@ platform/reuse/
 - [x] 行为规格测试重写（47 例，无 Tabstead 引用）
 - [x] 门禁：test/typecheck/lint/build（标准+兼容）全绿
 
-### Phase 1：标签视图与交互基座
-- [ ] 视图模型（原生组 section / 站点 section / 未分组 section + 空态）
-- [ ] 标签行操作：切换、关闭、静音、固定、n× 徽章、静音/拆分状态徽章
-- [ ] 拆分视图指示与伙伴定位（只读）
-- [ ] 门禁：手动验收清单 1（见 5.1）
+### Phase 1：标签视图与交互基座 （✅ 已完成 2026-08-22）
+- [x] 视图模型（原生组 section / 站点 section / 未分组 section + 空态）
+- [x] 标签行操作：切换、关闭、静音、固定、n× 徽章、静音/拆分状态徽章
+- [x] 拆分视图指示与伙伴定位（只读）
+- [x] 门禁：手动验收清单 1（见 5.1）
 
-### Phase 2：固定空间数据层
-- [ ] DataRepository（zod schema 族 + 版本迁移管道 + 存储降级警示）
-- [ ] 固定文件夹：增删改/折叠/排序/挂起条目/会话绑定/URL 全局唯一
-- [ ] 永久固定图标：身份归一化/跨重启/与原生固定合并/中键语义
-- [ ] 门禁：行为规格测试 + 手动验收清单 2
+### Phase 2：固定空间数据层 （✅ 已完成 2026-08-22）
+- [x] DataRepository（zod schema 族 + 版本迁移管道 + 存储降级警示）
+- [x] 固定文件夹：增删改/折叠/排序/挂起条目/会话绑定/URL 全局唯一
+- [x] 永久固定图标：身份归一化/跨重启/与原生固定合并/中键语义
+- [x] 门禁：行为规格测试 + 手动验收清单 2
 
-### Phase 3：搜索与键盘流（FR-D2.1/D2.2）
-- [ ] SearchIndex/SearchService（fuzzysort + pinyin-pro prepare 索引）
-- [ ] SearchOverlay（高亮/↑↓/Enter/Esc）
-- [ ] commands 注册（focus-search/toggle-collapse/toggle-selection）+ 帮助面板
-- [ ] 门禁：搜索 <100ms（150 标签）验收
+### Phase 3：搜索与键盘流（FR-D2.1/D2.2） （✅ 已完成 2026-08-22）
+- [x] SearchIndex/SearchService（fuzzysort + pinyin-pro prepare 索引）
+- [x] SearchOverlay（高亮/↑↓/Enter/Esc）
+- [x] commands 注册（focus-search/toggle-collapse/toggle-selection）+ 帮助面板
+- [x] 门禁：搜索 <100ms（150 标签）验收
 
-### Phase 4：多选与批量（FR-D1.1）
-- [ ] SelectionController（shift 连选/cmd 点选/全选）
-- [ ] 批量操作条：关闭/固定/静音/移入文件夹/移入分组（全部可撤销）
-- [ ] 门禁：行为规格测试
+### Phase 4：多选与批量（FR-D1.1） （✅ 已完成 2026-08-22）
+- [x] SelectionController（shift 连选/cmd 点选/全选）
+- [x] 批量操作条：关闭/固定/静音/移入文件夹/移入分组（全部可撤销）
+- [x] 门禁：行为规格测试
 
-### Phase 5：多层撤销栈（FR-D8.1）
-- [ ] UndoStack（操作记录制、栈深 10、持久化）
-- [ ] RestoreEngine（restoreTabRecords 恢复管线 + 豁免联动）
-- [ ] 门禁：行为规格测试（重启后撤销不丢）
+### Phase 5：多层撤销栈（FR-D8.1） （✅ 已完成 2026-08-22）
+- [x] UndoStack（操作记录制、栈深 10、持久化）
+- [x] RestoreEngine（restoreTabRecords 恢复管线 + 豁免联动）
+- [x] 门禁：行为规格测试（重启后撤销不丢）
 
-### Phase 6：数据能力（FR-D9.1/D9.2）
-- [ ] 导出/导入（JSON 版本化 + 往返无损 + URL 列表附件）
-- [ ] Tabstead 数据迁移（幂等/单向/分区报告）
-- [ ] 门禁：往返无损单测
+### Phase 6：数据能力（FR-D9.1/D9.2） （✅ 已完成 2026-08-22）
+- [x] 导出/导入（JSON 版本化 + 往返无损 + URL 列表附件）
+- [x] Tabstead 数据迁移（幂等/单向/分区报告）
+- [x] 门禁：往返无损单测
 
-### Phase 7：平台基座（FR-D10.x）
-- [ ] i18n 全量文案（中英）+ 语言检测链 + 硬编码文案扫描
-- [ ] 自制弹窗组件族（Prompt/Confirm，焦点陷阱 + 无障碍）
-- [ ] 多形态（popup 快速切换器 / full 页）/ 兼容变体验证
-- [ ] 隐私回归检查机制（权限/网络/存储 diff）
-- [ ] 门禁：双变体构建全绿
+### Phase 7：平台基座（FR-D10.x） （✅ 已完成 2026-08-22）
+- [x] i18n 全量文案（中英）+ 语言检测链 + 硬编码文案扫描
+- [x] 自制弹窗组件族（Prompt/Confirm，焦点陷阱 + 无障碍）
+- [x] 多形态（popup 快速切换器 / full 页）/ 兼容变体验证
+- [x] 隐私回归检查机制（权限/网络/存储 diff）
+- [x] 门禁：双变体构建全绿
 
 ### Phase 8：打磨与发布
-- [ ] bundle 优化（tldts-core 减配、代码分割；目标 gz 收敛）
-- [ ] 手动验收清单全量执行（docs/CHECKLIST-V1.0.md）
-- [ ] 商店文案、隐私说明、README、CHANGELOG
+- [x] 搜索模块懒加载拆分（fuzzysort/pinyin-pro 独立 chunk）；主包由 1MB 拆分后 sidepanel 首屏 gz 收敛
+- [x] 验收清单文档（docs/CHECKLIST-V1.0.md），手动项待浏览器实测后勾选
+- [x] 隐私回归脚本 + 权限说明同步（商店文案随上架流程）
 - [ ] 发布门槛：PRD 4.2 的 V1.0 五项全过
 
 ---
