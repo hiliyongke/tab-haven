@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { deriveTemporarySections } from '@/core/grouping/sections';
+import { deriveTemporarySections } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
 import { useTabStore } from '@/stores/tabStore';
 
@@ -21,13 +21,7 @@ function TabRow({ tab }: { tab: TabRecord }) {
   );
 }
 
-function Section({
-  title,
-  tabs
-}: {
-  title: string;
-  tabs: TabRecord[];
-}) {
+function Section({ title, tabs }: { title: string; tabs: TabRecord[] }) {
   return (
     <section className="mb-2">
       <h2 className="px-2 py-1 text-xs font-medium text-gray-500">{title}</h2>
@@ -43,13 +37,9 @@ function Section({
 export default function App() {
   const { t } = useTranslation();
   const tabs = useTabStore((state) => state.tabs);
-  const refreshTabs = useTabStore((state) => state.refreshTabs);
-  const startEventSync = useTabStore((state) => state.startEventSync);
+  const startTabSync = useTabStore((state) => state.startTabSync);
 
-  useEffect(() => {
-    void refreshTabs();
-    return startEventSync();
-  }, [refreshTabs, startEventSync]);
+  useEffect(() => startTabSync(), [startTabSync]);
 
   const sections = deriveTemporarySections(tabs);
 
