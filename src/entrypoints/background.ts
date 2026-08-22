@@ -2,7 +2,11 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { mapTab } from '@/platform/tabs';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
-import { AllowDuplicateOnceMessageSchema, DuplicateReusedMessageSchema } from '@/platform/messages';
+import {
+  AllowDuplicateOnceMessageSchema,
+  DuplicateReusedMessageSchema,
+  SearchFocusMessageSchema
+} from '@/platform/messages';
 
 /**
  * Service Worker 入口（全新设计，复用协调器见 platform/reuse）。
@@ -47,6 +51,19 @@ export default defineBackground(() => {
     const { windowId, url } = parsed.data;
     coordinator.grantAllowance(windowId, url);
     sendResponse({ ok: true });
+  });
+
+  // 浏览器级快捷键：聚焦搜索（FR-D2.2）
+  browser.commands?.onCommand.addListener(async (command) => {
+    if (command !== 'focus-search') return;
+    if (browser.sidePanel?.open) {
+      const [window] = await browser.windows.query({ lastFocused: true, type: 'normal' });
+      if (window?.id !== undefined) {
+        await browser.sidePanel.open({ windowId: window.id }).catch(() => {});
+      }
+    }
+    const message = SearchFocusMessageSchema.parse({ type: 'focus-search' });
+    browser.runtime.sendMessage(message).catch(() => {});
   });
 
   const enableActionClick = () => {

@@ -35,5 +35,12 @@
     "deleteConfirm": "删除固定文件夹“{{name}}”？正在打开的标签不会关闭。",
     "itemClose": "关闭标签并移出文件夹",
     "pendingHint": "等待输入网址，打开页面后会自动保存到此文件夹"
+  },
+  "search": {
+    "title": "搜索标签",
+    "placeholder": "搜索本窗口的标签（标题 / 网址 / 拼音）",
+    "close": "关闭搜索",
+    "noResults": "没有匹配的标签",
+    "typeHint": "输入标题、网址或拼音首字母"
   }
 }

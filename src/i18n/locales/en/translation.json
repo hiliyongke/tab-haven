@@ -35,5 +35,12 @@
     "deleteConfirm": "Delete fixed folder \"{{name}}\"? Open tabs will not be closed.",
     "itemClose": "Close tab and remove from folder",
     "pendingHint": "Waiting for a URL; the page will be saved here once opened"
+  },
+  "search": {
+    "title": "Search tabs",
+    "placeholder": "Search tabs in this window (title / URL / pinyin)",
+    "close": "Close search",
+    "noResults": "No matching tabs",
+    "typeHint": "Type a title, URL, or pinyin initials"
   }
 }

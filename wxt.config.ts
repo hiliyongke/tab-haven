@@ -20,7 +20,13 @@ export default defineConfig({
     name: 'TabHaven',
     description: 'A local-first side panel for organizing tabs in the current browser window.',
     minimum_chrome_version: '114',
-    permissions: ['tabs', 'tabGroups', 'storage']
+    permissions: ['tabs', 'tabGroups', 'storage'],
+    commands: {
+      'focus-search': {
+        suggested_key: { default: 'Ctrl+Shift+F' },
+        description: 'Focus tab search'
+      }
+    }
     // side_panel 字段与 sidePanel 权限由 WXT 检测 sidepanel 入口自动生成；
     // action 由 WXT 检测 popup 入口自动生成。标准版点击 action 打开侧边栏
     // 由 background 的 setPanelBehavior({ openPanelOnActionClick }) 控制，

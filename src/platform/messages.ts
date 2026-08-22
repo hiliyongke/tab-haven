@@ -22,9 +22,16 @@ export const DuplicateReusedMessageSchema = z.object({
 });
 export type DuplicateReusedMessage = z.infer<typeof DuplicateReusedMessageSchema>;
 
+/** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
+export const SearchFocusMessageSchema = z.object({
+  type: z.literal('focus-search')
+});
+export type SearchFocusMessage = z.infer<typeof SearchFocusMessageSchema>;
+
 /** 全量消息判别联合。 */
 export const TabHavenMessageSchema = z.discriminatedUnion('type', [
   AllowDuplicateOnceMessageSchema,
-  DuplicateReusedMessageSchema
+  DuplicateReusedMessageSchema,
+  SearchFocusMessageSchema
 ]);
 export type TabHavenMessage = z.infer<typeof TabHavenMessageSchema>;
