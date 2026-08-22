@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createUndoBatch, popBatch, pushBatch, toUndoTabRecord, UNDO_STACK_LIMIT } from '@/core/undo/UndoStack';
+import {
+  createUndoBatch,
+  popBatch,
+  pushBatch,
+  toUndoTabRecord,
+  DEFAULT_UNDO_STACK_LIMIT
+} from '@/core/undo/UndoStack';
 import type { TabRecord } from '@/core/tab-types';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -30,14 +36,23 @@ describe('UndoStack', () => {
     expect(remaining).toHaveLength(2);
   });
 
-  it('超限 FIFO 淘汰（栈深 10）', () => {
+  it('超限 FIFO 淘汰（默认栈深 10）', () => {
     let batches: ReturnType<typeof pushBatch> = [];
     for (let i = 0; i < 12; i += 1) {
       batches = pushBatch(batches, batch(`t${i}`));
     }
-    expect(batches).toHaveLength(UNDO_STACK_LIMIT);
+    expect(batches).toHaveLength(DEFAULT_UNDO_STACK_LIMIT);
     expect(batches[0]?.entries[0]?.url).toBe('https://t2.com/');
     expect(batches.at(-1)?.entries[0]?.url).toBe('https://t11.com/');
+  });
+
+  it('栈深可配置（设置项传入 limit）', () => {
+    let batches: ReturnType<typeof pushBatch> = [];
+    for (let i = 0; i < 6; i += 1) {
+      batches = pushBatch(batches, batch(`t${i}`), 3);
+    }
+    expect(batches).toHaveLength(3);
+    expect(batches[0]?.entries[0]?.url).toBe('https://t3.com/');
   });
 
   it('撤销记录携带五元组（URL/位置/固定/静音/分组）', () => {

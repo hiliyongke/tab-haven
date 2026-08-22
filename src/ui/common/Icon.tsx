@@ -1,28 +1,73 @@
-/** 线性图标（stroke 风格，全部视图共用）。 */
-export function Icon({ d, className }: { d: string; className?: string }) {
+import {
+  ChevronRight,
+  Copy,
+  Folder,
+  FolderDown,
+  FolderInput,
+  GripVertical,
+  Group,
+  Layers,
+  List,
+  Pencil,
+  Pin,
+  Plus,
+  Search,
+  Settings,
+  Snowflake,
+  Star,
+  Trash2,
+  Volume2,
+  VolumeX,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+
+/**
+ * 图标映射：用 lucide-react 的线性图标替换原先手绘 SVG 路径，
+ * 造型统一、可访问性更好。新增图标只需在此追加并 import 对应组件。
+ *
+ * `Icons` 的值是 LucideIcon 组件本身，沿用旧调用点
+ * `<Icon d={Icons.plus} className="h-3.5 w-3.5" />` 无需改动。
+ */
+export const Icons = {
+  plus: Plus,
+  close: X,
+  chevron: ChevronRight,
+  pin: Pin,
+  mute: Volume2,
+  muted: VolumeX,
+  list: List,
+  search: Search,
+  trash: Trash2,
+  pencil: Pencil,
+  grip: GripVertical,
+  copy: Copy,
+  snowflake: Snowflake,
+  group: Group,
+  folder: Folder,
+  folderInput: FolderInput,
+  /** 存为固定文件夹（文件夹 + 存入箭头，替代 FolderInput 的不直观表达）。 */
+  folderDown: FolderDown,
+  /** 新建标签组（分层归类语义，替代 FolderInput 的不贴切表达）。 */
+  layers: Layers,
+  settings: Settings,
+  star: Star,
+} as const;
+
+/** 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。 */
+export function Icon({
+  d,
+  className,
+  title,
+}: {
+  d: LucideIcon;
+  className?: string;
+  title?: string;
+}) {
+  const Cmp = d;
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d={d} />
-    </svg>
+    <Cmp className={className} aria-hidden={title ? undefined : 'true'}>
+      {title ? <title>{title}</title> : null}
+    </Cmp>
   );
 }
-
-/** 常用图标路径（与展示组件解耦，便于统一更换风格）。 */
-export const Icons = {
-  mute: 'M11 5 6 9H2v6h4l5 4V5z',
-  muted: 'M11 5 6 9H2v6h4l5 4V5z M22 9l-6 6 M16 9l6 6',
-  pin: 'M12 17v5 M9 3h6v2l-1 5 3 4v2H7v-2l3-4-1-5V3z',
-  close: 'M18 6 6 18 M6 6l12 12',
-  chevron: 'm9 6 6 6-6 6',
-  plus: 'M12 5v14 M5 12h14',
-  split: 'M8 3H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z M20 3h-4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z M8 15H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1Z M20 15h-4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1Z'
-} as const;

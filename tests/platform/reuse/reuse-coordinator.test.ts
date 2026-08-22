@@ -132,4 +132,35 @@ describe('ReuseCoordinator', () => {
     await h.flush();
     expect(h.calls.close).toEqual([]);
   });
+
+  it('同 URL 已有多个：保留最近访问的既有，关闭其余既有 + 新建', async () => {
+    const h = createHarness();
+    h.setWindowTabs([
+      makeTab({ id: 1, index: 0, url: 'https://a.com/', lastAccessed: 100 }),
+      makeTab({ id: 2, index: 1, url: 'https://a.com/', lastAccessed: 300 })
+    ]);
+    h.coordinator.handleCreated(makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' }));
+    await h.flush();
+
+    expect(h.calls.activate).toEqual([2]); // 最近访问的既有标签
+    expect(h.calls.close).toEqual([1, 10]); // 其余既有 + 新建全部关闭
+    expect(h.calls.notifications).toBe(1);
+  });
+
+  it('开关关闭后不再追踪合并（允许同 URL 多开）', async () => {
+    const h = createHarness();
+    h.setWindowTabs([makeTab({ id: 1, index: 0, url: 'https://a.com/' })]);
+    h.coordinator.setEnabled(false);
+
+    h.coordinator.handleCreated(makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' }));
+    await h.flush();
+    expect(h.calls.close).toEqual([]);
+    expect(h.calls.notifications).toBe(0);
+
+    // 重新开启后恢复追踪
+    h.coordinator.setEnabled(true);
+    h.coordinator.handleCreated(makeTab({ id: 11, index: 2, url: 'https://a.com/', status: 'complete' }));
+    await h.flush();
+    expect(h.calls.close).toEqual([11]);
+  });
 });

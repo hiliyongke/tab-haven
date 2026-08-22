@@ -1,4 +1,4 @@
-import { highlight, prepare, single, type Prepared, type Result } from 'fuzzysort';
+import { prepare, single, type Prepared, type Result } from 'fuzzysort';
 import { pinyin } from 'pinyin-pro';
 
 /**
@@ -18,19 +18,28 @@ export interface SearchableTab {
   active: boolean;
 }
 
+export interface SearchEngineOptions {
+  /** 是否包含中文拼音首字母匹配（默认 true）。 */
+  pinyin?: boolean;
+}
+
+export interface HighlightSegment {
+  text: string;
+  /** 是否命中（命中段由渲染层加粗，文本由 React 自动转义，杜绝 XSS）。 */
+  hit: boolean;
+}
+
 export interface SearchHit {
   tabId: number;
-  /** 标题命中的 HTML 高亮（fuzzysort.highlight 输出）。 */
-  titleMarkup: string;
-  /** URL 命中的 HTML 高亮。 */
-  urlMarkup: string | undefined;
+  /** 标题按命中索引展开的分段（纯文本，渲染层负责转义与加粗）。 */
+  titleSegments: HighlightSegment[];
 }
 
 interface PreparedTarget {
   tab: SearchableTab;
   title: Prepared;
   url: Prepared;
-  pinyinFirst: Prepared;
+  pinyinFirst: Prepared | null;
 }
 
 const URL_WEIGHT = 8;
@@ -44,15 +53,36 @@ function firstLetterPinyin(title: string): string {
     .toLowerCase();
 }
 
+/**
+ * 将 fuzzysort 命中索引展开为「命中 / 非命中」分段。
+ * 只输出纯文本片段，由渲染层负责 HTML 转义与加粗，避免注入页面标题中的 HTML。
+ */
+function toSegments(target: string, result: Result | undefined): HighlightSegment[] {
+  if (!result || !result.indexes || result.indexes.length === 0) {
+    return [{ text: target, hit: false }];
+  }
+  const indexes = result.indexes; // 升序的命中字符下标
+  const segments: HighlightSegment[] = [];
+  let start = 0;
+  for (const pos of indexes) {
+    if (pos > start) segments.push({ text: target.slice(start, pos), hit: false });
+    segments.push({ text: target[pos] ?? '', hit: true });
+    start = pos + 1;
+  }
+  if (start < target.length) segments.push({ text: target.slice(start), hit: false });
+  return segments;
+}
+
 export class SearchEngine {
   private readonly targets: PreparedTarget[];
 
-  constructor(tabs: readonly SearchableTab[]) {
+  constructor(tabs: readonly SearchableTab[], options: SearchEngineOptions = {}) {
+    const pinyinEnabled = options.pinyin ?? true;
     this.targets = tabs.map((tab) => ({
       tab,
       title: prepare(tab.title),
       url: prepare(tab.url),
-      pinyinFirst: prepare(firstLetterPinyin(tab.title))
+      pinyinFirst: pinyinEnabled ? prepare(firstLetterPinyin(tab.title)) : null
     }));
   }
 
@@ -66,7 +96,8 @@ export class SearchEngine {
     for (const target of this.targets) {
       const titleResult = single(query, target.title);
       const urlResult = single(query, target.url);
-      const pinyinResult = single(query, target.pinyinFirst);
+      const pinyinResult =
+        target.pinyinFirst !== null ? single(query, target.pinyinFirst) : null;
 
       const candidates: Array<{ score: number; title?: Result; url?: Result }> = [];
       if (titleResult) candidates.push({ score: titleResult.score, title: titleResult });
@@ -90,18 +121,10 @@ export class SearchEngine {
 
     return hits.slice(0, limit).map((hit) => ({
       tabId: hit.tab.id,
-      titleMarkup:
-        (hit.title && highlight(hit.title, '<b class="bg-amber-200">', '</b>')) ||
-        escapeText(hit.tab.title),
-      urlMarkup: hit.url ? highlight(hit.url, '<b class="bg-amber-200">', '</b>') : undefined
+      // 命中标题则按索引分段高亮；否则整段普通文本。均为纯文本，渲染层转义。
+      titleSegments: hit.title
+        ? toSegments(hit.tab.title, hit.title)
+        : [{ text: hit.tab.title, hit: false }]
     }));
   }
-}
-
-function escapeText(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

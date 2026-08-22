@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { browser } from 'wxt/browser';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import {
   createFolder as createFolderModel,
@@ -10,28 +11,32 @@ import {
   reorderFolders
 } from '@/core/fixed/FolderOps';
 import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
-import type {
-  FixedFolder,
-  PersistentPin,
-  Settings,
-  SiteCollapseState
-} from '@/core/schema/models';
 import {
   DEFAULT_SETTINGS,
-  FixedFolderSchema,
-  PersistentPinSchema,
-  SettingsSchema,
-  SiteCollapseSchema
+  ExportFileSchema,
+  type ExportFile,
+  type FixedFolder,
+  type PersistentPin,
+  type Settings,
+  type SiteCollapseState
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { inspectUrl } from '@/core/url/UrlInspector';
-import { DataRepository } from '@/platform/storage/DataRepository';
-import { readSession, updateSession } from '@/platform/storage/session';
+import {
+  collapseRepository,
+  foldersRepository,
+  pinsRepository,
+  settingsRepository
+} from '@/platform/storage/repositories';
+import { readSession, mutateSession } from '@/platform/storage/session';
+import { applyTheme } from '@/platform/theme/ThemeApplier';
 import {
   activateTab as activateTabPlatform,
   createNewTab as createNewTabPlatform,
+  groupTabs,
   queryCurrentWindowTabs,
   togglePinned as togglePinnedPlatform,
+  updateGroupMeta,
   updateTabUrl
 } from '@/platform/tabs';
 import { useTabStore } from '@/stores/tabStore';
@@ -40,27 +45,6 @@ import { useTabStore } from '@/stores/tabStore';
  * 固定空间数据 store：文件夹、永久固定图标、设置、折叠状态。
  * 持久化经 DataRepository（chrome.storage.local + zod + 坏数据隔离）。
  */
-
-const foldersRepository = new DataRepository<FixedFolder[]>(
-  'tabhaven.fixed-folders.v1',
-  FixedFolderSchema.array(),
-  []
-);
-const pinsRepository = new DataRepository<PersistentPin[]>(
-  'tabhaven.persistent-pins.v1',
-  PersistentPinSchema.array(),
-  []
-);
-const collapseRepository = new DataRepository<SiteCollapseState>(
-  'tabhaven.site-collapse.v1',
-  SiteCollapseSchema,
-  []
-);
-const settingsRepository = new DataRepository<Settings>(
-  'tabhaven.settings.v1',
-  SettingsSchema,
-  DEFAULT_SETTINGS
-);
 
 interface DataState {
   folders: FixedFolder[];
@@ -95,13 +79,20 @@ interface DataState {
   openSavedItem: (item: { id: string; url: string }) => Promise<void>;
   /** 从原生组保存为固定文件夹（去重 + 建立绑定）。 */
   createFolderFromNativeGroup: (name: string, groupTabs: readonly TabRecord[]) => Promise<void>;
+  /** 将固定文件夹恢复为原生标签组，并移除已转换的固定文件夹。 */
+  syncFolderToNativeGroup: (folderId: string) => Promise<boolean>;
 
   addPin: (tab: TabRecord) => Promise<void>;
   removePin: (pin: PersistentPin) => Promise<void>;
   openPin: (pin: PersistentPin) => Promise<void>;
 
-  toggleSiteCollapsed: (siteKey: string) => Promise<void>;
+  /** 设置站点分组折叠状态（持久化）。 */
+  toggleSiteCollapsed: (siteKey: string, collapsed: boolean) => Promise<void>;
   updateSettings: (partial: Partial<Settings>) => Promise<void>;
+  /** 导出固定空间与设置，不包含当前打开标签或撤销栈。 */
+  exportData: () => ExportFile;
+  /** 校验并覆盖导入固定空间与设置，不触碰当前打开标签。 */
+  importData: (raw: unknown) => Promise<void>;
 
   /** 快照联动：挂起转正 + 绑定维护（由 tabStore 每次刷新后调用）。 */
   reconcileWithTabs: (tabs: readonly TabRecord[]) => Promise<void>;
@@ -117,6 +108,16 @@ async function writePins(pins: PersistentPin[]): Promise<void> {
   useDataStore.setState({ pins });
 }
 
+/** 向 background 申请一次复用豁免（显式打开/复制的标签不被自动合并）。 */
+async function grantReuseAllowance(windowId: number, url: string): Promise<void> {
+  await browser.runtime
+    .sendMessage({ type: 'allow-duplicate-once', windowId, url })
+    .catch(() => {});
+}
+
+/** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
+let initialized = false;
+
 export const useDataStore = create<DataState>()((set, get) => ({
   folders: [],
   pins: [],
@@ -126,6 +127,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
   ready: false,
 
   initialize: async () => {
+    if (initialized) return;
+    initialized = true;
     const [folders, pins, collapsedSites, settings, session] = await Promise.all([
       foldersRepository.read(),
       pinsRepository.read(),
@@ -141,6 +144,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
       boundTabIds: Object.values(session.itemTabBindings),
       ready: true
     });
+    // 数据加载后立即同步主题镜像，确保防闪烁初始化与最新设置一致（单一数据源）。
+    applyTheme(settings.themePreference);
     foldersRepository.watch((value) => set({ folders: value }));
     pinsRepository.watch((value) => set({ pins: dedupePins(value) }));
     collapseRepository.watch((value) => set({ collapsedSites: value }));
@@ -160,13 +165,15 @@ export const useDataStore = create<DataState>()((set, get) => ({
   },
 
   deleteFolder: async (folderId) => {
-    const session = await readSession();
-    const bindings = { ...session.itemTabBindings };
-    for (const item of get().folders.find((f) => f.id === folderId)?.items ?? []) {
-      delete bindings[item.id];
-    }
-    await updateSession({ itemTabBindings: bindings });
+    const result = await mutateSession((session) => {
+      const bindings = { ...session.itemTabBindings };
+      for (const item of get().folders.find((f) => f.id === folderId)?.items ?? []) {
+        delete bindings[item.id];
+      }
+      return { itemTabBindings: bindings };
+    });
     await writeFolders(get().folders.filter((folder) => folder.id !== folderId));
+    set({ boundTabIds: Object.values(result.itemTabBindings) });
   },
 
   toggleFolderCollapsed: async (folderId) => {
@@ -183,13 +190,15 @@ export const useDataStore = create<DataState>()((set, get) => ({
 
     // URL 全局唯一：先移除所有文件夹中的同 URL 条目及其绑定
     const foldersWithout = removeItemsWithUrl(get().folders, inspection.comparisonKey);
-    const session = await readSession();
-    const bindings = { ...session.itemTabBindings };
-    for (const folder of get().folders) {
-      for (const item of folder.items) {
-        if (item.url === inspection.comparisonKey) delete bindings[item.id];
+    await mutateSession((session) => {
+      const bindings = { ...session.itemTabBindings };
+      for (const folder of get().folders) {
+        for (const item of folder.items) {
+          if (item.url === inspection.comparisonKey) delete bindings[item.id];
+        }
       }
-    }
+      return { itemTabBindings: bindings };
+    });
 
     const item = createFolderItem({
       url: inspection.comparisonKey,
@@ -202,7 +211,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
         : folder
     );
     await writeFolders(next);
-    await updateSession({ itemTabBindings: bindings });
   },
 
   createTabInFixedFolder: async (folder) => {
@@ -211,7 +219,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
     const newTab = await createNewTabPlatform(windowId);
     const item = createFolderItem({
       url: '',
-      title: '新标签页',
+      // 空标题由 UI 层按当前语言渲染「新标签页」
+      title: '',
       pendingTabId: newTab.id
     });
     const next = get().folders.map((f) =>
@@ -221,10 +230,11 @@ export const useDataStore = create<DataState>()((set, get) => ({
   },
 
   removeFolderItem: async (folderId, itemId) => {
-    const session = await readSession();
-    const bindings = { ...session.itemTabBindings };
-    delete bindings[itemId];
-    await updateSession({ itemTabBindings: bindings });
+    await mutateSession((session) => {
+      const bindings = { ...session.itemTabBindings };
+      delete bindings[itemId];
+      return { itemTabBindings: bindings };
+    });
 
     await writeFolders(
       get().folders.map((folder) =>
@@ -251,8 +261,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
 
   openSavedItem: async (item) => {
     const tabs = await queryCurrentWindowTabs();
-    const session = await readSession();
-    const bindings = { ...session.itemTabBindings };
+    const { itemTabBindings: bindings } = await readSession();
     const windowId = tabs[0]?.windowId;
 
     // 1) 绑定标签优先
@@ -264,8 +273,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
     // 2) 窗口内精确 URL 匹配
     const exact = tabs.find((tab) => tab.url === item.url && !tab.incognito);
     if (exact) {
-      bindings[item.id] = exact.id;
-      await updateSession({ itemTabBindings: bindings });
+      await mutateSession((session) => ({
+        itemTabBindings: { ...session.itemTabBindings, [item.id]: exact.id }
+      }));
       await activateTabPlatform(exact.id);
       return;
     }
@@ -273,8 +283,11 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (windowId === undefined) return;
     const created = await createNewTabPlatform(windowId);
     if (item.url) await updateTabUrl(created.id, item.url);
-    bindings[item.id] = created.id;
-    await updateSession({ itemTabBindings: bindings });
+    // 豁免复用：显式打开的固定项不允许被自动合并（与 RestoreEngine 一致）
+    await grantReuseAllowance(windowId, item.url);
+    await mutateSession((session) => ({
+      itemTabBindings: { ...session.itemTabBindings, [item.id]: created.id }
+    }));
   },
 
   createFolderFromNativeGroup: async (name, groupTabs) => {
@@ -293,20 +306,59 @@ export const useDataStore = create<DataState>()((set, get) => ({
     const items = [...savable.values()].map((entry) => createFolderItem(entry));
     await writeFolders([...get().folders, { ...folder, items }]);
 
-    // 建立绑定：精确 URL 匹配
-    const session = await readSession();
-    const bindings = { ...session.itemTabBindings };
-    const boundTabIds = new Set(Object.values(bindings));
+    // 建立绑定：精确 URL 匹配（串行化内完成，防并发覆盖）
+    await mutateSession((session) => {
+      const bindings = { ...session.itemTabBindings };
+      const boundTabIds = new Set(Object.values(bindings));
+      for (const item of items) {
+        const match = groupTabs.find(
+          (tab) => tab.url === item.url && !tab.pinned && !boundTabIds.has(tab.id)
+        );
+        if (match) {
+          bindings[item.id] = match.id;
+          boundTabIds.add(match.id);
+        }
+      }
+      return { itemTabBindings: bindings };
+    });
+  },
+
+  syncFolderToNativeGroup: async (folderId) => {
+    const folder = get().folders.find((f) => f.id === folderId);
+    if (!folder) return false;
+
+    const items = folder.items.filter((item) => item.url);
+    if (items.length === 0) return false;
+
+    // 先恢复已关闭的固定条目，确保转换不是“只处理当前碰巧打开的标签”。
     for (const item of items) {
-      const match = groupTabs.find(
-        (tab) => tab.url === item.url && !tab.pinned && !boundTabIds.has(tab.id)
+      const tabs = await queryCurrentWindowTabs();
+      const alreadyOpen = tabs.some(
+        (tab) => tab.url === item.url && !tab.incognito && !tab.pinned
       );
-      if (match) {
-        bindings[item.id] = match.id;
-        boundTabIds.add(match.id);
+      if (!alreadyOpen) await get().openSavedItem(item);
+    }
+
+    const tabs = await queryCurrentWindowTabs();
+    const memberIds: number[] = [];
+    const seen = new Set<number>();
+    for (const item of items) {
+      const tab = tabs.find(
+        (candidate) =>
+          candidate.url === item.url && !candidate.incognito && !candidate.pinned && !seen.has(candidate.id)
+      );
+      if (tab) {
+        memberIds.push(tab.id);
+        seen.add(tab.id);
       }
     }
-    await updateSession({ itemTabBindings: bindings });
+    if (memberIds.length === 0) return false;
+
+    const groupId = await groupTabs(memberIds);
+    if (groupId === undefined) return false;
+    await updateGroupMeta(groupId, folder.name);
+    await get().deleteFolder(folderId);
+    return true;
   },
 
   addPin: async (tab) => {
@@ -347,13 +399,17 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (windowId === undefined) return;
     const created = await createNewTabPlatform(windowId);
     await updateTabUrl(created.id, pin.url);
+    // 豁免复用：显式打开的固定图标不允许被自动合并
+    await grantReuseAllowance(windowId, pin.url);
     await togglePinnedPlatform(created.id, true);
   },
 
-  toggleSiteCollapsed: async (siteKey) => {
-    const next = get().collapsedSites.includes(siteKey)
-      ? get().collapsedSites.filter((key) => key !== siteKey)
-      : [...get().collapsedSites, siteKey];
+  toggleSiteCollapsed: async (siteKey, collapsed) => {
+    const next = collapsed
+      ? get().collapsedSites.includes(siteKey)
+        ? get().collapsedSites
+        : [...get().collapsedSites, siteKey]
+      : get().collapsedSites.filter((key) => key !== siteKey);
     await collapseRepository.write(next);
     set({ collapsedSites: next });
   },
@@ -364,20 +420,49 @@ export const useDataStore = create<DataState>()((set, get) => ({
     set({ settings: next });
   },
 
-  reconcileWithTabs: async (tabs) => {
-    const session = await readSession();
+  exportData: () =>
+    ExportFileSchema.parse({
+      format: 'tabhaven.export',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      fixedFolders: get().folders,
+      persistentPins: get().pins,
+      siteCollapse: get().collapsedSites,
+      settings: get().settings
+    }),
 
+  importData: async (raw) => {
+    const parsed = ExportFileSchema.safeParse(raw);
+    if (!parsed.success) throw new Error('invalid-tab-haven-export');
+    const data = parsed.data;
+    await Promise.all([
+      foldersRepository.write(data.fixedFolders),
+      pinsRepository.write(data.persistentPins),
+      collapseRepository.write(data.siteCollapse),
+      settingsRepository.write(data.settings)
+    ]);
+    set({
+      folders: data.fixedFolders,
+      pins: data.persistentPins,
+      collapsedSites: data.siteCollapse,
+      settings: data.settings
+    });
+    applyTheme(data.settings.themePreference);
+  },
+
+  reconcileWithTabs: async (tabs) => {
     // 挂起条目转正
     const pending = reconcilePendingItems(get().folders, tabs);
     if (pending.changed) {
       await writeFolders(pending.folders);
     }
 
-    // 绑定维护
-    const bindingResult = reconcileBindings(pending.folders, tabs, session.itemTabBindings);
-    if (bindingResult.changed) {
-      await updateSession({ itemTabBindings: bindingResult.bindings });
-    }
-    set({ boundTabIds: Object.values(bindingResult.bindings) });
+    // 绑定维护（串行化内 read-modify-write，防与用户操作竞态）
+    const result = await mutateSession((session) => {
+      const bindingResult = reconcileBindings(pending.folders, tabs, session.itemTabBindings);
+      if (!bindingResult.changed) return {};
+      return { itemTabBindings: bindingResult.bindings };
+    });
+    set({ boundTabIds: Object.values(result.itemTabBindings) });
   }
 }));

@@ -1,12 +1,15 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { canSafelyDiscardTab } from '@/core/tab-types';
 import { mapTab } from '@/platform/tabs';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
+import { settingsRepository } from '@/platform/storage/repositories';
 import {
   AllowDuplicateOnceMessageSchema,
   DuplicateReusedMessageSchema,
   SearchFocusMessageSchema
 } from '@/platform/messages';
+import { hasLegacyData, migrateFromTabstead } from '@/platform/migrate/migration';
 
 /**
  * Service Worker 入口（全新设计，复用协调器见 platform/reuse）。
@@ -29,6 +32,21 @@ export default defineBackground(() => {
       const notification = DuplicateReusedMessageSchema.parse({ type: 'duplicate-reused' });
       browser.runtime.sendMessage(notification).catch(() => {});
     }
+  });
+
+  // 同 URL 唯一化开关联动（设置存储在 chrome.storage.local）。
+  const syncCoordinatorEnabled = async () => {
+    try {
+      const settings = await settingsRepository.read();
+      coordinator.setEnabled(settings.uniqueUrlTabs);
+    } catch {
+      // 读取失败保持当前状态
+    }
+  };
+  void syncCoordinatorEnabled();
+  browser.storage?.local?.onChanged.addListener((changes) => {
+    if (!changes['tabhaven.settings.v1']) return;
+    void syncCoordinatorEnabled();
   });
 
   browser.tabs.onCreated.addListener((tab) => {
@@ -81,4 +99,44 @@ export default defineBackground(() => {
     enableActionClick();
   });
   enableActionClick();
+
+  // 自动休眠：周期性冻结长时间未访问的非激活标签，释放内存（受设置开关控制）。
+  // 使用 chrome.alarms 而非 setInterval：MV3 service worker 在空闲后会被浏览器回收，
+  // setInterval 回调无法保证触发；alarms 由浏览器保活调度，即使 SW 回收到点也会重新拉起。
+  const runAutoDiscard = async () => {
+    try {
+      const settings = await settingsRepository.read();
+      if (!settings.autoDiscardEnabled) return;
+      const tabs = await browser.tabs.query({
+        windowType: 'normal'
+      });
+      const cutoff = Date.now() - settings.autoDiscardMinutes * 60_000;
+      for (const rawTab of tabs) {
+        const tab = mapTab(rawTab);
+        if (
+          tab.id >= 0 &&
+          canSafelyDiscardTab(tab) &&
+          (tab.lastAccessed ?? 0) < cutoff
+        ) {
+          await browser.tabs.discard(tab.id).catch(() => {});
+        }
+      }
+    } catch {
+      /* 忽略：下次闹钟自动重试 */
+    }
+  };
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'tabhaven-auto-discard') void runAutoDiscard();
+  });
+  // periodInMinutes 最小为 1；同名闹钟重复创建即重置，幂等安全。
+  browser.alarms.create('tabhaven-auto-discard', { periodInMinutes: 1 }).catch(() => {});
+
+  // 一次性迁移前身（Tabstead）数据：仅当存在遗留数据且未迁移过时执行。
+  void (async () => {
+    try {
+      if (await hasLegacyData()) await migrateFromTabstead();
+    } catch {
+      /* 迁移失败不影响主流程 */
+    }
+  })();
 });

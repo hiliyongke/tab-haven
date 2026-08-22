@@ -26,6 +26,7 @@
   "dependencies": {
     "fuzzysort": "^4.0.2",
     "i18next": "^26.4.0",
+    "lucide-react": "^1.33.0",
     "pinyin-pro": "^3.29.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

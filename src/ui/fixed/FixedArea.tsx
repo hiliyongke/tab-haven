@@ -9,8 +9,9 @@ import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
 
-/** 固定条目行：图标 + 标题 + 挂起态 + 悬停关闭。 */
+/** 固定条目行：站点图标 + 标题 + 挂起态 + 悬停关闭。 */
 function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolderItem }) {
+  const { t } = useTranslation();
   const openSavedItem = useDataStore((state) => state.openSavedItem);
   const removeFolderItem = useDataStore((state) => state.removeFolderItem);
   const tabs = useTabStore((state) => state.tabs);
@@ -21,11 +22,12 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
     : tabs.some((tab) => tab.url === item.url && tab.active);
 
   return (
-    <article
+    <li
+      role="listitem"
       className={
-        'group flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-100' +
-        (isOpen ? '' : ' opacity-60') +
-        (isActive ? ' bg-gray-100' : '')
+        'folder-item group' +
+        (isOpen ? ' is-open' : ' is-closed') +
+        (isActive ? ' is-active' : '')
       }
       draggable
       onDragStart={(event) => {
@@ -62,21 +64,24 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
     >
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        className="fixed-item-main"
         onClick={() => void openSavedItem(item)}
         title={item.title || item.url}
       >
-        {item.pendingTabId !== undefined ? (
-          <span className="h-4 w-4 shrink-0 rounded-full border border-dashed border-gray-300" aria-hidden="true" />
-        ) : (
-          <Favicon src={item.favIconUrl} title={item.title} size={16} />
-        )}
-        <span className="truncate">{item.title || '新标签页'}</span>
+        <span className="fixed-item-favicon">
+          {item.pendingTabId !== undefined ? (
+            <span className="fixed-item-pending" aria-hidden="true" />
+          ) : (
+            <Favicon src={item.favIconUrl} title={item.title} size={16} />
+          )}
+        </span>
+        <span className="fixed-item-title truncate">{item.title || t('tabs.newTab')}</span>
       </button>
       <button
         type="button"
-        className="text-gray-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-        title="关闭标签并移出文件夹"
+        className="fixed-item-remove"
+        title={t('fixed.itemClose')}
+        aria-label={t('fixed.itemClose')}
         onClick={() => {
           const allTabs = useTabStore.getState().tabs;
           const targetTab = item.pendingTabId !== undefined
@@ -90,7 +95,7 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
       >
         <Icon d={Icons.close} className="h-3.5 w-3.5" />
       </button>
-    </article>
+    </li>
   );
 }
 
@@ -102,12 +107,14 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   const toggleFolderCollapsed = useDataStore((state) => state.toggleFolderCollapsed);
   const addTabToFolder = useDataStore((state) => state.addTabToFolder);
   const moveFolder = useDataStore((state) => state.moveFolder);
+  const onRestoreFolderAsGroup = useDataStore((state) => state.syncFolderToNativeGroup);
+  const notify = useUndoStore((state) => state.notify);
   const tabs = useTabStore((state) => state.tabs);
   const [dialog, setDialog] = useState<{ type: 'rename' } | { type: 'delete' } | null>(null);
 
   return (
     <section
-      className="mb-1"
+      className="fixed-folder"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(TAB_DRAG_MIME)) event.preventDefault();
       }}
@@ -119,7 +126,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
         if (tab) void addTabToFolder(tab, folder.id);
       }}
     >
-      <div className="group flex items-center gap-1 px-2 py-1" draggable onDragStart={(event) => {
+      <div className="fixed-folder-head group" draggable onDragStart={(event) => {
         event.dataTransfer.setData('application/x-folder-id', folder.id);
         event.dataTransfer.effectAllowed = 'move';
       }}
@@ -137,25 +144,39 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
       }}>
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-medium"
+          className="fixed-folder-toggle"
           onClick={() => void toggleFolderCollapsed(folder.id)}
         >
-          <Icon d={Icons.chevron} className={'h-3 w-3 text-gray-400 ' + (folder.collapsed ? '' : 'rotate-90')} />
-          <span className="truncate">{folder.name}</span>
-          <span className="text-xs text-gray-400">{folder.items.length}</span>
+          <Icon d={Icons.chevron} className={'fixed-folder-chevron' + (folder.collapsed ? '' : ' is-expanded')} />
+          <span className="fixed-folder-name truncate">{folder.name}</span>
+          <span className="fixed-folder-count">{folder.items.length}</span>
         </button>
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="fixed-folder-actions">
           <button
             type="button"
-            className="row-action"
-            title={t('fixed.rename')}
-            onClick={() => setDialog({ type: 'rename' })}
+            className="fixed-folder-action is-restore"
+            title={t('fixed.toNativeGroup')}
+            onClick={() =>
+              void onRestoreFolderAsGroup(folder.id)
+                .then((converted) =>
+                  notify(t(converted ? 'toast.folderConverted' : 'toast.folderConvertSkipped'))
+                )
+                .catch(() => notify(t('toast.folderConvertFailed')))
+            }
           >
-            <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" className="h-3.5 w-3.5" />
+            <Icon d={Icons.group} className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
-            className="row-action hover:text-red-500"
+            className="fixed-folder-action"
+            title={t('fixed.rename')}
+            onClick={() => setDialog({ type: 'rename' })}
+          >
+            <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="fixed-folder-action is-danger"
             title={t('fixed.delete')}
             onClick={() => setDialog({ type: 'delete' })}
           >
@@ -164,11 +185,11 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
         </span>
       </div>
       {!folder.collapsed && (
-        <div>
+        <ul className="fixed-folder-items">
           {folder.items.map((item) => (
             <FolderItemRow key={item.id} folder={folder} item={item} />
           ))}
-        </div>
+        </ul>
       )}
       {dialog?.type === 'rename' && (
         <PromptDialog
@@ -205,16 +226,20 @@ export function FixedArea() {
   const [creating, setCreating] = useState(false);
 
   return (
-    <section className="border-b border-gray-100 py-1" aria-label={t('fixed.areaLabel')}>
-      <div className="flex items-center gap-1 px-2 py-1">
-        <span className="flex-1 text-xs font-semibold text-gray-500">{t('fixed.areaTitle')}</span>
+    <section className="fixed-area" aria-label={t('fixed.areaLabel')}>
+      <div className="fixed-area-head">
+        <span className="fixed-area-title">
+          <span>{t('fixed.areaTitle')}</span>
+          <span className="fixed-area-count">{folders.length}</span>
+        </span>
         <button
           type="button"
-          className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="fixed-area-add"
           title={t('fixed.newFolder')}
           onClick={() => setCreating(true)}
         >
           <Icon d={Icons.plus} className="h-3.5 w-3.5" />
+          <span className="sr-only">{t('fixed.newFolder')}</span>
         </button>
       </div>
       {folders.map((folder) => (

@@ -20,6 +20,8 @@ export function SettingsSync() {
 
   useEffect(() => {
     if (language) void i18n.changeLanguage(language);
+    // 同步 <html lang>：读屏音系与字体渲染跟随界面语言
+    document.documentElement.lang = language ?? i18n.resolvedLanguage ?? 'zh-CN';
   }, [language, i18n]);
 
   return null;

@@ -1,45 +1,63 @@
 import type { TabRecord } from '@/core/tab-types';
+import { useTranslation } from 'react-i18next';
+import { Icon, Icons } from '@/ui/common/Icon';
 
 /** 标签行状态徽章（n× 重复 / 静音 / 拆分指示）。 */
 export function StatusBadges({
   tab,
   duplicateCount,
-  isSplitCompanion
+  isSplitCompanion,
+  showSplitBadges = true
 }: {
   tab: TabRecord;
   duplicateCount: number;
   isSplitCompanion: boolean;
+  /** 是否显示分屏「拆 / 伴」标记。 */
+  showSplitBadges?: boolean;
 }) {
+  const { t } = useTranslation();
   const badges: React.ReactNode[] = [];
 
   if (duplicateCount > 1) {
     badges.push(
       <span
         key="dup"
-        className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700"
-        title={`此网址在当前窗口共有 ${duplicateCount} 份`}
+        className="rounded bg-warn-100 px-1 text-[10px] font-medium text-warn-700"
+        title={t('status.duplicateTitle', { count: duplicateCount })}
       >
         {duplicateCount}×
       </span>
     );
   }
 
-  if (tab.muted) {
+  if (tab.audible && !tab.muted) {
     badges.push(
-      <span key="muted" className="text-[10px] text-gray-400" title="已静音">
-        静
+      <span
+        key="audible"
+        className="media-playing-badge"
+        title={t('status.audible')}
+        aria-label={t('status.audible')}
+      >
+        <Icon d={Icons.mute} className="h-3 w-3" />
+        <span>{t('status.playing')}</span>
+      </span>
+    );
+  } else if (tab.muted) {
+    badges.push(
+      <span key="muted" className="text-[10px] text-gray-400" title={t('status.muted')}>
+        {t('status.mutedGlyph')}
       </span>
     );
   }
 
-  if (tab.splitViewId !== undefined) {
+  if (showSplitBadges && tab.splitViewId !== undefined) {
     badges.push(
       <span
         key="split"
-        className="rounded border border-dashed border-blue-400 px-0.5 text-[10px] text-blue-500"
-        title="正在拆分视图中显示"
+        className="rounded border border-dashed border-accent-400 px-0.5 text-[10px] text-accent-500"
+        title={t('status.split')}
       >
-        拆
+        {t('status.splitGlyph')}
       </span>
     );
   }
@@ -48,11 +66,22 @@ export function StatusBadges({
     badges.push(
       <span
         key="companion"
-        className="rounded bg-blue-50 px-0.5 text-[10px] text-blue-400"
-        title="与当前标签拆分同屏"
+        className="rounded bg-accent-100 px-0.5 text-[10px] text-accent-700"
+        title={t('status.companion')}
       >
-        伴
+        {t('status.companionGlyph')}
       </span>
+    );
+  }
+
+  if (tab.discarded) {
+    badges.push(
+      <Icon
+        key="frozen"
+        d={Icons.snowflake}
+        className="h-3 w-3 text-gray-400"
+        title={t('status.discarded')}
+      />
     );
   }
 

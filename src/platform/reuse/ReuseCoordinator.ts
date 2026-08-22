@@ -1,4 +1,5 @@
 import type { TabRecord } from '@/core/tab-types';
+import { rankForKeep } from '@/core/dup/DedupeByUrl';
 import { inspectUrl } from '@/core/url/UrlInspector';
 import { AllowanceLedger } from '@/platform/reuse/AllowanceLedger';
 import { ReusePolicy } from '@/platform/reuse/ReusePolicy';
@@ -44,18 +45,28 @@ export class ReuseCoordinator {
   private readonly policy: ReusePolicy;
   private readonly deps: ReuseCoordinatorDependencies;
   private draining = false;
+  /** 是否启用（同 URL 唯一化开关；关闭后停止追踪与合并）。 */
+  private enabled: boolean;
 
   constructor(
     deps: ReuseCoordinatorDependencies,
-    options: { allowances?: AllowanceLedger; policy?: ReusePolicy } = {}
+    options: { allowances?: AllowanceLedger; policy?: ReusePolicy; enabled?: boolean } = {}
   ) {
     this.deps = deps;
     this.allowances = options.allowances ?? new AllowanceLedger();
     this.policy = options.policy ?? new ReusePolicy();
+    this.enabled = options.enabled ?? true;
+  }
+
+  /** 开关联动（设置变更时调用）。关闭时清空追踪任务，允许同 URL 多开。 */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) this.tasks.clear();
   }
 
   /** 新标签创建（事件源：tabs.onCreated）。 */
   handleCreated(tab: TabRecord): void {
+    if (!this.enabled) return;
     if (tab.incognito) return;
     this.tasks.set(tab.id, { latest: tab, dirty: true, status: 'tracked' });
     this.requestDrain();
@@ -63,6 +74,7 @@ export class ReuseCoordinator {
 
   /** 标签导航更新（事件源：tabs.onUpdated，仅 url/status 变化触发）。 */
   handleUpdated(tabId: number, changed: { url?: boolean; status?: boolean }, tab: TabRecord): void {
+    if (!this.enabled) return;
     if (!changed.url && !changed.status) return;
     const task = this.tasks.get(tabId);
     if (!task) return;
@@ -137,10 +149,23 @@ export class ReuseCoordinator {
         if (decision.kind === 'standalone') {
           return tab.status === 'complete' ? { action: 'keep' } : 'wait';
         }
-        await this.deps.activate(decision.targetId);
+        // 全量唯一化：保留「最近访问」的既有标签，关闭其余既有 + 新建标签。
+        const inspection = inspectUrl(tab.url, tab.pendingUrl);
+        const existing = windowTabs.filter(
+          (candidate) =>
+            candidate.id !== tab.id &&
+            inspectUrl(candidate.url, candidate.pendingUrl).comparisonKey ===
+              inspection.comparisonKey
+        );
+        const keep = rankForKeep(existing);
+        if (!keep) return { action: 'keep' }; // 防御：既有标签已全部消失
+        await this.deps.activate(keep.id);
+        for (const candidate of existing) {
+          if (candidate.id !== keep.id) await this.deps.close(candidate.id);
+        }
         await this.deps.close(tab.id);
         this.deps.notifyReuse();
-        return { action: 'reuse', targetId: decision.targetId };
+        return { action: 'reuse', targetId: keep.id };
       }
     }
   }

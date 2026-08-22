@@ -2,8 +2,10 @@ import { create } from 'zustand';
 import { createUndoBatch, popBatch, pushBatch, toUndoTabRecord } from '@/core/undo/UndoStack';
 import type { UndoBatch } from '@/core/schema/models';
 import { UndoBatchSchema } from '@/core/schema/models';
+import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { DataRepository } from '@/platform/storage/DataRepository';
+import { settingsRepository } from '@/platform/storage/repositories';
 import { restoreTabRecords } from '@/platform/undo/RestoreEngine';
 import { useTabStore } from '@/stores/tabStore';
 
@@ -35,6 +37,8 @@ interface UndoState {
   closeWithUndo: (tabs: readonly TabRecord[], tabIds: readonly number[]) => Promise<void>;
   undo: () => Promise<void>;
   clearToast: () => void;
+  /** 通用状态提示（无可撤销动作），如后台自动合并通知。 */
+  notify: (message: string) => void;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -45,7 +49,9 @@ export const useUndoStore = create<UndoState>()((set, get) => ({
   ready: false,
 
   load: async () => {
-    const batches = await undoRepository.read();
+    const settings = await settingsRepository.read();
+    const batches = settings.persistUndo ? await undoRepository.read() : [];
+    if (!settings.persistUndo) await undoRepository.write([]);
     set({ batches, ready: true });
   },
 
@@ -63,13 +69,15 @@ export const useUndoStore = create<UndoState>()((set, get) => ({
 
     const next = pushBatch(get().batches, batch);
     set({ batches: next });
-    await undoRepository.write(next);
+    const settings = await settingsRepository.read();
+    if (settings.persistUndo) await undoRepository.write(next);
+    else await undoRepository.write([]);
 
     await useTabStore.getState().closeTabs(closing.map((tab) => tab.id));
 
     set({
       toast: {
-        message: `已关闭 ${closing.length} 个标签`,
+        message: i18n.t('undo.closed', { count: closing.length }),
         canUndo: true,
         batchId: batch.id
       }
@@ -82,20 +90,26 @@ export const useUndoStore = create<UndoState>()((set, get) => ({
     if (!latest) return;
 
     set({ batches: remaining });
-    await undoRepository.write(remaining);
+    const settings = await settingsRepository.read();
+    if (settings.persistUndo) await undoRepository.write(remaining);
     clearTimeout(toastTimer);
     set({ toast: null });
 
     const windowId = useTabStore.getState().currentWindowId;
     if (windowId === undefined) return;
     const count = await restoreTabRecords(latest.entries, windowId);
-    set({ toast: { message: `已恢复 ${count} 个标签`, canUndo: false, batchId: undefined } });
+    set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
     scheduleToastClear();
   },
 
   clearToast: () => {
     clearTimeout(toastTimer);
     set({ toast: null });
+  },
+
+  notify: (message) => {
+    set({ toast: { message, canUndo: false, batchId: undefined } });
+    scheduleToastClear();
   }
 }));
 

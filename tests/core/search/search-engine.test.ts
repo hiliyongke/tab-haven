@@ -37,10 +37,27 @@ describe('SearchEngine', () => {
     expect(hits.some((hit) => hit.tabId === 3)).toBe(true);
   });
 
-  it('命中高亮输出 <b> 标记', () => {
+  it('命中分段标记（hit=true 覆盖匹配子串，且可还原原始标题）', () => {
     const engine = new SearchEngine(tabs);
     const hits = engine.search('热榜');
-    expect(hits[0]?.titleMarkup).toContain('<b');
+    const hit = hits[0];
+    expect(hit).toBeDefined();
+    // 所有分段拼接应无损还原原始标题（纯文本、无 HTML 注入）
+    const full = hit!.titleSegments.map((s) => s.text).join('');
+    expect(full).toBe('今日热榜');
+    // 至少存在一个命中分段，且其文本恰为被匹配的子串
+    const matched = hit!.titleSegments.filter((s) => s.hit);
+    expect(matched.length).toBeGreaterThan(0);
+    expect(matched.map((s) => s.text).join('')).toBe('热榜');
+  });
+
+  it('标题含 HTML 特殊字符时仅作为纯文本分段（不注入）', () => {
+    const engine = new SearchEngine([
+      { id: 9, title: 'A < B & C <script>x</script>', url: 'https://x.com', active: false }
+    ]);
+    const hits = engine.search('B');
+    const full = hits[0]?.titleSegments.map((s) => s.text).join('');
+    expect(full).toBe('A < B & C <script>x</script>');
   });
 
   it('模糊子序列匹配（gt 命中 GitHub）', () => {

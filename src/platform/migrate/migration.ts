@@ -1,10 +1,15 @@
 import { browser } from 'wxt/browser';
 import { TabsteadMigrator, MIGRATION_MARKER_KEY, type MigrationReport } from '@/core/migrate/TabsteadMigrator';
-import { useDataStore } from '@/stores/dataStore';
+import {
+  foldersRepository,
+  pinsRepository,
+  settingsRepository
+} from '@/platform/storage/repositories';
 
 /**
  * 迁移协调（FR-D9.2）：读取前身产品数据 → 映射 → 写入本产品存储 → 置幂等标记。
  * 只读旧 key，绝不写回；任一分区失败仅跳过该分区。
+ * 写入统一走共享 DataRepository（zod 校验），UI 页面经 storage.onChanged 自动同步。
  */
 
 /** 前身产品使用的存储 key（只读）。 */
@@ -36,26 +41,20 @@ export async function migrateFromTabstead(): Promise<MigrationReport> {
   );
 
   // 写入本产品数据（无数据分区跳过）
-  const dataStore = useDataStore.getState();
   if (data.folders.length > 0) {
-    await browser.storage.local.set({
-      'tabhaven.fixed-folders.v1': data.folders
-    });
+    await foldersRepository.write(data.folders);
   }
   if (data.pins.length > 0) {
-    await browser.storage.local.set({
-      'tabhaven.persistent-pins.v1': data.pins
-    });
+    await pinsRepository.write(data.pins);
   }
   if (report.migratedTheme) {
-    await browser.storage.local.set({
-      'tabhaven.settings.v1': { themePreference: data.themePreference, aggregationThreshold: 2 }
-    });
+    // 合并而非整体覆盖：保留现有设置其余字段，仅迁移主题偏好。
+    const current = await settingsRepository.read();
+    await settingsRepository.write({ ...current, themePreference: data.themePreference });
   }
 
-  // 幂等标记 + 刷新内存态
+  // 幂等标记（UI 页面经 storage.onChanged 自动同步，无需刷新内存态）
   await browser.storage.local.set({ [MIGRATION_MARKER_KEY]: { tabstead: true } });
-  await dataStore.initialize();
 
   return report;
 }

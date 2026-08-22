@@ -20,7 +20,7 @@ export function StatusToast() {
       {toast.canUndo && (
         <button
           type="button"
-          className="rounded bg-blue-50 px-2 py-0.5 font-medium text-blue-600 hover:bg-blue-100"
+          className="rounded bg-accent-50 px-2 py-0.5 font-medium text-accent-600 hover:bg-accent-100"
           onClick={() => void undo()}
         >
           {t('undo.action')}

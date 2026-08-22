@@ -1,5 +1,7 @@
+import { useTranslation } from 'react-i18next';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import type { PersistentPin } from '@/core/schema/models';
+import type { TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { Favicon } from '@/ui/common/Favicon';
@@ -8,8 +10,30 @@ import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
 /**
  * 顶部永久固定图标区（行为规格 C-2）：
  * 单击切换/重新打开；中键仅关闭页面、入口保留；标签可拖入固定。
+ * 视觉语言对齐原版 Tabstead 的 pinned-strip 磁贴（active 底部绿条、
+ * closed 降透明度、audible 绿点、discarded 灰化、split 角标）。
  */
+
+interface PinRuntime {
+  openTab?: TabRecord;
+  isActive: boolean;
+  isAudible: boolean;
+  isDiscarded: boolean;
+}
+
+function resolveRuntime(pin: PersistentPin, tabs: readonly TabRecord[]): PinRuntime {
+  const matches = tabs.filter((tab) => tab.url && pinIdentity(tab.url) === pin.identity);
+  const openTab = matches[0];
+  return {
+    openTab,
+    isActive: openTab?.active ?? false,
+    isAudible: openTab?.audible ?? false,
+    isDiscarded: openTab?.discarded ?? false
+  };
+}
+
 export function PinnedStrip() {
+  const { t } = useTranslation();
   const pins = useDataStore((state) => state.pins);
   const openPin = useDataStore((state) => state.openPin);
   const addPin = useDataStore((state) => state.addPin);
@@ -33,27 +57,38 @@ export function PinnedStrip() {
 
   return (
     <section
-      className="flex flex-wrap gap-1 border-b border-gray-100 px-2 py-1.5"
-      aria-label="固定标签"
+      className="pinned-strip"
+      aria-label={t('sections.pinned')}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(TAB_DRAG_MIME)) event.preventDefault();
       }}
       onDrop={handleDrop}
     >
-      {pins.map((pin) => (
-        <button
-          key={pin.id}
-          type="button"
-          className="relative flex h-8 w-8 items-center justify-center rounded hover:bg-gray-100"
-          title={pin.title || pin.url}
-          onClick={() => void openPin(pin)}
-          onAuxClick={(event) => {
-            if (event.button === 1) handleMiddleClick(pin);
-          }}
-        >
-          <Favicon src={pin.favIconUrl} title={pin.title} size={18} />
-        </button>
-      ))}
+      {pins.map((pin) => {
+        const rt = resolveRuntime(pin, tabs);
+        const tileClass =
+          'pinned-tile' +
+          (rt.isActive ? ' is-active' : rt.openTab ? '' : ' is-closed') +
+          (rt.isDiscarded ? ' is-discarded' : '') +
+          (rt.isAudible ? ' is-audible' : '');
+        return (
+          <article key={pin.id} className={tileClass} draggable={false}>
+            <button
+              type="button"
+              className="pinned-main"
+              title={pin.title || pin.url}
+              onClick={() => void openPin(pin)}
+              onAuxClick={(event) => {
+                if (event.button === 1) handleMiddleClick(pin);
+              }}
+            >
+              <span className="pinned-favicon-wrap">
+                <Favicon src={pin.favIconUrl} title={pin.title || ''} size={18} />
+              </span>
+            </button>
+          </article>
+        );
+      })}
     </section>
   );
 }

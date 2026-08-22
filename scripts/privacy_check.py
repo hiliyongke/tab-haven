@@ -23,7 +23,8 @@ ALLOWED_PERMISSIONS = {
     "tabGroups",
     "storage",
     "commands",
-    "alarms",  # 预留：自动保存（V1.2），当前未启用
+    "activeTab",  # 用户主动开启预览时截取当前可见标签
+    "alarms",  # 用户开启自动休眠后周期检查
 }
 
 # 禁止出现的网络通道调用

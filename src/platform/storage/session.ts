@@ -37,8 +37,30 @@ export async function writeSession(data: SessionData): Promise<void> {
   }
 }
 
-/** 增量更新会话数据。 */
-export async function updateSession(partial: Partial<SessionData>): Promise<void> {
-  const current = await readSession();
-  await writeSession({ ...current, ...partial });
+/** 会话写操作串行队列（模块级，进程内全局唯一）。 */
+let chain: Promise<void> = Promise.resolve();
+
+/**
+ * 基于当前会话数据做变换（串行化）。
+ *
+ * 并发安全：所有 read-modify-write 操作经模块级串行队列执行，
+ * 每个 updater 都基于队列内最新的存储值计算，避免快速连续操作互相覆盖。
+ * 跨页面实例（popup/sidepanel 同时打开）仍有理论竞态窗口，属 MV3 固有约束，
+ * 通过单次原子写降低实际影响。
+ */
+export function mutateSession(
+  updater: (current: SessionData) => Partial<SessionData>
+): Promise<SessionData> {
+  let result!: SessionData;
+  chain = chain.then(async () => {
+    const current = await readSession();
+    result = { ...current, ...updater(current) };
+    await writeSession(result);
+  });
+  return chain.then(() => result);
+}
+
+/** 增量更新会话数据（队列内 read-modify-write，串行化防竞态）。 */
+export function updateSession(partial: Partial<SessionData>): Promise<void> {
+  return mutateSession((current) => ({ ...current, ...partial })).then(() => undefined);
 }

@@ -18,10 +18,10 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
 const policy = new ReusePolicy();
 
 /**
- * 行为规格（PRD 附录 C-6）：
+ * 行为规格（PRD 附录 C-6 / 同 URL 唯一化）：
  *  - 同网址新标签复用窗口内既有标签：激活既有、关闭新标签由协调器执行；
- *  - 复用目标偏好：激活 > 固定 > 位置靠前 > id 小；
- *  - 既有标签（非本次新建）优先；无既有时本次新建中 id 最小者胜出；
+ *  - 复用目标偏好：最近访问 > 激活 > 固定 > 位置靠前 > id 大（rankForKeep 统一口径）；
+ *  - 既有标签（非本次新建）优先；无既有时本次新建中排序靠前者胜出；
  *  - 非 web 页、无匹配候选时保持独立。
  */
 describe('ReusePolicy', () => {
@@ -36,7 +36,18 @@ describe('ReusePolicy', () => {
     if (decision.kind === 'reuse') expect(decision.targetId).toBe(1);
   });
 
-  it('偏好排序：激活 > 固定 > 位置 > id', () => {
+  it('偏好排序：最近访问 > 激活 > 固定 > 位置 > id', () => {
+    const newTab = makeTab({ id: 10, index: 4, url: 'https://a.com/' });
+    const windowTabs = [
+      // lastAccessed 最新者胜出
+      makeTab({ id: 30, index: 0, url: 'https://a.com/', pinned: true, lastAccessed: 100 }),
+      makeTab({ id: 20, index: 2, url: 'https://a.com/', active: true, lastAccessed: 200 })
+    ];
+    const decision = policy.decide(newTab, windowTabs, new Set([10]));
+    expect(decision).toEqual({ kind: 'reuse', targetId: 20 });
+  });
+
+  it('无 lastAccessed 时回退：激活 > 固定 > 位置 > id', () => {
     const newTab = makeTab({ id: 10, index: 3, url: 'https://a.com/' });
     const windowTabs = [
       makeTab({ id: 30, index: 0, url: 'https://a.com/', pinned: true }),

@@ -21,7 +21,9 @@ export default defineConfig({
     description: '__MSG_extDescription__',
     default_locale: 'en',
     minimum_chrome_version: '114',
-    permissions: ['tabs', 'tabGroups', 'storage'],
+    // options_ui 由 WXT 检测 options 入口自动生成（含 page），此处仅覆盖 open_in_tab
+    options_ui: { open_in_tab: true },
+    permissions: ['tabs', 'tabGroups', 'storage', 'activeTab', 'alarms'],
     commands: {
       'focus-search': {
         suggested_key: { default: 'Ctrl+Shift+F' },
@@ -35,6 +37,10 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
+      // options_ui 由 WXT 检测 options 入口自动生成，其 open_in_tab 默认值（false）
+      // 无法被 manifest() 配置可靠覆盖（实测），故在此确定性后处理。
+      if (manifest.options_ui) manifest.options_ui.open_in_tab = true;
+
       if (!isCompatVariant) {
         // 标准版（侧边栏形态）：点击图标开侧边栏，绝不可绑定 default_popup，
         // 否则 Chrome 优先打开 popup 而非 sidePanel（实测：openPanelOnActionClick
@@ -57,6 +63,10 @@ export default defineConfig({
     }
   },
   vite: () => ({
+    // 固定 dev server 端口并启用 strictPort：避免 Vite 在 3000 被占用时自增到 3001，
+    // 否则 HTML 引用的脚本源（localhost:3000）与 WXT 自动生成进 manifest 的 CSP
+    // （允许 localhost:3001）不一致，导致 sidepanel 脚本被内容安全策略拦截。
+    server: { port: 3000, strictPort: true },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
