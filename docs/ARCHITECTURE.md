@@ -144,7 +144,9 @@ React 19 并发渲染（key = tab.id，节点稳定复用）
 tabhaven/
 ├── wxt.config.ts               # 入口注册、manifest 钩子（变体裁剪）、模块加载
 ├── package.json / tsconfig.json / eslint.config.js / vitest.config.ts
-├── public/icons/
+├── public/
+│   ├── _locales/{zh_CN,en}/messages.json   # 商店文案（Chrome 原生 i18n）
+│   └── icon/                            # 扩展图标（16/32/48/128，WXT 自动注入 manifest）
 ├── src/
 │   ├── entrypoints/            # 形态入口（薄壳）
 │   │   ├── background.ts       # SW：复用引擎 + commands 分发 + 消息端点
@@ -152,41 +154,46 @@ tabhaven/
 │   │   ├── popup/              # index.html + main.tsx → <QuickSwitcherApp/>
 │   │   └── pages/full/         # 设置/导入导出/迁移引导（懒加载全页）
 │   ├── core/                   # 纯领域逻辑（零 chrome/DOM 依赖，单测主战场）
-│   │   ├── grouping/           # tldts 封装、归组键计算、层级偏好合并
-│   │   ├── url/                # savableUrl、comparableUrl（V1.2 归一化预留接口）
-│   │   ├── undo/               # 撤销栈数据结构、栈深淘汰、恢复计划生成
-│   │   ├── dupes/              # 重复组计算、keeper 选择策略
-│   │   ├── search/             # fuzzysort 封装、索引构建、排序策略
-│   │   ├── schema/             # zod schema 族 + 版本迁移管道 + 导出格式定义
-│   │   └── migrate/            # Tabstead 数据 → TabHaven 数据映射
+│   │   ├── url/                # UrlInspector：URL 规约 + 分类（web/blank-start/internal）
+│   │   ├── dup/                # DuplicateIndex + KeeperPolicy：重复组索引与 keeper 策略
+│   │   ├── site/               # SiteKey / HostRules / SiteResolver / SiteGrouping：同站点聚合
+│   │   ├── fixed/              # PinIdentity / FolderOps / Reconcile：固定空间领域
+│   │   ├── search/             # SearchEngine：fuzzysort + pinyin-pro 三目标索引
+│   │   ├── undo/               # UndoStack：操作记录制 + 栈深淘汰
+│   │   ├── data/               # ExportService：导出导入
+│   │   ├── migrate/            # TabsteadMigrator：前身数据映射（数据级，非代码）
+│   │   └── schema/             # zod schema 族 + 版本迁移
 │   ├── platform/               # chrome 适配层（唯一触碰 chrome.* 的层）
-│   │   ├── tabs.ts             # 事件聚合器（40ms 防抖）、查询、reconcile 触发
-│   │   ├── storage/            # WXT storage 封装 + zod 校验读写 + 防御性降级
-│   │   ├── commands.ts         # 浏览器级快捷键注册与分发
-│   │   ├── messages.ts         # 类型安全消息协议（zod + runtime.sendMessage）
-│   │   └── capabilities.ts     # sidePanel/storage 可用性检测（决定形态）
+│   │   ├── tabs.ts             # 标签查询 / 事件聚合 / 操作
+│   │   ├── reuse/              # AllowanceLedger / ReusePolicy / ReuseCoordinator：复用引擎
+│   │   ├── sync/               # TabSyncService：事件→快照节流调度
+│   │   ├── storage/            # DataRepository：zod 校验读写 + 坏数据隔离 + 变更订阅
+│   │   ├── theme/              # ThemeApplier：主题三态落地
+│   │   ├── undo/              # RestoreEngine：撤销恢复管线
+│   │   ├── migrate/            # migration 协调（幂等 / 单向 / 分区报告）
+│   │   ├── messages.ts         # 类型安全消息协议（zod）
+│   │   └── capabilities.ts     # 形态能力检测
 │   ├── stores/                 # zustand store 族
-│   │   ├── tabStore.ts         # tabs/groups 镜像 + reconcile 结果 + 派生分组
+│   │   ├── tabStore.ts         # tabs/groups 镜像 + 派生分组
 │   │   ├── selectionStore.ts   # 多选状态（FR-D1.1）
-│   │   ├── searchStore.ts      # 搜索状态与结果
 │   │   ├── undoStore.ts        # 撤销栈镜像 + undo 执行
 │   │   ├── dataStore.ts        # 固定文件夹/永久固定/设置（存储层订阅）
-│   │   └── uiStore.ts          # 主题/菜单/弹窗/折叠等界面态
+│   │   └── uiStore.ts          # 主题/折叠等界面态
 │   ├── ui/                     # React 组件库
-│   │   ├── shell/              # ThemeShell、StatusToast（含撤销按钮）
-│   │   ├── tabs/               # TabRow、TabList、各 Section、SelectionBar
-│   │   ├── fixed/              # PinnedStrip、FolderList、FolderRow、SavedItemRow
+│   │   ├── common/             # Icon、Favicon、StatusBadges、StatusToast、ThemeSync、SettingsSync
+│   │   ├── tabs/               # TabRow、SectionList、SelectionBar
+│   │   ├── fixed/              # PinnedStrip、FixedArea
 │   │   ├── search/             # SearchOverlay（键盘导航、高亮）
-│   │   ├── menus/              # ContextMenuHost（5 类菜单，键盘可达）
-│   │   ├── dialog/             # 自制弹窗族（FR-D10.3）：PromptDialog/ConfirmDialog
-│   │   └── common/             # Icon、Badge、EmptyState
-│   ├── i18n/
+│   │   └── dialog/             # 自制弹窗族（FR-D10.3）：PromptDialog/ConfirmDialog
+│   ├── i18n/                   # UI 文案（react-i18next）
 │   │   ├── index.ts            # i18next 初始化（语言检测 + 设置覆盖）
 │   │   └── locales/{zh-CN,en}/
-│   ├── styles/                 # theme.css（CSS 变量 + data-theme）、tailwind 入口
-│   └── theme-init.ts           # 内联进各 html head（继承基线防闪烁）
-└── tests/                      # core 单测（与 src/core 镜像）+ platform fake-browser 测试
+│   ├── styles/                 # Tailwind + CSS 变量
+│   └── theme-init.ts           # 头部同步主题，避免闪烁
+└── tests/                      # core 单测（行为规格）+ platform fake-browser 测试
 ```
+
+> 注：本段为 V1.0 实际结构。Phase 0 起代码已完全重新设计，与早期脚手架结构无关。
 
 ---
 
@@ -337,7 +344,7 @@ hasSidePanel = typeof chrome.sidePanel !== 'undefined'
 hasStorage   = Boolean(chrome.storage?.local)
 ```
 
-- **支持 sidePanel**（Chrome 114+/Edge）：action 点击 → `sidePanel.setPanelBehavior({openPanelOnActionClick: true})`（继承基线）；popup 入口仍构建作为"快速切换器"加分项。**实现注（2026-08-22 脚手架实测）**：WXT 检测到 popup.html 会自动注入 `action.default_popup`，与 setPanelBehavior 的点击行为不冲突（Chrome 平台行为：openPanelOnActionClick 时点击开侧栏，右键图标仍可开 popup），故保留 default_popup 作为快速切换器入口。
+- **支持 sidePanel**（Chrome 114+/Edge）：action 点击 → `sidePanel.setPanelBehavior({openPanelOnActionClick: true})`（继承基线）。**实现注（2026-08-22 修正）**：WXT 检测到 `popup.html` 入口会自动注入 `action.default_popup`，与 `openPanelOnActionClick` 冲突——Chrome 优先打开 popup 而非侧边栏。因此标准版在 `build:manifestGenerated` hook 中**显式删除 `default_popup`**，确保点击图标稳定打开侧边栏；popup 形态仅作为兼容变体的降级入口。
 - **不支持**（Opera/Vivaldi/未知 Chromium）：action → popup（QuickSwitcher，FR-D2.1 的天然载体）；重操作（设置/导入导出/迁移）跳转 `pages/full`（tabs.create 打开扩展页）。
 - 形态能力差异在 UI 上显式引导（"此功能请前往完整页面"），不静默失效（PRD 验收项）。
 

@@ -17,14 +17,15 @@ export default defineConfig({
   // 显式导入，关闭 auto-imports（保持代码可读性与 ESLint 完整性）
   imports: false,
   manifest: () => ({
-    name: 'TabHaven',
-    description: 'A local-first side panel for organizing tabs in the current browser window.',
+    name: '__MSG_extName__',
+    description: '__MSG_extDescription__',
+    default_locale: 'en',
     minimum_chrome_version: '114',
     permissions: ['tabs', 'tabGroups', 'storage'],
     commands: {
       'focus-search': {
         suggested_key: { default: 'Ctrl+Shift+F' },
-        description: 'Focus tab search'
+        description: '__MSG_commandFocusSearch__'
       }
     }
     // side_panel 字段与 sidePanel 权限由 WXT 检测 sidepanel 入口自动生成；
@@ -34,7 +35,13 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
-      if (!isCompatVariant) return;
+      if (!isCompatVariant) {
+        // 标准版（侧边栏形态）：点击图标开侧边栏，绝不可绑定 default_popup，
+        // 否则 Chrome 优先打开 popup 而非 sidePanel（实测：openPanelOnActionClick
+        // 与 default_popup 共存时 popup 胜出）。快速切换器仅在兼容变体启用。
+        if (manifest.action) delete manifest.action.default_popup;
+        return;
+      }
 
       // 兼容变体：<114 内核遇未知权限字符串会加载失败，必须剥离 sidePanel。
       delete manifest.side_panel;

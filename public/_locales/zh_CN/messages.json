@@ -1,0 +1,26 @@
+{
+  "extName": {
+    "message": "TabHaven（页港）",
+    "description": "扩展在商店与工具栏显示的名称"
+  },
+  "extDescription": {
+    "message": "本地优先、无账号无云端的标签工作台：把散乱的标签组织成有秩序的空间，并保证你永远找得回来。",
+    "description": "扩展在商店展示的长描述"
+  },
+  "actionDefaultTitle": {
+    "message": "TabHaven（页港）",
+    "description": "工具栏图标悬停提示"
+  },
+  "sidePanelTitle": {
+    "message": "TabHaven 标签面板",
+    "description": "侧边栏标题"
+  },
+  "popupTitle": {
+    "message": "TabHaven 快速切换",
+    "description": "弹窗快速切换器标题"
+  },
+  "commandFocusSearch": {
+    "message": "聚焦标签搜索",
+    "description": "快捷键命令的描述"
+  }
+}
