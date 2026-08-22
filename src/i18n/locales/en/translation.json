@@ -42,5 +42,18 @@
     "close": "Close search",
     "noResults": "No matching tabs",
     "typeHint": "Type a title, URL, or pinyin initials"
+  },
+  "selection": {
+    "enterMode": "Enter selection mode",
+    "exitMode": "Exit selection mode",
+    "count": "{{count}} tabs selected",
+    "close": "Close selected",
+    "closeAction": "Close",
+    "pin": "Pin selected",
+    "pinAction": "Pin",
+    "mute": "Mute selected",
+    "muteAction": "Mute",
+    "moveToFolder": "Move to folder…",
+    "cancel": "Cancel selection"
   }
 }

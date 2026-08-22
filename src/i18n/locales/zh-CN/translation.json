@@ -42,5 +42,18 @@
     "close": "关闭搜索",
     "noResults": "没有匹配的标签",
     "typeHint": "输入标题、网址或拼音首字母"
+  },
+  "selection": {
+    "enterMode": "进入选择模式",
+    "exitMode": "退出选择模式",
+    "count": "已选 {{count}} 个标签",
+    "close": "批量关闭",
+    "closeAction": "关闭",
+    "pin": "批量固定",
+    "pinAction": "固定",
+    "mute": "批量静音",
+    "muteAction": "静音",
+    "moveToFolder": "移入文件夹…",
+    "cancel": "取消选择"
   }
 }

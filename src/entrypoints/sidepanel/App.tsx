@@ -6,11 +6,13 @@ import { deriveSections } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
 import { SearchFocusMessageSchema } from '@/platform/messages';
 import { useDataStore } from '@/stores/dataStore';
+import { useSelectionStore } from '@/stores/selectionStore';
 import { useTabStore } from '@/stores/tabStore';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchOverlay } from '@/ui/search/SearchOverlay';
+import { SelectionBar } from '@/ui/tabs/SelectionBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 
 export default function App() {
@@ -30,6 +32,13 @@ export default function App() {
 
   const [collapsedSites, setCollapsedSites] = useState<ReadonlySet<string>>(new Set());
   const [searchOpen, setSearchOpen] = useState(false);
+  const selectionActive = useSelectionStore((state) => state.active);
+  const selectedIds = useSelectionStore((state) => state.selectedIds);
+  const enterSelectionMode = useSelectionStore((state) => state.enterSelectionMode);
+  const exitSelectionMode = useSelectionStore((state) => state.exitSelectionMode);
+  const toggleSelect = useSelectionStore((state) => state.toggle);
+  const selectRange = useSelectionStore((state) => state.selectRange);
+  const selectAll = useSelectionStore((state) => state.selectAll);
 
   // 同步服务：事件 → 快照 → store 订阅自动重渲染
   useEffect(() => {
@@ -37,12 +46,24 @@ export default function App() {
     return startTabSync();
   }, [initializeData, startTabSync]);
 
-  // ⌘K / Ctrl+K 打开搜索；background focus-search 命令转发
+  // ⌘K / Ctrl+K 打开搜索；Ctrl+A 全选（选择模式下）；Esc 退出选择模式
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setSearchOpen(true);
+        return;
+      }
+      if (useSelectionStore.getState().active && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        selectAll(useTabStore.getState().tabs.map((tab) => tab.id));
+        return;
+      }
+      if (event.key === 'Escape') {
+        const selection = useSelectionStore.getState();
+        if (selection.active) {
+          exitSelectionMode();
+        }
       }
     };
     const onMessage = (message: unknown) => {
@@ -54,7 +75,7 @@ export default function App() {
       document.removeEventListener('keydown', onKeyDown);
       browser.runtime.onMessage.removeListener(onMessage);
     };
-  }, []);
+  }, [selectAll, exitSelectionMode]);
 
   // 固定空间排除集：挂起条目标签 + 绑定标签
   const fixedExcludedTabIds = useMemo(() => {
@@ -110,8 +131,16 @@ export default function App() {
             duplicateCounts={duplicateCounts}
             activeTabId={activeTabId}
             splitPartners={partners}
+            selectionMode={selectionActive}
+            selectedIds={selectedIds}
             callbacks={{
               onActivate: (tabId) => void activateTab(tabId),
+              onToggleSelect: (tabId) => {
+                if (selectionActive) toggleSelect(tabId);
+              },
+              onRangeSelect: (tabId) => {
+                selectRange(tabId, tabs.map((tab) => tab.id));
+              },
               onToggleMute: (tab) => void toggleMute(tab),
               onTogglePin: (tab) => void togglePinned(tab),
               onCloseTab: handleCloseTab,
@@ -142,11 +171,25 @@ export default function App() {
         </div>
       </div>
 
+      <SelectionBar tabs={tabs} />
       <footer className="flex shrink-0 items-center justify-between border-t border-gray-200 px-3 py-1.5 text-xs text-gray-500">
         <span>
           {t('tabs.currentOpen')} <strong>{tabs.length}</strong> {t('tabs.tabCountUnit')}
         </span>
         <nav className="flex items-center gap-1" aria-label={t('footer.utilityLabel')}>
+          <button
+            type="button"
+            className={
+              'rounded p-1 hover:bg-gray-100' + (selectionActive ? ' bg-gray-100 text-blue-600' : '')
+            }
+            title={selectionActive ? t('selection.exitMode') : t('selection.enterMode')}
+            onClick={() => {
+              if (selectionActive) exitSelectionMode();
+              else enterSelectionMode();
+            }}
+          >
+            <Icon d="M4 6h16v2H4zM4 11h16v2H4zM4 16h10v2H4z" className="h-4 w-4" />
+          </button>
           <button
             type="button"
             className="rounded p-1 hover:bg-gray-100"

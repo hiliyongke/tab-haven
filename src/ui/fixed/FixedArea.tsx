@@ -4,6 +4,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
 
 /** 固定条目行：图标 + 标题 + 挂起态 + 悬停关闭。 */
 function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolderItem }) {
@@ -23,6 +24,38 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
         (isOpen ? '' : ' opacity-60') +
         (isActive ? ' bg-gray-100' : '')
       }
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData('application/x-folder-item', `${folder.id}:${item.id}`);
+        event.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('application/x-folder-item')) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const after = event.clientY > rect.top + rect.height / 2;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        event.currentTarget.classList.toggle('is-drop-before', !after);
+        event.currentTarget.classList.toggle('is-drop-after', after);
+      }}
+      onDragLeave={(event) => {
+        event.currentTarget.classList.remove('is-drop-before', 'is-drop-after');
+      }}
+      onDrop={(event) => {
+        event.currentTarget.classList.remove('is-drop-before', 'is-drop-after');
+        const payload = event.dataTransfer.getData('application/x-folder-item');
+        if (!payload) return;
+        const [sourceFolderId, sourceItemId] = payload.split(':');
+        if (sourceFolderId === folder.id && sourceItemId === item.id) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const placeAfter = event.clientY > rect.top + rect.height / 2;
+        if (sourceFolderId === folder.id) {
+          // 同文件夹内排序
+          void useDataStore
+            .getState()
+            .reorderFolderItems(folder.id, sourceItemId ?? '', item.id, placeAfter);
+        }
+      }}
     >
       <button
         type="button"
@@ -63,10 +96,40 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   const renameFolder = useDataStore((state) => state.renameFolder);
   const deleteFolder = useDataStore((state) => state.deleteFolder);
   const toggleFolderCollapsed = useDataStore((state) => state.toggleFolderCollapsed);
+  const addTabToFolder = useDataStore((state) => state.addTabToFolder);
+  const moveFolder = useDataStore((state) => state.moveFolder);
+  const tabs = useTabStore((state) => state.tabs);
 
   return (
-    <section className="mb-1">
-      <div className="group flex items-center gap-1 px-2 py-1">
+    <section
+      className="mb-1"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes(TAB_DRAG_MIME)) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        const tabId = Number(event.dataTransfer.getData(TAB_DRAG_MIME));
+        if (!Number.isInteger(tabId)) return;
+        event.preventDefault();
+        const tab = tabs.find((candidate) => candidate.id === tabId);
+        if (tab) void addTabToFolder(tab, folder.id);
+      }}
+    >
+      <div className="group flex items-center gap-1 px-2 py-1" draggable onDragStart={(event) => {
+        event.dataTransfer.setData('application/x-folder-id', folder.id);
+        event.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('application/x-folder-id')) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+      }}
+      onDrop={(event) => {
+        const sourceId = event.dataTransfer.getData('application/x-folder-id');
+        if (!sourceId || sourceId === folder.id) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const placeAfter = event.clientY > rect.top + rect.height / 2;
+        void moveFolder(sourceId, folder.id, placeAfter);
+      }}>
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-medium"

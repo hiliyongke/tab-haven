@@ -10,6 +10,8 @@ import { TabRow } from '@/ui/tabs/TabRow';
 
 export interface SectionCallbacks {
   onActivate: (tabId: number) => void;
+  onToggleSelect: (tabId: number) => void;
+  onRangeSelect: (tabId: number) => void;
   onToggleMute: (tab: TabRecord) => void;
   onTogglePin: (tab: TabRecord) => void;
   onCloseTab: (tab: TabRecord) => void;
@@ -25,6 +27,8 @@ export function SectionList({
   duplicateCounts,
   activeTabId,
   splitPartners,
+  selectionMode,
+  selectedIds,
   callbacks
 }: {
   sections: readonly TemporarySection[];
@@ -34,6 +38,8 @@ export function SectionList({
   activeTabId: number | undefined;
   /** 与当前激活标签同屏的伙伴 id 集合。 */
   splitPartners: ReadonlySet<number>;
+  selectionMode: boolean;
+  selectedIds: readonly number[];
   callbacks: SectionCallbacks;
 }) {
   return (
@@ -104,7 +110,11 @@ export function SectionList({
                   duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
                   isActive={tab.id === activeTabId}
                   isSplitCompanion={splitPartners.has(tab.id)}
+                  selectionMode={selectionMode}
+                  selected={selectedIds.includes(tab.id)}
                   onActivate={callbacks.onActivate}
+                  onToggleSelect={callbacks.onToggleSelect}
+                  onRangeSelect={callbacks.onRangeSelect}
                   onToggleMute={callbacks.onToggleMute}
                   onTogglePin={callbacks.onTogglePin}
                   onClose={callbacks.onCloseTab}

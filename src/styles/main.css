@@ -23,3 +23,11 @@ body,
   --group-cyan: #007b83;
   --group-orange: #fa903e;
 }
+
+/* 拖动插入线（固定条目排序） */
+.is-drop-before {
+  box-shadow: inset 0 2px 0 0 rgb(59 130 246 / 0.8);
+}
+.is-drop-after {
+  box-shadow: inset 0 -2px 0 0 rgb(59 130 246 / 0.8);
+}
