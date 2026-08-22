@@ -1,0 +1,62 @@
+{
+  "name": "tabhaven",
+  "description": "TabHaven（页港）—— 本地优先、无账号无云端的标签工作台（浏览器侧边栏扩展）",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:edge": "wxt -b edge",
+    "build": "wxt build",
+    "build:compat": "cross-env TABHAVEN_VARIANT=compat wxt build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "zip": "wxt zip"
+  },
+  "packageManager": "pnpm@11.1.3",
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "fuzzysort": "^4.0.2",
+    "i18next": "^26.4.0",
+    "pinyin-pro": "^3.29.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-i18next": "^17.0.12",
+    "tldts": "^7.4.10",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "@webext-core/fake-browser": "^2.0.1",
+    "cross-env": "^10.1.0",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "jsdom": "^30.0.1",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.9.6",
+    "simple-git-hooks": "^2.13.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.11",
+    "wxt": "^0.21.4"
+  }
+}

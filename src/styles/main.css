@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+
+@theme {
+  /* 主题变量占位——三态主题（system/light/dark）后续按架构文档以
+     CSS 变量 + [data-theme] 属性选择器实现，此处仅定义 Tailwind 接入点。 */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
