@@ -1,5 +1,7 @@
 import {
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Copy,
   Folder,
   FolderDown,
@@ -8,6 +10,7 @@ import {
   Group,
   Layers,
   List,
+  LocateFixed,
   Pencil,
   Pin,
   Plus,
@@ -33,6 +36,8 @@ export const Icons = {
   plus: Plus,
   close: X,
   chevron: ChevronRight,
+  collapseAll: ChevronsDownUp,
+  expandAll: ChevronsUpDown,
   pin: Pin,
   mute: Volume2,
   muted: VolumeX,
@@ -50,6 +55,7 @@ export const Icons = {
   folderDown: FolderDown,
   /** 新建标签组（分层归类语义，替代 FolderInput 的不贴切表达）。 */
   layers: Layers,
+  locate: LocateFixed,
   settings: Settings,
   star: Star,
 } as const;

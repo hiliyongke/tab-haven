@@ -26,11 +26,14 @@
     "duplicate": "Duplicate tab",
     "discard": "Discard tab (free memory)",
     "closeTab": "Close tab",
+    "locateActive": "Locate current tab",
     "newTabPlaceholder": "New tab",
     "switchTo": "Switch to: {{title}}"
   },
   "footer": {
     "utilityLabel": "Sidebar tools",
+    "collapseAll": "Collapse all groups",
+    "expandAll": "Expand all groups",
     "search": "Search tabs",
     "cleanDuplicates": "Clean up duplicate tabs"
   },
@@ -43,7 +46,9 @@
     "allInactive": "Discard all inactive tabs (free memory)"
   },
   "fixed": {
-    "toNativeGroup": "Convert to native group",
+    "toNativeGroup": "Restore as native group",
+    "convertTitle": "Restore as native group",
+    "convertConfirm": "This opens the web tabs in “{{name}}” and deletes the fixed folder. Continue?",
     "saveGroupAsFolder": "Save as fixed folder",
     "areaLabel": "Fixed space",
     "areaTitle": "Fixed space",
@@ -54,7 +59,9 @@
     "delete": "Delete folder",
     "deleteConfirm": "Delete fixed folder \"{{name}}\"? Open tabs will not be closed.",
     "itemClose": "Close tab and remove from folder",
-    "pendingHint": "Waiting for a URL; the page will be saved here once opened"
+    "pendingHint": "Waiting for a URL; the page will be saved here once opened",
+    "dragToPin": "Drop here to pin",
+    "emptyHint": "Click + to create a fixed folder, then drop tabs into that folder"
   },
   "groups": {
     "newGroup": "New tab group",
@@ -189,6 +196,7 @@
     "duplicated": "Tab duplicated",
     "discarded": "Tab hibernated",
     "discardedMany": "Hibernated {{count}} tabs",
+    "activeTabNotFound": "There is no current tab to locate",
     "savedAsFolder": "Saved as fixed folder",
     "folderConverted": "Restored as native tab group",
     "folderConvertSkipped": "No web tabs to convert in this fixed folder",

@@ -49,6 +49,7 @@ export function TabRow({
   isHighlighted,
   isSearchActive,
   onRequestPreview,
+  rowActionsVisible = true,
 }: {
   tab: TabRecord;
   duplicateCount: number;
@@ -91,6 +92,8 @@ export function TabRow({
   isSearchActive?: boolean;
   /** 用户悬停时按需请求预览。 */
   onRequestPreview?: (tab: TabRecord) => void;
+  /** 是否显示行尾快捷操作。 */
+  rowActionsVisible?: boolean;
 }) {
   const { t } = useTranslation();
   const handleMainClick = (event: React.MouseEvent) => {
@@ -220,7 +223,7 @@ export function TabRow({
         <span className="flex min-w-0 flex-col">
           <span className="truncate title-text">{tab.title || t('tabs.untitled')}</span>
           {showUrl && tab.url && (
-            <span className="truncate text-2xs leading-tight text-gray-500">{tab.url}</span>
+            <span className="tab-url truncate text-2xs leading-tight text-gray-500">{tab.url}</span>
           )}
         </span>
         {tab.pinned && (
@@ -240,8 +243,9 @@ export function TabRow({
             isSplitCompanion={isSplitCompanion}
             showSplitBadges={showSplitBadges}
           />
-          <span className="flex shrink-0 items-center gap-0.5 w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-auto group-hover:opacity-100">
-            {(tab.audible || tab.muted) && (
+          {rowActionsVisible && (
+            <span className="flex shrink-0 items-center gap-0.5 w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100">
+              {(tab.audible || tab.muted) && (
               <button
                 type="button"
                 className="row-action"
@@ -286,7 +290,8 @@ export function TabRow({
             <button type="button" className="row-action" title={t('tabs.closeTab')} aria-label={t('tabs.closeTab')} onClick={() => onClose(tab)}>
               <Icon d={Icons.close} className="h-3.5 w-3.5" />
             </button>
-          </span>
+            </span>
+          )}
         </>
       )}
       {preview && (

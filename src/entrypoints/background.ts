@@ -9,7 +9,6 @@ import {
   DuplicateReusedMessageSchema,
   SearchFocusMessageSchema
 } from '@/platform/messages';
-import { hasLegacyData, migrateFromTabstead } from '@/platform/migrate/migration';
 
 /**
  * Service Worker 入口（全新设计，复用协调器见 platform/reuse）。
@@ -130,13 +129,4 @@ export default defineBackground(() => {
   });
   // periodInMinutes 最小为 1；同名闹钟重复创建即重置，幂等安全。
   browser.alarms.create('tabhaven-auto-discard', { periodInMinutes: 1 }).catch(() => {});
-
-  // 一次性迁移前身（Tabstead）数据：仅当存在遗留数据且未迁移过时执行。
-  void (async () => {
-    try {
-      if (await hasLegacyData()) await migrateFromTabstead();
-    } catch {
-      /* 迁移失败不影响主流程 */
-    }
-  })();
 });

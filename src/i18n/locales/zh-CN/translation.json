@@ -26,11 +26,14 @@
     "duplicate": "复制标签",
     "discard": "休眠标签（释放内存）",
     "closeTab": "关闭标签",
+    "locateActive": "定位当前标签",
     "newTabPlaceholder": "新标签页",
     "switchTo": "切换到：{{title}}"
   },
   "footer": {
     "utilityLabel": "侧边栏工具",
+    "collapseAll": "收起所有分组",
+    "expandAll": "展开所有分组",
     "search": "搜索标签",
     "cleanDuplicates": "清理重复标签"
   },
@@ -43,7 +46,9 @@
     "allInactive": "休眠全部非激活标签（释放内存）"
   },
   "fixed": {
-    "toNativeGroup": "转为原生标签组",
+    "toNativeGroup": "恢复为原生标签组",
+    "convertTitle": "恢复为原生标签组",
+    "convertConfirm": "将打开“{{name}}”中的网页标签，并删除这个固定文件夹。是否继续？",
     "saveGroupAsFolder": "存为固定文件夹",
     "areaLabel": "固定空间",
     "areaTitle": "固定空间",
@@ -54,7 +59,9 @@
     "delete": "删除文件夹",
     "deleteConfirm": "删除固定文件夹“{{name}}”？正在打开的标签不会关闭。",
     "itemClose": "关闭标签并移出文件夹",
-    "pendingHint": "等待输入网址，打开页面后会自动保存到此文件夹"
+    "pendingHint": "等待输入网址，打开页面后会自动保存到此文件夹",
+    "dragToPin": "拖到这里固定",
+    "emptyHint": "点击 + 新建固定文件夹，然后将标签拖入文件夹"
   },
   "groups": {
     "newGroup": "新建标签组",
@@ -191,6 +198,7 @@
     "discardedMany": "已休眠 {{count}} 个标签",
     "discardedManySkipped": "已休眠 {{count}} 个标签，另有 {{skipped}} 个出于安全原因跳过",
     "discardSkippedMany": "为安全起见，已跳过 {{count}} 个标签",
+    "activeTabNotFound": "当前没有可定位的标签",
 
     "savedAsFolder": "已存为固定文件夹",
     "folderConverted": "已恢复为原生标签组",

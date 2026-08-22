@@ -29,11 +29,12 @@ export function PinnedTile({
     (tab.audible ? ' is-audible' : '');
 
   return (
-    <article className={tileClass}>
+    <article className={tileClass} data-tabhaven-tab-id={tab.id}>
       <button
         type="button"
         className="pinned-main"
         title={tab.title || tab.url}
+        aria-label={tab.title || tab.url}
         onClick={() => onActivate(tab.id)}
         onAuxClick={(event) => {
           if (event.button === 1) onClose?.(tab);

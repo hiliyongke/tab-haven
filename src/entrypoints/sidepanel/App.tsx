@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
@@ -17,11 +17,11 @@ import { useUndoStore } from '@/stores/undoStore';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { SettingsSync } from '@/ui/common/SettingsSync';
 import { StatusToast } from '@/ui/common/StatusToast';
-import { FixedArea } from '@/ui/fixed/FixedArea';
+import { FixedArea, LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SelectionBar } from '@/ui/tabs/SelectionBar';
 import { SearchBar } from '@/ui/search/SearchBar';
-import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
+import { LOCATE_SECTION_EVENT, SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 import { PinnedTile } from '@/ui/tabs/PinnedTile';
 
 export default function App() {
@@ -47,8 +47,6 @@ export default function App() {
   const recolorGroup = useTabStore((state) => state.recolorGroup);
   const removeGroup = useTabStore((state) => state.removeGroup);
   const moveGroup = useTabStore((state) => state.moveGroup);
-  const goBack = useTabStore((state) => state.goBack);
-  const goForward = useTabStore((state) => state.goForward);
   const highlightTabs = useTabStore((state) => state.highlightTabs);
   const currentWindowId = useTabStore((state) => state.currentWindowId);
   const startTabSync = useTabStore((state) => state.startTabSync);
@@ -67,6 +65,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const locateRequestRef = useRef(0);
 
   // 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）
   const engine = useMemo(
@@ -126,6 +125,41 @@ export default function App() {
   const toggleSelect = useSelectionStore((state) => state.toggle);
   const selectRange = useSelectionStore((state) => state.selectRange);
   const selectAll = useSelectionStore((state) => state.selectAll);
+  const activeTabId = tabs.find((tab) => tab.active)?.id;
+  const handleLocateActive = useCallback(() => {
+    if (activeTabId === undefined) {
+      notify(t('toast.activeTabNotFound'));
+      return;
+    }
+    const requestId = ++locateRequestRef.current;
+    if (query.trim()) setQuery('');
+    const locateTarget = () => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-tabhaven-tab-id="${activeTabId}"]`
+      );
+      if (!target) return false;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+      target.classList.remove('is-located');
+      void target.offsetWidth;
+      target.classList.add('is-located');
+      window.setTimeout(() => target.classList.remove('is-located'), 1200);
+      return true;
+    };
+    if (locateTarget()) return;
+    window.dispatchEvent(new CustomEvent<number>(LOCATE_SECTION_EVENT, { detail: activeTabId }));
+    window.dispatchEvent(new CustomEvent<number>(LOCATE_TAB_EVENT, { detail: activeTabId }));
+    let attempts = 0;
+    const retryLocate = () => {
+      if (requestId !== locateRequestRef.current) return;
+      window.dispatchEvent(new CustomEvent<number>(LOCATE_SECTION_EVENT, { detail: activeTabId }));
+      window.dispatchEvent(new CustomEvent<number>(LOCATE_TAB_EVENT, { detail: activeTabId }));
+      if (locateTarget()) return;
+      attempts += 1;
+      if (attempts < 12) window.setTimeout(retryLocate, 50);
+    };
+    window.setTimeout(retryLocate, 0);
+  }, [activeTabId, notify, query, setQuery, t]);
 
   // 同步服务：事件 → 快照 → store 订阅自动重渲染
   useEffect(() => {
@@ -144,6 +178,11 @@ export default function App() {
   // ⌘K / Ctrl+K 打开搜索；Ctrl+A 全选（选择模式下）；Esc 退出选择模式
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        handleLocateActive();
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         searchInputRef.current?.focus();
@@ -177,7 +216,7 @@ export default function App() {
       document.removeEventListener('keydown', onKeyDown);
       browser.runtime.onMessage.removeListener(onMessage);
     };
-  }, [selectAll, exitSelectionMode, notify, t]);
+  }, [selectAll, exitSelectionMode, handleLocateActive, notify, t]);
 
   // 固定空间排除集：挂起条目标签 + 绑定标签
   const fixedExcludedTabIds = useMemo(() => {
@@ -247,7 +286,6 @@ export default function App() {
     [tabs, keeperPolicy]
   );
 
-  const activeTabId = tabs.find((tab) => tab.active)?.id;
   const partners = useMemo(() => splitPartnerIds(tabs, activeTabId), [tabs, activeTabId]);
 
   // 标签预览：仅在用户悬停当前激活标签时按需截图，默认关闭且不持久化。
@@ -291,6 +329,26 @@ export default function App() {
     () => new Set(groups.filter((group) => group.collapsed).map((group) => group.id)),
     [groups]
   );
+  const collapsibleSections = restSections.filter(
+    (section) => section.kind === 'native' || section.kind === 'site'
+  );
+  const allSectionsCollapsed =
+    collapsibleSections.length > 0 &&
+    collapsibleSections.every((section) =>
+      section.kind === 'native'
+        ? collapsedGroupIds.has(section.groupId)
+        : collapsedSites.includes(section.siteKey)
+    );
+  const handleToggleAllSections = () => {
+    const shouldCollapse = !allSectionsCollapsed;
+    for (const section of collapsibleSections) {
+      if (section.kind === 'native') {
+        void setGroupCollapsed(section.groupId, shouldCollapse);
+      } else {
+        void toggleSiteCollapsed(section.siteKey, shouldCollapse);
+      }
+    }
+  };
 
   const handleCloseTab = (tab: TabRecord) => {
     void closeWithUndo(tabs, [tab.id]);
@@ -349,12 +407,6 @@ export default function App() {
   const handleRemoveGroup = (groupId: number) =>
     void removeGroup(groupId).then(() => notify(t('toast.groupRemoved')));
   const handleMoveGroup = (groupId: number, index: number) => void moveGroup(groupId, index);
-  const handleGoBack = () => {
-    if (activeTabId !== undefined) void goBack(activeTabId);
-  };
-  const handleGoForward = () => {
-    if (activeTabId !== undefined) void goForward(activeTabId);
-  };
   const handleHighlightSelected = () => void highlightTabs([...selectedIds]);
 
   // 拖拽重排：用当前全部标签计算目标原生索引并写回浏览器。
@@ -517,10 +569,21 @@ export default function App() {
         <nav className="flex items-center gap-1" aria-label={t('footer.utilityLabel')}>
           <button
             type="button"
+            className="rounded p-1 transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35"
+            title={t(allSectionsCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
+            aria-label={t(allSectionsCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
+            disabled={collapsibleSections.length === 0}
+            onClick={handleToggleAllSections}
+          >
+            <Icon d={allSectionsCollapsed ? Icons.expandAll : Icons.collapseAll} className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
             className={
               'rounded p-1 transition-base hover:bg-gray-100' + (selectionActive ? ' bg-gray-100 text-accent-600' : '')
             }
             title={selectionActive ? t('selection.exitMode') : t('selection.enterMode')}
+            aria-label={selectionActive ? t('selection.exitMode') : t('selection.enterMode')}
             onClick={() => {
               if (selectionActive) exitSelectionMode();
               else enterSelectionMode();
@@ -539,6 +602,7 @@ export default function App() {
                 ? t('duplicates.cleanTooltip', { count: removableCount })
                 : t('duplicates.none')
             }
+            aria-label={t('footer.cleanDuplicates')}
             // aria-disabled 而非 disabled：保留 title 提示「为什么不可点」
             aria-disabled={removableCount === 0}
             onClick={() => {
@@ -558,6 +622,7 @@ export default function App() {
             type="button"
             className="rounded p-1 transition-base hover:bg-gray-100"
             title={t('discard.allInactive')}
+            aria-label={t('discard.allInactive')}
             onClick={handleDiscardInactive}
           >
             <Icon d={Icons.snowflake} className="h-4 w-4" />
@@ -566,6 +631,7 @@ export default function App() {
             type="button"
             className="rounded p-1 transition-base hover:bg-gray-100"
             title={t('groups.newGroup')}
+            aria-label={t('groups.newGroup')}
             onClick={() => handleCreateGroup()}
           >
             <Icon d={Icons.layers} className="h-4 w-4" />
@@ -575,6 +641,7 @@ export default function App() {
               type="button"
               className="rounded p-1 transition-base hover:bg-gray-100"
               title={t('tabs.highlight')}
+              aria-label={t('tabs.highlight')}
               onClick={handleHighlightSelected}
             >
               <Icon d={Icons.star} className="h-4 w-4" />
@@ -582,19 +649,13 @@ export default function App() {
           )}
           <button
             type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100"
-            title={t('tabs.back')}
-            onClick={handleGoBack}
+            className="rounded p-1 transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35"
+            title={t('tabs.locateActive')}
+            aria-label={t('tabs.locateActive')}
+            disabled={activeTabId === undefined}
+            onClick={handleLocateActive}
           >
-            <Icon d={Icons.chevron} className="h-4 w-4 rotate-90" />
-          </button>
-          <button
-            type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100"
-            title={t('tabs.forward')}
-            onClick={handleGoForward}
-          >
-            <Icon d={Icons.chevron} className="h-4 w-4 -rotate-90" />
+            <Icon d={Icons.locate} className="h-4 w-4" />
           </button>
           <span className="ml-1 flex items-center border-l border-gray-200 pl-1">
             <button

@@ -10,7 +10,7 @@ import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
 /**
  * 顶部永久固定图标区（行为规格 C-2）：
  * 单击切换/重新打开；中键仅关闭页面、入口保留；标签可拖入固定。
- * 视觉语言对齐原版 Tabstead 的 pinned-strip 磁贴（active 底部绿条、
+ * 视觉语言：pinned-strip 磁贴（active 底部绿条、
  * closed 降透明度、audible 绿点、discarded 灰化、split 角标）。
  */
 
@@ -59,6 +59,7 @@ export function PinnedStrip() {
     <section
       className="pinned-strip"
       aria-label={t('sections.pinned')}
+      data-drop-label={t('fixed.dragToPin')}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes(TAB_DRAG_MIME)) event.preventDefault();
       }}
@@ -77,6 +78,7 @@ export function PinnedStrip() {
               type="button"
               className="pinned-main"
               title={pin.title || pin.url}
+              aria-label={pin.title || pin.url}
               onClick={() => void openPin(pin)}
               onAuxClick={(event) => {
                 if (event.button === 1) handleMiddleClick(pin);

@@ -11,6 +11,8 @@ import { groupAccentVar, useDomainAccent } from '@/ui/tabs/accent';
 
 /** 原生组拖拽重排时记录被拖动组的 id（同页面内共享）。 */
 let draggingGroupId: number | null = null;
+/** 用户主动定位当前标签时，请求临时区展开其所属分组。 */
+export const LOCATE_SECTION_EVENT = 'tabhaven:locate-section';
 /** 原生组可使用的标准颜色（tabGroups 枚举）。 */
 const GROUP_COLORS = [
   'grey',
@@ -181,6 +183,7 @@ function RowList({
   selectedIds,
   reorderEnabled,
   showUrl,
+  rowActionsVisible,
   autoScrollActive,
   closeOnMiddleClick,
   density,
@@ -227,6 +230,7 @@ function RowList({
           selected={selectedIds.includes(tab.id)}
           reorderEnabled={reorderEnabled}
           showUrl={showUrl}
+          rowActionsVisible={rowActionsVisible}
           autoScrollActive={autoScrollActive}
           closeOnMiddleClick={closeOnMiddleClick}
           density={density}
@@ -308,7 +312,12 @@ function SectionHead({
       onDragEnd={onDragEnd}
     >
       {onToggle ? (
-        <button type="button" className="toggle" onClick={onToggle}>
+        <button
+          type="button"
+          className="toggle"
+          aria-label={title}
+          onClick={onToggle}
+        >
           {content}
         </button>
       ) : (
@@ -318,7 +327,13 @@ function SectionHead({
       {mediaIndicator}
       {action}
       {onClose && (
-        <button type="button" className="row-action close-site" title={closeTitle} onClick={onClose}>
+        <button
+          type="button"
+          className="row-action close-site"
+          title={closeTitle}
+          aria-label={closeTitle}
+          onClick={onClose}
+        >
           <Icon d={Icons.close} className="h-3.5 w-3.5" />
         </button>
       )}
@@ -413,6 +428,7 @@ function SectionCard({
             type="button"
             className="row-action"
             title={t('fixed.saveGroupAsFolder')}
+            aria-label={t('fixed.saveGroupAsFolder')}
             onClick={(event) => {
               event.stopPropagation();
               callbacks.onSaveGroupAsFolder?.(section.groupId);
@@ -426,6 +442,7 @@ function SectionCard({
           type="button"
           className="row-action cursor-grab"
           title={t('groups.drag')}
+          aria-label={t('groups.drag')}
         >
           <Icon d={Icons.grip} className="h-3.5 w-3.5" />
         </button>
@@ -433,6 +450,7 @@ function SectionCard({
           type="button"
           className="row-action"
           title={t('groups.edit')}
+          aria-label={t('groups.edit')}
           onClick={(event) => {
             event.stopPropagation();
             setEditOpen(true);
@@ -508,10 +526,10 @@ function SectionCard({
             selectedIds={selectedIds}
             reorderEnabled={reorderEnabled}
             showUrl={showUrl}
+            rowActionsVisible={rowActionsVisible}
             autoScrollActive={autoScrollActive}
             closeOnMiddleClick={closeOnMiddleClick}
             density={density}
-            rowActionsVisible={rowActionsVisible}
             showSplitBadges={showSplitBadges}
             depths={section.depths}
             previews={previews}
@@ -688,10 +706,10 @@ function SectionCard({
                   selectedIds={selectedIds}
                   reorderEnabled={reorderEnabled}
                   showUrl={showUrl}
+                  rowActionsVisible={rowActionsVisible}
                   autoScrollActive={autoScrollActive}
                   closeOnMiddleClick={closeOnMiddleClick}
                   density={density}
-                  rowActionsVisible={rowActionsVisible}
                   showSplitBadges={showSplitBadges}
                   previews={previews}
                   highlightedIds={highlightedIds}
@@ -711,6 +729,7 @@ function SectionCard({
             selectedIds={selectedIds}
             reorderEnabled={reorderEnabled}
             showUrl={showUrl}
+            rowActionsVisible={rowActionsVisible}
             autoScrollActive={autoScrollActive}
             closeOnMiddleClick={closeOnMiddleClick}
             density={density}
@@ -799,6 +818,23 @@ function SectionListImpl({
     () => (collapsedSites instanceof Set ? collapsedSites : new Set(collapsedSites)),
     [collapsedSites]
   );
+
+  useEffect(() => {
+    const handleLocateSection = (event: Event) => {
+      const tabId = (event as CustomEvent<number>).detail;
+      if (!Number.isInteger(tabId)) return;
+      const section = sections.find((candidate) => candidate.tabs.some((tab) => tab.id === tabId));
+      if (!section) return;
+      if (section.kind === 'native' && collapsedGroups.has(section.groupId)) {
+        callbacks.onToggleGroupCollapsed(section.groupId, false);
+      } else if (section.kind === 'site' && collapsedSitesSet.has(section.siteKey)) {
+        callbacks.onToggleSiteCollapsed(section.siteKey, false);
+      }
+    };
+    window.addEventListener(LOCATE_SECTION_EVENT, handleLocateSection);
+    return () => window.removeEventListener(LOCATE_SECTION_EVENT, handleLocateSection);
+  }, [callbacks, collapsedGroups, collapsedSitesSet, sections]);
+
   return (
     <div className="flex flex-col gap-1">
       {sections.length === 0 ? (
@@ -824,10 +860,10 @@ function SectionListImpl({
             selectedIds={selectedIds}
             reorderEnabled={reorderEnabled}
             showUrl={showUrl}
+            rowActionsVisible={rowActionsVisible}
             autoScrollActive={autoScrollActive}
             closeOnMiddleClick={closeOnMiddleClick}
             density={density}
-            rowActionsVisible={rowActionsVisible}
             showSplitBadges={showSplitBadges}
             previews={previews}
             highlightedIds={highlightedIds}

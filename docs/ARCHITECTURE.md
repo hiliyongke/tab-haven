@@ -16,8 +16,8 @@ src/
 ├── entrypoints/   各入口（sidepanel/popup/options/background）
 ├── ui/            展示组件（tabs / fixed / search / dialog / common）
 ├── stores/        zustand 状态（dataStore / tabStore / undoStore / selectionStore）
-├── core/          纯领域逻辑（URL 检视、站点聚合、去重、撤销栈、迁移、固定空间模型）
-├── platform/      浏览器 API 适配（tabs / storage / theme / sync / reuse / migrate / undo）
+├── core/          纯领域逻辑（URL 检视、站点聚合、去重、撤销栈、固定空间模型）
+├── platform/      浏览器 API 适配（tabs / storage / theme / sync / reuse / undo）
 └── i18n/          文案（zh-CN / en）
 ```
 

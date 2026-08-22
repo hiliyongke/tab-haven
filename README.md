@@ -9,7 +9,7 @@ TabHaven 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它只管理
 - 固定空间（文件夹 + 永久固定图标）
 - 模糊搜索 + 键盘流（`Ctrl+Shift+F` / `⌘K`）
 - 多选批量操作、多层可撤销
-- 一键清理重复标签、安全休眠、JSON 数据导出导入、从 Tabstead 迁移
+- 一键清理重复标签、安全休眠、JSON 数据导出导入
 
 隐私详情见 [PRIVACY.md](./PRIVACY.md)。
 
@@ -58,7 +58,7 @@ python3 scripts/privacy_check.py   # 隐私回归（权限/网络/数据三项�
 | 多选批量 | 选择模式（`Shift` 连选、`Cmd` 点选、`Ctrl+A` 全选）、批量关闭/固定/静音/移入文件夹   |
 | 重复治理 | 一键清理重复标签（保留激活 / 固定 / 最早打开者）                                           |
 | 安全网   | 多层撤销栈（栈深 10，可恢复关闭的标签与分组）；所有关闭路径可撤销                          |
-| 数据     | 固定空间与设置的 JSON 版本化导出导入（不包含当前打开标签）、从 Tabstead 单向迁移             |
+| 数据     | 固定空间与设置的 JSON 版本化导出导入（不包含当前打开标签）                                   |
 | 平台     | 侧边栏主形态 + 弹窗快速切换器降级形态；中/英双语；主题三态（跟随系统/亮/暗）；自制弹窗组件 |
 
 > 注：V1.0 只发布标准版（侧边栏形态）。兼容变体的构建管道已建成，随 V2.0 交付。
@@ -83,7 +83,6 @@ src/
 │   ├── fixed/           # PinIdentity / FolderOps / Reconcile：固定空间领域
 │   ├── search/          # SearchEngine：fuzzysort + pinyin-pro 三目标索引
 │   ├── undo/            # UndoStack：操作记录制 + 栈深淘汰
-│   ├── migrate/         # TabsteadMigrator：前身数据映射（数据级，非代码）
 │   └── schema/          # zod schema 族 + 导出文件格式
 ├── platform/           # chrome 适配层（唯一触碰 chrome.* 的层）
 │   ├── tabs.ts          # 标签查询 / 事件聚合 / 操作
@@ -92,7 +91,6 @@ src/
 │   ├── storage/         # DataRepository：zod 校验读写 + 坏数据隔离 + 变更订阅
 │   ├── theme/           # ThemeApplier：主题三态落地
 │   ├── undo/            # RestoreEngine：撤销恢复管线
-│   ├── migrate/         # migration 协调（幂等 / 单向 / 分区报告）
 │   ├── messages.ts      # 类型安全消息协议（zod）
 │   └── capabilities.ts  # 形态能力检测
 ├── stores/             # zustand store 族（tab / selection / undo / data / ui）

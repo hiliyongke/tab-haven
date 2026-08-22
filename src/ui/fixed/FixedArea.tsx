@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { useDataStore } from '@/stores/dataStore';
@@ -9,6 +9,8 @@ import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
 
+export const LOCATE_TAB_EVENT = 'tabhaven:locate-tab';
+
 /** 固定条目行：站点图标 + 标题 + 挂起态 + 悬停关闭。 */
 function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolderItem }) {
   const { t } = useTranslation();
@@ -17,13 +19,15 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
   const tabs = useTabStore((state) => state.tabs);
 
   const isOpen = item.pendingTabId !== undefined || tabs.some((tab) => tab.url === item.url);
-  const isActive = item.pendingTabId !== undefined
-    ? tabs.some((tab) => tab.id === item.pendingTabId && tab.active)
-    : tabs.some((tab) => tab.url === item.url && tab.active);
+  const runtimeTab = item.pendingTabId !== undefined
+    ? tabs.find((tab) => tab.id === item.pendingTabId)
+    : tabs.find((tab) => tab.url === item.url);
+  const isActive = runtimeTab?.active ?? false;
 
   return (
     <li
       role="listitem"
+      data-tabhaven-tab-id={runtimeTab?.id}
       className={
         'folder-item group' +
         (isOpen ? ' is-open' : ' is-closed') +
@@ -110,7 +114,22 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   const onRestoreFolderAsGroup = useDataStore((state) => state.syncFolderToNativeGroup);
   const notify = useUndoStore((state) => state.notify);
   const tabs = useTabStore((state) => state.tabs);
-  const [dialog, setDialog] = useState<{ type: 'rename' } | { type: 'delete' } | null>(null);
+  const [dialog, setDialog] = useState<
+    { type: 'rename' } | { type: 'delete' } | { type: 'convert' } | null
+  >(null);
+
+  useEffect(() => {
+    const handleLocate = (event: Event) => {
+      const tabId = (event as CustomEvent<number>).detail;
+      if (!Number.isInteger(tabId)) return;
+      const belongsToFolder = tabs.some(
+        (tab) => tab.id === tabId && folder.items.some((item) => item.url === tab.url || item.pendingTabId === tab.id)
+      );
+      if (folder.collapsed && belongsToFolder) void toggleFolderCollapsed(folder.id);
+    };
+    window.addEventListener(LOCATE_TAB_EVENT, handleLocate);
+    return () => window.removeEventListener(LOCATE_TAB_EVENT, handleLocate);
+  }, [folder.collapsed, folder.id, folder.items, tabs, toggleFolderCollapsed]);
 
   return (
     <section
@@ -156,13 +175,8 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
             type="button"
             className="fixed-folder-action is-restore"
             title={t('fixed.toNativeGroup')}
-            onClick={() =>
-              void onRestoreFolderAsGroup(folder.id)
-                .then((converted) =>
-                  notify(t(converted ? 'toast.folderConverted' : 'toast.folderConvertSkipped'))
-                )
-                .catch(() => notify(t('toast.folderConvertFailed')))
-            }
+            aria-label={t('fixed.toNativeGroup')}
+            onClick={() => setDialog({ type: 'convert' })}
           >
             <Icon d={Icons.group} className="h-3.5 w-3.5" />
           </button>
@@ -170,6 +184,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
             type="button"
             className="fixed-folder-action"
             title={t('fixed.rename')}
+            aria-label={t('fixed.rename')}
             onClick={() => setDialog({ type: 'rename' })}
           >
             <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
@@ -178,6 +193,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
             type="button"
             className="fixed-folder-action is-danger"
             title={t('fixed.delete')}
+            aria-label={t('fixed.delete')}
             onClick={() => setDialog({ type: 'delete' })}
           >
             <Icon d={Icons.close} className="h-3.5 w-3.5" />
@@ -214,6 +230,22 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
           onCancel={() => setDialog(null)}
         />
       )}
+      {dialog?.type === 'convert' && (
+        <ConfirmDialog
+          title={t('fixed.convertTitle')}
+          message={t('fixed.convertConfirm', { name: folder.name })}
+          danger
+          onConfirm={() => {
+            setDialog(null);
+            void onRestoreFolderAsGroup(folder.id)
+              .then((converted) =>
+                notify(t(converted ? 'toast.folderConverted' : 'toast.folderConvertSkipped'))
+              )
+              .catch(() => notify(t('toast.folderConvertFailed')));
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
     </section>
   );
 }
@@ -236,12 +268,16 @@ export function FixedArea() {
           type="button"
           className="fixed-area-add"
           title={t('fixed.newFolder')}
+          aria-label={t('fixed.newFolder')}
           onClick={() => setCreating(true)}
         >
           <Icon d={Icons.plus} className="h-3.5 w-3.5" />
           <span className="sr-only">{t('fixed.newFolder')}</span>
         </button>
       </div>
+      {folders.length === 0 && (
+        <p className="fixed-area-empty">{t('fixed.emptyHint')}</p>
+      )}
       {folders.map((folder) => (
         <FolderRow key={folder.id} folder={folder} />
       ))}

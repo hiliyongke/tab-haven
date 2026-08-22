@@ -11,9 +11,9 @@ import type { FixedFolder, PersistentPin, Settings, SiteCollapseState } from '@/
 /**
  * 共享持久化仓库单例（storage key 的唯一权威出处）。
  *
- * dataStore 与 background 迁移流程共用同一组实例，保证：
+ * dataStore 与 background 写入流程共用同一组实例，保证：
  *  - key 字符串不重复硬编码；
- *  - 所有写入都经过 zod 校验（迁移也不例外）。
+ *  - 所有写入都经过 zod 校验。
  */
 
 export const foldersRepository = new DataRepository<FixedFolder[]>(

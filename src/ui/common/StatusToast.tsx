@@ -12,7 +12,7 @@ export function StatusToast() {
 
   return (
     <div
-      className="flex items-center gap-2 border-t border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600"
+      className="status-toast flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600"
       role="status"
       aria-live="polite"
     >
