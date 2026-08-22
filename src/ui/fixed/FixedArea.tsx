@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
+import { ConfirmDialog, PromptDialog } from '@/ui/dialog/Dialog';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
@@ -101,6 +103,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   const addTabToFolder = useDataStore((state) => state.addTabToFolder);
   const moveFolder = useDataStore((state) => state.moveFolder);
   const tabs = useTabStore((state) => state.tabs);
+  const [dialog, setDialog] = useState<{ type: 'rename' } | { type: 'delete' } | null>(null);
 
   return (
     <section
@@ -146,10 +149,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
             type="button"
             className="row-action"
             title={t('fixed.rename')}
-            onClick={() => {
-              const name = window.prompt(t('fixed.renamePrompt'), folder.name);
-              if (name) void renameFolder(folder.id, name);
-            }}
+            onClick={() => setDialog({ type: 'rename' })}
           >
             <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" className="h-3.5 w-3.5" />
           </button>
@@ -157,11 +157,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
             type="button"
             className="row-action hover:text-red-500"
             title={t('fixed.delete')}
-            onClick={() => {
-              if (window.confirm(t('fixed.deleteConfirm', { name: folder.name }))) {
-                void deleteFolder(folder.id);
-              }
-            }}
+            onClick={() => setDialog({ type: 'delete' })}
           >
             <Icon d={Icons.close} className="h-3.5 w-3.5" />
           </button>
@@ -174,6 +170,29 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
           ))}
         </div>
       )}
+      {dialog?.type === 'rename' && (
+        <PromptDialog
+          title={t('fixed.renamePrompt')}
+          initialValue={folder.name}
+          onConfirm={(name) => {
+            void renameFolder(folder.id, name);
+            setDialog(null);
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'delete' && (
+        <ConfirmDialog
+          title={t('fixed.delete')}
+          message={t('fixed.deleteConfirm', { name: folder.name })}
+          danger
+          onConfirm={() => {
+            void deleteFolder(folder.id);
+            setDialog(null);
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
     </section>
   );
 }
@@ -183,8 +202,7 @@ export function FixedArea() {
   const { t } = useTranslation();
   const folders = useDataStore((state) => state.folders);
   const createFolder = useDataStore((state) => state.createFolder);
-
-  if (folders.length === 0) return null;
+  const [creating, setCreating] = useState(false);
 
   return (
     <section className="border-b border-gray-100 py-1" aria-label={t('fixed.areaLabel')}>
@@ -194,10 +212,7 @@ export function FixedArea() {
           type="button"
           className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           title={t('fixed.newFolder')}
-          onClick={() => {
-            const name = window.prompt(t('fixed.newFolderPrompt'));
-            if (name) void createFolder(name);
-          }}
+          onClick={() => setCreating(true)}
         >
           <Icon d={Icons.plus} className="h-3.5 w-3.5" />
         </button>
@@ -205,6 +220,16 @@ export function FixedArea() {
       {folders.map((folder) => (
         <FolderRow key={folder.id} folder={folder} />
       ))}
+      {creating && (
+        <PromptDialog
+          title={t('fixed.newFolderPrompt')}
+          onConfirm={(name) => {
+            void createFolder(name);
+            setCreating(false);
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
     </section>
   );
 }

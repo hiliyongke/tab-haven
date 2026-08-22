@@ -83,5 +83,9 @@
     "legacyHint": "One-click migration of fixed folders and pins (original data is untouched)",
     "migrate": "Migrate",
     "migrated": "Migration complete"
+  },
+  "dialog": {
+    "confirm": "OK",
+    "cancel": "Cancel"
   }
 }

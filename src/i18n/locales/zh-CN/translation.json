@@ -83,5 +83,9 @@
     "legacyHint": "可一键迁移固定文件夹与固定图标（不会改动原数据）",
     "migrate": "开始迁移",
     "migrated": "迁移完成"
+  },
+  "dialog": {
+    "confirm": "确定",
+    "cancel": "取消"
   }
 }

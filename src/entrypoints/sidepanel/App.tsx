@@ -10,6 +10,7 @@ import { useSelectionStore } from '@/stores/selectionStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { SettingsSync } from '@/ui/common/SettingsSync';
 import { StatusToast } from '@/ui/common/StatusToast';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
@@ -118,6 +119,7 @@ export default function App() {
 
   return (
     <main className="app flex h-full flex-col">
+      <SettingsSync />
       <PinnedStrip />
       <FixedArea />
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
