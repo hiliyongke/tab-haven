@@ -1,7 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { WxtVitest } from 'wxt/testing/vitest-plugin';
 
 export default defineConfig({
+  // WXT 官方测试插件：自动把 `wxt/browser` 别名到 fake-browser，
+  // 并 stub 全局 `chrome` / `browser`，使平台层（tabs/tabGroups/events）可在单测中驱动。
+  plugins: [WxtVitest()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

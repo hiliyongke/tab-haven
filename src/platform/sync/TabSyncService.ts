@@ -27,9 +27,13 @@ const THROTTLE_MS = 40;
 
 export class TabSyncService {
   private generation = 0;
-  private stopped = false;
 
   start(onSnapshot: (snapshot: TabSnapshot) => void): () => void {
+    // 每次 start 拥有独立的运行态闭包，互不污染：
+    // React StrictMode（开发模式）会挂载→清理→再挂载，若 stopped 是单例字段，
+    // 第一次清理置 true 会让第二次（真正生效的）监听器在 run() 内直接 return，
+    // 表现为"侧边栏首帧后不再响应任何 tab 变化"。改为局部变量即可根治。
+    let stopped = false;
     let pending = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let querying = false;
@@ -41,7 +45,7 @@ export class TabSyncService {
           queryCurrentWindowTabs(),
           queryCurrentWindowGroups()
         ]);
-        if (this.stopped) return;
+        if (stopped) return;
         this.generation += 1;
         onSnapshot({ tabs, groups, windowId: tabs[0]?.windowId, generation: this.generation });
       } catch (error) {
@@ -92,7 +96,7 @@ export class TabSyncService {
     signal();
 
     return () => {
-      this.stopped = true;
+      stopped = true;
       if (timer) clearTimeout(timer);
       for (const event of events) {
         event.removeListener(signal);
