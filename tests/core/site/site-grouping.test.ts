@@ -75,7 +75,7 @@ describe('aggregateBySite', () => {
 });
 
 describe('deriveSections', () => {
-  it('固定标签与原生组标签不入临时区（原生组标签保留在原生 section）', () => {
+  it('固定标签独立成区置顶，原生组标签保留在原生 section', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://a.com/1' }),
       makeTab({ id: 2, index: 1, url: 'https://b.com/1', pinned: true }),
@@ -86,11 +86,39 @@ describe('deriveSections', () => {
       tabs,
       groups: [{ id: 5, title: '调研', color: 'blue' }]
     });
-    expect(sections).toHaveLength(2);
-    expect(sections[0]?.kind).toBe('native');
-    expect(sections[0]?.tabs.map((tab) => tab.id)).toEqual([3, 4]);
-    expect(sections[1]?.kind).toBe('ungrouped');
-    expect(sections[1]?.tabs.map((tab) => tab.id)).toEqual([1]);
+    expect(sections[0]?.kind).toBe('pinned');
+    expect(sections[0]?.tabs.map((tab) => tab.id)).toEqual([2]);
+    expect(sections[1]?.kind).toBe('native');
+    expect(sections[1]?.tabs.map((tab) => tab.id)).toEqual([3, 4]);
+    expect(sections[2]?.kind).toBe('ungrouped');
+    expect(sections[2]?.tabs.map((tab) => tab.id)).toEqual([1]);
+  });
+
+  it('多级子域名智能分组：同注册域多子域折叠为子分组（FR-D3.1 层级）', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://mail.google.com/1' }),
+      makeTab({ id: 2, index: 1, url: 'https://mail.google.com/2' }),
+      makeTab({ id: 3, index: 2, url: 'https://drive.google.com/1' }),
+      makeTab({ id: 4, index: 3, url: 'https://drive.google.com/2' })
+    ];
+    const sections = deriveSections({ tabs, groups: [] });
+    const site = sections.find((s) => s.kind === 'site');
+    expect(site?.kind).toBe('site');
+    // 标题用注册域（子域折叠展示）
+    expect(site && site.kind === 'site' && site.title).toBe('google.com');
+    expect(site && site.kind === 'site' && site.subgroups).toHaveLength(2);
+    const mail = site && site.kind === 'site' ? site.subgroups.find((g) => g.subdomain === 'mail') : undefined;
+    expect(mail?.tabs.map((tab) => tab.id)).toEqual([1, 2]);
+  });
+
+  it('多级子域名智能识别：a.b.example.com 与 example.com 同属注册域归组', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://app.staging.example.com/1' }),
+      makeTab({ id: 2, index: 1, url: 'https://example.com/2' })
+    ];
+    const { groups } = aggregateBySite(tabs);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key.value).toBe('example.com');
   });
 
   it('原生组按组内首标签位置排序', () => {

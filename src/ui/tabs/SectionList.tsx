@@ -1,11 +1,11 @@
-import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
-import type { TemporarySection } from '@/core/site/Sections';
+import type { TabRecord } from '@/core/tab-types';
+import type { SiteSubGroup, TemporarySection } from '@/core/site/Sections';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TabRow } from '@/ui/tabs/TabRow';
 
 /**
- * 临时区 section 列表：原生组 → 网站组 → 未分组。
- * 折叠状态由调用方（store/本地态）持有并通过 props 回传。
+ * 临时区 section 列表：固定区（置顶）→ 原生组 → 网站组（含子域折叠）→ 未分组。
+ * 折叠状态由调用方（本地态）持有并通过 props 回传。
  */
 
 export interface SectionCallbacks {
@@ -18,6 +18,46 @@ export interface SectionCallbacks {
   onToggleGroupCollapsed: (groupId: number, collapsed: boolean) => void;
   onToggleSiteCollapsed: (siteKey: string, collapsed: boolean) => void;
   onCloseSiteGroup: (siteKey: string, tabs: readonly TabRecord[]) => void;
+}
+
+function RowList({
+  tabs,
+  duplicateCounts,
+  activeTabId,
+  splitPartners,
+  selectionMode,
+  selectedIds,
+  callbacks
+}: {
+  tabs: readonly TabRecord[];
+  duplicateCounts: ReadonlyMap<string, number>;
+  activeTabId: number | undefined;
+  splitPartners: ReadonlySet<number>;
+  selectionMode: boolean;
+  selectedIds: readonly number[];
+  callbacks: SectionCallbacks;
+}) {
+  return (
+    <div>
+      {tabs.map((tab) => (
+        <TabRow
+          key={tab.id}
+          tab={tab}
+          duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
+          isActive={tab.id === activeTabId}
+          isSplitCompanion={splitPartners.has(tab.id)}
+          selectionMode={selectionMode}
+          selected={selectedIds.includes(tab.id)}
+          onActivate={callbacks.onActivate}
+          onToggleSelect={callbacks.onToggleSelect}
+          onRangeSelect={callbacks.onRangeSelect}
+          onToggleMute={callbacks.onToggleMute}
+          onTogglePin={callbacks.onTogglePin}
+          onClose={callbacks.onCloseTab}
+        />
+      ))}
+    </div>
+  );
 }
 
 export function SectionList({
@@ -51,6 +91,30 @@ export function SectionList({
             : section.kind === 'site'
               ? collapsedSites.has(section.siteKey)
               : false;
+
+        // 固定区 / 未分组：无折叠按钮，直接渲染列表
+        if (section.kind === 'pinned' || section.kind === 'ungrouped') {
+          return (
+            <section key={section.key} className="mb-2">
+              {section.kind === 'pinned' && (
+                <div className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500">
+                  <Icon d={Icons.pin} className="h-3 w-3" />
+                  <span>{section.title}</span>
+                  <span className="text-gray-400">{section.tabs.length}</span>
+                </div>
+              )}
+              <RowList
+                tabs={section.tabs}
+                duplicateCounts={duplicateCounts}
+                activeTabId={activeTabId}
+                splitPartners={splitPartners}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                callbacks={callbacks}
+              />
+            </section>
+          );
+        }
 
         const header = (
           <div className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500">
@@ -99,28 +163,41 @@ export function SectionList({
           );
         }
 
+        // 展开态：site 多子域时按子域再分块（折叠子标题）
+        const subGroups: SiteSubGroup[] =
+          section.kind === 'site' ? section.subgroups : [];
+
         return (
           <section key={section.key} className="mb-2">
             {header}
-            <div>
-              {section.tabs.map((tab) => (
-                <TabRow
-                  key={tab.id}
-                  tab={tab}
-                  duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
-                  isActive={tab.id === activeTabId}
-                  isSplitCompanion={splitPartners.has(tab.id)}
-                  selectionMode={selectionMode}
-                  selected={selectedIds.includes(tab.id)}
-                  onActivate={callbacks.onActivate}
-                  onToggleSelect={callbacks.onToggleSelect}
-                  onRangeSelect={callbacks.onRangeSelect}
-                  onToggleMute={callbacks.onToggleMute}
-                  onTogglePin={callbacks.onTogglePin}
-                  onClose={callbacks.onCloseTab}
-                />
-              ))}
-            </div>
+            {subGroups.length > 0 ? (
+              <div>
+                {subGroups.map((sub) => (
+                  <div key={sub.subdomain || 'root'}>
+                    <div className="px-2 py-0.5 text-[11px] text-gray-400">{sub.label}</div>
+                    <RowList
+                      tabs={sub.tabs}
+                      duplicateCounts={duplicateCounts}
+                      activeTabId={activeTabId}
+                      splitPartners={splitPartners}
+                      selectionMode={selectionMode}
+                      selectedIds={selectedIds}
+                      callbacks={callbacks}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <RowList
+                tabs={section.tabs}
+                duplicateCounts={duplicateCounts}
+                activeTabId={activeTabId}
+                splitPartners={splitPartners}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                callbacks={callbacks}
+              />
+            )}
           </section>
         );
       })}
@@ -141,6 +218,6 @@ export function splitPartnerIds(tabs: readonly TabRecord[], activeTabId: number 
 }
 
 /** 供父组件占位导出（原生组数据）。 */
-export function groupColorVar(group: TabGroupRecord): string {
+export function groupColorVar(group: { color?: string }): string {
   return `var(--group-${group.color || 'grey'})`;
 }

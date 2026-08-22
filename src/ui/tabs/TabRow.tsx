@@ -88,6 +88,13 @@ export function TabRow({
           <Favicon src={tab.favIconUrl} title={tab.title || ''} />
         )}
         <span className="truncate">{tab.title || '无标题标签页'}</span>
+        {tab.pinned && (
+          <Icon
+            d={Icons.pin}
+            className="h-3 w-3 shrink-0 text-blue-500"
+            aria-label="已固定"
+          />
+        )}
       </button>
 
       {!selectionMode && (
