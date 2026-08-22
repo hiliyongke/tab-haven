@@ -8,7 +8,9 @@ import { SearchFocusMessageSchema } from '@/platform/messages';
 import { useDataStore } from '@/stores/dataStore';
 import { useSelectionStore } from '@/stores/selectionStore';
 import { useTabStore } from '@/stores/tabStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { StatusToast } from '@/ui/common/StatusToast';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchOverlay } from '@/ui/search/SearchOverlay';
@@ -20,7 +22,6 @@ export default function App() {
   const tabs = useTabStore((state) => state.tabs);
   const groups = useTabStore((state) => state.groups);
   const activateTab = useTabStore((state) => state.activateTab);
-  const closeTabs = useTabStore((state) => state.closeTabs);
   const toggleMute = useTabStore((state) => state.toggleMute);
   const togglePinned = useTabStore((state) => state.togglePinned);
   const setGroupCollapsed = useTabStore((state) => state.setGroupCollapsed);
@@ -29,6 +30,8 @@ export default function App() {
   const initializeData = useDataStore((state) => state.initialize);
   const boundTabIds = useDataStore((state) => state.boundTabIds);
   const folders = useDataStore((state) => state.folders);
+  const loadUndo = useUndoStore((state) => state.load);
+  const closeWithUndo = useUndoStore((state) => state.closeWithUndo);
 
   const [collapsedSites, setCollapsedSites] = useState<ReadonlySet<string>>(new Set());
   const [searchOpen, setSearchOpen] = useState(false);
@@ -43,8 +46,9 @@ export default function App() {
   // 同步服务：事件 → 快照 → store 订阅自动重渲染
   useEffect(() => {
     void initializeData();
+    void loadUndo();
     return startTabSync();
-  }, [initializeData, startTabSync]);
+  }, [initializeData, loadUndo, startTabSync]);
 
   // ⌘K / Ctrl+K 打开搜索；Ctrl+A 全选（选择模式下）；Esc 退出选择模式
   useEffect(() => {
@@ -106,10 +110,10 @@ export default function App() {
   );
 
   const handleCloseTab = (tab: TabRecord) => {
-    void closeTabs([tab.id]);
+    void closeWithUndo(tabs, [tab.id]);
   };
   const handleCloseSiteGroup = (_siteKey: string, groupTabs: readonly TabRecord[]) => {
-    void closeTabs(groupTabs.map((tab) => tab.id));
+    void closeWithUndo(tabs, groupTabs.map((tab) => tab.id));
   };
 
   return (
@@ -117,6 +121,7 @@ export default function App() {
       <PinnedStrip />
       <FixedArea />
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <StatusToast />
       <div className="flex-1 overflow-y-auto p-2">
         {tabs.length === 0 ? (
           <div className="px-2 py-8 text-center text-sm text-gray-400">
@@ -209,7 +214,7 @@ export default function App() {
             disabled={removableCount === 0}
             onClick={() => {
               const removable = DuplicateIndex.build(tabs).removable(KeeperPolicy.default);
-              if (removable.length > 0) void closeTabs(removable.map((tab) => tab.id));
+              if (removable.length > 0) void closeWithUndo(tabs, removable.map((tab) => tab.id));
             }}
           >
             <Icon d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13" className="h-4 w-4" />

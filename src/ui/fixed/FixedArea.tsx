@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TAB_DRAG_MIME } from '@/ui/tabs/TabRow';
@@ -75,11 +76,12 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
         className="text-gray-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
         title="关闭标签并移出文件夹"
         onClick={() => {
-          if (item.pendingTabId !== undefined) {
-            void useTabStore.getState().closeTabs([item.pendingTabId]);
-          } else {
-            const match = tabs.find((tab) => tab.url === item.url);
-            if (match) void useTabStore.getState().closeTabs([match.id]);
+          const allTabs = useTabStore.getState().tabs;
+          const targetTab = item.pendingTabId !== undefined
+            ? allTabs.find((tab) => tab.id === item.pendingTabId)
+            : allTabs.find((tab) => tab.url === item.url);
+          if (targetTab) {
+            void useUndoStore.getState().closeWithUndo(allTabs, [targetTab.id]);
           }
           void removeFolderItem(folder.id, item.id);
         }}

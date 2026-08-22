@@ -3,6 +3,7 @@ import type { TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
 import { useSelectionStore } from '@/stores/selectionStore';
 import { useTabStore } from '@/stores/tabStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
@@ -16,7 +17,7 @@ export function SelectionBar({ tabs }: { tabs: readonly TabRecord[] }) {
   const exitSelectionMode = useSelectionStore((state) => state.exitSelectionMode);
   const clear = useSelectionStore((state) => state.clear);
 
-  const closeTabs = useTabStore((state) => state.closeTabs);
+  const closeWithUndo = useUndoStore((state) => state.closeWithUndo);
   const toggleMute = useTabStore((state) => state.toggleMute);
   const togglePinned = useTabStore((state) => state.togglePinned);
   const folders = useDataStore((state) => state.folders);
@@ -29,7 +30,7 @@ export function SelectionBar({ tabs }: { tabs: readonly TabRecord[] }) {
 
   const handleClose = () => {
     if (selected.length === 0) return;
-    void closeTabs(selected.map((tab) => tab.id));
+    void closeWithUndo(tabs, selected.map((tab) => tab.id));
     exitSelectionMode();
   };
 

@@ -55,5 +55,11 @@
     "muteAction": "Mute",
     "moveToFolder": "Move to folder…",
     "cancel": "Cancel selection"
+  },
+  "undo": {
+    "action": "Undo",
+    "dismiss": "Dismiss",
+    "closed": "Closed {{count}} tabs",
+    "restored": "Restored {{count}} tabs"
   }
 }

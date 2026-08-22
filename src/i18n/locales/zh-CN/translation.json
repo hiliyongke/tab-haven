@@ -55,5 +55,11 @@
     "muteAction": "静音",
     "moveToFolder": "移入文件夹…",
     "cancel": "取消选择"
+  },
+  "undo": {
+    "action": "撤销",
+    "dismiss": "关闭提示",
+    "closed": "已关闭 {{count}} 个标签",
+    "restored": "已恢复 {{count}} 个标签"
   }
 }
