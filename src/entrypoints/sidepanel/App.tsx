@@ -1,60 +1,134 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { deriveTemporarySections } from '@/core/site/Sections';
+import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
+import { deriveSections } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
 import { useTabStore } from '@/stores/tabStore';
-
-function TabRow({ tab }: { tab: TabRecord }) {
-  const activateTab = useTabStore((state) => state.activateTab);
-  return (
-    <button
-      type="button"
-      className={
-        'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-gray-100' +
-        (tab.active ? ' bg-gray-100' : '')
-      }
-      onClick={() => void activateTab(tab.id)}
-      title={tab.title || tab.url || ''}
-    >
-      <span className="truncate">{tab.title || '无标题标签页'}</span>
-    </button>
-  );
-}
-
-function Section({ title, tabs }: { title: string; tabs: TabRecord[] }) {
-  return (
-    <section className="mb-2">
-      <h2 className="px-2 py-1 text-xs font-medium text-gray-500">{title}</h2>
-      <div>
-        {tabs.map((tab) => (
-          <TabRow key={tab.id} tab={tab} />
-        ))}
-      </div>
-    </section>
-  );
-}
+import { Icon, Icons } from '@/ui/common/Icon';
+import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 
 export default function App() {
   const { t } = useTranslation();
   const tabs = useTabStore((state) => state.tabs);
+  const groups = useTabStore((state) => state.groups);
+  const activateTab = useTabStore((state) => state.activateTab);
+  const closeTabs = useTabStore((state) => state.closeTabs);
+  const toggleMute = useTabStore((state) => state.toggleMute);
+  const togglePinned = useTabStore((state) => state.togglePinned);
+  const setGroupCollapsed = useTabStore((state) => state.setGroupCollapsed);
+  const createNewTab = useTabStore((state) => state.createNewTab);
   const startTabSync = useTabStore((state) => state.startTabSync);
 
+  const [collapsedSites, setCollapsedSites] = useState<ReadonlySet<string>>(new Set());
+
+  // 同步服务：事件 → 快照 → store 订阅自动重渲染
   useEffect(() => startTabSync(), [startTabSync]);
 
-  const sections = deriveTemporarySections(tabs);
+  const sections = useMemo(() => deriveSections({ tabs, groups }), [tabs, groups]);
+  const duplicateCounts = useMemo(() => DuplicateIndex.build(tabs).counts(), [tabs]);
+  const removableCount = useMemo(
+    () => DuplicateIndex.build(tabs).removable(KeeperPolicy.default).length,
+    [tabs]
+  );
+
+  const activeTabId = tabs.find((tab) => tab.active)?.id;
+  const partners = useMemo(() => splitPartnerIds(tabs, activeTabId), [tabs, activeTabId]);
+  const collapsedGroupIds = useMemo(
+    () => new Set(groups.filter((group) => group.collapsed).map((group) => group.id)),
+    [groups]
+  );
+
+  const handleCloseTab = (tab: TabRecord) => {
+    void closeTabs([tab.id]);
+  };
+  const handleCloseSiteGroup = (_siteKey: string, groupTabs: readonly TabRecord[]) => {
+    void closeTabs(groupTabs.map((tab) => tab.id));
+  };
 
   return (
-    <main className="app flex h-full flex-col p-2">
-      <h1 className="mb-2 px-2 text-sm font-semibold">{t('app.name')}</h1>
-      {tabs.length === 0 ? (
-        <p className="px-2 text-sm text-gray-500">{t('app.scaffold')}</p>
-      ) : (
-        <div>
-          {sections.map((section) => (
-            <Section key={section.key} title={section.title} tabs={section.tabs} />
-          ))}
+    <main className="app flex h-full flex-col">
+      <div className="flex-1 overflow-y-auto p-2">
+        {tabs.length === 0 ? (
+          <div className="px-2 py-8 text-center text-sm text-gray-400">
+            <p className="font-medium text-gray-500">{t('empty.title')}</p>
+            <p>{t('empty.hint')}</p>
+          </div>
+        ) : (
+          <SectionList
+            sections={sections}
+            collapsedGroups={collapsedGroupIds}
+            collapsedSites={collapsedSites}
+            duplicateCounts={duplicateCounts}
+            activeTabId={activeTabId}
+            splitPartners={partners}
+            callbacks={{
+              onActivate: (tabId) => void activateTab(tabId),
+              onToggleMute: (tab) => void toggleMute(tab),
+              onTogglePin: (tab) => void togglePinned(tab),
+              onCloseTab: handleCloseTab,
+              onToggleGroupCollapsed: (groupId, collapsed) =>
+                void setGroupCollapsed(groupId, collapsed),
+              onToggleSiteCollapsed: (siteKey, collapsed) => {
+                setCollapsedSites((prev) => {
+                  const next = new Set(prev);
+                  if (collapsed) next.add(siteKey);
+                  else next.delete(siteKey);
+                  return next;
+                });
+              },
+              onCloseSiteGroup: handleCloseSiteGroup
+            }}
+          />
+        )}
+
+        <div className="pt-1">
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-gray-200 py-2 text-sm text-gray-400 hover:border-gray-300 hover:text-gray-500"
+            onClick={() => void createNewTab()}
+          >
+            <Icon d={Icons.plus} className="h-4 w-4" />
+            <span>{t('tabs.newTab')}</span>
+          </button>
         </div>
-      )}
+      </div>
+
+      <footer className="flex shrink-0 items-center justify-between border-t border-gray-200 px-3 py-1.5 text-xs text-gray-500">
+        <span>
+          {t('tabs.currentOpen')} <strong>{tabs.length}</strong> {t('tabs.tabCountUnit')}
+        </span>
+        <nav className="flex items-center gap-1" aria-label={t('footer.utilityLabel')}>
+          <button
+            type="button"
+            className="rounded p-1 hover:bg-gray-100"
+            title={t('footer.search')}
+            disabled
+          >
+            <Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm0 0 8 8" className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className="relative rounded p-1 hover:bg-gray-100"
+            title={
+              removableCount > 0
+                ? t('duplicates.cleanTooltip', { count: removableCount })
+                : t('duplicates.none')
+            }
+            disabled={removableCount === 0}
+            onClick={() => {
+              const removable = DuplicateIndex.build(tabs).removable(KeeperPolicy.default);
+              if (removable.length > 0) void closeTabs(removable.map((tab) => tab.id));
+            }}
+          >
+            <Icon d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13" className="h-4 w-4" />
+            {removableCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
+                {removableCount}
+              </span>
+            )}
+          </button>
+        </nav>
+      </footer>
     </main>
   );
 }

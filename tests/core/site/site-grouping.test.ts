@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aggregateBySite } from '@/core/site/SiteGrouping';
-import { deriveTemporarySections } from '@/core/site/Sections';
+import { deriveSections } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -74,17 +74,42 @@ describe('aggregateBySite', () => {
   });
 });
 
-describe('deriveTemporarySections', () => {
-  it('固定标签与原生组标签不入临时区', () => {
+describe('deriveSections', () => {
+  it('固定标签与原生组标签不入临时区（原生组标签保留在原生 section）', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://a.com/1' }),
       makeTab({ id: 2, index: 1, url: 'https://b.com/1', pinned: true }),
-      makeTab({ id: 3, index: 2, url: 'https://c.com/1', groupId: 5 })
+      makeTab({ id: 3, index: 2, url: 'https://c.com/1', groupId: 5 }),
+      makeTab({ id: 4, index: 3, url: 'https://c.com/2', groupId: 5 })
     ];
-    const sections = deriveTemporarySections(tabs);
-    expect(sections).toHaveLength(1);
-    expect(sections[0]?.kind).toBe('ungrouped');
-    expect(sections[0]?.tabs.map((tab) => tab.id)).toEqual([1]);
+    const sections = deriveSections({
+      tabs,
+      groups: [{ id: 5, title: '调研', color: 'blue' }]
+    });
+    expect(sections).toHaveLength(2);
+    expect(sections[0]?.kind).toBe('native');
+    expect(sections[0]?.tabs.map((tab) => tab.id)).toEqual([3, 4]);
+    expect(sections[1]?.kind).toBe('ungrouped');
+    expect(sections[1]?.tabs.map((tab) => tab.id)).toEqual([1]);
+  });
+
+  it('原生组按组内首标签位置排序', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 5, url: 'https://z.com/1', groupId: 20 }),
+      makeTab({ id: 2, index: 6, url: 'https://z.com/2', groupId: 20 }),
+      makeTab({ id: 3, index: 0, url: 'https://a.com/1', groupId: 10 }),
+      makeTab({ id: 4, index: 1, url: 'https://a.com/2', groupId: 10 })
+    ];
+    const sections = deriveSections({
+      tabs,
+      groups: [
+        { id: 20, title: 'Z' },
+        { id: 10, title: 'A' }
+      ]
+    });
+    expect(sections[0]?.kind).toBe('native');
+    expect(sections[0]?.title).toBe('A');
+    expect(sections[1]?.title).toBe('Z');
   });
 
   it('同站点聚合为 site section，单标签归未分组', () => {
@@ -93,14 +118,20 @@ describe('deriveTemporarySections', () => {
       makeTab({ id: 2, index: 1, url: 'https://a.com/2' }),
       makeTab({ id: 3, index: 2, url: 'https://b.com/1' })
     ];
-    const sections = deriveTemporarySections(tabs);
+    const sections = deriveSections({ tabs, groups: [] });
     expect(sections[0]?.kind).toBe('site');
     expect(sections[0]?.title).toBe('a.com');
     expect(sections[1]?.kind).toBe('ungrouped');
     expect(sections[1]?.tabs).toHaveLength(1);
   });
 
+  it('排除集不进入任何 section', () => {
+    const tabs = [makeTab({ id: 1, index: 0, url: 'https://a.com/1' })];
+    const sections = deriveSections({ tabs, groups: [], excludedTabIds: new Set([1]) });
+    expect(sections).toHaveLength(0);
+  });
+
   it('空输入返回空 sections', () => {
-    expect(deriveTemporarySections([])).toHaveLength(0);
+    expect(deriveSections({ tabs: [], groups: [] })).toHaveLength(0);
   });
 });

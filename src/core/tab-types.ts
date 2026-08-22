@@ -18,10 +18,33 @@ export interface TabRecord {
   status?: string;
   /** 静音状态（来自 mutedInfo）。 */
   muted?: boolean;
+  /** 是否正在播放声音。 */
+  audible?: boolean;
   /** 原生标签组 id（NO_GROUP = -1）。 */
   groupId: number;
   /** Chrome 140+ 拆分视图 id（无拆分时为 undefined）。 */
   splitViewId?: number;
 }
 
+/** 原生标签组（Chrome tabGroups 子集，只读安全映射）。 */
+export interface TabGroupRecord {
+  id: number;
+  title?: string;
+  color?: string;
+  collapsed?: boolean;
+}
+
 export const NO_GROUP = -1;
+
+/** 原生组 9 色（展示用，与 Chrome 对齐）。 */
+export const GROUP_COLORS = [
+  'grey',
+  'blue',
+  'red',
+  'yellow',
+  'green',
+  'pink',
+  'purple',
+  'cyan',
+  'orange'
+] as const;

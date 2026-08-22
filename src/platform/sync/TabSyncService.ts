@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
-import type { TabRecord } from '@/core/tab-types';
-import { queryCurrentWindowTabs } from '@/platform/tabs';
+import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
+import { queryCurrentWindowGroups, queryCurrentWindowTabs } from '@/platform/tabs';
 
 /**
  * 标签同步服务：把浏览器标签事件统一为"快照刷新"信号。
@@ -17,6 +17,7 @@ import { queryCurrentWindowTabs } from '@/platform/tabs';
 
 export interface TabSnapshot {
   tabs: readonly TabRecord[];
+  groups: readonly TabGroupRecord[];
   windowId: number | undefined;
   /** 快照代数：每次广播递增。 */
   generation: number;
@@ -36,10 +37,13 @@ export class TabSyncService {
     const run = async () => {
       querying = true;
       try {
-        const tabs = await queryCurrentWindowTabs();
+        const [tabs, groups] = await Promise.all([
+          queryCurrentWindowTabs(),
+          queryCurrentWindowGroups()
+        ]);
         if (this.stopped) return;
         this.generation += 1;
-        onSnapshot({ tabs, windowId: tabs[0]?.windowId, generation: this.generation });
+        onSnapshot({ tabs, groups, windowId: tabs[0]?.windowId, generation: this.generation });
       } catch (error) {
         console.error(error);
       } finally {

@@ -10,3 +10,16 @@ body,
 #root {
   height: 100%;
 }
+
+/* 原生标签组 9 色（Chrome 对齐） */
+:root {
+  --group-grey: #80868b;
+  --group-blue: #1a73e8;
+  --group-red: #d93025;
+  --group-yellow: #f9ab00;
+  --group-green: #188038;
+  --group-pink: #d01884;
+  --group-purple: #9334e6;
+  --group-cyan: #007b83;
+  --group-orange: #fa903e;
+}

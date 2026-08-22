@@ -1,6 +1,27 @@
 {
   "app": {
-    "name": "TabHaven（页港）",
-    "scaffold": "工程脚手架就绪：WXT + React 19 + TypeScript + Tailwind v4。"
+    "name": "TabHaven（页港）"
+  },
+  "empty": {
+    "title": "这个窗口还没有标签",
+    "hint": "新建标签后会自动显示在这里"
+  },
+  "tabs": {
+    "newTab": "新建标签页",
+    "currentOpen": "当前打开",
+    "tabCountUnit": "个标签页",
+    "untitled": "无标题标签页",
+    "unnamedGroup": "未命名标签组",
+    "ungrouped": "未分组",
+    "closeGroup": "关闭组内全部标签"
+  },
+  "footer": {
+    "utilityLabel": "侧边栏工具",
+    "search": "搜索标签",
+    "cleanDuplicates": "清理重复标签"
+  },
+  "duplicates": {
+    "none": "暂无可清理的重复标签",
+    "cleanTooltip": "清理 {{count}} 个重复标签；保留当前、固定或最早打开的标签"
   }
 }

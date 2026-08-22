@@ -1,6 +1,27 @@
 {
   "app": {
-    "name": "TabHaven",
-    "scaffold": "Scaffold ready: WXT + React 19 + TypeScript + Tailwind v4."
+    "name": "TabHaven"
+  },
+  "empty": {
+    "title": "No tabs in this window yet",
+    "hint": "New tabs will appear here automatically"
+  },
+  "tabs": {
+    "newTab": "New tab",
+    "currentOpen": "Open",
+    "tabCountUnit": "tabs",
+    "untitled": "Untitled",
+    "unnamedGroup": "Unnamed group",
+    "ungrouped": "Ungrouped",
+    "closeGroup": "Close all tabs in group"
+  },
+  "footer": {
+    "utilityLabel": "Sidebar tools",
+    "search": "Search tabs",
+    "cleanDuplicates": "Clean up duplicate tabs"
+  },
+  "duplicates": {
+    "none": "No duplicates to clean up",
+    "cleanTooltip": "Clean up {{count}} duplicate tabs; keeps the active, pinned, or earliest tab"
   }
 }
