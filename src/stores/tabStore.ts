@@ -42,8 +42,8 @@ interface TabState {
   highlightedIds: ReadonlySet<number>;
   /** 切换标签（点击行为）。 */
   activateTab: (tabId: number) => Promise<void>;
-  /** 关闭标签（撤销联动由调用方编排）。 */
-  closeTabs: (tabIds: readonly number[]) => Promise<void>;
+  /** 关闭标签，返回实际成功的标签 id（撤销联动由调用方编排）。 */
+  closeTabs: (tabIds: readonly number[]) => Promise<number[]>;
   /** 切换静音。 */
   toggleMute: (tab: TabRecord) => Promise<void>;
   /** 切换固定。 */
@@ -56,8 +56,8 @@ interface TabState {
   createNewTab: () => Promise<void>;
   /** 复制单个标签（对标浏览器原生右键「复制标签页」）。 */
   duplicateTab: (tabId: number) => Promise<void>;
-  /** 冻结（休眠）单个标签以释放内存。 */
-  discardTab: (tabId: number) => Promise<void>;
+  /** 冻结（休眠）单个标签以释放内存，返回是否成功。 */
+  discardTab: (tabId: number) => Promise<boolean>;
   /** 缓存标签预览缩略图。 */
   setPreview: (tabId: number, dataUrl: string) => void;
   /** 删除已不存在标签的预览缓存。 */
@@ -100,9 +100,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
     await activateTabPlatform(tabId);
   },
 
-  closeTabs: async (tabIds) => {
-    await closeTabsPlatform(tabIds);
-  },
+  closeTabs: (tabIds) => closeTabsPlatform(tabIds),
 
   toggleMute: async (tab) => {
     await toggleMutePlatform(tab.id, Boolean(tab.muted));
@@ -130,9 +128,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
     await duplicateTabPlatform(tabId);
   },
 
-  discardTab: async (tabId) => {
-    await discardTabPlatform(tabId);
-  },
+  discardTab: (tabId) => discardTabPlatform(tabId),
 
   setPreview: (tabId, dataUrl) => {
     set((state) => {

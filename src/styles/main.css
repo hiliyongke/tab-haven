@@ -194,12 +194,24 @@ body {
   --group-orange: #fa903e;
 }
 
-/* 拖动插入线（固定条目排序）—— 仅作用于固定条目，避免污染分组卡片的落点样式 */
-.folder-item.is-drop-before {
-  box-shadow: inset 0 2px 0 0 var(--drop-line);
+/* 固定文件夹复用分组卡片：排序中浮动 + 拖入目标高亮 */
+.section-card.is-sorting {
+  z-index: 40;
+  opacity: 0.9;
+  box-shadow: 0 6px 16px rgb(var(--shadow-tint) / 0.16);
 }
-.folder-item.is-drop-after {
-  box-shadow: inset 0 -2px 0 0 var(--drop-line);
+.section-card.is-drop-target {
+  background: color-mix(in srgb, var(--c-brand-500) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
+}
+/* 固定条目列表：与分组标签列表同款紧凑排列 */
+.section-body-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0 1px 2px;
+  list-style: none;
 }
 
 /* 统一动效曲线：快入慢出（frontend-design-pro 推荐 cubic-bezier） */
@@ -360,14 +372,6 @@ body {
   color: var(--c-gray-400);
 }
 
-/* 键盘焦点环：.search-bar-input 自身 outline:none 特异性同为 0-1-0，
-   此处用 :focus-visible 伪类提升特异性，确保 Tab 聚焦时可见 */
-.search-bar-input:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-  border-radius: 4px;
-}
-
 /* 隐藏原生 search 清除按钮（使用自定义 ×） */
 .search-bar-input::-webkit-search-cancel-button {
   -webkit-appearance: none;
@@ -408,256 +412,31 @@ body {
   box-shadow: 0 4px 14px rgb(var(--shadow-tint) / 14%);
 }
 
-/* ---------- 固定空间：扁平分隔 + 紧凑层级 ---------- */
+/* ---------- 分类模块外壳：固定空间 / 站点分组 统一视觉壳（扁平分隔，零背景） ---------- */
+/* 左 0 + 内部 .section-head padding-left 8px：内容起始与 .pinned-strip / .section-card 统一到距侧边栏 8px */
+.fixed-area,
+.module-shell {
+  padding: 6px 0 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--c-brand-500) 18%, var(--border-subtle));
+}
 .fixed-area {
   flex: none;
   max-height: min(34vh, 280px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 6px 8px 7px;
-  border-bottom: 1px solid color-mix(in srgb, var(--c-brand-500) 18%, var(--border-subtle));
-  background: color-mix(in srgb, var(--c-brand-50) 34%, var(--canvas));
 }
-.fixed-area-head {
-  position: sticky;
-  top: -6px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 24px;
-  padding: 0 2px 4px;
-  background: color-mix(in srgb, var(--c-brand-50) 88%, var(--canvas));
-}
-.fixed-area-title {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  color: var(--c-gray-600);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-}
-.fixed-area-count,
-.fixed-folder-count {
-  display: inline-grid;
-  min-width: 16px;
-  height: 16px;
-  place-items: center;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--c-gray-100);
-  color: var(--c-gray-500);
-  font-size: 10px;
-  font-weight: 650;
-  line-height: 16px;
-}
-.fixed-area-add {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--c-gray-500);
-  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-.fixed-area-add:hover,
-.fixed-area-add:focus-visible {
-  border-color: var(--c-brand-200);
-  background: var(--c-brand-50);
-  color: var(--c-brand-600);
-}
-.fixed-folder {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 2px;
-}
-.fixed-folder:first-of-type {
+/* 紧跟 module-shell 的下一块不再画 border-top，避免与上一块的 border-bottom 叠成双线 */
+.module-shell + .section-card,
+.module-shell + .module-shell {
   border-top: 0;
 }
-.fixed-folder-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 2px 4px;
-  border-radius: 6px;
-  cursor: grab;
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-.fixed-folder-head:hover,
-.fixed-folder-head:focus-within {
-  background: var(--c-gray-50);
-}
-.fixed-folder-head:active {
-  cursor: grabbing;
-}
-.fixed-folder-toggle {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 5px;
-  padding: 2px;
-  border-radius: 4px;
-  color: var(--c-gray-700);
-  text-align: left;
-}
-.fixed-folder-toggle:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-.fixed-folder-chevron {
-  width: 12px;
-  height: 12px;
-  flex: none;
-  color: var(--c-gray-400);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-.fixed-folder-chevron.is-expanded {
-  transform: rotate(90deg);
-}
-.fixed-folder-icon {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  color: var(--c-brand-500);
-}
-.fixed-folder-name {
-  min-width: 0;
-  color: var(--c-gray-700);
-  font-size: 12px;
-  font-weight: 650;
-}
-.fixed-folder-count {
-  margin-left: 1px;
-}
-.fixed-folder-actions {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-.fixed-folder-head:hover .fixed-folder-actions,
-.fixed-folder-head:focus-within .fixed-folder-actions {
-  opacity: 1;
-}
-.fixed-folder-action {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: var(--c-gray-400);
-  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-.fixed-folder-action:hover,
-.fixed-folder-action:focus-visible {
-  border-color: var(--border-subtle);
-  background: var(--surface);
-  color: var(--c-gray-700);
-}
-.fixed-folder-action.is-restore:hover,
-.fixed-folder-action.is-restore:focus-visible {
-  border-color: var(--c-brand-200);
-  background: var(--c-brand-50);
-  color: var(--c-brand-600);
-}
-.fixed-folder-action.is-danger:hover,
-.fixed-folder-action.is-danger:focus-visible {
-  border-color: var(--c-red-50);
-  background: var(--c-red-50);
-  color: var(--c-red-600);
-}
-.fixed-folder-items {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 1px 0 3px 13px;
-  padding: 2px 0 2px 6px;
-  border-left: 1px solid var(--c-gray-200);
-}
-.folder-item {
-  position: relative;
-  display: flex;
-  min-height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-  border-radius: 5px;
-  color: var(--c-gray-700);
-  font-size: 11px;
-  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
-}
-.folder-item:hover,
-.folder-item:focus-within {
-  background: var(--c-gray-50);
-}
-.folder-item.is-active {
-  background: color-mix(in srgb, var(--c-brand-500) 10%, var(--surface));
-  color: var(--c-brand-700);
-}
-.folder-item.is-closed .fixed-item-title {
-  color: var(--c-gray-500);
-}
-.folder-item.is-closed .fixed-item-favicon {
-  opacity: 0.55;
-  filter: grayscale(0.65);
-}
-.fixed-item-main {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  padding: 1px 0;
-  color: inherit;
-  text-align: left;
-}
-.fixed-item-favicon {
-  display: grid;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  place-items: center;
-}
+/* 固定空间头部/文件夹/条目的视觉壳复用分组模块的 .section-card / .section-head /
+   .row-item 系列（见「分组」区块），以下仅保留固定空间特有的少量样式。 */
 .fixed-item-pending {
   width: 14px;
   height: 14px;
   border: 1px dashed var(--c-gray-400);
   border-radius: 50%;
-}
-.fixed-item-title {
-  min-width: 0;
-  color: inherit;
-  font-size: 12px;
-  line-height: 18px;
-}
-.fixed-item-remove {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: var(--c-gray-400);
-  opacity: 0;
-  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
-}
-.folder-item:hover .fixed-item-remove,
-.folder-item:focus-within .fixed-item-remove {
-  opacity: 1;
-}
-.fixed-item-remove:hover,
-.fixed-item-remove:focus-visible {
-  border-color: var(--c-red-50);
-  background: var(--c-red-50);
-  color: var(--c-red-600);
 }
 
 /* ---------- 顶部永久固定图标区 ---------- */
@@ -669,26 +448,10 @@ body {
   flex-wrap: wrap;
   gap: 4px;
   margin: 0 0 4px;
-  padding: 4px 6px;
+  /* 左 0 + 内部 .pinned-grid padding-left 8px，让磁贴与 module-shell 内色条对齐到距侧边栏 8px */
+  padding: 6px 0 7px 0;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--canvas);
-  box-shadow: 0 3px 8px rgb(var(--shadow-tint) / 0.04);
   isolation: isolate;
-}
-
-.pinned-strip.is-drop-ready {
-  min-height: 40px;
-  border: 1px dashed var(--c-brand-300);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--c-brand-500) 8%, var(--canvas));
-}
-
-.pinned-strip.is-drop-ready:empty::after {
-  align-self: center;
-  margin: auto;
-  color: var(--c-gray-500);
-  content: '拖到这里固定';
-  font-size: 11px;
 }
 
 .pinned-strip.is-drop-target {
@@ -699,26 +462,46 @@ body {
 
 .pinned-tile {
   position: relative;
+  display: grid;
   width: 36px;
   height: 36px;
+  place-items: center;
   border-radius: 8px;
+  cursor: grab;
+}
+.pinned-tile:active {
+  cursor: grabbing;
+}
+.pinned-tile.is-dragging {
+  z-index: 30;
+  opacity: 0.85;
+  box-shadow: 0 6px 16px rgb(var(--shadow-tint) / 0.18);
 }
 
-.pinned-tile.is-split-companion .pinned-main {
-  border-color: var(--c-brand-300);
-  background: color-mix(in srgb, var(--c-brand-500) 8%, var(--surface));
+.pinned-tile:hover {
+  border-color: var(--c-gray-300);
+  background: var(--c-gray-100);
 }
 
-.pinned-tile > .split-view-indicator {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface);
+.pinned-tile:focus-visible {
+  border-color: var(--c-gray-300);
+  background: var(--c-gray-100);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
+.pinned-tile.is-active {
+  border-color: var(--c-brand-500);
+  background: color-mix(in srgb, var(--c-brand-500) 10%, transparent);
+  box-shadow: none;
+}
+
+.pinned-tile.is-discarded .pinned-favicon-wrap {
+  opacity: 0.56;
+  filter: grayscale(0.9);
+}
+
+/* 原生固定区磁贴（PinnedTile）内部按钮 */
 .pinned-main {
   display: grid;
   width: 36px;
@@ -730,38 +513,20 @@ body {
   background: transparent;
   cursor: pointer;
 }
-
 .pinned-main:hover {
   border-color: var(--c-gray-300);
   background: var(--c-gray-100);
 }
-
-/* 焦点环：补全键盘可达性（不移除 outline） */
 .pinned-main:focus-visible {
   border-color: var(--c-gray-300);
   background: var(--c-gray-100);
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-
 .pinned-tile.is-active .pinned-main {
   border-color: var(--c-brand-500);
   background: color-mix(in srgb, var(--c-brand-500) 10%, transparent);
   box-shadow: none;
-}
-
-.pinned-tile.is-closed .pinned-main {
-  opacity: 0.58;
-}
-
-.pinned-tile.is-discarded .pinned-favicon-wrap {
-  opacity: 0.56;
-  filter: grayscale(0.9);
-}
-
-.pinned-tile.is-closed .pinned-main:hover,
-.pinned-tile.is-closed .pinned-main:focus-visible {
-  opacity: 0.82;
 }
 
 .pinned-favicon-wrap {
@@ -794,22 +559,15 @@ body {
   content: '';
 }
 
-.pinned-tile.is-dragging {
-  opacity: 0.35;
-}
-
-.pinned-tile.is-drop-target {
-  box-shadow: inset 2px 0 var(--c-brand-500);
-}
-
 /* 列表内「固定标签」区：紧凑图标网格（与顶部 PinnedStrip 视觉一致） */
 .pinned-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 1px 3px 3px;
+  /* padding-left 8px 与 module-shell 内 section-head 对齐，让磁贴起始在距侧边栏 8px */
+  padding: 1px 3px 3px 8px;
 }
-.pinned-grid .pinned-unpin {
+.pinned-tile .pinned-unpin {
   position: absolute;
   top: -4px;
   right: -4px;
@@ -830,12 +588,12 @@ body {
 .pinned-tile .pinned-unpin:focus-visible {
   opacity: 1;
 }
-.pinned-grid .pinned-unpin:hover {
+.pinned-tile .pinned-unpin:hover {
   background: var(--c-red-50);
   border-color: var(--c-red-200);
   color: var(--c-red-600);
 }
-.pinned-grid .pinned-duplicate {
+.pinned-tile .pinned-duplicate {
   position: absolute;
   bottom: -5px;
   right: -5px;
@@ -856,7 +614,7 @@ body {
 .pinned-tile .pinned-duplicate:focus-visible {
   opacity: 1;
 }
-.pinned-grid .pinned-duplicate:hover {
+.pinned-tile .pinned-duplicate:hover {
   background: var(--c-brand-50);
   border-color: var(--c-brand-200);
   color: var(--c-brand-600);
@@ -882,10 +640,6 @@ body {
   box-shadow: none;
 }
 
-:root[data-theme='dark'] .pinned-tile.is-split-companion .pinned-main {
-  border-color: var(--c-brand-400);
-  background: color-mix(in srgb, var(--c-brand-500) 16%, var(--surface));
-}
 
 :root[data-theme='dark'] .pinned-tile.is-audible::after {
   border-color: var(--surface);
@@ -917,28 +671,32 @@ body {
 .row-item .drag-grip:active {
   cursor: grabbing;
 }
+/* dnd-kit 排序中的行：浮动层级 + 轻量阴影，随指针平滑移动 */
+.row-item.is-sorting {
+  z-index: 40;
+  opacity: 0.9;
+  box-shadow: 0 6px 16px rgb(var(--shadow-tint) / 0.16);
+}
 
-/* 拖拽重排落点指示线（上/下半区 = 插到目标前/后） */
-.row-item.drop-before,
-.row-item.drop-after {
-  position: relative;
+/* 固定条目作为投放目标（拖标签/分组加入文件夹）时的落点高亮 */
+.row-item.is-drop-target {
+  background: color-mix(in srgb, var(--c-brand-500) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
 }
-.row-item.drop-before::before,
-.row-item.drop-after::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--c-brand-500);
-  pointer-events: none;
-}
-.row-item.drop-before::before {
-  top: -1px;
-}
-.row-item.drop-after::after {
-  bottom: -1px;
+
+/* DragOverlay 跟随指针的拖拽视觉（替代原生 HTML5 DnD 的系统 ghost） */
+.drag-overlay-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--c-brand-500) 22%, var(--border-subtle));
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgb(var(--shadow-tint) / 0.18);
+  font-size: 12px;
+  color: var(--c-gray-800);
 }
 
 /* 当前激活标签：品牌绿底 + 底部高亮线 + 加粗深色标题；底角改方以让下划线端点平齐 */
@@ -1052,45 +810,20 @@ body {
   border-top: 0;
   padding-top: 0;
 }
+/* 相邻分组卡片之间留 2px 间隔，避免折叠状态粘成一片 */
+.section-card + .section-card {
+  margin-top: 2px;
+}
 
-/* 组卡片拖拽落点指示线（上/下半区 = 插到目标前/后） */
-.section-card.is-drop-before,
-.section-card.is-drop-after {
-  position: relative;
-}
-.section-card.is-drop-before::before,
-.section-card.is-drop-after::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--c-brand-500);
-  pointer-events: none;
-}
-.section-card.is-drop-before::before {
-  top: -1px;
-}
-.section-card.is-drop-after::after {
-  bottom: -1px;
-}
 .section-card.is-pinned {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border-subtle);
+  /* 零背景，仅保留底部 border 与 position: sticky（吸顶时跟随滚动不脱离搜索栏） */
 }
-/* 分组强调色：标题前竖色条 + 极淡背景 */
+/* 分组强调色：标题前竖色条（零背景/零圆角，遵循扁平分隔原则） */
 .section-card.is-accented {
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-  border-radius: 8px;
-  padding: 1px 3px 1px;
   border-top: 0;
-}
-.section-card.is-accented + .section-card.is-accented {
-  margin-top: 0;
 }
 .section-card.is-accented .count-pill {
   background: color-mix(in srgb, var(--accent) 14%, var(--c-gray-100));
@@ -1187,6 +920,15 @@ body {
   font-size: 10px;
   font-weight: 600;
 }
+/* 整张卡片 hover（覆盖色条、标题、count-pill 周围、row-action 透明区域之间） */
+.section-card:hover {
+  background: var(--c-gray-50);
+}
+/* 行内按钮自身 hover 时升级为品牌色背景，specificity 高于 .section-card:hover */
+.section-card:hover .row-action:hover {
+  background: var(--c-brand-100);
+  color: var(--c-brand-700);
+}
 .section-card .close-site {
   opacity: 0;
   color: var(--c-gray-400);
@@ -1201,7 +943,8 @@ body {
   color: var(--c-red-600);
 }
 .section-body {
-  padding: 0 1px 2px;
+  /* 左右 8px 与 .section-head 对齐，让色条与标签行 favicon 左边缘对齐 */
+  padding: 0 8px 2px;
 }
 
 /* ---------- 底部固定的「新建标签页」操作条（紧凑） ---------- */

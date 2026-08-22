@@ -7,7 +7,8 @@ import {
   pinFromTab,
   removeItemsWithUrl,
   reorderFolderItems,
-  reorderFolders
+  reorderFolders,
+  reorderPins
 } from '@/core/fixed/FolderOps';
 
 /**
@@ -79,5 +80,18 @@ describe('FolderOps', () => {
     const folders = ['a', 'b', 'c'].map((name) => ({ ...createFolder(name), id: name }));
     const next = reorderFolders(folders, 'a', 'c', false);
     expect(next.map((folder) => folder.name)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('reorderPins：固定标签移动到目标前后', () => {
+    const pins = ['a', 'b', 'c'].map((host) => ({
+      id: host,
+      identity: `${host}.com`,
+      url: `https://${host}.com/`,
+      title: host
+    }));
+    const before = reorderPins(pins, { sourceId: 'a', targetId: 'c', placeAfter: false });
+    expect(before.map((pin) => pin.id)).toEqual(['b', 'a', 'c']);
+    const after = reorderPins(pins, { sourceId: 'a', targetId: 'c', placeAfter: true });
+    expect(after.map((pin) => pin.id)).toEqual(['b', 'c', 'a']);
   });
 });

@@ -1,18 +1,20 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import type { SiteSubGroup, TemporarySection } from '@/core/site/Sections';
 import { DialogShell } from '@/ui/dialog/Dialog';
+import { CategoryModule } from '@/ui/common/CategoryModule';
+import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
-import { TAB_DRAG_FINISHED_EVENT, TabRow } from '@/ui/tabs/TabRow';
+import { TabRow } from '@/ui/tabs/TabRow';
 import { PinnedTile } from '@/ui/tabs/PinnedTile';
+import { DragType } from '@/ui/dnd/types';
 import { groupAccentVar, useDomainAccent } from '@/ui/tabs/accent';
-
-/** 原生组拖拽重排时记录被拖动组的 id（同页面内共享）。 */
-let draggingGroupId: number | null = null;
 /** 用户主动定位当前标签时，请求临时区展开其所属分组。 */
 export const LOCATE_SECTION_EVENT = 'tabhaven:locate-section';
+
 /** 原生组可使用的标准颜色（tabGroups 枚举）。 */
 const GROUP_COLORS = [
   'grey',
@@ -140,8 +142,6 @@ function GroupEditDialog({
 
 export interface SectionCallbacks {
   onActivate: (tabId: number) => void;
-  onToggleSelect: (tabId: number) => void;
-  onRangeSelect: (tabId: number) => void;
   onToggleMute: (tab: TabRecord) => void;
   onTogglePin: (tab: TabRecord) => void;
   onCloseTab: (tab: TabRecord) => void;
@@ -179,8 +179,6 @@ function RowList({
   duplicateCounts,
   activeTabId,
   splitPartners,
-  selectionMode,
-  selectedIds,
   reorderEnabled,
   showUrl,
   rowActionsVisible,
@@ -192,14 +190,13 @@ function RowList({
   previews,
   highlightedIds,
   searchActiveTabId,
-  callbacks
+  callbacks,
+  containerKey
 }: {
   tabs: readonly TabRecord[];
   duplicateCounts: ReadonlyMap<string, number>;
   activeTabId: number | undefined;
   splitPartners: ReadonlySet<number>;
-  selectionMode: boolean;
-  selectedIds: readonly number[];
   reorderEnabled: boolean;
   showUrl?: boolean;
   autoScrollActive?: boolean;
@@ -216,48 +213,50 @@ function RowList({
   /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
   callbacks: SectionCallbacks;
+  /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
+  containerKey: string;
 }) {
   return (
-    <ul role="list">
-      {tabs.map((tab) => (
-        <TabRow
-          key={tab.id}
-          tab={tab}
-          duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
-          isActive={tab.id === activeTabId}
-          isSplitCompanion={splitPartners.has(tab.id)}
-          selectionMode={selectionMode}
-          selected={selectedIds.includes(tab.id)}
-          reorderEnabled={reorderEnabled}
-          showUrl={showUrl}
-          rowActionsVisible={rowActionsVisible}
-          autoScrollActive={autoScrollActive}
-          closeOnMiddleClick={closeOnMiddleClick}
-          density={density}
-          showSplitBadges={showSplitBadges}
-          indent={depths?.get(tab.id)}
-          preview={previews?.get(tab.id)}
-          isHighlighted={highlightedIds?.has(tab.id)}
-          isSearchActive={tab.id === searchActiveTabId}
-          onRequestPreview={callbacks.onRequestPreview}
-          onReorder={callbacks.onReorder}
-          onActivate={callbacks.onActivate}
-          onToggleSelect={callbacks.onToggleSelect}
-          onRangeSelect={callbacks.onRangeSelect}
-          onToggleMute={callbacks.onToggleMute}
-          onTogglePin={callbacks.onTogglePin}
-          onClose={callbacks.onCloseTab}
-          onDuplicate={callbacks.onDuplicate}
-          onDiscard={callbacks.onDiscard}
-          onMoveTab={callbacks.onMoveTab}
-        />
-      ))}
-    </ul>
+    <SortableContext items={tabs.map((tab) => tab.id)} strategy={verticalListSortingStrategy}>
+      <ul>
+        {tabs.map((tab) => (
+          <TabRow
+            key={tab.id}
+            tab={tab}
+            duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
+            isActive={tab.id === activeTabId}
+            isSplitCompanion={splitPartners.has(tab.id)}
+            reorderEnabled={reorderEnabled}
+            showUrl={showUrl}
+            rowActionsVisible={rowActionsVisible}
+            autoScrollActive={autoScrollActive}
+            closeOnMiddleClick={closeOnMiddleClick}
+            density={density}
+            showSplitBadges={showSplitBadges}
+            indent={depths?.get(tab.id)}
+            preview={previews?.get(tab.id)}
+            isHighlighted={highlightedIds?.has(tab.id)}
+            isSearchActive={tab.id === searchActiveTabId}
+            onRequestPreview={callbacks.onRequestPreview}
+            onActivate={callbacks.onActivate}
+            onToggleMute={callbacks.onToggleMute}
+            onTogglePin={callbacks.onTogglePin}
+            onClose={callbacks.onCloseTab}
+            onDuplicate={callbacks.onDuplicate}
+            onDiscard={callbacks.onDiscard}
+            onMoveTab={callbacks.onMoveTab}
+            containerKey={containerKey}
+          />
+        ))}
+      </ul>
+    </SortableContext>
   );
 }
 
-/** 卡片头部：标题 + 计数胶囊；可点击折叠，可选关闭（解散网站组）。 */
-function SectionHead({
+/** 卡片头部：标题 + 计数胶囊；可点击折叠，可选关闭（解散网站组）。
+ *  排序用 dnd-kit（head 容器承载 listeners）；跨容器拖出（到固定空间）由全局 DndContext 处理。
+ *  固定文件夹头也复用此组件，保证视觉与分组一致。 */
+export function SectionHead({
   icon,
   accent,
   title,
@@ -267,12 +266,8 @@ function SectionHead({
   closeTitle,
   action,
   mediaIndicator,
-  draggable,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd
+  dragHandleRef,
+  dragHandleProps
 }: {
   icon?: ReactNode;
   /** 分组强调色；存在时在标题前渲染一条竖色条。 */
@@ -286,13 +281,10 @@ function SectionHead({
   action?: ReactNode;
   /** 分组内媒体播放提示，可在折叠时显示并快速定位。 */
   mediaIndicator?: ReactNode;
-  /** 原生组拖拽重排用。 */
-  draggable?: boolean;
-  onDragStart?: React.DragEventHandler;
-  onDragOver?: React.DragEventHandler;
-  onDragLeave?: React.DragEventHandler;
-  onDrop?: React.DragEventHandler;
-  onDragEnd?: React.DragEventHandler;
+  /** dnd-kit 排序节点引用。 */
+  dragHandleRef?: (node: HTMLDivElement | null) => void;
+  /** dnd-kit 排序监听（attributes + listeners）。 */
+  dragHandleProps?: Record<string, unknown>;
 }) {
   const content = (
     <>
@@ -304,12 +296,8 @@ function SectionHead({
   return (
     <div
       className="section-head"
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
+      ref={dragHandleRef}
+      {...dragHandleProps}
     >
       {onToggle ? (
         <button
@@ -352,8 +340,6 @@ function SectionCard({
   duplicateCounts,
   activeTabId,
   splitPartners,
-  selectionMode,
-  selectedIds,
   reorderEnabled,
   showUrl,
   autoScrollActive,
@@ -364,10 +350,6 @@ function SectionCard({
   previews,
   highlightedIds,
   searchActiveTabId,
-  groupFirstTabIndex,
-  groupLastTabIndex,
-  dropPos,
-  setDropPos,
   callbacks
 }: {
   section: TemporarySection;
@@ -376,8 +358,6 @@ function SectionCard({
   duplicateCounts: ReadonlyMap<string, number>;
   activeTabId: number | undefined;
   splitPartners: ReadonlySet<number>;
-  selectionMode: boolean;
-  selectedIds: readonly number[];
   reorderEnabled: boolean;
   showUrl?: boolean;
   autoScrollActive?: boolean;
@@ -391,13 +371,6 @@ function SectionCard({
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
-  /** 拖拽目标组的首个标签 tab index（Chrome tabGroups.move 按 tab 索引定位）。 */
-  groupFirstTabIndex?: number;
-  /** 拖拽目标组的末尾标签 tab index。 */
-  groupLastTabIndex?: number;
-  /** 当前卡片是否为唯一拖拽落点目标（SectionList 层全局唯一）。 */
-  dropPos?: 'before' | 'after' | null;
-  setDropPos: (next: { groupId: number; place: 'before' | 'after' } | null) => void;
   callbacks: SectionCallbacks;
 }) {
   const isCollapsed =
@@ -419,7 +392,18 @@ function SectionCard({
     if (isCollapsed) setPlayingOnly(false);
   }, [isCollapsed]);
 
-  // 原生组头部操作：存为固定文件夹 + 编辑 + 拖拽手柄。
+  // 拖拽数据 + 排序开关：原生组参与排序；站点组仅支持拖出到固定空间（不在外层
+  // SortableContext items 中，不会误排序）；置顶/未分组禁用 sortable。
+  const sectionDragData = {
+    type: DragType.Section,
+    sectionKey: section.key,
+    groupId: section.kind === 'native' ? section.groupId : undefined,
+    title: section.title,
+    tabIds: section.tabs.map((tab) => tab.id)
+  } as const;
+  const sortableDisabled = section.kind === 'pinned' || section.kind === 'ungrouped';
+
+  // 原生组头部操作：存为固定文件夹 + 编辑（拖拽事件由 dnd-kit 在 head 接管，无需独立手柄按钮）。
   const headerAction =
     section.kind === 'native' ? (
       <>
@@ -437,15 +421,6 @@ function SectionCard({
             <Icon d={Icons.folderDown} className="h-3.5 w-3.5" />
           </button>
         )}
-        {/* 拖拽手柄：仅视觉提示，拖拽事件统一由 header 处理 */}
-        <button
-          type="button"
-          className="row-action cursor-grab"
-          title={t('groups.drag')}
-          aria-label={t('groups.drag')}
-        >
-          <Icon d={Icons.grip} className="h-3.5 w-3.5" />
-        </button>
         <button
           type="button"
           className="row-action"
@@ -474,56 +449,59 @@ function SectionCard({
         ? siteAccent
         : undefined;
 
-  const cardClass =
-    'section-card' +
-    (accent ? ' is-accented' : '') +
-    (section.kind === 'pinned' ? ' is-pinned' : '') +
-    (dropPos === 'before' ? ' is-drop-before' : dropPos === 'after' ? ' is-drop-after' : '');
-  const cardStyle: CSSProperties | undefined = accent
-    ? ({ '--accent': accent } as CSSProperties)
-    : undefined;
-
   // 固定区：浏览器置顶标签 → 紧凑图标磁贴（与顶部 PinnedStrip 视觉一致，不再一行行铺开）
   if (section.kind === 'pinned') {
     return (
-      <section className={cardClass} style={cardStyle}>
-        <SectionHead
-          icon={<Icon d={Icons.pin} className="icon h-3.5 w-3.5 text-accent-500" />}
-          title={section.title}
-          count={count}
-          accent={accent}
-        />
+      <GroupCard
+        id={section.key}
+        dragData={sectionDragData}
+        disabled={sortableDisabled}
+        title={section.title}
+        count={count}
+        accent={accent}
+        icon={<Icon d={Icons.pin} className="icon h-3.5 w-3.5 text-accent-500" />}
+        className="is-pinned"
+      >
         <div className="section-body">
           <div className="pinned-grid">
             {section.tabs.map((tab) => (
               <PinnedTile
                 key={tab.id}
-                tab={tab}
-                onActivate={callbacks.onActivate}
-                onTogglePin={callbacks.onTogglePin}
-                onClose={callbacks.onCloseTab}
-                onDuplicate={callbacks.onDuplicate}
+                title={tab.title || ''}
+                favIconUrl={tab.favIconUrl}
+                url={tab.url}
+                isActive={tab.active}
+                isDiscarded={tab.discarded}
+                isAudible={tab.audible}
+                onClick={() => callbacks.onActivate(tab.id)}
+                onMiddleClick={() => callbacks.onCloseTab(tab)}
+                onUnpin={() => callbacks.onTogglePin(tab)}
+                onDuplicate={() => callbacks.onDuplicate?.(tab)}
               />
             ))}
           </div>
         </div>
-      </section>
+      </GroupCard>
     );
   }
 
   // 未分组：普通标签整行列表
   if (section.kind === 'ungrouped') {
     return (
-      <section className={cardClass} style={cardStyle}>
-        <SectionHead title={section.title} count={count} accent={accent} />
+      <GroupCard
+        id={section.key}
+        dragData={sectionDragData}
+        disabled={sortableDisabled}
+        title={section.title}
+        count={count}
+        accent={accent}
+      >
         <div className="section-body">
           <RowList
             tabs={section.tabs}
             duplicateCounts={duplicateCounts}
             activeTabId={activeTabId}
             splitPartners={splitPartners}
-            selectionMode={selectionMode}
-            selectedIds={selectedIds}
             reorderEnabled={reorderEnabled}
             showUrl={showUrl}
             rowActionsVisible={rowActionsVisible}
@@ -536,9 +514,10 @@ function SectionCard({
             highlightedIds={highlightedIds}
             searchActiveTabId={searchActiveTabId}
             callbacks={callbacks}
+            containerKey={section.key}
           />
         </div>
-      </section>
+      </GroupCard>
     );
   }
 
@@ -577,95 +556,18 @@ function SectionCard({
     </button>
   ) : undefined;
 
-  const header = (
-    <SectionHead
-      icon={chevron}
-      title={section.title}
-      count={count}
-      accent={accent}
-      onToggle={() => {
-        setPlayingOnly(false);
-        if (section.kind === 'native') {
-          callbacks.onToggleGroupCollapsed(section.groupId, !isCollapsed);
-        } else {
-          callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
-        }
-      }}
-      onClose={
-        section.kind === 'site'
-          ? () => callbacks.onCloseSiteGroup(section.siteKey, section.tabs)
-          : undefined
-      }
-      closeTitle={t('tabs.closeGroup')}
-      mediaIndicator={mediaIndicator}
-      action={headerAction}
-      draggable={section.kind === 'native'}
-      onDragStart={
-        section.kind === 'native'
-          ? (e) => {
-              e.stopPropagation();
-              draggingGroupId = section.groupId;
-              setDropPos(null);
-            }
-          : undefined
-      }
-      onDragEnd={() => {
-        draggingGroupId = null;
-        setDropPos(null);
-        window.dispatchEvent(new Event(TAB_DRAG_FINISHED_EVENT));
-      }}
-      onDragOver={
-        section.kind === 'native'
-          ? (e) => {
-              if (draggingGroupId === null) return;
-              // 跳过自身（拖自己不会作为 drop target）
-              if (draggingGroupId === section.groupId) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              const rect = e.currentTarget.getBoundingClientRect();
-              const place = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-              // 全局唯一落点：直接替换，自动清除其他组（隐式）
-              setDropPos({ groupId: section.groupId, place });
-            }
-          : undefined
-      }
-      onDragLeave={
-        section.kind === 'native'
-          ? (e) => {
-              const relatedTarget = e.relatedTarget;
-              if (relatedTarget && e.currentTarget.contains(relatedTarget as Node)) return;
-              setDropPos(null);
-            }
-          : undefined
-      }
-      onDrop={
-        section.kind === 'native'
-          ? (e) => {
-              e.preventDefault();
-              setDropPos(null);
-              if (draggingGroupId === null || draggingGroupId === section.groupId) {
-                draggingGroupId = null;
-                window.dispatchEvent(new Event(TAB_DRAG_FINISHED_EVENT));
-                return;
-              }
-              // 按真实 tab index 定位插入位置：before → 目标组首 tab 位置，after → 末尾 tab + 1
-              const rect = e.currentTarget.getBoundingClientRect();
-              const after = e.clientY > rect.top + rect.height / 2;
-              const targetFirst = groupFirstTabIndex ?? 0;
-              const targetLast = groupLastTabIndex ?? targetFirst;
-              const insertAt = after ? targetLast + 1 : targetFirst;
-              callbacks.onGroupMove(draggingGroupId, insertAt);
-              draggingGroupId = null;
-              window.dispatchEvent(new Event(TAB_DRAG_FINISHED_EVENT));
-            }
-          : undefined
-      }
-    />
-  );
-
-  if (isCollapsed) {
-    return <section className={cardClass} style={cardStyle}>{header}</section>;
-  }
+  const onToggle = () => {
+    setPlayingOnly(false);
+    if (section.kind === 'native') {
+      callbacks.onToggleGroupCollapsed(section.groupId, !isCollapsed);
+    } else {
+      callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
+    }
+  };
+  const onClose =
+    section.kind === 'site'
+      ? () => callbacks.onCloseSiteGroup(section.siteKey, section.tabs)
+      : undefined;
 
   // 展开态：site 多子域时按子域再分块（折叠子标题）；媒体定位模式只保留播放标签所在子域。
   const subGroups: SiteSubGroup[] =
@@ -678,9 +580,8 @@ function SectionCard({
           .filter((sub) => sub.tabs.length > 0)
       : [];
 
-  return (
-    <section className={cardClass} style={cardStyle}>
-      {header}
+  const renderBody = () => (
+    <>
       {section.kind === 'native' && editOpen && (
         <GroupEditDialog
           title={section.title}
@@ -702,8 +603,6 @@ function SectionCard({
                   duplicateCounts={duplicateCounts}
                   activeTabId={activeTabId}
                   splitPartners={splitPartners}
-                  selectionMode={selectionMode}
-                  selectedIds={selectedIds}
                   reorderEnabled={reorderEnabled}
                   showUrl={showUrl}
                   rowActionsVisible={rowActionsVisible}
@@ -715,6 +614,7 @@ function SectionCard({
                   highlightedIds={highlightedIds}
                   searchActiveTabId={searchActiveTabId}
                   callbacks={callbacks}
+                  containerKey={section.key}
                 />
               </div>
             ))}
@@ -725,8 +625,6 @@ function SectionCard({
             duplicateCounts={duplicateCounts}
             activeTabId={activeTabId}
             splitPartners={splitPartners}
-            selectionMode={selectionMode}
-            selectedIds={selectedIds}
             reorderEnabled={reorderEnabled}
             showUrl={showUrl}
             rowActionsVisible={rowActionsVisible}
@@ -739,10 +637,31 @@ function SectionCard({
             highlightedIds={highlightedIds}
             searchActiveTabId={searchActiveTabId}
             callbacks={callbacks}
+            containerKey={section.key}
           />
         )}
       </div>
-    </section>
+    </>
+  );
+
+  return (
+    <GroupCard
+      id={section.key}
+      dragData={sectionDragData}
+      disabled={sortableDisabled}
+      title={section.title}
+      count={count}
+      accent={accent}
+      icon={chevron}
+      onToggle={onToggle}
+      onClose={onClose}
+      closeTitle={t('tabs.closeGroup')}
+      mediaIndicator={mediaIndicator}
+      action={headerAction}
+      collapsed={isCollapsed}
+    >
+      {isCollapsed ? null : renderBody()}
+    </GroupCard>
   );
 }
 
@@ -755,8 +674,6 @@ function SectionListImpl({
   duplicateCounts,
   activeTabId,
   splitPartners,
-  selectionMode,
-  selectedIds,
   reorderEnabled,
   showUrl,
   autoScrollActive,
@@ -776,8 +693,6 @@ function SectionListImpl({
   activeTabId: number | undefined;
   /** 与当前激活标签同屏的伙伴 id 集合。 */
   splitPartners: ReadonlySet<number>;
-  selectionMode: boolean;
-  selectedIds: readonly number[];
   reorderEnabled: boolean;
   showUrl?: boolean;
   autoScrollActive?: boolean;
@@ -794,26 +709,6 @@ function SectionListImpl({
   callbacks: SectionCallbacks;
 }) {
   const { t } = useTranslation();
-  // 拖拽落点：全局唯一（最多 1 个组高亮），避免多个组件 state 残留导致绿条不消。
-  const [dropPos, setDropPos] = useState<{ groupId: number; place: 'before' | 'after' } | null>(
-    null
-  );
-  // 拖拽目标组的 firstTab/lastTab tab index（Chrome tabGroups.move({index}) 按 tab 索引）。
-  const groupFirstTabIndex = new Map<number, number>();
-  const groupLastTabIndex = new Map<number, number>();
-  for (const s of sections) {
-    if (s.kind !== 'native' || s.tabs.length === 0) continue;
-    groupFirstTabIndex.set(s.groupId, s.tabs[0]!.index);
-    groupLastTabIndex.set(s.groupId, s.tabs.at(-1)!.index);
-  }
-  useEffect(() => {
-    const clearGroupDropIndicator = () => {
-      draggingGroupId = null;
-      setDropPos(null);
-    };
-    window.addEventListener(TAB_DRAG_FINISHED_EVENT, clearGroupDropIndicator);
-    return () => window.removeEventListener(TAB_DRAG_FINISHED_EVENT, clearGroupDropIndicator);
-  }, []);
   const collapsedSitesSet = useMemo(
     () => (collapsedSites instanceof Set ? collapsedSites : new Set(collapsedSites)),
     [collapsedSites]
@@ -835,57 +730,72 @@ function SectionListImpl({
     return () => window.removeEventListener(LOCATE_SECTION_EVENT, handleLocateSection);
   }, [callbacks, collapsedGroups, collapsedSitesSet, sections]);
 
+  // 分组头排序（dnd-kit）：只对原生组参与排序，排序逻辑由全局 DndContext 的 onDragEnd 处理。
+  const sortableSectionKeys = sections
+    .filter((s) => s.kind === 'native')
+    .map((s) => s.key);
+
+  const nativeSiteSections = sections.filter(
+    (s) => s.kind === 'native' || s.kind === 'site'
+  );
+  const ungroupedSection = sections.find((s) => s.kind === 'ungrouped');
+
+  const renderSectionCard = (section: TemporarySection) => (
+    <SectionCard
+      key={section.key}
+      section={section}
+      collapsedGroups={collapsedGroups}
+      collapsedSites={collapsedSitesSet}
+      duplicateCounts={duplicateCounts}
+      activeTabId={activeTabId}
+      splitPartners={splitPartners}
+      reorderEnabled={reorderEnabled}
+      showUrl={showUrl}
+      rowActionsVisible={rowActionsVisible}
+      autoScrollActive={autoScrollActive}
+      closeOnMiddleClick={closeOnMiddleClick}
+      density={density}
+      showSplitBadges={showSplitBadges}
+      previews={previews}
+      highlightedIds={highlightedIds}
+      searchActiveTabId={searchActiveTabId}
+      callbacks={callbacks}
+    />
+  );
+
   return (
-    <div className="flex flex-col gap-1">
-      {sections.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
-          <Icon d={Icons.search} className="h-6 w-6 text-gray-300" />
-          <div className="text-sm font-medium text-gray-600">{t('empty.title')}</div>
-          <div className="text-xs text-gray-400">{t('empty.hint')}</div>
-        </div>
-      ) : (
-        sections.map((section) => {
-        const isNative = section.kind === 'native';
-        const nativeDropPos = isNative && dropPos?.groupId === section.groupId ? dropPos.place : null;
-        return (
-          <SectionCard
-            key={section.key}
-            section={section}
-            collapsedGroups={collapsedGroups}
-            collapsedSites={collapsedSitesSet}
-            duplicateCounts={duplicateCounts}
-            activeTabId={activeTabId}
-            splitPartners={splitPartners}
-            selectionMode={selectionMode}
-            selectedIds={selectedIds}
-            reorderEnabled={reorderEnabled}
-            showUrl={showUrl}
-            rowActionsVisible={rowActionsVisible}
-            autoScrollActive={autoScrollActive}
-            closeOnMiddleClick={closeOnMiddleClick}
-            density={density}
-            showSplitBadges={showSplitBadges}
-            previews={previews}
-            highlightedIds={highlightedIds}
-            searchActiveTabId={searchActiveTabId}
-            groupFirstTabIndex={isNative ? groupFirstTabIndex.get(section.groupId) : undefined}
-            groupLastTabIndex={isNative ? groupLastTabIndex.get(section.groupId) : undefined}
-            dropPos={nativeDropPos}
-            setDropPos={setDropPos}
-            callbacks={callbacks}
-          />
-        );
-      })
-      )}
-    </div>
+    <SortableContext items={sortableSectionKeys} strategy={verticalListSortingStrategy}>
+      <div className="flex flex-col gap-1">
+        {sections.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
+            <Icon d={Icons.search} className="h-6 w-6 text-gray-300" />
+            <div className="text-sm font-medium text-gray-600">{t('empty.title')}</div>
+            <div className="text-xs text-gray-400">{t('empty.hint')}</div>
+          </div>
+        ) : (
+          <>
+            {nativeSiteSections.length > 0 && (
+              <CategoryModule
+                title={t('groups.label')}
+                count={nativeSiteSections.length}
+                className="module-shell groups-module"
+              >
+                {nativeSiteSections.map(renderSectionCard)}
+              </CategoryModule>
+            )}
+            {ungroupedSection && renderSectionCard(ungroupedSection)}
+          </>
+        )}
+      </div>
+    </SortableContext>
   );
 }
 
-/** 供父组件计算拆分伙伴集合。 */
+/** 供父组件计算拆分伙伴集合：与当前激活标签同 splitViewId 的其它标签。 */
 export function splitPartnerIds(tabs: readonly TabRecord[], activeTabId: number | undefined): Set<number> {
   const active = tabs.find((tab) => tab.id === activeTabId);
   const activeSplit = active?.splitViewId;
-  if (activeSplit === undefined || active?.active) return new Set();
+  if (activeSplit === undefined) return new Set();
   return new Set(
     tabs
       .filter((tab) => tab.id !== activeTabId && tab.splitViewId === activeSplit)

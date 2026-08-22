@@ -8,7 +8,7 @@
   },
   "tabs": {
     "newTab": "New tab",
-    "currentOpen": "Open",
+    "currentOpen": "",
     "tabCountUnit": "tabs",
     "untitled": "Untitled",
     "unnamedGroup": "Unnamed group",
@@ -26,6 +26,7 @@
     "duplicate": "Duplicate tab",
     "discard": "Discard tab (free memory)",
     "closeTab": "Close tab",
+    "dragToMove": "Drag to reorder (hold here to drag into the fixed space)",
     "locateActive": "Locate current tab",
     "newTabPlaceholder": "New tab",
     "switchTo": "Switch to: {{title}}"
@@ -35,7 +36,11 @@
     "collapseAll": "Collapse all groups",
     "expandAll": "Expand all groups",
     "search": "Search tabs",
-    "cleanDuplicates": "Clean up duplicate tabs"
+    "cleanDuplicates": "Clean up duplicate tabs",
+    "quickRegroup": "Quickly regroup tabs",
+    "quickRegroupHint": "Group ungrouped tabs using the current grouping mode; pinned and existing groups stay unchanged",
+    "quickRegroupNone": "No tab groups need organizing",
+    "quickRegroupDone": "Quickly organized {{count}} groups"
   },
   "duplicates": {
     "none": "No duplicates to clean up",
@@ -61,9 +66,14 @@
     "itemClose": "Close tab and remove from folder",
     "pendingHint": "Waiting for a URL; the page will be saved here once opened",
     "dragToPin": "Drop here to pin",
-    "emptyHint": "Click + to create a fixed folder, then drop tabs into that folder"
+    "reorderPins": "Drag to reorder fixed tabs",
+    "removePin": "Remove pin",
+    "reorderItem": "Drag to reorder",
+    "emptyHint": "Click + to create a folder, or drop a tab/group here directly",
+    "dropResult": "Added {{added}}, moved {{moved}}, skipped {{skipped}} duplicate or unsupported tabs"
   },
   "groups": {
+    "label": "Site groups",
     "newGroup": "New tab group",
     "createFromSelected": "Group selected tabs",
     "edit": "Edit group",
@@ -102,6 +112,8 @@
     "action": "Undo",
     "dismiss": "Dismiss",
     "closed": "Closed {{count}} tabs",
+    "closedPartial": "Closed {{count}} tabs; {{skipped}} could not be closed",
+    "closedSkipped": "No tabs closed ({{count}} were protected or no longer existed)",
     "restored": "Restored {{count}} tabs"
   },
   "settings": {
@@ -164,6 +176,7 @@
     "previewDesc": "Show a screenshot preview on tab hover (requires activeTab permission)",
     "autoGroupNative": "Auto-create native groups",
     "autoGroupNativeHint": "When on, tabs aggregated by site or language are automatically grouped into browser-native tab groups (except opener-tree mode); turning it off disbands the groups created by this feature",
+    "autoGroupNativeDisableConfirm": "Turning this off will disband native groups created by TabHaven without closing tabs. Continue?",
     "undoStackLimit": "Undo stack depth",
     "undoStackLimitHint": "Maximum consecutive close operations that can be undone (oldest records are evicted beyond this)",
     "toastDuration": "Toast duration",
@@ -195,7 +208,10 @@
   "toast": {
     "duplicated": "Tab duplicated",
     "discarded": "Tab hibernated",
+    "discardSkipped": "Tab skipped for safety",
     "discardedMany": "Hibernated {{count}} tabs",
+    "discardedManySkipped": "Hibernated {{count}} tabs; {{skipped}} skipped for safety",
+    "discardSkippedMany": "Skipped {{count}} tabs for safety",
     "activeTabNotFound": "There is no current tab to locate",
     "savedAsFolder": "Saved as fixed folder",
     "folderConverted": "Restored as native tab group",
@@ -210,13 +226,15 @@
     "folderRenamed": "Fixed folder renamed",
     "movedToFolder": "Moved into fixed folder",
     "syncedToGroup": "Converted to native group",
-    "removedFromFolder": "Removed from fixed folder"
+    "removedFromFolder": "Removed from fixed folder",
+    "folderItemMoved": "Moved to target folder"
   },
   "dialog": {
     "confirm": "OK",
     "cancel": "Cancel"
   },
   "errors": {
-    "dataLoadFailed": "Failed to load data. Check extension permissions."
+    "dataLoadFailed": "Failed to load data. Check extension permissions.",
+    "operationFailed": "Operation failed. Please try again."
   }
 }

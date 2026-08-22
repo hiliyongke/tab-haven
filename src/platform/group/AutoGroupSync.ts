@@ -22,7 +22,7 @@ const autoGroupsRepository = new DataRepository<number[]>(
   []
 );
 
-export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<void> {
+export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<number> {
   const createdIds: number[] = [];
   for (const plan of plans) {
     try {
@@ -40,6 +40,7 @@ export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<v
     const existing = await autoGroupsRepository.read();
     await autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
   }
+  return createdIds.length;
 }
 
 /**

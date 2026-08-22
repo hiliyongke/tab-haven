@@ -8,8 +8,8 @@
   },
   "tabs": {
     "newTab": "新建标签页",
-    "currentOpen": "当前打开",
-    "tabCountUnit": "个标签页",
+    "currentOpen": "共",
+    "tabCountUnit": "个标签",
     "untitled": "无标题标签页",
     "unnamedGroup": "未命名标签组",
     "ungrouped": "未分组",
@@ -26,6 +26,7 @@
     "duplicate": "复制标签",
     "discard": "休眠标签（释放内存）",
     "closeTab": "关闭标签",
+    "dragToMove": "拖拽调整顺序（按住此处可拖到固定空间）",
     "locateActive": "定位当前标签",
     "newTabPlaceholder": "新标签页",
     "switchTo": "切换到：{{title}}"
@@ -35,7 +36,11 @@
     "collapseAll": "收起所有分组",
     "expandAll": "展开所有分组",
     "search": "搜索标签",
-    "cleanDuplicates": "清理重复标签"
+    "cleanDuplicates": "清理重复标签",
+    "quickRegroup": "快速智能整理分组",
+    "quickRegroupHint": "按当前聚合方式整理未分组标签；不会改变固定标签或已有分组",
+    "quickRegroupNone": "没有可整理的标签分组",
+    "quickRegroupDone": "已快速整理 {{count}} 个分组"
   },
   "duplicates": {
     "none": "暂无可清理的重复标签",
@@ -56,14 +61,22 @@
     "newFolderPrompt": "新建固定文件夹",
     "rename": "重命名文件夹",
     "renamePrompt": "重命名固定文件夹",
+    "edit": "编辑固定文件夹",
+    "folderNamePlaceholder": "文件夹名称",
     "delete": "删除文件夹",
     "deleteConfirm": "删除固定文件夹“{{name}}”？正在打开的标签不会关闭。",
+    "confirmDelete": "确认删除",
     "itemClose": "关闭标签并移出文件夹",
     "pendingHint": "等待输入网址，打开页面后会自动保存到此文件夹",
     "dragToPin": "拖到这里固定",
-    "emptyHint": "点击 + 新建固定文件夹，然后将标签拖入文件夹"
+    "reorderPins": "拖拽调整固定标签顺序",
+    "removePin": "移除固定入口",
+    "reorderItem": "拖拽调整顺序",
+    "emptyHint": "点击 + 新建文件夹，或直接把标签/分组拖到这里",
+    "dropResult": "新增 {{added}} 个，移动 {{moved}} 个，跳过 {{skipped}} 个重复或不可用标签"
   },
   "groups": {
+    "label": "站点分组",
     "newGroup": "新建标签组",
     "createFromSelected": "把选中的标签组成新组",
     "edit": "编辑标签组",
@@ -163,6 +176,7 @@
     "previewDesc": "悬停标签时显示其截图预览（需 activeTab 权限）",
     "autoGroupNative": "自动创建原生标签组",
     "autoGroupNativeHint": "开启后，按网站或语言聚合的标签会自动组成浏览器原生标签组（来源树模式除外）；关闭开关时会解散由本功能创建的组",
+    "autoGroupNativeDisableConfirm": "关闭后会解散由 TabHaven 创建的原生标签组，但不会关闭标签。确定继续吗？",
     "undoStackLimit": "撤销栈深度",
     "undoStackLimitHint": "最多可连续撤销的关闭操作次数（超出后最早的记录被淘汰）",
     "toastDuration": "提示条时长",
@@ -213,13 +227,16 @@
     "folderRenamed": "已重命名固定文件夹",
     "movedToFolder": "已移入固定文件夹",
     "syncedToGroup": "已转为原生标签组",
-    "removedFromFolder": "已从固定文件夹移除"
+    "removedFromFolder": "已从固定文件夹移除",
+    "folderItemMoved": "已移动到目标文件夹"
   },
   "dialog": {
     "confirm": "确定",
-    "cancel": "取消"
+    "cancel": "取消",
+    "save": "保存"
   },
   "errors": {
-    "dataLoadFailed": "数据加载失败，请检查扩展权限"
+    "dataLoadFailed": "数据加载失败，请检查扩展权限",
+    "operationFailed": "操作失败，请稍后重试"
   }
 }

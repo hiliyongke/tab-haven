@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { canSafelyDiscardTab } from '@/core/tab-types';
 import { mapTab } from '@/platform/tabs';
+import { readSession } from '@/platform/storage/session';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
 import { settingsRepository } from '@/platform/storage/repositories';
 import {
@@ -106,16 +107,20 @@ export default defineBackground(() => {
     try {
       const settings = await settingsRepository.read();
       if (!settings.autoDiscardEnabled) return;
-      const tabs = await browser.tabs.query({
-        windowType: 'normal'
-      });
+      const [tabs, session] = await Promise.all([
+        browser.tabs.query({ windowType: 'normal' }),
+        readSession()
+      ]);
+      const boundTabIds = new Set(Object.values(session.itemTabBindings));
       const cutoff = Date.now() - settings.autoDiscardMinutes * 60_000;
       for (const rawTab of tabs) {
         const tab = mapTab(rawTab);
         if (
           tab.id >= 0 &&
+          !boundTabIds.has(tab.id) &&
+          typeof tab.lastAccessed === 'number' &&
           canSafelyDiscardTab(tab) &&
-          (tab.lastAccessed ?? 0) < cutoff
+          tab.lastAccessed < cutoff
         ) {
           await browser.tabs.discard(tab.id).catch(() => {});
         }

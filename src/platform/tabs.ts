@@ -86,13 +86,18 @@ export async function activateTab(tabId: number): Promise<void> {
   await browser.tabs.update(tabId, { active: true });
 }
 
-/** 关闭标签（撤销联动在调用方，本层只做原子操作）。 */
-export async function closeTabs(tabIds: readonly number[]): Promise<void> {
-  try {
-    await browser.tabs.remove([...tabIds]);
-  } catch {
-    // 系统标签或已关闭标签无法移除，静默忽略
+/** 关闭标签并返回实际成功的标签 id，供撤销和批量反馈使用。 */
+export async function closeTabs(tabIds: readonly number[]): Promise<number[]> {
+  const closedIds: number[] = [];
+  for (const tabId of tabIds) {
+    try {
+      await browser.tabs.remove(tabId);
+      closedIds.push(tabId);
+    } catch {
+      // 系统标签或已关闭标签无法移除，继续处理其余标签
+    }
   }
+  return closedIds;
 }
 
 /** 切换静音。 */
@@ -160,12 +165,14 @@ export function computeReorderIndex(params: {
   return ordered.findIndex((tab) => tab.id === sourceId);
 }
 
-/** 冻结（卸载）标签以释放内存。休眠后的标签点击会重新加载。 */
-export async function discardTab(tabId: number): Promise<void> {
+/** 冻结（卸载）标签并返回是否成功。休眠后的标签点击会重新加载。 */
+export async function discardTab(tabId: number): Promise<boolean> {
   try {
     await browser.tabs.discard(tabId);
+    return true;
   } catch {
-    // 活跃标签、已丢弃标签或系统页面无法丢弃，静默忽略
+    // 活跃标签、已丢弃标签或系统页面无法丢弃
+    return false;
   }
 }
 

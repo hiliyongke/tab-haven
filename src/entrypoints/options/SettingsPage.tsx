@@ -300,7 +300,10 @@ export function SettingsPage() {
         >
           <Toggle
             checked={settings.autoGroupNative}
-            onChange={(v) => set('autoGroupNative', v)}
+            onChange={(v) => {
+              if (!v && settings.autoGroupNative && !window.confirm(t('settings.autoGroupNativeDisableConfirm'))) return;
+              void set('autoGroupNative', v);
+            }}
             ariaLabel={t('settings.autoGroupNative')}
           />
         </Row>

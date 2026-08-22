@@ -1,5 +1,8 @@
 # TabHaven 长期记忆
 
+## 用户协作偏好（稳定，务必遵守）
+- **禁止自己编译/运行/杀进程**：用户本地一直自己跑 `pnpm dev`，我不得执行 `pnpm dev`、`pnpm build`、`pnpm test` 等会占用端口或干扰其运行环境的命令；也不得 kill wxt/vite 进程。只允许做代码/文件编辑（可用 typecheck/lint 做静态校验，但不要启动 dev server）。若用户环境异常，提示用户自行重启 `pnpm dev`。
+
 ## 用户设计偏好（稳定，务必遵守）
 
 - **核心定位**：TabHaven 是「高效管理 tab」的工具，UI 的一切都要服务于效率与信息密度。

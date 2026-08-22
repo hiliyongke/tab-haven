@@ -79,7 +79,7 @@ export const SettingsSchema = z.object({
   previewEnabled: z.boolean().default(false),
   /** 临时区非固定标签聚合模式：site 按网站 / opener 按来源树 / language 按语言。 */
   groupMode: z.enum(['site', 'opener', 'language']).default('site'),
-  /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups（只创建、不自动解散）。 */
+  /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups；关闭开关会解散本功能创建的组。 */
   autoGroupNative: z.boolean().default(false),
   /** 撤销栈深度（FIFO 淘汰上限）。 */
   undoStackLimit: z.number().int().min(5).max(50).default(10),

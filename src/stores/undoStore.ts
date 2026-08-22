@@ -7,6 +7,7 @@ import type { TabRecord } from '@/core/tab-types';
 import { DataRepository } from '@/platform/storage/DataRepository';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { restoreTabRecords } from '@/platform/undo/RestoreEngine';
+import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 
 /**
@@ -43,79 +44,101 @@ interface UndoState {
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const useUndoStore = create<UndoState>()((set, get) => ({
-  batches: [],
-  toast: null,
-  ready: false,
+export const useUndoStore = create<UndoState>()((set, get) => {
+  const scheduleToastClear = (): void => {
+    clearTimeout(toastTimer);
+    // 提示条显示时长来自设置（默认 7 秒），不再硬编码。
+    const durationSec = useDataStore.getState().settings.toastDurationSec;
+    toastTimer = setTimeout(() => {
+      set({ toast: null });
+    }, durationSec * 1000);
+  };
 
-  load: async () => {
-    const settings = await settingsRepository.read();
-    const batches = settings.persistUndo ? await undoRepository.read() : [];
-    if (!settings.persistUndo) await undoRepository.write([]);
-    set({ batches, ready: true });
-  },
+  return {
+    batches: [],
+    toast: null,
+    ready: false,
 
-  closeWithUndo: async (tabs, tabIds) => {
-    const idSet = new Set(tabIds);
-    const closing = tabs.filter((tab) => idSet.has(tab.id));
-    if (closing.length === 0) return;
+    load: async () => {
+      const settings = await settingsRepository.read();
+      const batches = settings.persistUndo ? await undoRepository.read() : [];
+      if (!settings.persistUndo) await undoRepository.write([]);
+      set({ batches, ready: true });
+    },
 
-    const groups = useTabStore.getState().groups;
-    const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
-    const batch = createUndoBatch(
-      'close',
-      closing.map((tab) => toUndoTabRecord(tab, groupNameById))
-    );
-
-    const next = pushBatch(get().batches, batch);
-    set({ batches: next });
-    const settings = await settingsRepository.read();
-    if (settings.persistUndo) await undoRepository.write(next);
-    else await undoRepository.write([]);
-
-    await useTabStore.getState().closeTabs(closing.map((tab) => tab.id));
-
-    set({
-      toast: {
-        message: i18n.t('undo.closed', { count: closing.length }),
-        canUndo: true,
-        batchId: batch.id
+    closeWithUndo: async (tabs, tabIds) => {
+      const idSet = new Set(tabIds);
+      const requested = tabs.filter((tab) => idSet.has(tab.id));
+      const closing = requested.filter((tab) => !tab.pinned);
+      if (closing.length === 0) {
+        if (requested.length > 0) {
+          set({ toast: { message: i18n.t('undo.closedSkipped', { count: requested.length }), canUndo: false, batchId: undefined } });
+          scheduleToastClear();
+        }
+        return;
       }
-    });
-    scheduleToastClear();
-  },
 
-  undo: async () => {
-    const [latest, remaining] = popBatch(get().batches);
-    if (!latest) return;
+      const settings = await settingsRepository.read();
+      const closedIds = await useTabStore.getState().closeTabs(closing.map((tab) => tab.id));
+      const closedIdSet = new Set(closedIds);
+      const closed = closing.filter((tab) => closedIdSet.has(tab.id));
+      if (closed.length === 0) {
+        set({ toast: { message: i18n.t('undo.closedSkipped', { count: requested.length }), canUndo: false, batchId: undefined } });
+        scheduleToastClear();
+        return;
+      }
 
-    set({ batches: remaining });
-    const settings = await settingsRepository.read();
-    if (settings.persistUndo) await undoRepository.write(remaining);
-    clearTimeout(toastTimer);
-    set({ toast: null });
+      const groups = useTabStore.getState().groups;
+      const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
+      const batch = createUndoBatch(
+        'close',
+        closed.map((tab) => toUndoTabRecord(tab, groupNameById))
+      );
 
-    const windowId = useTabStore.getState().currentWindowId;
-    if (windowId === undefined) return;
-    const count = await restoreTabRecords(latest.entries, windowId);
-    set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
-    scheduleToastClear();
-  },
+      const next = pushBatch(get().batches, batch, settings.undoStackLimit);
+      set({ batches: next });
+      if (settings.persistUndo) await undoRepository.write(next);
+      else await undoRepository.write([]);
 
-  clearToast: () => {
-    clearTimeout(toastTimer);
-    set({ toast: null });
-  },
+      const skipped = requested.length - closed.length;
+      set({
+        toast: {
+          message:
+            skipped > 0
+              ? i18n.t('undo.closedPartial', { count: closed.length, skipped })
+              : i18n.t('undo.closed', { count: closed.length }),
+          canUndo: true,
+          batchId: batch.id
+        }
+      });
+      scheduleToastClear();
+    },
 
-  notify: (message) => {
-    set({ toast: { message, canUndo: false, batchId: undefined } });
-    scheduleToastClear();
-  }
-}));
+    undo: async () => {
+      const windowId = useTabStore.getState().currentWindowId;
+      if (windowId === undefined) return;
+      const [latest, remaining] = popBatch(get().batches);
+      if (!latest) return;
 
-function scheduleToastClear(): void {
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    useUndoStore.setState({ toast: null });
-  }, 7_000);
-}
+      set({ batches: remaining });
+      const settings = await settingsRepository.read();
+      if (settings.persistUndo) await undoRepository.write(remaining);
+      clearTimeout(toastTimer);
+      set({ toast: null });
+
+      const count = await restoreTabRecords(latest.entries, windowId);
+      set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
+      scheduleToastClear();
+    },
+
+    clearToast: () => {
+      clearTimeout(toastTimer);
+      set({ toast: null });
+    },
+
+    notify: (message) => {
+      set({ toast: { message, canUndo: false, batchId: undefined } });
+      scheduleToastClear();
+    }
+  };
+});

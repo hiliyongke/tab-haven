@@ -82,6 +82,24 @@ export function reorderFolders(
   return next;
 }
 
+/** 永久固定标签排序：把 source 移到 target 前/后。 */
+export function reorderPins(
+  pins: PersistentPin[],
+  options: { sourceId: string; targetId: string; placeAfter: boolean }
+): PersistentPin[] {
+  const { sourceId, targetId, placeAfter } = options;
+  const sourceIndex = pins.findIndex((pin) => pin.id === sourceId);
+  const targetIndex = pins.findIndex((pin) => pin.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return pins;
+
+  const next = [...pins];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) return pins;
+  const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
+  next.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
+  return next;
+}
+
 /** pin 身份去重（保留首个，过滤后续同身份）。 */
 export function dedupePins(pins: PersistentPin[]): PersistentPin[] {
   const seen = new Set<string>();

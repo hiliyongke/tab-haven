@@ -1,65 +1,97 @@
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TabRecord } from '@/core/tab-types';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 
+/** dnd-kit 排序接入点（顶部永久固定区 PinnedStrip 传入；无排序的场景不传）。 */
+export interface PinnedTileSortable {
+  setNodeRef: (node: HTMLElement | null) => void;
+  attributes: object;
+  listeners: object | undefined;
+  style: CSSProperties;
+  isDragging: boolean;
+}
+
 /**
- * 固定标签磁贴（浏览器原生固定区 / 固定空间共用）：
+ * 固定标签磁贴（浏览器原生固定区 / 顶部永久固定区共用）：
  * 主按钮（单击激活、中键关闭）+ 悬停取消固定 / 复制。
+ * 传 `sortable` 时参与 dnd-kit 排序。
  */
 export function PinnedTile({
-  tab,
-  onActivate,
-  onTogglePin,
-  onClose,
-  onDuplicate
+  title,
+  favIconUrl,
+  url,
+  isActive = false,
+  isDiscarded = false,
+  isAudible = false,
+  onClick,
+  onMiddleClick,
+  onUnpin,
+  onDuplicate,
+  unpinTitle,
+  sortable
 }: {
-  tab: TabRecord;
-  onActivate: (tabId: number) => void;
-  onTogglePin: (tab: TabRecord) => void;
-  /** 中键关闭。 */
-  onClose?: (tab: TabRecord) => void;
-  onDuplicate?: (tab: TabRecord) => void;
+  title: string;
+  favIconUrl?: string;
+  url?: string;
+  isActive?: boolean;
+  isDiscarded?: boolean;
+  isAudible?: boolean;
+  onClick: () => void;
+  /** 中键关闭（仅关闭页面，固定入口保留）。 */
+  onMiddleClick?: () => void;
+  onUnpin?: () => void;
+  onDuplicate?: () => void;
+  /** 移除按钮文案（默认「取消固定」，永久固定区传「移除固定入口」）。 */
+  unpinTitle?: string;
+  sortable?: PinnedTileSortable;
 }) {
   const { t } = useTranslation();
   const tileClass =
     'pinned-tile' +
-    (tab.active ? ' is-active' : '') +
-    (tab.discarded ? ' is-discarded' : '') +
-    (tab.audible ? ' is-audible' : '');
+    (isActive ? ' is-active' : '') +
+    (isDiscarded ? ' is-discarded' : '') +
+    (isAudible ? ' is-audible' : '') +
+    (sortable?.isDragging ? ' is-dragging' : '');
 
   return (
-    <article className={tileClass} data-tabhaven-tab-id={tab.id}>
+    <article className={tileClass}>
       <button
+        ref={sortable?.setNodeRef}
         type="button"
         className="pinned-main"
-        title={tab.title || tab.url}
-        aria-label={tab.title || tab.url}
-        onClick={() => onActivate(tab.id)}
+        style={sortable?.style}
+        title={title || url}
+        aria-label={title || url}
+        onClick={onClick}
         onAuxClick={(event) => {
-          if (event.button === 1) onClose?.(tab);
+          if (event.button === 1) onMiddleClick?.();
         }}
+        {...sortable?.attributes}
+        {...sortable?.listeners}
       >
         <span className="pinned-favicon-wrap">
-          <Favicon src={tab.favIconUrl} title={tab.title || ''} size={18} />
+          <Favicon src={favIconUrl} title={title || ''} size={18} />
         </span>
       </button>
-      <button
-        type="button"
-        className="row-action pinned-unpin"
-        title={t('tabs.unpin')}
-        aria-label={t('tabs.unpin')}
-        onClick={() => onTogglePin(tab)}
-      >
-        <Icon d={Icons.close} className="h-3 w-3" />
-      </button>
+      {onUnpin && (
+        <button
+          type="button"
+          className="row-action pinned-unpin"
+          title={unpinTitle ?? t('tabs.unpin')}
+          aria-label={unpinTitle ?? t('tabs.unpin')}
+          onClick={onUnpin}
+        >
+          <Icon d={Icons.close} className="h-3 w-3" />
+        </button>
+      )}
       {onDuplicate && (
         <button
           type="button"
           className="row-action pinned-duplicate"
           title={t('tabs.duplicate')}
           aria-label={t('tabs.duplicate')}
-          onClick={() => onDuplicate(tab)}
+          onClick={onDuplicate}
         >
           <Icon d={Icons.copy} className="h-3 w-3" />
         </button>

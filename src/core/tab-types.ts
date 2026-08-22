@@ -47,7 +47,12 @@ export interface TabGroupRecord {
 }
 
 /** 判断标签是否满足基础安全休眠条件。浏览器 API 无法可靠暴露未提交表单状态，因此保守跳过活跃、固定、播放声音、需要关注、加载中和禁止自动休眠的标签。 */
-export function canSafelyDiscardTab(tab: Pick<TabRecord, 'active' | 'pinned' | 'discarded' | 'audible' | 'attention' | 'status' | 'autoDiscardable'>): boolean {
+export function canSafelyDiscardTab(
+  tab: Pick<
+    TabRecord,
+    'active' | 'pinned' | 'discarded' | 'audible' | 'attention' | 'status' | 'autoDiscardable' | 'lastAccessed'
+  >
+): boolean {
   return (
     !tab.active &&
     !tab.pinned &&
@@ -55,7 +60,9 @@ export function canSafelyDiscardTab(tab: Pick<TabRecord, 'active' | 'pinned' | '
     !tab.audible &&
     !tab.attention &&
     tab.status !== 'loading' &&
-    tab.autoDiscardable !== false
+    tab.autoDiscardable !== false &&
+    typeof tab.lastAccessed === 'number' &&
+    Number.isFinite(tab.lastAccessed)
   );
 }
 
