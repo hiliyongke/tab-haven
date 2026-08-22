@@ -1,0 +1,52 @@
+packages:
+  # i18n-kit：自研的文案工具集（扫描/编译/守卫），独立成包以便其它项目直接引用
+  - packages/*
+  # apps/*：可部署应用（扩展 extension + 官网 site）。
+  # 刻意不放在 packages/ 下：`scripts/privacy-check.mjs` 会扫描 packages/ 里的
+  # 全部 .ts/.tsx（那是扩展的发布门禁），官网不该被它收编。
+  # 同理也不放在 apps/extension/src/ 或 apps/extension/public/ 下：前者会被扩展的
+  # typecheck 收编，后者会被 wxt 打进扩展包。
+  - apps/*
+    # 不要关 autoInstallPeers：关掉会连第三方包（如 vitest → @vitest/utils）的 peer
+    # 一起停装，直接起不来。要收敛版本用下面的 overrides。
+    # （已在 .npmrc 里显式固化这条，此处保留说明以免有人改配置时不知缘由）
+
+# 依赖版本的单一事实来源：跨包重复声明的工具链版本集中在这里，包里写 `catalog:`。
+#
+# 与 overrides 的分工：overrides 管「所有 importer 必须解析到同一份」（防分叉），
+# catalog 管「版本写在哪」（防漂移）。两者互补，catalog 不是 overrides 的替代品——
+# 把 react 之类进了 overrides 的包再写进 catalog 属于重复约束，故此处不收。
+catalog:
+  '@types/node': ^26.6.5
+  '@types/react': ^19.3.0
+  '@types/react-dom': ^19.3.0
+  '@eslint/js': ^10.0.1
+  '@vitejs/plugin-react': ^6.1.2
+  eslint: ^10.12.0
+  eslint-config-prettier: ^10.1.8
+  eslint-plugin-react-hooks: ^7.1.1
+  typescript: ^5.9.3
+  typescript-eslint: ^8.71.2
+  vitest: ^4.1.11
+
+allowBuilds:
+  simple-git-hooks: true
+
+# 整仓强制单副本（pnpm 11 起 overrides 只认这里，写进 package.json 的 `pnpm` 字段会被忽略）。
+#
+# 必须钉死的原因：`packages/i18n-kit` 的 peer 范围是宽松的（react >=18 / i18next >=23 /
+# react-i18next >=15），而 pnpm 会按它自己的范围**独立解析**出一份放进
+# `packages/i18n-kit/node_modules`。只升根包时两边版本就分叉，产物里出现两份
+# react-i18next —— 注册实例与取实例落在不同副本上，侧边栏挂载即崩。
+# overrides 对所有 importer 生效，两侧因此解析到同一份（守卫见
+# `tests/config/dependency-integrity.test.ts`，分叉时 `pnpm test` 会红）。
+#
+# 注意保护范围已不止扩展与 i18n-kit：官网 `site/` 也依赖这份 overrides 拿同一份
+# react（它同时被扩展侧栏与官网 SSR 使用）。想动 overrides 时，官网要一起验证。
+overrides:
+  # 一律用范围钉版：这里要保证的是「所有 importer 解析到同一份」，不是锁死具体号，
+  # 将来升级不必同步改这里（升完跑一遍守卫测试即可）。
+  react: ^19.3.0
+  react-dom: ^19.3.0
+  react-i18next: ^17.0.16
+  i18next: ^26.4.4

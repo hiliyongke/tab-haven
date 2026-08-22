@@ -1,0 +1,68 @@
+# ---------- 依赖 ----------
+node_modules/
+
+# ---------- 构建产物（WXT / 扩展打包） ----------
+.output/
+.wxt/
+dist/
+stats.html
+*.zip
+*.crx
+*.pem
+*.key
+*.xpi
+
+# ---------- 测试与覆盖率 ----------
+coverage/
+.vitest-cache/
+
+# ---------- 文案（i18n） ----------
+# `i18n/source/`、`i18n/translation/` 是**词典源**，必须入库
+# ——译文是资产，漏入库等于整包译文丢失且无法回溯。
+# 条目仍锚定仓库根：不带前导斜杠会匹配任意层级的 i18n 目录，连 src/i18n/ 一起忽略。
+# 扩展词典随扩展包住在 apps/extension/ 下，锚点跟着改。
+/apps/extension/i18n/report.md
+/apps/extension/i18n/untranslated/
+/apps/extension/i18n/retired/
+# 官网（apps/site/）是独立工程，有自己的词典；根规则带前导斜杠、只锚定仓库根，
+# 覆盖不到 apps/site/i18n，故按同样口径再声明一遍。
+/apps/site/i18n/report.md
+/apps/site/i18n/untranslated/
+/apps/site/i18n/retired/
+
+# ---------- 日志 ----------
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------- 环境变量与密钥（扩展项目尤其禁止入库） ----------
+.env
+.env.*
+*.local
+!.env.example
+
+# ---------- 缓存与增量构建 ----------
+.eslintcache
+*.tsbuildinfo
+.vite/
+
+# ---------- 编辑器与系统文件 ----------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---------- 助手工作区 ----------
+# .codebuddy 下的 rules/agents/skills/commands/README 是团队共享的 AI 工作流规范，随库跟踪；
+# 仅忽略本机私有产物（跨会话记忆、插件市场缓存、并行 Agent 团队的运行时状态）：
+.codebuddy/memory/
+.codebuddy/marketplace/
+.codebuddy/plan/
+.codebuddy/plans/
+# teams/ 是并行 Agent 团队的会话运行时状态（team-lead / 成员 agent 的 JSON），
+# 每次派单都会重写、且只对本机会话有意义，随库跟踪只会污染 diff。
+.codebuddy/teams/
+.workbuddy

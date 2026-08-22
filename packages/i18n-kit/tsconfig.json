@@ -1,0 +1,25 @@
+{
+  // 本包自带类型检查，与扩展同严格度（strict / noUncheckedIndexedAccess / noUnused*）。
+  //
+  // 为什么必须有这份配置：扩展的 tsc 只把**被 import 拉进来**的 i18n-kit 源码纳进来
+  // （.wxt 生成的 include 相对 apps/extension，覆盖不到 packages/），本包 tests/ 因此
+  // 完全没有类型检查 —— 迁移前它们在仓库根 tests/ 下是被覆盖的。配置随包走才能补上。
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "resolveJsonModule": true,
+    // 本包源码由 Node 原生 ESM 直接加载，相对导入带 `.ts` 后缀，需显式允许
+    "allowImportingTsExtensions": true,
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"]
+}

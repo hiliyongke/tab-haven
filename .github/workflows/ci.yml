@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# 最小权限：本工作流只读代码，不需要写权限。
+permissions:
+  contents: read
+
+# 同一分支的新推送会取消在途的旧任务，避免排队浪费。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: 质量门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 不写死版本号：pnpm/action-setup 会读 package.json 的 packageManager 字段，
+      # 避免「本地已升 pnpm、CI 还装旧版」导致依赖解析结果与本地不一致。
+      - uses: pnpm/action-setup@v4
+
+      # 与 `package.json` 的 engines.node（>=26）和 `.nvmrc` 保持一致：
+      # CI 跑在更低的 Node 上会让本地无法复现的失败（依赖解析 / 运行时 API）流入主干。
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # 先打印版本：下次 CI 红时，日志第一行就能看出是不是 pnpm/Node 版本漂移。
+      - name: 安装依赖
+        run: |
+          node -v
+          pnpm -v
+          pnpm install --frozen-lockfile
+
+      # 与本地 `pnpm check` 同源，另外补了两项本地不跑的：format:check 与依赖审计。
+      # 顺序：format:check → typecheck → lint → check:i18n → check:ui → test → audit → build → check:privacy
+      - name: 格式一致性
+        run: pnpm format:check
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 代码规范
+        run: pnpm lint
+
+      - name: 文案键一致性
+        run: pnpm check:i18n
+
+      # 设计令牌守卫（未受控调色板 / 字号 / 对比度）。
+      # 必须与本地同跑：只在本地存在的守卫等于没建。
+      - name: UI 设计令牌
+        run: pnpm check:ui
+
+      - name: 测试
+        run: pnpm test
+
+      # 供应链安全分两级：
+      # 1) 生产依赖 —— 高危及以上阻断合并（这些包会真正打进扩展产物，必须干净）。
+      #    `--ignore-registry-errors`：Advisory 服务抖动/超时不该让构建变红（pnpm 官方为该
+      #    用途提供此开关，仅豁免「registry 报错」，不豁免真实漏洞）。
+      - name: 依赖漏洞审计（生产依赖，阻断）
+        run: pnpm audit --prod --audit-level=high --ignore-registry-errors
+
+      # 2) 全量（含 dev）—— 仅出报告，不阻断合并。
+      #    理由：告警集中在构建链的传递依赖（jsdom>undici、eslint>minimatch>brace-expansion、
+      #    tailwindcss/vite>source-map-js），不进产物，且只有做破坏性升级才能消掉；Advisory 库
+      #    每天新增条目，阻断会让「代码没改、CI 也变红」。
+      #    真要消掉某条：用 package.json 的 pnpm.overrides，不要删这一步。
+      - name: 依赖漏洞审计（含开发依赖，仅报告）
+        continue-on-error: true
+        run: pnpm audit --audit-level=high --ignore-registry-errors
+
+      - name: 生产构建
+        run: pnpm build
+
+      - name: 隐私回归（权限冻结 + 零网络调用）
+        run: pnpm check:privacy

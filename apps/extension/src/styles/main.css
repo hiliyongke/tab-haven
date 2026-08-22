@@ -1,0 +1,2286 @@
+@import 'tailwindcss';
+
+/*
+ * z-index 规范（z-stack，禁止随意新增层级）
+ * --------------------------------------------------------------
+ * 30  .search-bar / .pinned-tile.is-dragging / 预览浮层
+ * 35  .status-toast（位于常规内容之上、所有模态遮罩之下）
+ * 40  .is-sorting 排序中浮动 / DragOverlay
+ * 50  模态遮罩层：Dialog / CommandPalette / OnboardingTour
+ *     —— 三者同层，任意时刻仅其一挂载。必须高于 status-toast：
+ *        二者同处 .app 层叠上下文（由 container-type: inline-size 创建），
+ *        若遮罩低于 35，撤销提示会盖在「导入确认框」之上，语义自相矛盾。
+ * --------------------------------------------------------------
+ */
+
+/*
+ * 设计令牌系统（redesign）
+ * --------------------------------------------------------------
+ * 复用 Tailwind v4 的工具类名（gray / blue / red），但将其重定向到
+ * 本项目统一的「中性灰 + 品牌绿 (#347554)」语义变量，使既有组件代码
+ * 无需逐处改写即可整体换肤。
+ *
+ * 机制：@theme 仅声明「色名 -> CSS 变量」的引用；真实数值放在 :root 与
+ * :root[data-theme="dark"] 中，随三态主题（system/light/dark）切换。
+ * 这与 ThemeApplier / theme-init 写入的 documentElement.dataset.theme 对齐。
+ */
+
+@theme {
+  /* 字号刻度：text-xs(12px) 向下一步即为最小字号，供密集侧栏小字使用。
+     10px 仅用于图标内文与徽角等极窄容器，正文说明一律 ≥ 11px。
+
+     伴生行高必须声明：不声明时 Tailwind v4 的 text-2xs/3xs 只输出 font-size，
+     元素行高回落到继承值（≈1.5），于是「同类徽章并排差 5px」——高度取决于
+     外层行高而非自身字号，改一处外层就漂一处。
+     取值：2xs(10px) 只服务徽角/图标内文 → 1；3xs(11px) 大量用作正文说明 → 1.45
+     （与 body 默认观感一致）。需要紧凑的徽角用 .chip 覆盖为 1，长段落用
+     leading-relaxed 覆盖 —— Tailwind v4 里 leading-* 排在 text-* 之后输出，
+     同特异性下后者胜出，故显式 leading 不受本声明影响。 */
+  --text-2xs: 0.625rem; /* 10px */
+  --text-2xs--line-height: 1;
+  --text-3xs: 0.6875rem; /* 11px */
+  --text-3xs--line-height: 1.45;
+
+  /* 间距基准：4px。显式声明（即便与 Tailwind 默认值相同）是为了让「本项目
+     用 4px 网格、一切间距都是它的整数倍」成为可被工具校验的事实，而不是口头约定。 */
+  --spacing: 0.25rem; /* 4px */
+
+  /* 圆角刻度：小控件 → 卡片/弹窗，逐级 2px 递增，避免同一屏出现五六种圆角。 */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.375rem; /* 6px */
+  --radius-lg: 0.5rem; /* 8px */
+  --radius-xl: 0.75rem; /* 12px */
+
+  /* 阴影改走 elev 令牌（见 :root 的 --elev-*）：Tailwind 默认 shadow-lg/xl 是
+     纯黑，与本项目暖调阴影同屏混用会出现「有黑有暖」的割裂。 */
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --shadow-elev-3: var(--elev-3);
+
+  --color-gray-50: var(--c-gray-50);
+  --color-gray-100: var(--c-gray-100);
+  --color-gray-200: var(--c-gray-200);
+  --color-gray-300: var(--c-gray-300);
+  --color-gray-400: var(--c-gray-400);
+  --color-gray-500: var(--c-gray-500);
+  --color-gray-600: var(--c-gray-600);
+  --color-gray-700: var(--c-gray-700);
+  --color-gray-800: var(--c-gray-800);
+  --color-gray-900: var(--c-gray-900);
+
+  /* 强调色 = 品牌绿（语义化别名，替代旧 blue- 误称） */
+  --color-accent-50: var(--c-brand-50);
+  --color-accent-100: var(--c-brand-100);
+  --color-accent-200: var(--c-brand-200);
+  --color-accent-300: var(--c-brand-300);
+  --color-accent-400: var(--c-brand-400);
+  --color-accent-500: var(--c-brand-500);
+  --color-accent-600: var(--c-brand-600);
+  --color-accent-700: var(--c-brand-700);
+
+  /* 警示色（暖琥珀，替代旧 amber- 未受控色） */
+  --color-warn-50: var(--c-warn-50);
+  --color-warn-100: var(--c-warn-100);
+  --color-warn-200: var(--c-warn-200);
+  --color-warn-600: var(--c-warn-600);
+  --color-warn-700: var(--c-warn-700);
+  --color-warn-800: var(--c-warn-800);
+
+  --color-red-50: var(--c-red-50);
+  --color-red-500: var(--c-red-500);
+  --color-red-600: var(--c-red-600);
+  /* 危险按钮的 hover 必须有更深的令牌可走，否则只能用透明度表达 hover，
+     成为全站唯一的例外变体。 */
+  --color-red-700: var(--c-red-700);
+
+  /* 语义表面（供 bg-surface / bg-canvas 等工具类引用，支持暗色换肤） */
+  --color-surface: var(--surface);
+  --color-canvas: var(--canvas);
+
+  /* 强调色表面上的前景文字（深色模式强调色提亮后白字对比度不足，自动换深色字） */
+  --color-on-accent: var(--c-on-accent);
+
+  /* 控件边框专用（与装饰性分隔线解耦）：分隔线可极淡，控件边界必须 ≥3:1。
+     表单控件一律用 border-control，禁止再用 border-gray-200。 */
+  --color-control: var(--border-control);
+}
+
+/* ---------- 浅色（默认） ---------- */
+:root {
+  color-scheme: light;
+
+  /* 中性灰梯度（温暖石墨） */
+  --c-gray-50: #f5f6f4;
+  --c-gray-100: #eceeec;
+  --c-gray-200: #dde0dd;
+  --c-gray-300: #c4c9c4;
+  --c-gray-400: #98a099;
+  /* 弱文本：对画布 #f5f4f0 达 4.60:1（WCAG AA）；再浅一档即不达标，勿下调 */
+  --c-gray-500: #687168;
+  --c-gray-600: #566056;
+  --c-gray-700: #414a42;
+  --c-gray-800: #2f362f;
+  --c-gray-900: #232923;
+
+  /* 品牌绿梯度 */
+  --c-brand-50: #eaf3ec;
+  --c-brand-100: #d8ebdd;
+  --c-brand-200: #b6d8c0;
+  --c-brand-300: #79b88f;
+  --c-brand-400: #4d9a6b;
+  --c-brand-500: #347554; /* 主强调 */
+  --c-brand-600: #2a6247;
+  --c-brand-700: #214d39;
+
+  /* 危险色（砖红，偏低饱和） */
+  --c-red-50: #fbecea;
+  --c-red-200: #f0cdc6;
+  --c-red-500: #c0584a;
+  --c-red-600: #a8432f;
+  --c-red-700: #863322;
+
+  /* 警示色（暖琥珀，用于重复标签/遗留数据提示） */
+  --c-warn-50: #fbf3da;
+  --c-warn-100: #f6e8bf;
+  --c-warn-200: #f0d98f;
+  --c-warn-600: #b5891f;
+  /* 同时对 --c-warn-50 (5.06:1) 与 --c-warn-100 (4.60:1) 达标 */
+  --c-warn-700: #7f641c;
+  --c-warn-800: #6f5616;
+
+  /* 语义表面（供少量自定义组件直接引用） */
+  --surface: #ffffff;
+  /* 页面画布：暖调米灰（暖底 + 绿强调的成熟配色结构，与白色表面层次清晰） */
+  --canvas: #f5f4f0;
+  /* 行/分区头的悬停与键盘焦点底色。
+     不能用 --c-gray-50：浅色下 gray-50(#f5f6f4) 与画布(#f5f4f0) 仅差 ΔE<1、深色下
+     各预设的 gray-50 与 canvas **完全同值**（#1d2220 / #1c2126 / #211e26 / #241f1c /
+     #1e1f20），会让深色模式下整个列表失去悬停与键盘焦点指示。
+     改用 gray-100：浅色比画布深一档、深色比画布亮一档，两态方向都正确。
+     这里写 var(--c-gray-100) 而非具体色值：变量在使用时求值，各色相预设
+     （data-hue）覆盖了 gray-100 后本令牌自动跟随，无需在每个预设块重复声明。 */
+  --row-hover: var(--c-gray-100);
+  --border-subtle: #dde0dd;
+  /* 控件边框：对 --canvas 达 3.21–3.26:1、对 --surface 达 3.57:1
+     （WCAG 1.4.11 非文本对比）。控件既可能落在 surface 也可能落在 canvas 上，
+     因此按更严格的 canvas 取值。装饰性分隔线继续用 --border-subtle。 */
+  --border-control: #868887;
+  /* 焦点环取品牌 500 实色：对画布 5.00:1；半透明合成仅 1.55:1，浅色下近乎不可见。 */
+  --ring: var(--c-brand-500);
+  --shadow-tint: 38 55 47;
+  --count-badge-bg: var(--c-brand-500);
+  --c-on-accent: #ffffff;
+
+  /* 阴影令牌（elevation）：统一走 shadow-tint 暖调。
+     历史问题：浮层里 Tailwind 默认 shadow-lg/xl（纯黑）与自定义组件的
+     暖调阴影（rgb(shadow-tint)）混用，同一屏里阴影有黑有暖。 */
+  --elev-1: 0 1px 2px rgb(var(--shadow-tint) / 8%);
+  --elev-2: 0 4px 14px rgb(var(--shadow-tint) / 14%);
+  --elev-3: 0 12px 32px rgb(var(--shadow-tint) / 20%), 0 2px 6px rgb(var(--shadow-tint) / 10%);
+
+  /* 模态遮罩走令牌：组件各写 bg-black/30 会绕过调色板守卫。 */
+  --overlay-scrim: rgb(0 0 0 / 30%);
+  /* 滚动区底部渐隐（嵌套滚动的边界提示）：走令牌，深色主题另有对应值。 */
+  --scroll-fade: rgb(0 0 0 / 6%);
+}
+
+/* 阴影工具类：供组件以 className 引用（替代 shadow-sm/lg/xl，后者纯黑且不随主题）。 */
+.elev-1 {
+  box-shadow: var(--elev-1);
+}
+.elev-2 {
+  box-shadow: var(--elev-2);
+}
+.elev-3 {
+  box-shadow: var(--elev-3);
+}
+
+/* 图标笔画：lucide 默认 stroke-width 2，在 10-14px 的密集侧栏尺寸下显重；
+   收到 1.75 让整套图标精致一档（CSS 覆盖 svg 的 presentation attribute）。 */
+.lucide {
+  stroke-width: 1.75;
+}
+
+/* ---------- 深色（data-theme="dark"） ---------- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  /* 深色下 30% 黑遮罩几乎看不出层次，加深到 55% 才能让模态从背景中分离。 */
+  --overlay-scrim: rgb(0 0 0 / 55%);
+  /* 深色底上 6% 的渐隐几乎不可见，加深到 24% 才能读出「还有更多内容」。 */
+  --scroll-fade: rgb(0 0 0 / 24%);
+
+  --c-gray-50: #1d2220;
+  --c-gray-100: #282e2b;
+  --c-gray-200: #36413b;
+  --c-gray-300: #475249;
+  --c-gray-400: #788278;
+  --c-gray-500: #98a29b;
+  --c-gray-600: #b1bcb6;
+  --c-gray-700: #c7d0cb;
+  --c-gray-800: #dce5df;
+  --c-gray-900: #e4eae6;
+
+  --c-brand-50: #1f3328;
+  --c-brand-100: #294237;
+  --c-brand-200: #33593f;
+  --c-brand-300: #5c9a75;
+  --c-brand-400: #6fb088;
+  --c-brand-500: #79c498;
+  --c-brand-600: #8ed0a8;
+  --c-brand-700: #a7d5b8;
+
+  --c-red-50: #36231f;
+  --c-red-200: #4d2f28;
+  --c-red-500: #e0907f;
+  --c-red-600: #ef9b8c;
+  /* 深色下危险色的 hover 是**提亮**而不是压暗（与浅色方向相反），
+     否则按浅色直觉写的 700 会在深底上越点越暗、像被禁用。 */
+  --c-red-700: #f8c0b4;
+
+  /* 警示色（深色下提亮以保证可读） */
+  --c-warn-50: #3a3220;
+  --c-warn-100: #463a22;
+  --c-warn-200: #5c4a26;
+  --c-warn-600: #c9a24a;
+  --c-warn-700: #e7c874;
+  --c-warn-800: #f0d68a;
+
+  /* 深色下品牌绿偏亮，计数徽章改用深绿底以保证白字对比度 */
+  --count-badge-bg: var(--c-brand-700);
+
+  --surface: #282e2b;
+  --canvas: #1d2220;
+  --border-subtle: #36413b;
+  /* 控件边框：深色下需提亮而非压暗（对 --surface 达 3.2:1） */
+  --border-control: #747b77;
+  --shadow-tint: 0 0 0;
+  /* 深色下强调色整体提亮（亮绿/亮红），前景改用深色文字保证 WCAG 对比度 */
+  --c-on-accent: #1d2220;
+  /* --ring 继承 :root 的 var(--c-brand-500)：深色梯度已在上方整体替换，
+     变量在使用时求值，自动取到提亮后的品牌色（对画布 7.81:1）。 */
+}
+
+/* ---------- 主题色预设（data-hue） ----------
+ * 默认 plain（纯净，无底色跟随 Chrome 明暗），设置默认值与 theme-init 回退均与之对齐；
+ * :root 内置梯度为 forest（石墨绿），仅在 JS 未跑的首帧瞬间可见，plain/其余预设
+ * 均通过 :root[data-hue] 覆盖品牌色梯度及派生变量。
+ * 浅色：品牌梯度 + 带色调的画布/浅灰阶（灰阶深档保持暖调中性，与各色调兼容）；
+ * 深色：品牌梯度 + 整套灰阶 + 画布（默认绿灰底与其他色相冲突，须整体替换）。
+ * 徽章/进度等派生变量引用 var(--c-brand-*)，随梯度自动换肤。 */
+
+/* 雾霾蓝 ocean */
+:root[data-hue='ocean'] {
+  --c-brand-50: #eaf1f7;
+  --c-brand-100: #d7e5f2;
+  --c-brand-200: #b3cde6;
+  --c-brand-300: #7ba6d4;
+  --c-brand-400: #5285c2;
+  --c-brand-500: #3a6ea8;
+  --c-brand-600: #2f5b8c;
+  --c-brand-700: #274a73;
+  /* 浅色画布与浅灰阶同步带色调（背景换肤的感知主体） */
+  --c-gray-50: #eef3f8;
+  --c-gray-100: #e2eaf1;
+  /* 深档灰阶必须跟随色相：若正文（gray-500）、卡片边框、骨架屏仍是 forest 的绿灰，
+     画布却是蓝的，换肤就只换了一半，视觉上「脏」。各档亮度对齐 forest 版本，
+     gray-500 取更深以保住对画布的 4.5:1。 */
+  --c-gray-200: #dbe4ee;
+  --c-gray-300: #c3d0de;
+  --c-gray-400: #9aa8b8;
+  --c-gray-500: #5a6a7c;
+  --c-gray-600: #4a596a;
+  --canvas: #f1f5f9;
+  /* 装饰性分隔线跟随色相；仅调装饰线（无对比度要求），控件边框 --border-control 不动。 */
+  --border-subtle: #dbe3ec;
+}
+:root[data-theme='dark'][data-hue='ocean'] {
+  --c-brand-50: #1e2c3a;
+  --c-brand-100: #26394c;
+  --c-brand-200: #2e4a63;
+  --c-brand-300: #5c85ad;
+  --c-brand-400: #6f9cc4;
+  --c-brand-500: #85b4dc;
+  --c-brand-600: #9cc4e5;
+  --c-brand-700: #b4d2ea;
+  --c-gray-50: #1c2126;
+  --c-gray-100: #272d34;
+  --c-gray-200: #353d46;
+  --c-gray-300: #47505a;
+  --c-gray-400: #78828c;
+  --c-gray-500: #98a2ac;
+  --c-gray-600: #b1bcc4;
+  --c-gray-700: #c7d0d8;
+  --c-gray-800: #dce5ec;
+  --c-gray-900: #e4eaf0;
+  --surface: #272d34;
+  --canvas: #1c2126;
+  --border-subtle: #353d46;
+  --border-control: #747a80;
+  --c-on-accent: #1c2126;
+}
+
+/* 暮山紫 violet */
+:root[data-hue='violet'] {
+  --c-brand-50: #f1edf8;
+  --c-brand-100: #e4dcf2;
+  --c-brand-200: #cbb9e6;
+  --c-brand-300: #a685d2;
+  --c-brand-400: #8a63c2;
+  --c-brand-500: #6f4ba6;
+  --c-brand-600: #5d3d8c;
+  --c-brand-700: #4c3273;
+  --c-gray-50: #f3f1f8;
+  --c-gray-100: #e9e5f2;
+  --c-gray-200: #e0dce9;
+  --c-gray-300: #c8c2d6;
+  --c-gray-400: #9d96ac;
+  --c-gray-500: #645d76;
+  --c-gray-600: #544e64;
+  --canvas: #f4f2f8;
+  --border-subtle: #e0dce8;
+}
+:root[data-theme='dark'][data-hue='violet'] {
+  --c-brand-50: #292137;
+  --c-brand-100: #352a48;
+  --c-brand-200: #43355c;
+  --c-brand-300: #7d63a8;
+  --c-brand-400: #9377c2;
+  --c-brand-500: #a98fd6;
+  --c-brand-600: #bca3e0;
+  --c-brand-700: #cdb8e8;
+  --c-gray-50: #211e26;
+  --c-gray-100: #2c2833;
+  --c-gray-200: #3a3542;
+  --c-gray-300: #4d4756;
+  --c-gray-400: #7d7886;
+  --c-gray-500: #9d99a6;
+  --c-gray-600: #b6b3bd;
+  --c-gray-700: #cbc8d1;
+  --c-gray-800: #e0dee4;
+  --c-gray-900: #e8e6eb;
+  --surface: #2c2833;
+  --canvas: #211e26;
+  --border-subtle: #3a3542;
+  --border-control: #79757e;
+  --c-on-accent: #211e26;
+}
+
+/* 暖阳橙 sunset */
+:root[data-hue='sunset'] {
+  --c-brand-50: #faf0e6;
+  --c-brand-100: #f6e2cf;
+  --c-brand-200: #eec49e;
+  --c-brand-300: #e09a5e;
+  --c-brand-400: #d27936;
+  --c-brand-500: #b85f22;
+  --c-brand-600: #9c4f1b;
+  --c-brand-700: #7f4117;
+  /* sunset 的 500 档偏亮，白字徽章仅 4.47:1；改用 600 档（5.92:1） */
+  --count-badge-bg: var(--c-brand-600);
+  --c-gray-50: #f7f2ea;
+  --c-gray-100: #f1e7d8;
+  --c-gray-200: #e8dfd2;
+  --c-gray-300: #d2c5b3;
+  --c-gray-400: #a89a86;
+  --c-gray-500: #6f6152;
+  --c-gray-600: #5d5044;
+  --canvas: #f8f3ec;
+  --border-subtle: #e8e0d2;
+}
+:root[data-theme='dark'][data-hue='sunset'] {
+  --c-brand-50: #362920;
+  --c-brand-100: #473422;
+  --c-brand-200: #5c4326;
+  --c-brand-300: #ad7c4a;
+  --c-brand-400: #c79360;
+  --c-brand-500: #dcab7a;
+  --c-brand-600: #e5bc91;
+  --c-brand-700: #eacba8;
+  --c-gray-50: #241f1c;
+  --c-gray-100: #302a26;
+  --c-gray-200: #403832;
+  --c-gray-300: #544a42;
+  --c-gray-400: #877a70;
+  --c-gray-500: #a69a90;
+  --c-gray-600: #beb4ac;
+  --c-gray-700: #d0c8c2;
+  --c-gray-800: #e5ded9;
+  --c-gray-900: #ebe6e2;
+  --surface: #302a26;
+  --canvas: #241f1c;
+  --border-subtle: #403832;
+  --border-control: #7c7773;
+  --c-on-accent: #241f1c;
+}
+
+/* 中性灰 mono */
+:root[data-hue='mono'] {
+  --c-brand-50: #f0f1f0;
+  --c-brand-100: #e2e4e2;
+  --c-brand-200: #c6c9c6;
+  --c-brand-300: #9aa09a;
+  --c-brand-400: #6f766f;
+  --c-brand-500: #4a524a;
+  --c-brand-600: #3c433c;
+  --c-brand-700: #303630;
+  --c-gray-50: #f2f2f2;
+  --c-gray-100: #e8e8e8;
+  --c-gray-200: #dcdcdc;
+  --c-gray-300: #c6c6c6;
+  --c-gray-400: #9a9a9a;
+  --c-gray-500: #656565;
+  --c-gray-600: #525252;
+  --canvas: #f4f4f4;
+  --border-subtle: #e0e0e0;
+}
+:root[data-theme='dark'][data-hue='mono'] {
+  --c-brand-50: #26282a;
+  --c-brand-100: #313438;
+  --c-brand-200: #3f4348;
+  --c-brand-300: #7d838a;
+  --c-brand-400: #98a0a8;
+  --c-brand-500: #b0b8c0;
+  --c-brand-600: #c2c9d0;
+  --c-brand-700: #d2d8de;
+  --c-gray-50: #1e1f20;
+  --c-gray-100: #292a2c;
+  --c-gray-200: #37393c;
+  --c-gray-300: #4a4d51;
+  --c-gray-400: #7b7f85;
+  --c-gray-500: #9ba0a6;
+  --c-gray-600: #b4b8be;
+  --c-gray-700: #c9cdd2;
+  --c-gray-800: #dee2e6;
+  --c-gray-900: #e6eaed;
+  --surface: #292a2c;
+  --canvas: #1e1f20;
+  --border-subtle: #37393c;
+  --border-control: #767779;
+  --c-on-accent: #1e1f20;
+}
+
+/* 纯净 plain：无色调；画布取系统色 Canvas，严格等同 Chrome 侧边栏明暗；强调色用 Chrome 中性灰 */
+:root[data-hue='plain'] {
+  --c-brand-50: #f1f3f4;
+  --c-brand-100: #e3e6e8;
+  --c-brand-200: #c8ccce;
+  --c-brand-300: #9aa0a6;
+  --c-brand-400: #80868b;
+  --c-brand-500: #5f6368;
+  --c-brand-600: #4a4d51;
+  --c-brand-700: #3c4043;
+  --c-gray-50: #f8f9fa;
+  --c-gray-100: #f1f3f4;
+  --c-gray-200: #e3e6e8;
+  --c-gray-300: #c8ccce;
+  --c-gray-400: #80868b;
+  --c-gray-500: #5f6368;
+  --c-gray-600: #4a4d51;
+  --c-gray-700: #3c4043;
+  --c-gray-800: #202124;
+  --c-gray-900: #1a1a1a;
+  --canvas: Canvas;
+  --surface: Canvas;
+  --border-subtle: #dadce0;
+  --border-control: #868887;
+  --count-badge-bg: var(--c-brand-500);
+  --c-on-accent: #ffffff;
+}
+
+:root[data-theme='dark'][data-hue='plain'] {
+  --c-brand-50: #2a2b2c;
+  --c-brand-100: #353637;
+  --c-brand-200: #434445;
+  --c-brand-300: #7a7c7e;
+  --c-brand-400: #9aa0a6;
+  --c-brand-500: #bdc1c6;
+  --c-brand-600: #cdd1d5;
+  --c-brand-700: #e3e3e3;
+  --c-gray-50: #202124;
+  --c-gray-100: #2a2b2c;
+  --c-gray-200: #353637;
+  --c-gray-300: #434445;
+  --c-gray-400: #7a7c7e;
+  --c-gray-500: #9aa0a6;
+  --c-gray-600: #bdc1c6;
+  --c-gray-700: #d2d3d4;
+  --c-gray-800: #e8eaed;
+  --c-gray-900: #f1f3f4;
+  --canvas: Canvas;
+  --surface: Canvas;
+  --border-subtle: #3c4043;
+  --border-control: #6e6f70;
+  --count-badge-bg: var(--c-brand-700);
+  --c-on-accent: #202124;
+}
+
+/* ---------- 关于页 ----------
+ * 明暗两版 logo 按 data-theme 切换：logo.svg 为暗底版、logo-light.svg 为亮底版，
+ * 单一版本在另一种主题下会呈现突兀的色块底，故两版并存由主题裁决。 */
+.about-logo-dark {
+  display: none;
+}
+:root[data-theme='dark'] .about-logo-dark {
+  display: block;
+}
+:root[data-theme='dark'] .about-logo-light {
+  display: none;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.app {
+  position: relative;
+  min-width: 0;
+  container-type: inline-size;
+  /* 横向一律裁掉（任一块溢出就把侧边栏撑成横向可滚），纵向只在**真的装不下**时
+     才让 .app 自己滚 —— 这是「主列表 min-height 兜底 + 同级 shrink-0 区块合计过高」
+     仍超出时的最后兜底。
+     纵向绝不能 hidden：底栏 /「新建标签」是 shrink-0 的最后一个 flex 子项，
+     溢出被裁即**永久不可达**（既看不见也滚不到），比整页可滚严重得多。
+     常态下主列表会吸收剩余高度，这里不产生滚动条。
+     注意：fixed 后代会被这里的 layout containment 收为包含块，浮层必须
+     Portal 到 body（Dialog / ContextMenu 已如此，DragOverlay 同步改）。 */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--c-gray-800);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 原生标签组 9 色（Chrome 对齐） */
+:root {
+  --group-grey: #80868b;
+  --group-blue: #1a73e8;
+  --group-red: #d93025;
+  --group-yellow: #f9ab00;
+  --group-green: #188038;
+  --group-pink: #d01884;
+  --group-purple: #9334e6;
+  --group-cyan: #007b83;
+  --group-orange: #fa903e;
+}
+
+/* 固定文件夹复用分组卡片：排序中浮动 + 拖入目标高亮 */
+.section-card.is-sorting {
+  z-index: 40;
+  opacity: 0.9;
+  box-shadow: var(--elev-3);
+}
+.section-card.is-drop-target {
+  background: color-mix(in srgb, var(--c-brand-500) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
+}
+/* 统一动效曲线：快入慢出（frontend-design-pro 推荐 cubic-bezier） */
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* 动效时长刻度：微交互 120ms 起，容器/进场 160ms，主题切换 240ms。 */
+  --dur-fast: 120ms;
+  --dur-normal: 160ms;
+  --dur-slow: 240ms;
+}
+
+/* 过渡基类：色/背景变化的微反馈（100-200ms 区间） */
+.transition-base {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+/* ---------- 列表变化的连续性（动效品质） ----------
+ * 行入场：新标签打开、搜索命中出现时淡入；
+ * 分区体展开：折叠→展开时容器轻微上移淡入。
+ *
+ * 关键约束：行的动画**只动 opacity，不动 transform** —— dnd-kit 排序靠 inline
+ * transform 驱动，动画期间 transform 优先级高于 inline style，若动画里带位移，
+ * 用户在 140ms 窗口内起拖会被动画覆盖而跳位。容器不在拖拽链路上，可以用位移。
+ * prefers-reduced-motion 由全局规则统一关闭（animation: none !important）。 */
+@keyframes row-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes section-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.row-item {
+  animation: row-in 140ms var(--ease-out);
+}
+.section-body {
+  animation: section-expand 160ms var(--ease-out);
+}
+
+/* 磁贴入场：与行同一节奏（只动 opacity，磁贴同样参与 dnd-kit 排序，
+   动画里带 transform 会在拖拽时与 inline transform 抢占属性）。 */
+@keyframes tile-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.pinned-tile {
+  animation: tile-in 160ms var(--ease-out);
+}
+
+/* ---------- 弹窗族进出场 ----------
+ * 进场用 CSS animation（零依赖、无时序风险）；遮罩同步淡入。
+ * 退场仍为瞬时：DOM 卸载时机由各调用方的条件渲染决定，做退场需引入
+ * 「延迟卸载」状态机（会改变关闭时序与测试断言），暂不引入。 */
+@keyframes overlay-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* 弹窗进场：位移 4px → 8px、时长 140ms → --dur-normal(160ms)。
+   三段式分区后弹窗体量更大，位移太小会显得「贴在原地的淡入」，缺少落位感。 */
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.modal-overlay {
+  animation: overlay-enter var(--dur-fast) var(--ease-out);
+  /* 遮罩色走令牌：各写一次 bg-black/30 既不随主题变化，也躲过调色板守卫的扫描前缀。 */
+  background: var(--overlay-scrim);
+}
+.modal-panel {
+  animation: dialog-enter var(--dur-normal) var(--ease-out);
+}
+
+/* Toast 进场：从下方轻滑入（退场同样受卸载时机限制，保持瞬时） */
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.status-toast {
+  animation: toast-enter 140ms var(--ease-out);
+}
+
+/* ---------- 主题切换的平滑过渡 ----------
+ * 切换明暗/色号时整页颜色是瞬间跳变的（生硬）。做法：ThemeApplier 在切换时给
+ * html 挂 220ms 的 theme-transition 类，由本规则给全树开一段颜色过渡后自动移除。
+ * 不常驻是刻意的：日常交互已有各自的 transition-base，全局常开会覆盖它们
+ * （如行尾操作的 max-width 展开）并增加无谓开销。
+ * reduced-motion 的兜底见文件末尾（同为 !important 时按特异性与顺序裁决）。 */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 200ms var(--ease-out),
+    color 200ms var(--ease-out),
+    border-color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out),
+    fill 200ms var(--ease-out),
+    stroke 200ms var(--ease-out) !important;
+}
+
+/* ---------- 开关（role=switch） ----------
+ * 尺寸全部由局部变量派生：改尺寸只需动 --sw-w/--sw-h，不再出现 left-[18px] 这类魔数。
+ * 关闭态用「浅填充 + 达标描边」而非纯灰填充 —— 轨道是控件边界，须满足 1.4.11 的 3:1，
+ * 而 --c-gray-300 对画布仅约 1.5:1，等于没有边界。 */
+.switch {
+  --sw-w: 36px;
+  --sw-h: 20px;
+  --sw-pad: 2px;
+  --sw-knob: calc(var(--sw-h) - var(--sw-pad) * 2);
+
+  position: relative;
+  flex: none;
+  width: var(--sw-w);
+  height: var(--sw-h);
+  border: 0;
+  border-radius: 999px;
+  background: var(--c-gray-100);
+  box-shadow: inset 0 0 0 1px var(--border-control);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.switch--sm {
+  --sw-w: 32px;
+  --sw-h: 18px;
+}
+/* 透明命中扩区：视觉高度 20px、命中 24px（WCAG 2.5.8 最小目标尺寸） */
+.switch::after {
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  content: '';
+}
+.switch[aria-checked='true'] {
+  background: var(--c-brand-500);
+  box-shadow: inset 0 0 0 1px var(--c-brand-500);
+}
+.switch-knob {
+  position: absolute;
+  top: var(--sw-pad);
+  left: var(--sw-pad);
+  width: var(--sw-knob);
+  height: var(--sw-knob);
+  border-radius: 999px;
+  background: var(--c-gray-500);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.switch[aria-checked='true'] .switch-knob {
+  background: var(--surface);
+  /* 位移由尺寸令牌算出，不再写死像素 */
+  transform: translateX(calc(var(--sw-w) - var(--sw-knob) - var(--sw-pad) * 2));
+}
+
+/* 分组取色器（无文字纯色块）：边框是唯一边界线索，须用 --border-control；
+   视觉 16px、命中 24px；选中态用品牌外环（与 .theme-swatch 同一语言）。 */
+.swatch {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  box-shadow: inset 0 0 0 1px var(--surface);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.swatch::after {
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  content: '';
+}
+.swatch:hover {
+  transform: scale(1.15);
+}
+.swatch[aria-checked='true'] {
+  box-shadow:
+    inset 0 0 0 1px var(--surface),
+    0 0 0 2px var(--c-brand-600);
+}
+
+/* 主题色板单选项：视觉 20px、命中 24px。
+   选中态用「白色内环 + 品牌外环」双层，避免外环与色块同色不可辨
+   （实测 gray-500 外环落在 sunset 色块上仅 1.02:1，等于没有选中反馈）。 */
+.theme-swatch {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  box-shadow: inset 0 0 0 2px var(--surface);
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.theme-swatch::after {
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  content: '';
+}
+.theme-swatch:hover {
+  transform: scale(1.1);
+}
+.theme-swatch[aria-checked='true'] {
+  box-shadow:
+    inset 0 0 0 2px var(--surface),
+    0 0 0 2px var(--c-brand-600);
+}
+
+/* 全局焦点可见环：键盘可达性兜底（不破坏既有各组件反馈）。
+   要点：
+   - --ring 必须是实色：写 rgba(品牌, .32) 合成到画布后仅 1.55:1，
+     浅色模式下键盘用户几乎看不见焦点在哪 —— 对以键盘流为卖点的产品是致命伤；
+   - box-shadow 补一圈画布色内描边，保证环落在深色/彩色控件上时依然可辨；
+   - 选择器须覆盖 select / textarea / summary：它们同样是键盘可达控件，
+     漏掉会让「高级设置」抽屉的 <summary> 拿到焦点却毫无视觉提示；
+   - 不写 border-radius：outline 天然沿元素自身圆角绘制。全局写死 6px 会让
+     特异性 (0,1,0) 与单类选择器同级，圆角归属随 CSS 书写顺序漂移 ——
+     方形控件被强加圆环、8px/12px 圆角控件被压回 6px。 */
+:where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1px var(--canvas);
+}
+
+/* 表单控件的焦点样式刻意比按钮更克制：
+   按钮是「点一下就走」，2px 外环是恰当的路标；而输入框是「长期驻留」的焦点，
+   全局环（outline 2px + canvas 内描边 1px）+ 控件自身边框 + 聚焦边框色四层叠加，
+   在暖色主题（sunset）下会被直接误读为「错误态」（用户实测反馈）。
+   收敛为「1px 品牌色边框 + 1px 同色内环」共 2px 视觉厚度。 */
+/* 排除 radio / checkbox：色块类控件（.swatch 16px / .theme-swatch 20px）走这条收敛
+   规则只有 2px 厚度，且 box-shadow 会**替换**掉自身的 inset 白内环，聚焦瞬间色块
+   与选中外环贴死。它们应走与按钮同档的全局 2px 环（下方显式补回 inset 内环）。 */
+:where(input:not([type='radio']):not([type='checkbox']), textarea, select):focus-visible {
+  outline: none;
+  border-color: var(--c-brand-500);
+  box-shadow: 0 0 0 1px var(--c-brand-500);
+}
+
+/* 色块类单选：拿回全局 2px 环，同时保留自身 inset 内描边（不被 box-shadow 顶掉）。 */
+.swatch:focus-visible,
+.theme-swatch:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  box-shadow:
+    inset 0 0 0 1px var(--surface),
+    0 0 0 1px var(--canvas);
+}
+
+/* 轻微按下反馈（带快入慢出曲线） */
+:where(button, [role='button']):active {
+  transform: scale(0.96);
+  transition: transform 80ms var(--ease-out);
+}
+/* 开关类控件不做按压缩放：滑块位移叠加整体缩放会产生抖动观感，
+   且其自身已有 transition-base 的轨道变色反馈，语义已足够。 */
+:where([role='switch'], input[type='radio'], input[type='checkbox']):active {
+  transform: none;
+}
+
+/* 展开/折叠分组头部不做按压缩放：缩放回弹与列表重排叠加会产生抖动观感 */
+.section-head button.toggle:active {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  :where(button, [role='button']):active {
+    transform: none;
+  }
+}
+
+/* ---------- Windows 高对比度模式（forced-colors: active）----------
+   系统会强制替换作者颜色：color-mix 半透明状态背景与 box-shadow 描边被丢弃，
+   拖放目标 / 激活行 / 浏览器高亮行退化为不可辨，焦点环失去内描边保障。
+   对策：改用系统语义色（Highlight / SelectedItem）实色表达状态。
+   原则：只求「状态可辨」，不求还原品牌色；不使用 forced-color-adjust: none
+   （强行保留作者色反而失去系统级对比度保障）。
+   此块受 design-tokens.test.ts「交互基线」断言守护，整块删除会被 CI 拦下。 */
+@media (forced-colors: active) {
+  /* 拖放目标：三处 color-mix 高亮统一降级为系统高亮色边框 + 选中底色 */
+  .section-card.is-drop-target,
+  .pinned-strip.is-drop-target,
+  .row-item.is-drop-target {
+    background: SelectedItem;
+    outline: 2px solid Highlight;
+  }
+
+  /* 激活 / 浏览器高亮行：底色降级为系统选中色，保底一行实色描边 */
+  .row-item.is-active,
+  .row-item.is-highlighted:not(.is-active) {
+    background: SelectedItem;
+    outline: 1px solid Highlight;
+  }
+
+  /* 焦点环：box-shadow 内描边被系统丢弃，改为纯 outline（系统保证可见） */
+  :where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+}
+
+/* ---------- 极细滚动条：尽量小、降低视觉干扰 ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-gray-300) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--c-gray-300);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--c-gray-400);
+}
+
+/* ---------- 行内操作按钮 ---------- */
+.row-action {
+  position: relative;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-gray-500);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+/* 透明命中扩区：视觉 20px、命中 24px（WCAG 2.5.8 下限），不占布局空间 */
+.row-action::after {
+  position: absolute;
+  inset: -2px;
+  border-radius: 6px;
+  content: '';
+}
+/* 磁贴角标只有 16px：再扩一圈到 24px 命中 */
+.pinned-tile .pinned-unpin::after {
+  inset: -4px;
+}
+
+.row-action:hover {
+  background: var(--c-brand-100);
+  color: var(--c-brand-700);
+}
+
+/* 焦点环：补全键盘可达性（不移除 outline） */
+.row-action:focus-visible {
+  background: var(--c-brand-100);
+  color: var(--c-brand-700);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* 危险操作（关闭/删除）：悬停/键盘聚焦转砖红。
+   刻意只改 hover / focus-visible，静默态保持中性灰 ——
+   密集列表里每行常驻一个红图标会造成持续的焦虑感，
+   危险预警只需在「即将点下去」的那一刻出现。
+   统一入口为 .is-danger：固定空间的红色操作也走本规则，避免同一语义两套实现漂移。 */
+.row-action.is-danger:hover,
+.row-action.is-danger:focus-visible {
+  background: var(--c-red-50);
+  color: var(--c-red-600);
+}
+
+/* 行内关闭是最高频的行操作之一：视觉目标放大到 22px（命中区经 ::after 扩到 26px），
+   降低相邻行密集时的点空率；其余行内操作保持 20px 以维持信息密度。 */
+.row-item .row-action.is-danger {
+  width: 22px;
+  height: 22px;
+}
+
+/* 计数徽章（工具条角标等）：品牌绿底，满足对比度；
+   11px 迷你尺寸挂在 24px 图标按钮角落，外圈 canvas 描边与图标视觉分离；
+   两位数自动呈小胶囊（min-width + 横向 padding），不挤成正圆大球。 */
+/* 14px 高 + 10px 字（原 13px / 9px）：13 与 9 都不在刻度上，且 9px 是全文最小字，
+   暗色下可读性最差。字号回落到 --text-2xs(10px) 刻度内。 */
+.count-badge {
+  display: inline-grid;
+  min-width: 14px;
+  height: 14px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--count-badge-bg);
+  color: var(--c-on-accent);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  box-shadow: 0 0 0 1px var(--canvas);
+}
+/* 带计数徽章的按钮抬一层：徽章定位在 -right-1 / -top-1，伸出按钮右上角之外，
+   相邻且**后渲染**的按钮（同层级、hover 时有实底背景）会把它盖住 —— 底栏图标
+   密集时表现为「悬停一个按钮，左边那个的角标就消失了」。
+   注意是抬高**带徽章的**按钮，而不是抬高 hover 的按钮：后者会反过来盖住别人。 */
+button:has(> .count-badge) {
+  position: relative;
+  z-index: 2;
+}
+
+/* ---------- chip：徽角 / 小胶囊的紧凑排版 ----------
+ * 只给 10-11px 的窄容器用（徽章、来源标记、计数胶囊、chip 按钮）。长段落正文禁用。
+ *
+ * 历史问题：同类元素一半写了 leading-none、一半没写，高度随继承行高（≈1.5）浮动，
+ * 并排时同类徽章差约 5px。
+ * 现在 @theme 已声明 --text-2xs/3xs--line-height（默认 1 / 1.45），浮动问题消失；
+ * 本类的价值是「徽角要的是 1，而不是 3xs 默认的 1.45」——一行字重 + 紧凑行高，
+ * 让所有徽角共用同一个度量，不必在每处重复写 leading-none。 */
+.chip {
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1;
+}
+/* 含汉字词的徽角用 11px：汉字在 10px 下笔画糊（纯数字不受影响，保持 10px）。 */
+.chip--cjk {
+  font-size: var(--text-3xs);
+}
+
+/* Tailwind v4 的 preflight 不再给 button 手型光标（Button/IconButton 已各自显式声明），
+   但绕过这两个组件的手写 <button>（新建标签页、搜索清除、菜单项、面板行…）全都漏了，
+   表现为「可点但光标是箭头」。统一在原生层补上，禁用态保持 default。 */
+button:not([disabled]) {
+  cursor: pointer;
+}
+
+/* ---------- 常驻顶部搜索框（替代弹窗式覆盖层） ---------- */
+.search-bar {
+  position: relative;
+  z-index: 30;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--border-subtle);
+  /* 聚焦指示（底边框 + inset 指示条）走过渡，避免聚焦瞬间硬切闪一下 */
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+/* 键盘流主入口：聚焦时由容器整体给出焦点指示 ——
+   底边框转品牌色 + 底部 2px 指示条（下划线式，干净且醒目）。
+   不在 input 上画全局焦点环：全宽裸输入框套 2px 圆角 outline 会与
+   底边框叠成双重描边，观感突兀。焦点可见性不减反增（容器级指示）。 */
+.search-bar:focus-within {
+  border-bottom-color: var(--c-brand-500);
+  box-shadow: inset 0 -2px 0 0 var(--c-brand-500);
+}
+
+.search-bar-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--c-gray-500);
+}
+
+.search-bar-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--c-gray-800);
+  font-size: 12px;
+  /* 豁免全局 focus-visible 焦点环：全宽裸输入框套圆角 outline 与容器底边框
+     叠成双重描边。焦点可见性由 .search-bar:focus-within 的容器级指示条承担。 */
+}
+
+.search-bar-input:focus-visible {
+  outline: none;
+  /* 全局环还附带一圈 canvas 色 box-shadow 描边，一并重置 */
+  box-shadow: none;
+}
+
+.search-bar-input::placeholder {
+  color: var(--c-gray-500);
+}
+
+/* 隐藏原生 search 清除按钮（使用自定义 ×） */
+.search-bar-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-bar-clear {
+  display: grid;
+  /* 24px = WCAG 2.5.8 最小目标尺寸（原 22px 低于下限） */
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--c-gray-500);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.search-bar-clear:hover {
+  background: var(--c-gray-100);
+  color: var(--c-gray-700);
+}
+
+/* 「包含历史」开关（P-01 时间线搜索）：与 clear 同款的 24px 命中尺寸与过渡；
+   激活态用品牌色区分——常驻按钮需要一眼可辨的开/关状态。 */
+.search-bar-history {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--c-gray-500);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.search-bar-history:hover {
+  background: var(--c-gray-100);
+  color: var(--c-gray-700);
+}
+
+.search-bar-history.is-active {
+  color: var(--c-brand-600);
+}
+
+.search-bar-history.is-active:hover {
+  background: var(--c-brand-50);
+  color: var(--c-brand-700);
+}
+
+/* 搜索键盘导航提示：过滤态出现，极淡不抢眼（键盘流能力的可发现性出口） */
+.search-keyboard-hint {
+  margin: 0;
+  padding: 2px 8px 0;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: var(--c-gray-400);
+  background: var(--canvas);
+}
+
+/* Toast 浮层不参与主内容排版，避免撤销提示出现时标签列表跳动。
+   bottom 取 72px：抬到「新建标签页」栏（约 33px）+ 底部工具条（约 28px）之上，
+   否则悬浮在最常用的「新建标签页」入口上遮挡最长 7 秒。 */
+/* ---------- 状态提示条（「+ 新建标签」与底栏之间，实体占位） ----------
+ * 流式占位（挂载点在 App 的 add-tab-bar 之后）：出现时列表让位而非被盖住。
+ * 品牌色描边 + 左侧色条 + elev-2 投影：提示必须一眼可辨，混在列表里会被忽略。 */
+.status-toast {
+  margin: 4px 8px 2px;
+  z-index: 35;
+  /* 描边保持中性：品牌色与边框色混合后的「暗绿描边」在深色主题下浑浊发脏，
+     各主题色预设（data-hue）深浅不一，混出来不可控；品牌感交给色条与图标。 */
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--c-brand-50));
+  box-shadow: var(--elev-2);
+}
+/* 左侧状态色条：取 400 档（亮暗分支都刻意提亮过），任何主题色预设下都清晰；
+   600 档在深色下是为「更深一档强调」设计的，做色条会显得浑浊。
+   align-self: stretch 让它随两行提示（消息 + note）一起变高。 */
+.status-toast::before {
+  content: '';
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--c-brand-400);
+}
+.status-toast.is-error::before {
+  background: var(--c-red-500);
+}
+
+/* ---------- 弹窗宽度刻度（两档收敛，替代散落的任意宽度值） ---------- */
+/* 弹窗宽度：小弹窗放宽到 400 —— 标题栏 / 内容 / 底栏三段式分区后，360 的
+   正文区（扣掉两侧 16px padding）只剩 328，中文长句在标题栏里就开始截断。 */
+.dialog-sm {
+  width: min(400px, 90vw);
+}
+.dialog-md {
+  width: min(440px, 92vw);
+}
+/* 宽端：侧边栏可被拖到 800px+，此时 440px 的弹窗左右各空约 180px，20+ 条快照
+   只用了 55% 宽度。Dialog 已 Portal 到 body（为绕开 .app 的层叠上下文），
+   拿不到 .app 的容器上下文，故这里只能退而用媒体查询。 */
+@media (min-width: 900px) {
+  .dialog-md {
+    width: min(640px, 92vw);
+  }
+}
+
+/* 引导弹窗跳步圆点：视觉高 6px 几乎点不中，透明扩区撑到 ≥24px 命中（WCAG 2.5.8） */
+.tour-dot {
+  position: relative;
+}
+.tour-dot::after {
+  position: absolute;
+  inset: -9px;
+  content: '';
+}
+
+/* 白名单 chip 删除按钮：12px 图标扩到 24px 命中区（与 .row-action 同款方案） */
+.whitelist-remove {
+  position: relative;
+}
+.whitelist-remove::after {
+  position: absolute;
+  inset: -6px;
+  content: '';
+}
+
+/* ---------- 分类模块外壳：固定空间 / 站点分组 ---------- */
+/* 左 0 + 内部 .section-head padding-left 8px：内容起始与 .pinned-strip / .section-card 统一到距侧边栏 8px。
+   纵向 6/8 在此统一声明，.fixed-area 不得另写 padding 覆盖。 */
+.fixed-area,
+.module-shell {
+  padding: 6px 0 8px 0;
+}
+/* 固定空间：与列表同一套扁平语言（零背景、零边框），
+   身份由「一条中性分隔线 + 更大的上下留白 + 标题前的文件夹图标」承担 ——
+   资产区需要的是沉稳，而不是把它框起来（卡片边框会与密集列表的扁平语言冲突）。 */
+.fixed-area {
+  flex: none;
+  max-height: min(34vh, 280px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ---------- 内滚区底部渐隐（滚动边界提示） ----------
+ * 侧边栏里被 max-height 截断的内滚区（固定空间 / 快照详情 / 命令面板结果 /
+ * 虚拟列表）缺少可见的底部边界，用户滚到一半会误判「已经到底了」。
+ * 底部渐隐随滚动位置由 useScrollFade 切换 .is-scrolled-to-end 显隐 ——
+ * 必须配套这个 JS 切换：常驻渐隐会变成「到底了还提示有更多」的反向误导。
+ * 配色走 --scroll-fade 令牌（浅 6% / 深 24%），不硬编码 rgba。
+ * background-attachment: scroll 把渐隐钉在**容器可视底边**：若用 local，渐隐会
+ * 跟随滚动内容停在内容末端 —— 滚动过程中它在视口外看不见，滚到底时又被
+ * .is-scrolled-to-end 撤掉，整个效果等于空转。
+ * 「内容不足一屏时不该凭空出现阴影」由 JS 侧负责（不可滚动时不加本 class）。 */
+.scroll-fade {
+  background-image: linear-gradient(to bottom, transparent, var(--scroll-fade));
+  background-size: 100% 12px;
+  background-repeat: no-repeat;
+  background-position: bottom;
+  background-attachment: scroll;
+}
+.scroll-fade.is-scrolled-to-end {
+  background-image: none;
+}
+/* 固定空间历史上把这套写死在自己身上，现统一走 .scroll-fade（class 在 TSX 上加）。 */
+/* 分组模块（站点分组大壳）：同样一条中性分隔线，与下方未分组区断开 */
+.module-shell {
+  border-bottom: 1px solid var(--border-subtle);
+}
+/* 紧跟 module-shell 的下一块不再画 border-top（上一块的 border-bottom 已是分隔线），
+   但要把省掉的 border+padding 折算回 margin-top 4px，让间距与模块内部相邻分区
+   （margin 2 + border 1 + padding 1 = 4px）完全一致。 */
+.module-shell + .section-card,
+.module-shell + .module-shell {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 4px;
+}
+/* 固定空间头部/文件夹/条目的视觉壳复用分组模块的 .section-card / .section-head /
+   .row-item 系列（见「分组」区块），以下仅保留固定空间特有的少量样式。 */
+
+/* 固定空间空态提示（"点击 + 新建文件夹，或直接把标签/分组拖到这里"）。
+   必须显式定义：未定义时 <p> 继承 body 的 16px 正文色，在正文 12px 的密集
+   侧边栏里比所有内容都大，而这恰是新用户首屏必现的内容（固定空间为空时）。
+   字号取 --text-3xs(11px) 而非 2xs(10px)：本文是需要阅读的正文说明，
+   遵守本文件顶部自订的「正文说明一律 ≥ 11px」。
+   左缩进 8px：与 .section-head 前导色条、行内 favicon 同处一条内容竖线
+   （8px = .section-body 2px + .row-item pl-1.5 6px）。
+   颜色用 gray-500：空态文字是需要阅读的正文说明，gray-400 对画布仅约 2.7:1
+   （不达 AA），不能再下调 —— 想让它「不抢眼」靠字号与留白，不靠降对比度。 */
+.fixed-area-empty {
+  margin: 2px 0 0;
+  padding: 0 8px;
+  color: var(--c-gray-500);
+  font-size: var(--text-3xs);
+  line-height: 1.4;
+}
+
+.fixed-item-pending {
+  width: 14px;
+  height: 14px;
+  border: 1px dashed var(--c-gray-500);
+  border-radius: 50%;
+}
+
+/* ---------- 顶部常驻磁贴区 ---------- */
+/* 不再画分隔线：磁贴自身的圆角面 + 上下留白已足以把它与列表分开，
+   少一条横线换一分呼吸感（一屏横线从 8-9 条压到 4-5 条）。 */
+/* 自身只承担纵向留白（上 6 + 下 2）；横向 8px 由内部 .pinned-grid 提供，
+   让磁贴与 .section-head 前导色条、行内 favicon 同处一条内容竖线。 */
+.pinned-strip {
+  /* flex: none：同列的 .search-bar / .add-tab-bar / .fixed-area 都是 flex:none，
+     唯独磁贴条没有 —— 空间不足时它会被压缩并与下方固定空间重叠。 */
+  flex: none;
+  margin: 0 0 6px;
+  padding: 6px 0 2px;
+  isolation: isolate;
+  /* 投放高亮走过渡（分区级落点不与 .row-item 共享 transition-base，须各自声明） */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.pinned-strip.is-drop-target {
+  border-color: var(--c-brand-600);
+  background: color-mix(in srgb, var(--c-brand-500) 12%, var(--canvas));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 28%, transparent);
+}
+
+.pinned-tile {
+  position: relative;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 8px;
+  cursor: grab;
+  /* 默认透明边框占位，避免 hover 时布局抖动；
+     底色/边框取 favicon 主色或域名强调色（--tile-accent，与站点组圆点同源），未取到色回退中性灰 */
+  border: 1px solid color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 22%, transparent);
+  background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 16%, transparent);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.pinned-tile:active {
+  cursor: grabbing;
+}
+/* 磁贴名称：默认不显示（视觉取舍：36×36 只放 favicon，靠 title tooltip 辨识）。
+   无 hover 的设备拿不到 tooltip —— 一整排纯图标完全不可分辨，故在此显形并
+   让磁贴变高，名称单行截断。 */
+.pinned-tile-name {
+  display: none;
+}
+@media (hover: none) {
+  .pinned-tile {
+    width: 56px;
+    height: auto;
+    min-height: 36px;
+    padding: 4px 2px 2px;
+  }
+  .pinned-tile-name {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--c-gray-600);
+  }
+}
+.pinned-tile.is-dragging {
+  z-index: 30;
+  opacity: 0.85;
+  box-shadow: var(--elev-3);
+}
+
+.pinned-tile:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 45%, transparent);
+  background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 30%, transparent);
+  box-shadow: var(--elev-1);
+}
+
+.pinned-tile:focus-visible {
+  border-color: color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 45%, transparent);
+  background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 30%, transparent);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.pinned-tile.is-active {
+  /* 克制的激活态：实色面从条带底色中浮出 + 底部 2px 强调短杠。
+     小尺寸磁贴上叠加彩色描边/光晕/位移会让整条磁贴带显得嘈杂，
+     激活指示收敛为「面 + 杠」两个元素，由 --tile-accent 承载语义色。 */
+  border-color: color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 35%, transparent);
+  /* 激活底必须比画布亮一档、且与行激活态同构：取 --canvas 会让非激活态（accent 16%
+     叠在画布上）在激活后反而「变空」，唯一信号只剩底部 2px 色条 —— 在 36px 的
+     磁贴上一不小心就被 favicon 抢走注意力。 */
+  background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 22%, var(--surface));
+  box-shadow:
+    inset 0 -2px 0 var(--tile-accent, var(--c-brand-500)),
+    var(--elev-1);
+}
+
+.pinned-tile.is-discarded .pinned-favicon-wrap {
+  opacity: 0.56;
+  filter: grayscale(0.9);
+}
+
+/* 原生固定区磁贴（PinnedTile）内部按钮 */
+.pinned-main {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.pinned-main:hover,
+.pinned-main:focus-visible {
+  border-color: transparent;
+  background: transparent;
+}
+.pinned-main:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.pinned-tile.is-active .pinned-main {
+  /* 激活态视觉由 .pinned-tile 的强调色承载，内层按钮保持透明 */
+  border-color: transparent;
+  background: transparent;
+}
+
+.pinned-favicon-wrap {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-gray-600);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Favicon 回退字母与图标统一去掉自带背景，交给 wrap 容器；
+   图标尺寸由 CSS 接管（Favicon cssSized 模式），尺寸变体直接级联覆盖，无需 !important */
+.pinned-favicon-wrap > span,
+.pinned-favicon-wrap > img {
+  width: 18px;
+  height: 18px;
+  background: transparent !important;
+}
+
+.pinned-tile.is-audible::after {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--c-brand-500);
+  content: '';
+}
+
+/* 列表内「固定标签」区：紧凑图标网格（与顶部 PinnedStrip 视觉一致） */
+/* 磁贴网格是唯一的横向留白来源（左右各 8px），不嵌套在 .section-body 内
+   —— 否则双重缩进会把置顶区磁贴推到 16px。 */
+.pinned-grid {
+  display: flex;
+  flex-wrap: wrap;
+  /* 行距 6px / 列距 4px：磁贴 36px 高，hover 时 translateY(-1px) + elev-1 向下扩散约
+     3px，行距 4px 时阴影直接压到下一排；.pinned-unpin 的 top:-4px 也恰好占满 4px
+     行距，角标顶到上一排磁贴底边（后渲染的在上层，看着像挂错磁贴）。 */
+  gap: 6px 4px;
+  /* 顶部 4px 是给**第一行**磁贴的 .pinned-unpin 留位：角标 top:-4px 会向上伸出磁贴，
+     而本容器 overflow-y:auto 会把伸出 padding box 的部分裁掉 —— 第一行没有上一排行距
+     可以占，缺这 4px 时取消按钮会被切掉顶部（看起来像「右上角被遮住」）。
+     左右 8px 同理给角标的 right:-4px 留位；底部 4px 与行距一致。 */
+  padding: 4px 8px 4px;
+  /* 两行封顶（4 + 36 + 6 + 36 + 4 = 86px）：20+ 枚磁贴时磁贴区会把固定空间与主列表挤出首屏 */
+  max-height: 86px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pinned-tile .pinned-unpin {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--c-gray-500);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.pinned-tile:hover .pinned-unpin,
+.pinned-tile .pinned-unpin:focus-visible {
+  opacity: 1;
+}
+.pinned-tile .pinned-unpin:hover {
+  background: var(--c-red-50);
+  border-color: var(--c-red-200);
+  color: var(--c-red-600);
+}
+:root[data-theme='dark'] .pinned-tile.is-audible::after {
+  border-color: var(--surface);
+  background: var(--c-brand-400);
+}
+
+:root[data-theme='dark'] .pinned-strip.is-drop-target {
+  border-color: var(--c-brand-400);
+  background: color-mix(in srgb, var(--c-brand-500) 18%, var(--canvas));
+}
+
+/* ---------- 拖拽手柄（悬停覆盖 favicon 原位，不占布局列） ---------- */
+.row-item .drag-grip {
+  position: absolute;
+  inset: -2px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--row-bg, var(--canvas));
+  color: var(--c-gray-500);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  cursor: grab;
+  pointer-events: none;
+}
+/* 宽松密度：增加行内边距，信息更舒展 */
+.row-item.density-cozy {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* 大字号密度：低视力可读性档位 —— 行文字 12px → 14px，边距同步加高。
+   副标题（tab-url 10px）与徽章字号保持不变：它们只是辅助信息。
+   14px 直接写字面量：--text-sm 是 Tailwind 内部变量、未在本文件 @theme 声明，
+   设计令牌守卫会将其判为未受控引用。 */
+/* 10px（原 7px）：与 cozy 的 6px 只差 1px 时档位形同虚设，且 7px 脱 4px 网格。
+   三档 2 / 6 / 10 逐级差 4px，切换密度时变化可辨。
+   选择器并列两条：
+   - .row-item.density-large —— 行显式收到 density prop 时命中（主列表）；
+   - [data-density='large'] .row-item —— 祖先下发时命中（固定空间的条目行不
+     经 RowItem 的 density prop，只能靠 .app 上的属性驱动）。两者同值，
+     互补覆盖两条渲染链，不产生冲突。 */
+.row-item.density-large,
+[data-density='large'] .row-item {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 0.875rem;
+}
+.row-item.density-large .title-text,
+[data-density='large'] .row-item .title-text {
+  line-height: 1.35;
+}
+/* 副标题（完整网址）同步放大 10px → 12px：它同属正文级信息，只放大标题
+   会让大字号档位半途而废（读得清标题、读不清网址）。徽章保持原尺寸（辅助标记）。 */
+.row-item.density-large .tab-url,
+[data-density='large'] .row-item .tab-url {
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+/* 同样的两条链：cozy 档也补属性选择器，否则固定空间在「舒适」档下
+   拿不到 6px 上下留白（它只能继承到 class 版，而 class 版由 prop 决定）。 */
+[data-density='cozy'] .row-item:not(.density-large) {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* 分组标题同步放大（导航级文字）：density 标记由 .app 根节点下发 */
+[data-density='large'] .section-head .title {
+  font-size: 0.875rem;
+}
+/* 刚放下的一瞬间：指针仍停在落点行上，纯 :hover 会让把手残留不消，
+   观感像「拖完卡住」。抑制到指针再次移动（那才是真正的重新悬停）。 */
+body.dnd-just-dropped .row-item .drag-grip {
+  opacity: 0;
+}
+/* 仅悬停显示，不带 :focus-within —— 行内主按钮点击后会保持焦点，
+   导致激活标签永远满足条件、把手常驻在它的 favicon 上，干扰「当前是哪个标签」的识别。
+   键盘排序走 Alt+↑↓，不依赖这个纯视觉提示（grip 本身 aria-hidden）。
+   注：.is-selected 类从未被任何组件添加，属于死条件，一并移除。 */
+.row-item:hover .drag-grip {
+  opacity: 1;
+  pointer-events: auto;
+}
+.row-item .drag-grip:active {
+  cursor: grabbing;
+}
+/* dnd-kit 排序中的行：浮动层级 + 轻量阴影，随指针平滑移动 */
+.row-item.is-sorting {
+  z-index: 40;
+  opacity: 0.9;
+  box-shadow: var(--elev-3);
+}
+
+/* ---------- 行尾操作（参与布局：悬停/聚焦时操作组以 max-width 展开，
+   标题自动收缩省略，与按钮零重叠 —— 旧「absolute 浮层 + 渐变遮罩」方案
+   在长中文标题上遮不干净，表现为文字压在按钮下） ---------- */
+.row-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  max-width: 0;
+  overflow: hidden;
+  /* 纵向呼吸位：计数徽章顶部超出按钮 4px，没有它会被 overflow 裁掉一角 */
+  padding-top: 4px;
+  padding-bottom: 4px;
+  margin-top: -4px;
+  margin-bottom: -4px;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    max-width var(--dur-fast) var(--ease-out),
+    padding-left var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+.row-item:hover .row-actions,
+.row-item:focus-within .row-actions {
+  max-width: 150px;
+  padding-left: 8px;
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 浮层浮现时让位：次要徽章（播放/拆分等）淡出，改由浮现的快捷操作承担；
+   但「重复 n×」与休眠雪花是**决策信息**（决定要不要关闭/去重），必须常显 ——
+   悬停准备操作时信息消失会让用户失去判断依据。keep 类徽章不参与淡出。 */
+/* 徽章组宽度预算：仅 inline-flex shrink-0 时五枚徽章
+   （重复 12× + 播放中 + 拆 + 伴 + 禁）约 154px，在 320px 面板下会把标题挤成 0 宽
+   并与 favicon 重叠、向右溢出。上限取 38%（≈110px @300px），超出裁掉；
+   「重复 n×」与休眠雪花由 StatusBadges 前置渲染，保证不被裁。 */
+.row-badges {
+  max-width: 38%;
+  overflow: hidden;
+}
+/* 用 display:none 而非 opacity:0 —— opacity 只隐藏视觉、宽度照样占着，
+   悬停时 150px 操作区 + 全部徽章宽度会把标题挤成 0 宽并溢出右边缘。
+   （@media (hover:none) 分支早已是 display:none，此处对齐同一口径。） */
+.row-item:hover .status-badge:not(.status-keep),
+.row-item:focus-within .status-badge:not(.status-keep) {
+  display: none;
+}
+/* 「操作常显」档（设置项 rowActionsVisible）：复用 .row-actions 的宽度预算与
+   ≤300px 收窄，但不参与「max-width:0 塌陷 + 悬停展开」—— 它是常驻的。 */
+.row-actions--static {
+  /* 与 ≤300px 档的收窄同值（内容本身约 118px）：常显档若按 150px 预算占位，
+     窄面板下与徽章叠加会把标题挤到几乎为零。 */
+  max-width: 118px;
+  padding-left: 8px;
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 拖拽排序中不浮现操作，避免干扰落点判断 */
+.row-item.is-sorting .row-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+/* 拖拽期间对所有行同样处理（.is-sorting 只标记被拖的那一行）：
+   指针扫过目标行会触发 hover，行尾操作展开 150px 挤动行内布局，
+   与拖拽中的持续重测叠加会表现为落点抖动、要停一下才命中。 */
+body.dnd-dragging .row-item .row-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+/* 拖拽期间放开固定空间的高度上限：34vh 内滚区大约只放得下 4–5 个文件夹，
+   而拖拽期的自动滚动被全局关闭（避免落点漂移），第 6 个及之后的文件夹在拖拽
+   过程中无法滚到 —— 用户只能放弃这次拖拽、手动滚、再拖一次。让固定区在拖拽
+   期间整段可见，成本是列表暂时被撑开（松手即恢复）。 */
+body.dnd-dragging .fixed-area {
+  max-height: none;
+}
+/* 高度降级：真正的挤压源是**面板高度**而不是宽度。若降级挂在 ≤300px 的容器
+   查询下，320×500 的矮胖面板拿不到降级（该让位时不让），280×900 的高瘦面板
+   反而被压到 160px（不该让位时乱让）。按视口高度降级才对上因果。
+   用媒体查询而非 container-type: size：后者会让 .app 成为 fixed 后代的包含块
+   并新建层叠上下文，Dialog/ContextMenu/DragOverlay 全部要重新回归。 */
+@media (max-height: 620px) {
+  .fixed-area {
+    max-height: min(24vh, 160px);
+  }
+}
+
+/* 无悬停设备（触屏）：常显悬停态操作，否则无法呼出；同时隐藏次要徽标避免重叠，
+   决策徽章（重复/休眠）保留 —— 触屏用户同样需要判断依据。 */
+@media (hover: none) {
+  .pinned-tile .pinned-unpin {
+    opacity: 1;
+  }
+  .row-item .row-actions {
+    max-width: 150px;
+    padding-left: 8px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .row-item .status-badge:not(.status-keep) {
+    display: none;
+  }
+}
+
+/* 固定条目作为投放目标（拖标签/分组加入文件夹）时的落点高亮 */
+.row-item.is-drop-target {
+  background: color-mix(in srgb, var(--c-brand-500) 5%, transparent);
+  --row-bg: var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
+}
+
+/* DragOverlay 跟随指针的拖拽视觉（替代原生 HTML5 DnD 的系统 ghost） */
+.drag-overlay-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--c-brand-500) 22%, var(--border-subtle));
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+  font-size: 12px;
+  color: var(--c-gray-800);
+  /* 必须穿透指针：overlay 常驻指针正下方，不设会抢走 hover/焦点，
+     行不高亮、拖拽手感发涩。（dnd-kit 的 pointerWithin 是几何计算，
+     不受此影响——这里修的是原生 hover 与视觉反馈。） */
+  pointer-events: none;
+}
+
+/* 行尾浮层底色基准（--row-bg）：base/hover/focus-within 必须在下方状态规则之前声明，
+   级联后状态色（is-active/is-search-active/is-media-playing/is-highlighted）在悬停时
+   仍优先于灰底，浮层渐变始终与真实行底色一致。 */
+.row-item {
+  --row-bg: var(--canvas);
+  background: var(--row-bg);
+  /* 来源树缩进：步长与上限都是变量，窄档可整体收紧（见下方容器查询）。 */
+  --indent-step: 16px;
+  --indent-max: 70px;
+}
+.row-item:hover {
+  --row-bg: var(--row-hover);
+}
+/* 键盘 Tab 进入行内按钮时行底色同步加深，焦点位置可见 */
+.row-item:focus-within {
+  background: var(--row-hover);
+  --row-bg: var(--row-hover);
+}
+
+/* 已休眠（discarded）：只淡化 favicon，标题降到仍满足 4.5:1 的灰阶。
+   历史缺陷：整行 opacity-60 会把标题压到约 2.68:1（AA 要求 4.5:1），低视力用户
+   完全读不清 —— 而休眠恰恰是最需要看清标题的时候。
+   参数与 .pinned-tile.is-discarded 对齐（0.56 + grayscale .9），两处共用同一语义。 */
+.row-item.is-discarded .row-favicon {
+  opacity: 0.56;
+  filter: grayscale(0.9);
+}
+.row-item.is-discarded .title-text {
+  /* 浅色 #687168 对画布 5.08:1、深色 #98a29b 对表面 5.26:1，均达标 */
+  color: var(--c-gray-500);
+}
+
+/* 当前激活标签：淡品牌底 + 加粗深色标题（去掉行首圆点——与 favicon 相叠显脏，
+   底色+字重双信号已足够，视觉更干净） */
+.row-item.is-active {
+  background: color-mix(in srgb, var(--c-brand-500) 15%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 15%, var(--surface));
+}
+.row-item.is-active .title-text {
+  color: var(--c-gray-900);
+  font-weight: 600;
+}
+/* 浏览器高亮（onHighlighted：多选/拆分视图联动）：极淡琥珀底，无边框——
+   激活标签不叠加高亮底色（激活态主导，避免"激活+高亮"双层背景）。 */
+.row-item.is-highlighted:not(.is-active) {
+  background: color-mix(in srgb, var(--c-warn-200) 16%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-warn-200) 16%, var(--surface));
+}
+.row-item.is-located {
+  animation: locate-tab-pulse 1.1s var(--ease-out);
+}
+@keyframes locate-tab-pulse {
+  0%,
+  100% {
+    background: transparent;
+  }
+  35% {
+    background: color-mix(in srgb, var(--c-brand-500) 22%, var(--surface));
+  }
+}
+
+.row-item.is-search-active {
+  background: color-mix(in srgb, var(--c-brand-500) 8%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 8%, var(--surface));
+  box-shadow: inset 2px 0 var(--c-brand-500);
+}
+
+.row-item.is-search-active .title-text {
+  color: var(--c-brand-700);
+  font-weight: 600;
+}
+
+/* 媒体播放中的标签：加粗品牌色标题 + 行内脉冲胶囊。刻意不再叠加整行绿底 ——
+   与激活态（15% 绿底）、搜索命中（8% 绿底）同色相浓度差仅 6-7%，肉眼难辨；
+   播放信号由 media-playing-badge 独自承担后，三态可一眼区分。 */
+.row-item.is-media-playing .title-text {
+  color: var(--c-brand-700);
+  font-weight: 600;
+}
+
+/* 分屏组指示：分屏的「连续」标签段左侧一条高亮竖线贯穿（简约醒目）。
+   用 data-split-role 属性选择器（不依赖 class 拼接，避免被 Tailwind utilities 覆盖）。
+   配「拆/伴」徽章，一眼即知两个 tab 同屏。 */
+/* padding-left 4px（而非 6px）：2px 竖线自身占位，4+2 = 6px 与 .row-item 的
+   pl-1.5 等值，分屏行与普通行的 favicon 才落在同一条 8px 内容竖线上。 */
+.row-item[data-split-role] {
+  border-left: 2px solid color-mix(in srgb, var(--c-brand-500) 34%, transparent);
+  padding-left: 4px;
+  z-index: 1;
+}
+/* 状态层级：激活标签是主状态，搜索只提供辅助提示，不覆盖激活圆点。 */
+.row-item.is-active.is-search-active {
+  background: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
+}
+.media-playing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--c-brand-500) 42%, var(--border-subtle));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-brand-500) 13%, var(--surface));
+  color: var(--c-brand-700);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.media-playing-badge::after {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--c-brand-500);
+  content: '';
+  animation: media-playing-pulse 1.2s ease-in-out infinite;
+}
+@keyframes media-playing-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---------- 搜索骨架屏 ---------- */
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--c-gray-100) 25%,
+    var(--c-gray-200) 37%,
+    var(--c-gray-100) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+/* ---------- 分组：扁平分隔（极致压缩信息密度） ---------- */
+.section-card {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 1px;
+  /* 拖拽落点高亮走过渡（分区级落点不与 .row-item 共享 transition-base，须各自声明） */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.section-card:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+/* 相邻分组卡片之间留 2px 间隔，避免折叠状态粘成一片 */
+.section-card + .section-card {
+  margin-top: 2px;
+}
+
+.section-card.is-pinned {
+  /* 固定（原生钉住）分类的视觉标识：零背景，常驻于滚动区之外始终可见 */
+}
+/* 分组强调色：count 胶囊随组色轻染（accent 圆点用内联样式在 SectionHead 渲染）。
+   去掉 border-top 的同时补回 padding-top 2px：否则相邻分区间距为
+   margin 2 + padding 1 = 3px，而无强调色分区是 2+1+1 = 4px —— 同列两种间距。 */
+.section-card.is-accented {
+  border-top: 0;
+  padding-top: 2px;
+}
+.section-card.is-accented .count-pill {
+  background: color-mix(in srgb, var(--accent) 14%, var(--c-gray-100));
+}
+.section-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.section-head:hover {
+  background: var(--row-hover);
+}
+/* 头部前导（色条 + chevron）：拖拽手柄浮现时淡出交换 */
+.section-head .head-leading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+/* 仅存在拖拽手柄的头才做前导交换（无手柄的头悬停不淡出）。
+   仅 hover 触发：点击 toggle 会让其获得焦点，若用 :focus-within 会持续显示手柄，
+   鼠标移开后仍不消失。键盘场景由手柄自身 :focus-visible 承担（见下方）。 */
+.section-head:has(.section-drag-handle):hover .head-leading {
+  opacity: 0;
+}
+.section-head .toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.section-head button.toggle {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+/* 分组头键盘拖拽手柄：整头鼠标可拖（指针），手柄承担键盘拖拽（Space + 方向键）。
+   绝对定位覆盖头部前导（色条/chevron 原位），零布局占位；
+   translate 属性与全局 :active scale 变换正交，按压不跳位。 */
+.section-drag-handle {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 1;
+  opacity: 0;
+  color: var(--c-gray-500);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.section-head:hover .section-drag-handle,
+.section-drag-handle:focus-visible {
+  opacity: 1;
+}
+/* 无 hover 的设备永远看不到手柄 —— 用户不知道分区头可以拖动排序。
+   键盘有 :focus-visible 兜底，触屏没有。 */
+@media (hover: none) {
+  .section-drag-handle {
+    opacity: 1;
+  }
+}
+
+.section-head .title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-gray-600);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-media-indicator {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--c-brand-500) 48%, var(--border-subtle));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
+  color: var(--c-brand-700);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.section-media-indicator:hover,
+.section-media-indicator:focus-visible {
+  border-color: var(--c-brand-500);
+  background: color-mix(in srgb, var(--c-brand-500) 18%, var(--surface));
+  color: var(--c-brand-700);
+}
+.section-media-label {
+  max-width: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-media-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-brand-500);
+  animation: media-playing-pulse 1.2s ease-in-out infinite;
+}
+/* 计数胶囊：分区头（分组数 / 文件夹数 / 标签数）与底栏（当前窗口标签数）共用。
+   从 `.section-head .count-pill` 放宽为通用类，避免底栏另写一份徽章样式。 */
+.count-pill {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--c-gray-100);
+  /* gray-500 在 gray-100 底上仅 3.92:1，不达 AA；gray-600 达 6.8:1 */
+  color: var(--c-gray-600);
+  font-size: 10px;
+  font-weight: 600;
+}
+/* 行内按钮自身 hover 时升级为品牌色背景 */
+.section-card:hover .row-action:hover {
+  background: var(--c-brand-100);
+  color: var(--c-brand-700);
+}
+/* 头部操作按钮容器：display:contents 让按钮重新成为 .section-head 的 flex 子项
+   （保留既有 gap 与对齐），同时在此拦截 pointerdown，避免点击操作按钮时
+   冒泡到 dnd-kit 拖拽手柄而误触发排序拖拽/吞掉点击。 */
+.section-head-actions {
+  display: contents;
+}
+/* 内容竖线口径：
+   分区头前导色条 = .section-head padding-left 8px；
+   行内 favicon   = .section-body 2px + .row-item pl-1.5 6px = 8px。
+   二者同处一条 8px 竖线。.section-body 只留 2px：行需近满宽（hover 底色成连续色带、
+   长标题可多出 12px），缩进全部交给行自身的 pl-1.5，改行内边距不必再动容器。 */
+.section-body {
+  padding: 0 2px 2px;
+}
+
+/* 虚拟列表滚动容器（VirtualRowList）。
+   overscroll-behavior: contain 是关键 —— 虚拟列表是嵌套滚动的最内层
+   （固定区 / 主列表 / 虚拟列表最多三层），不隔离滚动链会导致内层滚到
+   边界后继续带动外层列表滚动，长列表里落点会"跳走"。 */
+.virtual-row-scroll {
+  overscroll-behavior: contain;
+}
+
+/* 超阈值分区被强制虚拟化、列表内排序暂停时的行内说明（RowList 顶部）。 */
+/* 左 6px：本元素渲染在 .section-body 内（2px），6+2 = 8px 与全局内容竖线一致。 */
+.virtual-notice {
+  margin: 0;
+  padding: 2px 6px 4px;
+  color: var(--c-gray-500);
+  font-size: var(--text-3xs);
+  line-height: 1.4;
+}
+
+/* ---------- 底部固定的「新建标签页」操作条（紧凑，融入页面底色） ----------
+   去掉 border-top：按钮自身的虚线边框已经是边界，再叠一条实线属于双重分隔。
+   仅保留上方 2px 留白与按钮 hover 的面色反馈。 */
+.add-tab-bar {
+  flex: none;
+  background: var(--canvas);
+  padding: 4px 8px 4px;
+}
+.add-tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-subtle);
+  color: var(--c-gray-600);
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.add-tab-btn:hover {
+  border-color: var(--c-brand-300);
+  background: var(--c-brand-50);
+  color: var(--c-brand-600);
+}
+.add-tab-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* 窄侧边栏降级：隐藏低优先级文字，保留标题、状态和核心动作。
+   注意：.tab-url 不在此列——它是用户显式开启「显示网址」后才渲染的，
+   容器查询隐藏会导致该设置"无效"（Chrome 侧边栏默认宽度 ≤360px 正落入此区间）。 */
+@container (max-width: 360px) {
+  .section-media-label {
+    display: none;
+  }
+  .section-head {
+    gap: 2px;
+  }
+}
+
+/* 底栏文字标签的窄面板策略：
+   - 常规宽度：按 footerLabels 设置显示，nav 已有 flex-wrap，文字放不下自然换行；
+   - 窄档（≤480px）：全部退回纯图标 —— 底栏宽度有限，留住「快照 / 历史 / 设置」
+     三个文字标签会把其余图标挤到第二行，整条底栏换行。窄档不区分核心入口，
+     语义由 title / aria-label 承载。
+
+   断点取 480 而非 360：360→361px 时文字会一次性全部出现，底栏高度 28→52px
+   是硬跳变，主列表随之被压缩。480 才是「真正放得下」的宽度。 */
+@container (max-width: 480px) {
+  .icon-btn-label {
+    display: none;
+  }
+}
+/* 底栏按钮的可拖拽外壳：position:relative 让拖拽中的 z-index 生效，
+   inline-flex 保持与直接渲染 IconButton 时一致的盒模型（不引入额外尺寸）。 */
+.footer-button {
+  position: relative;
+  display: inline-flex;
+}
+.footer-button.is-dragging {
+  cursor: grabbing;
+}
+/* 拖拽中的按钮跟着指针浮起，与相邻项区分 */
+.footer-button.is-dragging > * {
+  box-shadow: var(--elev-2);
+  border-radius: 4px;
+}
+
+/* 拖拽期提示条：与 Toast 同视觉语言（浮在内容之上、不占布局），
+   但常驻到拖拽结束为止（不是 7 秒自动消失）。 */
+.dnd-hint {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 40;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--c-gray-600);
+  font-size: 11px;
+  box-shadow: var(--elev-2);
+  pointer-events: none;
+}
+
+/* 更窄档（≤360px）：只收紧来源树缩进。
+   曾在此隐藏底栏分隔线与「关于 / 重排 / 定位」——理由是它们都有命令面板替代
+   路径、隐藏后底栏能回到一行；但实际效果是用户看到「图标莫名少了一半」，
+   入口的可发现性损失远大于省下的 20px 高度。底栏换行是可接受的代价，恢复常驻。 */
+@container (max-width: 360px) {
+  /* 窄面板下来源树缩进收紧：4 级固定 70px 会吃掉约 22% 的行宽 */
+  .row-item {
+    --indent-step: 10px;
+    --indent-max: 40px;
+  }
+}
+
+/* 更窄档（≤300px，Chrome 侧边栏拖到最窄）：再退一级，
+   只保留标题、计数与核心动作；「新建标签页」收为纯图标，
+   媒体播放指示整块隐藏（其信息已由行内徽章承载，不丢状态）。
+
+   刻意**不**收窄 .section-body：收窄会让内容竖线与 .section-head 的 8px 错开，
+   且 .pinned-grid 仍是 8px，一屏出现三条左边缘。内容竖线必须与宽度档位无关：
+   宽档/窄档一律 8px（body 2px + 行 pl-1.5 6px）。窄档要省宽度应靠隐藏元素，
+   而不是拆掉对齐。 */
+@container (max-width: 300px) {
+  .add-tab-btn span {
+    display: none;
+  }
+  .add-tab-btn {
+    padding: 4px;
+  }
+  .section-media-indicator {
+    display: none;
+  }
+  /* 固定空间是 flex:none 的定高块，窄面板下必须让位给主列表 */
+  .fixed-area {
+    max-height: min(24vh, 160px);
+  }
+  /* 行尾操作在窄档收窄，避免与徽章合计挤出右边缘。
+     118px 而非 104px：max-width 是 border-box，要扣掉 padding-left 8px，
+     104px 时内容区仅 96px < 五按钮实宽 110px，末尾「关闭」会被裁掉约 14px。 */
+  .row-item:hover .row-actions,
+  .row-item:focus-within .row-actions {
+    max-width: 118px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .media-playing-badge::after,
+  .section-media-dot,
+  .row-item,
+  .section-body,
+  .pinned-tile,
+  .modal-overlay,
+  .modal-panel,
+  .status-toast {
+    animation: none;
+  }
+  .row-item .drag-grip,
+  .row-actions,
+  .row-badges .status-badge,
+  .section-head button.toggle,
+  .section-drag-handle,
+  .add-tab-btn,
+  .pinned-grid .pinned-unpin,
+  .search-bar-clear {
+    transition: none;
+  }
+  /* theme-transition 的全局颜色过渡带 !important 且特异性更高，
+     必须在此以同权重 + 更后顺序显式关闭，否则 reduced-motion 失效 */
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: none !important;
+  }
+}

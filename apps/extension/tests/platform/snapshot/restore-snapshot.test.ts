@@ -1,0 +1,296 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fakeBrowser } from 'wxt/testing/fake-browser';
+import type { Snapshot, SnapshotTab } from '@/core/schema/models';
+import {
+  collectSnapshotTabs,
+  replaceSpaceSnapshot,
+  restoreSnapshot
+} from '@/platform/snapshot/snapshots';
+import { snapshotsRepository } from '@/platform/storage/repositories';
+import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
+
+/**
+ * 快照恢复行为规格：
+ *  - 加法语义：仅新建缺失标签，已存在的不重复创建、不被关闭；
+ *  - 固定/静音状态还原；
+ *  - 分组还原：同名组并入、缺失组按名重建（标题/颜色还原）；
+ *  - 固定标签不参与分组；快照内重复 URL 去重。
+ */
+
+const WINDOW_ID = 1;
+
+/** fake-browser 要求先建窗口：不带有效 windowId 创建的标签会落到 windowId 0。 */
+async function ensureWindow(): Promise<void> {
+  const win = await fakeBrowser.windows.create();
+  expect(win?.id).toBe(WINDOW_ID);
+}
+
+function snapTab(partial: Partial<SnapshotTab> & Pick<SnapshotTab, 'url'>): SnapshotTab {
+  return { title: '', pinned: false, muted: false, ...partial };
+}
+
+function snapshotOf(tabs: SnapshotTab[]): Snapshot {
+  return {
+    id: 'snap-1',
+    name: '测试快照',
+    origin: 'manual',
+    createdAt: Date.now(),
+    windowId: WINDOW_ID,
+    tabCount: tabs.length,
+    tabs
+  };
+}
+
+/** fake-browser 对 tabs.group / tabGroups.query 部分实现不全，注入最小实现。 */
+function stubTabsApi(): {
+  groupMock: ReturnType<typeof vi.fn>;
+  updateMock: ReturnType<typeof vi.fn>;
+} {
+  const groupMock = vi.fn(
+    async (options: { tabIds?: number[]; groupId?: number }) =>
+      options.groupId ?? 100 + Math.max(...(options.tabIds ?? [0]))
+  );
+  const updateMock = vi.fn(async () => undefined);
+  const tabs = fakeBrowser.tabs as unknown as { group: typeof groupMock };
+  const groups = fakeBrowser.tabGroups as unknown as {
+    query: (q: object) => Promise<{ id: number; title?: string }[]>;
+    update: typeof updateMock;
+  };
+  tabs.group = groupMock;
+  groups.query = vi.fn(async () => []);
+  groups.update = updateMock;
+  return { groupMock, updateMock };
+}
+
+afterEach(() => {
+  fakeBrowser.reset();
+  vi.restoreAllMocks();
+});
+
+describe('restoreSnapshot（加法恢复）', () => {
+  it('仅新建缺失标签：窗口已存在的 URL 不重复创建', async () => {
+    stubTabsApi();
+    await ensureWindow();
+    // 窗口已有 a.com 与 b.com
+    await fakeBrowser.tabs.create({ windowId: WINDOW_ID, url: 'https://a.com/' });
+    await fakeBrowser.tabs.create({ windowId: WINDOW_ID, url: 'https://b.com/' });
+
+    const snap = snapshotOf([
+      snapTab({ url: 'https://a.com/' }), // 已存在 → 跳过
+      snapTab({ url: 'https://b.com/' }), // 已存在 → 跳过
+      snapTab({ url: 'https://c.com/' }) // 缺失 → 新建
+    ]);
+    const { count: created } = await restoreSnapshot(snap, WINDOW_ID);
+
+    expect(created).toBe(1);
+    const all = await fakeBrowser.tabs.query({ windowId: WINDOW_ID });
+    expect(all).toHaveLength(3); // 2 个原有 + 1 个新建，无一被关闭
+  });
+
+  it('快照内重复 URL 只恢复一次', async () => {
+    stubTabsApi();
+    await ensureWindow();
+    const snap = snapshotOf([
+      snapTab({ url: 'https://a.com/' }),
+      snapTab({ url: 'https://a.com/' })
+    ]);
+    const { count: created } = await restoreSnapshot(snap, WINDOW_ID);
+    expect(created).toBe(1);
+  });
+
+  it('全部条目均已存在时为空操作（返回 0）', async () => {
+    stubTabsApi();
+    await ensureWindow();
+    await fakeBrowser.tabs.create({ windowId: WINDOW_ID, url: 'https://a.com/' });
+    const snap = snapshotOf([snapTab({ url: 'https://a.com/' })]);
+    expect(await restoreSnapshot(snap, WINDOW_ID)).toMatchObject({ count: 0 });
+  });
+
+  it('还原固定与静音状态', async () => {
+    stubTabsApi();
+    await ensureWindow();
+    // fake-browser 不落地 mutedInfo，静音断言以 API 调用为准（spy）
+    const updateSpy = vi.spyOn(fakeBrowser.tabs, 'update');
+    const snap = snapshotOf([
+      snapTab({ url: 'https://a.com/', pinned: true }),
+      snapTab({ url: 'https://b.com/', muted: true }),
+      snapTab({ url: 'https://c.com/' }) // 未固定未静音：不应有静音调用
+    ]);
+    await restoreSnapshot(snap, WINDOW_ID);
+
+    const all = await fakeBrowser.tabs.query({ windowId: WINDOW_ID });
+    expect(all).toHaveLength(3);
+    const pinned = all.find((tab) => tab.url === 'https://a.com/');
+    expect(pinned?.pinned).toBe(true);
+    // 仅 b.com 被置静音（pinned 内联于 create；c.com 无任何 update）
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith(expect.any(Number), { muted: true });
+  });
+
+  it('分组还原：缺失组按名重建并写入标题与颜色', async () => {
+    const { updateMock } = stubTabsApi();
+    await ensureWindow();
+    const snap = snapshotOf([
+      snapTab({ url: 'https://a.com/', groupTitle: '研究', groupColor: 'blue' }),
+      snapTab({ url: 'https://b.com/', groupTitle: '研究', groupColor: 'blue' }),
+      snapTab({ url: 'https://c.com/' }) // 无组：保持未分组
+    ]);
+    await restoreSnapshot(snap, WINDOW_ID);
+
+    // 两个同组标签一次成组，组名/颜色写入
+    expect(updateMock).toHaveBeenCalledWith(102, { title: '研究', color: 'blue' });
+  });
+
+  it('固定标签不参与分组（Chrome 限制）', async () => {
+    const { groupMock } = stubTabsApi();
+    await ensureWindow();
+    const snap = snapshotOf([snapTab({ url: 'https://a.com/', pinned: true, groupTitle: '研究' })]);
+    await restoreSnapshot(snap, WINDOW_ID);
+    expect(groupMock).not.toHaveBeenCalled();
+  });
+
+  it('窗口已有同名组时并入既有组', async () => {
+    const { groupMock, updateMock } = stubTabsApi();
+    await ensureWindow();
+    const groups = fakeBrowser.tabGroups as unknown as {
+      query: (q: object) => Promise<{ id: number; title?: string }[]>;
+    };
+    groups.query = vi.fn(async () => [{ id: 42, title: '研究' }]);
+
+    const snap = snapshotOf([snapTab({ url: 'https://a.com/', groupTitle: '研究' })]);
+    await restoreSnapshot(snap, WINDOW_ID);
+
+    expect(groupMock).toHaveBeenCalledWith({ tabIds: [expect.any(Number)], groupId: 42 });
+    // 并入既有同名组时**不**回写快照里的标题/颜色：用户可能在快照之后改过该组，
+    // 旧 meta 会覆盖用户的后续修改。
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('collectSnapshotTabs（采集端）', () => {
+  it('记录静音与组归属，过滤内部页', () => {
+    const tabs: TabRecord[] = [
+      {
+        id: 1,
+        windowId: 1,
+        index: 0,
+        active: false,
+        pinned: false,
+        incognito: false,
+        url: 'https://a.com/',
+        pendingUrl: undefined,
+        title: 'A',
+        favIconUrl: undefined,
+        status: 'complete',
+        discarded: false,
+        muted: true,
+        audible: false,
+        groupId: 7,
+        splitViewId: undefined,
+        lastAccessed: 1000,
+        autoDiscardable: true
+      },
+      {
+        id: 2,
+        windowId: 1,
+        index: 1,
+        active: false,
+        pinned: false,
+        incognito: false,
+        url: 'chrome://newtab',
+        pendingUrl: undefined,
+        title: '内部页',
+        favIconUrl: undefined,
+        status: 'complete',
+        discarded: false,
+        muted: false,
+        audible: false,
+        groupId: -1,
+        splitViewId: undefined,
+        lastAccessed: 1000,
+        autoDiscardable: true
+      }
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: '研究', color: 'blue', collapsed: false }];
+    const collected = collectSnapshotTabs(tabs, groups);
+    expect(collected).toHaveLength(1); // 内部页过滤
+    expect(collected[0]).toMatchObject({
+      url: 'https://a.com/',
+      muted: true,
+      groupTitle: '研究',
+      groupColor: 'blue'
+    });
+  });
+});
+
+describe('replaceSpaceSnapshot（空间原地更新，C1）', () => {
+  it('把最新现场写回目标空间快照：tabs/tabCount/createdAt 更新，id 与 name 不变', async () => {
+    const space: Snapshot = {
+      ...snapshotOf([snapTab({ url: 'https://old.com/' })]),
+      id: 'space-1',
+      name: '工作',
+      origin: 'space'
+    };
+    const other: Snapshot = {
+      ...snapshotOf([snapTab({ url: 'https://keep.com/' })]),
+      id: 'snap-2',
+      name: '普通快照',
+      origin: 'manual'
+    };
+    await snapshotsRepository.write([space, other]);
+
+    const result = await replaceSpaceSnapshot(
+      'space-1',
+      [snapTab({ url: 'https://new.com/' }), snapTab({ url: 'https://new2.com/' })],
+      7
+    );
+
+    expect(result.replaced).toBe(true);
+    const next = result.snapshots;
+    const updated = next.find((snapshot) => snapshot.id === 'space-1')!;
+    expect(updated.origin).toBe('space');
+    expect(updated.name).toBe('工作'); // 名称等身份字段保持
+    expect(updated.tabCount).toBe(2);
+    expect(updated.tabs.map((tab) => tab.url)).toEqual(['https://new.com/', 'https://new2.com/']);
+    expect(updated.windowId).toBe(7);
+    // 其余快照不受影响，也不新增条目
+    expect(next).toHaveLength(2);
+    expect(next.find((snapshot) => snapshot.id === 'snap-2')!.tabs[0]!.url).toBe(
+      'https://keep.com/'
+    );
+  });
+
+  it('目标不是 space 快照：幂等返回原列表且 replaced=false', async () => {
+    await snapshotsRepository.write([{ ...snapshotOf([]), id: 'manual-1', origin: 'manual' }]);
+    const before = await snapshotsRepository.read();
+
+    const result = await replaceSpaceSnapshot('manual-1', [snapTab({ url: 'https://x.com/' })], 1);
+
+    expect(result.replaced).toBe(false);
+    expect(result.snapshots).toEqual(before); // manual 快照不得被原地改写
+  });
+
+  it('目标空间已不存在：replaced=false（调用方据此中止切换）', async () => {
+    await snapshotsRepository.write([{ ...snapshotOf([]), id: 'space-1', origin: 'space' }]);
+
+    const result = await replaceSpaceSnapshot('deleted', [snapTab({ url: 'https://x.com/' })], 1);
+
+    expect(result.replaced).toBe(false);
+  });
+
+  it('现场为空时不回写（保留原空间内容，避免抹成空现场）', async () => {
+    const space: Snapshot = {
+      ...snapshotOf([snapTab({ url: 'https://old.com/' })]),
+      id: 'space-1',
+      origin: 'space'
+    };
+    await snapshotsRepository.write([space]);
+
+    const result = await replaceSpaceSnapshot('space-1', [], 1);
+
+    expect(result.replaced).toBe(false);
+    // 原内容仍在（用户手工关光标签后切空间不会丢现场）
+    expect(result.snapshots.find((snapshot) => snapshot.id === 'space-1')!.tabCount).toBe(1);
+  });
+});

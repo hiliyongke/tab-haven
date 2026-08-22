@@ -1,0 +1,145 @@
+/*
+ * 插画层：所有手绘 SVG 的着色都走这里的令牌类。
+ *
+ * 为什么不把颜色写进 SVG 属性：插画要随浅色/深色自动换肤，写死色值就得维护两套
+ * （且深色下多半不达标）。这里只暴露一组语义类，TSX 里只管形状不管颜色。
+ */
+
+/* ---------- 语义色（填充 / 描边） ---------- */
+.a-surface {
+  fill: var(--surface);
+}
+.a-canvas {
+  fill: var(--canvas);
+}
+.a-brand {
+  fill: var(--c-brand-500);
+}
+.a-brand-soft {
+  fill: color-mix(in srgb, var(--c-brand-500) 16%, transparent);
+}
+.a-brand-dim {
+  fill: color-mix(in srgb, var(--c-brand-500) 34%, transparent);
+}
+.a-warn {
+  fill: var(--c-warn-600);
+}
+.a-warn-soft {
+  fill: color-mix(in srgb, var(--c-warn-600) 18%, transparent);
+}
+.a-red-soft {
+  fill: color-mix(in srgb, var(--c-red-500) 16%, transparent);
+}
+.a-neutral-soft {
+  fill: var(--c-gray-100);
+}
+.a-text {
+  fill: var(--c-gray-600);
+}
+.a-mute {
+  fill: var(--c-gray-400);
+}
+
+/*
+ * 描边类一律带 fill: none —— SVG 的默认填充是黑色，只写 stroke 不写 fill 的
+ * <rect> 会变成一块黑板（这个坑在浅色下才看得见，深色下会被整体压住）。
+ */
+.a-stroke-line {
+  fill: none;
+  stroke: var(--border-subtle);
+}
+.a-stroke-control {
+  fill: none;
+  stroke: var(--border-control);
+}
+.a-stroke-brand {
+  fill: none;
+  stroke: var(--c-brand-500);
+}
+.a-stroke-mute {
+  fill: none;
+  stroke: var(--c-gray-400);
+}
+.a-stroke-dim {
+  fill: none;
+  stroke: var(--c-gray-300);
+}
+.a-stroke-red {
+  fill: none;
+  stroke: var(--c-red-500);
+}
+
+/* ---------- 通用 ---------- */
+.art {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* 插画统一笔画语言：与 lucide 的 1.75 对齐，细一点会更精致、粗一点会显脏 */
+.art [stroke] {
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.art .thin {
+  stroke-width: 1.4;
+}
+.art .dashed {
+  stroke-dasharray: 4 4;
+}
+
+/* ---------- 容器 ---------- */
+/* 插画底板：比卡片更淡，让插画像"浮在纸上"而不是被框住 */
+.art-plate {
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--c-brand-500) 6%, transparent),
+    transparent 65%
+  );
+}
+.art-plate > .art {
+  max-width: 320px;
+}
+
+.scenario-art {
+  width: 100%;
+  max-width: 132px;
+}
+
+/* ---------- Hero 场景 ---------- */
+.hero-scene {
+  position: relative;
+}
+/* 极淡品牌绿光晕：给大图一点纵深，不抢内容 */
+.hero-scene::before {
+  position: absolute;
+  inset: -8% -6% -14% -6%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    60% 55% at 60% 30%,
+    color-mix(in srgb, var(--c-brand-500) 18%, transparent),
+    transparent 70%
+  );
+  content: '';
+}
+.hero-scene .mockup-window {
+  box-shadow: var(--elev-3);
+}
+/* DevTools 零请求面板：压在窗口左下角，一眼看到"0 requests" */
+.hero-devtools {
+  position: absolute;
+  left: clamp(-8px, -1vw, 0px);
+  bottom: clamp(-18px, -3vw, -8px);
+  width: min(210px, 46%);
+  transform: rotate(-1.5deg);
+}
+@media (max-width: 900px) {
+  .hero-devtools {
+    display: none;
+  }
+}

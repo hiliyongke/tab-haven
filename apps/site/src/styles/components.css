@@ -1,0 +1,576 @@
+/* 组件层：按钮、导航、卡片、表格、折叠面板、页脚、界面演示 */
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.btn:hover {
+  text-decoration: none;
+}
+.btn-primary {
+  background: var(--c-brand-500);
+  color: var(--on-accent);
+}
+.btn-primary:hover {
+  background: var(--c-brand-600);
+  box-shadow: var(--elev-2);
+}
+.btn-ghost {
+  background: var(--surface);
+  border-color: var(--border-control);
+  color: var(--c-gray-700);
+}
+.btn-ghost:hover {
+  border-color: var(--c-brand-300);
+  color: var(--c-brand-700);
+}
+.btn-sm {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+.btn-lg {
+  min-height: 52px;
+  padding: 14px 26px;
+  font-size: 16px;
+}
+.btn-note {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+/* ---------- 顶部导航 ---------- */
+.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: var(--nav-h);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--c-gray-900);
+  font-size: 18px;
+  font-weight: 700;
+}
+.brand:hover {
+  text-decoration: none;
+}
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+.nav-links a {
+  display: inline-block;
+  padding: 6px 2px;
+  color: var(--c-gray-600);
+}
+.nav-links a:hover {
+  color: var(--c-brand-700);
+}
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.lang-switch {
+  display: flex;
+  gap: var(--sp-1);
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--c-gray-50);
+  font-size: 13px;
+}
+.lang-switch a {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  color: var(--c-gray-500);
+}
+.lang-switch a:hover {
+  text-decoration: none;
+  color: var(--c-gray-800);
+}
+.lang-switch a[aria-current='page'] {
+  background: var(--surface);
+  color: var(--c-brand-700);
+  font-weight: 600;
+  box-shadow: var(--elev-1);
+}
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--c-gray-700);
+}
+
+/*
+ * 移动端导航：收起能力只在 `.js` 下生效（client.ts 给 <html> 打标记）。
+ *
+ * 无脚本时菜单退化为**静态块**常显在导航下方 —— 宁可占一点纵向空间，也不能让
+ * 导航链接、语言切换与下载按钮整体不可达。
+ */
+@media (max-width: 768px) {
+  .nav-toggle {
+    display: none;
+  }
+  .js .nav-toggle {
+    display: inline-flex;
+  }
+  .nav-menu {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-4);
+    padding: var(--sp-4) clamp(16px, 4vw, 32px) var(--sp-5);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .js .nav-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: none;
+    background: var(--surface);
+    box-shadow: var(--elev-2);
+  }
+  .js .nav-menu.is-open {
+    display: flex;
+  }
+  .nav-links {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-1);
+    font-size: 16px;
+  }
+  .nav-actions {
+    justify-content: space-between;
+  }
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-5);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.card h3 {
+  font-size: 17px;
+}
+.card p {
+  margin-top: var(--sp-2);
+  color: var(--c-gray-500);
+  font-size: 15px;
+}
+.card-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: var(--sp-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--c-brand-500) 12%, transparent);
+  color: var(--c-brand-600);
+}
+
+/* ---------- 列表 ---------- */
+.check-list {
+  margin: var(--sp-3) 0 0;
+  padding-left: 1.1em;
+  color: var(--c-gray-500);
+  font-size: 15px;
+}
+.check-list li + li {
+  margin-top: var(--sp-2);
+}
+.tag {
+  display: inline-block;
+  margin-left: var(--sp-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-warn-100);
+  color: var(--c-warn-700);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---------- 表格 ---------- */
+.table-wrap {
+  margin-top: var(--sp-3);
+  overflow-x: auto;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.data-table th,
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+.data-table thead th {
+  color: var(--c-gray-500);
+  font-size: 13px;
+  font-weight: 600;
+}
+.data-table tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.data-table td {
+  color: var(--c-gray-600);
+}
+
+/* ---------- 折叠面板（原生 details，零脚本可用） ---------- */
+.doc-card summary,
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+}
+.doc-card summary::-webkit-details-marker,
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.doc-card summary::after,
+.faq-item summary::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-right: 2px solid var(--c-gray-500);
+  border-bottom: 2px solid var(--c-gray-500);
+  transform: rotate(45deg);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.doc-card[open] summary::after,
+.faq-item[open] summary::after {
+  transform: rotate(-135deg);
+}
+.doc-card[open] > *:not(summary),
+.faq-item[open] > *:not(summary) {
+  animation: reveal var(--dur-normal) var(--ease-out);
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---------- 页脚 ---------- */
+.site-footer {
+  margin-top: var(--sp-section);
+  padding-block: var(--sp-7) var(--sp-5);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+.footer-inner {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: var(--sp-6);
+}
+.footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: flex-start;
+}
+.footer-wordmark {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--c-gray-900);
+}
+.footer-note {
+  font-size: 14px;
+}
+.footer-group-title {
+  margin-bottom: var(--sp-2);
+  font-size: 14px;
+  color: var(--c-gray-500);
+}
+.footer-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.footer-group li + li {
+  margin-top: var(--sp-2);
+}
+.footer-group a {
+  color: var(--c-gray-600);
+}
+.footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+@media (max-width: 768px) {
+  .footer-inner {
+    grid-template-columns: 1fr 1fr;
+  }
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- 界面演示（纯 CSS 绘制的侧边栏） ---------- */
+.mockup {
+  width: 100%;
+}
+.mockup-window {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+}
+.mockup-chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--c-gray-50);
+}
+.mockup-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+.mockup-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-gray-300);
+}
+.mockup-omnibox {
+  flex: 1;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--c-gray-500);
+  font-size: 11px;
+}
+.mockup-body {
+  display: flex;
+  min-height: 340px;
+}
+/* 左侧是被浏览的页面（骨架块），右侧才是侧边栏：要让人一眼看出「它是侧边栏」 */
+.mockup-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--canvas);
+}
+.sk {
+  display: block;
+  border-radius: 6px;
+  background: var(--c-gray-100);
+}
+.sk-h1 {
+  width: 60%;
+  height: 18px;
+}
+.sk-line {
+  width: 92%;
+  height: 10px;
+}
+.sk-line.is-short {
+  width: 62%;
+}
+.sk-block {
+  width: 100%;
+  height: 110px;
+  margin-top: 4px;
+}
+.mockup-panel {
+  flex: none;
+  width: 300px;
+  padding: 6px 8px;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--surface);
+  font-size: 11px;
+}
+.mp-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--c-gray-500);
+}
+.mp-tiles {
+  display: flex;
+  gap: 4px;
+  padding: 6px 2px;
+}
+.mp-tile {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.mp-tile--a {
+  background: color-mix(in srgb, var(--c-brand-500) 18%, transparent);
+  color: var(--c-brand-700);
+}
+.mp-tile--b {
+  background: color-mix(in srgb, var(--c-warn-600) 18%, transparent);
+  color: var(--c-warn-700);
+}
+.mp-tile--c {
+  background: color-mix(in srgb, var(--c-red-500) 16%, transparent);
+  color: var(--c-red-600);
+}
+.mp-tile--d {
+  background: var(--c-gray-100);
+  color: var(--c-gray-600);
+}
+.mp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px 3px;
+  color: var(--c-gray-600);
+  font-weight: 600;
+}
+.mp-bar {
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--c-brand-500);
+}
+.mp-count {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--c-gray-100);
+  color: var(--c-gray-600);
+  font-size: 10px;
+  font-weight: 600;
+}
+.mp-row,
+.mp-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  border-radius: 6px;
+}
+.mp-favicon {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--c-gray-100);
+  color: var(--c-gray-600);
+  font-size: 9px;
+  font-weight: 700;
+}
+.mp-row-title {
+  overflow: hidden;
+  color: var(--c-gray-800);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 休眠态：只淡化标题到仍满足 AA 的灰阶，不用整行 opacity（扩展侧的同款口径） */
+.mp-row.is-dim .mp-row-title {
+  color: var(--c-gray-500);
+}
+.mp-row mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--c-brand-500) 24%, transparent);
+  color: var(--c-brand-700);
+}
+.mp-history {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mp-history-action {
+  margin-left: auto;
+  color: var(--c-brand-600);
+  font-weight: 600;
+}
+.mp-history.is-done .mp-history-action {
+  color: var(--c-gray-400);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  /* 窄屏放不下「页面 + 侧边栏」两栏，只保留侧边栏本身 */
+  .mockup-page {
+    display: none;
+  }
+  .mockup-panel {
+    width: 100%;
+    border-left: 0;
+  }
+}

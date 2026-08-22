@@ -1,0 +1,147 @@
+import { browser } from 'wxt/browser';
+import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
+import { hostnameOf as coreHostnameOf, inspectUrl } from '@/core/url/UrlInspector';
+import { normalizeWhitelistHost } from '@/core/url/hostname';
+import {
+  PENDING_ACTIONS_KEY,
+  PENDING_ACTIONS_LIMIT,
+  PendingActionsSchema,
+  sendMessage,
+  type Message,
+  type PendingAction
+} from '@/platform/messages';
+import { settingsRepository } from '@/platform/storage/repositories';
+import { logDegraded } from '@/platform/diagnostics';
+import { openSidePanel } from '@/platform/sidePanel';
+
+/**
+ * SW 侧共享状态与工具（被各 background 子模块复用）。
+ *
+ * 设置缓存 / hostname 留痕包装 / 白名单 / 通知 / 待执行动作队列。
+ * 打开侧边栏属 platform/sidePanel，不在此处另写一份。
+ */
+
+/** SW 侧设置缓存：SW 每次启动重新读取（模块级变量在回收后重置），变更经 watch 实时更新。 */
+export let cachedSettings: Settings = DEFAULT_SETTINGS;
+export const syncCachedSettings = async (): Promise<void> => {
+  try {
+    cachedSettings = await settingsRepository.read();
+  } catch (error) {
+    // 文案须与函数名对应：此处是「设置缓存读取」，不是泛化的共享上下文操作。
+    logDegraded('background', '设置缓存读取失败，保持当前缓存值（后续 watch 会纠正）', error);
+  }
+};
+
+/**
+ * hostname 判定的唯一事实来源在 `@/core/url/UrlInspector`，这里只包一层 SW 侧留痕。
+ *
+ * 各写一份判定时，任一处修口径（如空串 / 内部页的处理）另一处都静默漏改，
+ * 表现为「同一个 URL 在休眠白名单里算命中、在搜索站点里算不命中」。
+ */
+export const hostnameOf = (url: string | undefined): string => {
+  const host = coreHostnameOf(url);
+  // 「有 URL 却取不到主机名」在 SW 侧是用户可见降级：白名单按主机名匹配，
+  // 取不到即等价于不命中，站点会被自动休眠。空白起始页（about:blank 等）
+  // 本就没有主机名，属正常态，不记诊断 —— 否则每轮休眠扫描都会为它写一条，
+  // 真实故障被淹没（同 syncCachedSettings 的留痕纪律）。
+  if (url && !host && inspectUrl(url, undefined).category !== 'blank-start') {
+    logDegraded('background', 'URL 无法解析为主机名，已按空主机名处理', url);
+  }
+  return host;
+};
+
+/**
+ * 构建白名单匹配器（精确 hostname 或子域匹配，qq.com 覆盖 mail.qq.com）。
+ *
+ * 归一化只做一次：原实现对每个 (标签 × 条目) 组合做 3 次正则替换，而自动休眠
+ * 每轮要过「全部标签 × 全部白名单」（上限各 500，即 25 万次正则/轮）。预归一化
+ * 后内层只剩字符串比较，正则次数压到 O(条目数)。
+ *
+ * 供多标签热路径复用；单次判定直接取返回的匹配器调用即可。
+ */
+export function buildWhitelistMatcher(whitelist: readonly string[]): (hostname: string) => boolean {
+  // 归一化委托 core/url/hostname 的唯一来源（schema 层落盘时用同一函数），
+  // 否则任一处改口径另一处都会静默漏改。
+  const targets: string[] = [];
+  for (const entry of whitelist) {
+    const target = normalizeWhitelistHost(entry);
+    if (target) targets.push(target);
+  }
+  return (hostname: string) => {
+    const host = hostname.toLowerCase();
+    return targets.some((target) => host === target || host.endsWith(`.${target}`));
+  };
+}
+
+/** 通知用户（notifications 权限不可用时静默）。 */
+export function notifyUser(title: string, message: string): void {
+  if (!browser.notifications?.create) return;
+  browser.notifications
+    .create('tabs-action', {
+      type: 'basic',
+      iconUrl: browser.runtime.getURL('/icon/128.png'),
+      title,
+      message,
+      priority: 1
+    })
+    .catch(() => {});
+}
+
+/** 挂起动作的类型取自 `@/platform/messages` 的协议 schema，不在此处另抄一份
+ *  （另抄的结构类型与协议毫无关联，改协议时漏改只表现为「动作静默不执行」）。 */
+type PendingActionInput =
+  { type: 'search-domain'; query: string } | { type: 'locate-active' } | { type: 'focus-search' };
+
+/** 挂起队列 read-modify-write 串行链：连续两个动作（快捷键连按）的 get→set
+ *  交错会静默丢掉先入队的那一条。 */
+let queueActionChain: Promise<void> = Promise.resolve();
+
+/**
+ * 把待面板执行的动作存入 storage.session（面板未开时挂起），并即时广播。
+ *
+ * 双通道是刻意为之：打开侧边栏后立刻 `runtime.sendMessage` 存在竞态——
+ * 面板文档可能尚未注册监听，消息无人接收，用户看到「按了快捷键没反应」。
+ * 落一份到 session 队列后，面板挂载时补消费，动作不会丢。
+ */
+export async function queueAction(action: PendingActionInput): Promise<void> {
+  // at 时间戳：面板经「即时消息 + session onChanged」双通道收到同一动作时按 at 去重，
+  // 且面板消费后清除 session 列表，不会重放历史动作。
+  const at = Date.now();
+  const stamped = { ...action, at } as PendingAction;
+  const step = queueActionChain.then(async () => {
+    try {
+      const sessionArea = browser.storage?.session;
+      if (sessionArea) {
+        const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
+        // 存的是外部数据，必须经 schema 校验：手写的 `as PendingAction[]` 断言
+        // 会把任何形状的垃圾都当成合法队列。
+        const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
+        const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
+        list.push(stamped);
+        await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
+      }
+    } catch (error) {
+      // 文案须与函数名对应：此处是「挂起动作入队」，不是泛化的共享上下文操作。
+      logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error);
+    }
+  });
+  // 双保险：与 windowCache.skipMarkerChain / storage/session 的串行链同口径 ——
+  // 链上任何一次漏网 reject 都会让此后每个 queueAction 永不 resolve，快捷键路径
+  // 表现为「按了没反应」且无任何报错。
+  queueActionChain = step.catch((error: unknown) => {
+    logDegraded('background', '挂起动作入队失败', error);
+  });
+  await queueActionChain;
+  sendMessage(stamped as Message);
+}
+
+/**
+ * 面板侧搜索：先开面板，再把搜索动作挂起投递。
+ *
+ * 右键菜单与地址栏共用这一条路径：只入队不开面板时，面板未打开则动作仅落
+ * session 队列，用户点了「搜索此域名」得到零反馈。
+ */
+export async function runPanelSearch(query: string): Promise<void> {
+  await openSidePanel().catch(() => undefined);
+  await queueAction({ type: 'search-domain', query });
+}

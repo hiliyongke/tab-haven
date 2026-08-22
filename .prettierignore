@@ -1,0 +1,15 @@
+# 锁文件由包管理器生成，格式化它会污染 diff 且与 `pnpm install --frozen-lockfile`
+# 的校验无益。
+pnpm-lock.yaml
+
+# 构建产物与覆盖率报告（测试自动生成，不进版本库）
+.output/
+.wxt/
+coverage/
+
+# 外部引入技能的原始内容（`.codebuddy/skills/chrome-extensions/`）：
+# 它来自上游 `GoogleChrome/modern-web-guidance-src`，维护方式是「重新 clone 覆盖」。
+# 若对本仓格式化，下一次上游覆盖就会把格式差异原样带回来，`format:check` 必然再次失败
+# ——格式化上游内容与「覆盖式更新」这两种维护方式互斥，故只格式化 SKILL.md 之外的
+# 本仓自撰部分（README.md 已在格式化范围内）。
+.codebuddy/skills/chrome-extensions/

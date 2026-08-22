@@ -1,0 +1,50 @@
+{
+  "name": "i18n-kit",
+  "version": "0.1.0",
+  "description": "写母语原文、自动出哈希 key 词典的 i18n 工具集：扫描源码抽词、编译运行时词条、守卫未登记与未翻译",
+  "license": "UNLICENSED",
+  "type": "module",
+  "//private": "本包随仓库私有，不对外发布。标 private 是防误 `npm publish` —— 项目暂不开源，且包名 i18n-kit 与 npm 公共包重名风险高。依赖方的 `workspace:*` 引用不受影响（引用方也是 private）。",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.tsx",
+    "./node": "./src/node.ts"
+  },
+  "bin": {
+    "i18n-kit": "./bin/i18n-kit.mjs"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "//devDependencies": "react 是可选 peer（本包不强依赖运行时），但 src/react.tsx 的类型检查需要 @types/react；src/node.ts 与 tests 用 Node 内置模块，需 @types/node —— 二者都不由宿主间接提供，由本包自己声明：库包不该依赖宿主的间接类型来源。",
+  "devDependencies": {
+    "@babel/parser": "^8.0.7",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "i18next": ">=23",
+    "react": ">=18",
+    "react-i18next": ">=15"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-i18next": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

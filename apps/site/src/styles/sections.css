@@ -1,0 +1,506 @@
+/* 区块层：Hero、功能、演示、上手、文档、常见问题 */
+
+/* ---------- 1. Hero ---------- */
+.hero {
+  padding-block: clamp(40px, 7vw, 80px) var(--sp-section);
+  /* 极淡品牌绿径向渐变：给首屏一点方向感，不抢内容 */
+  background:
+    radial-gradient(
+      120% 80% at 12% 0%,
+      color-mix(in srgb, var(--c-brand-500) 10%, transparent),
+      transparent 60%
+    ),
+    var(--canvas);
+}
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: clamp(24px, 4vw, 56px);
+  align-items: center;
+}
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--c-gray-500);
+  font-size: 13px;
+}
+.hero-title {
+  margin-top: var(--sp-2);
+  font-size: clamp(40px, 6vw, 60px);
+}
+.hero-tagline {
+  margin-top: var(--sp-3);
+  color: var(--c-gray-700);
+  font-size: clamp(18px, 2.2vw, 22px);
+  font-weight: 600;
+}
+.hero-desc {
+  max-width: 46ch;
+  margin-top: var(--sp-3);
+  color: var(--c-gray-500);
+  font-size: 16px;
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+}
+.trust-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  margin: var(--sp-5) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--c-gray-600);
+  font-size: 14px;
+}
+.trust-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.trust-list svg {
+  color: var(--c-brand-600);
+}
+@media (max-width: 900px) {
+  .hero-inner {
+    grid-template-columns: 1fr;
+  }
+  .hero-visual {
+    order: 2;
+  }
+}
+
+/* ---------- 2. 功能 ---------- */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.feature-card {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-2);
+}
+/* 能力清单用小标题（h4）：上一层的 h3 已经是四大主题的标题 */
+.feature-card h4 {
+  font-size: 16px;
+}
+.feature-card p {
+  font-size: 14px;
+}
+
+/* ---------- 3. 演示 ---------- */
+.demo-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-1);
+  overflow-x: auto;
+}
+.demo-tab {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--c-gray-600);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.demo-tab:hover {
+  border-color: var(--c-brand-300);
+  color: var(--c-brand-700);
+}
+.demo-tab[aria-selected='true'] {
+  background: var(--c-brand-500);
+  border-color: var(--c-brand-500);
+  color: var(--on-accent);
+}
+.demo-panel {
+  margin-top: var(--sp-4);
+}
+.demo-figure {
+  margin: 0;
+}
+.demo-figure figcaption {
+  max-width: 68ch;
+  margin-top: var(--sp-3);
+  color: var(--c-gray-500);
+  font-size: 15px;
+}
+
+/* ---------- 4. 上手 ---------- */
+.step-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-5);
+  padding: 0;
+  list-style: none;
+}
+.step-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: var(--sp-3);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c-brand-500) 14%, transparent);
+  color: var(--c-brand-700);
+  font-size: 14px;
+  font-weight: 700;
+}
+.step-code {
+  margin-top: var(--sp-3);
+}
+/*
+ * 扩展管理页地址按浏览器分列：同一个包三浏览器通用，差的只是入口地址
+ *（chrome:// 在 Edge 里不会跳转）。两行并列，别让用户去猜自己该用哪个。
+ */
+.step-codes {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.step-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.step-code-browser {
+  color: var(--c-gray-500);
+  font-size: 13px;
+}
+.start-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.start-hint {
+  margin-top: var(--sp-4);
+  font-size: 14px;
+}
+
+/* ---------- 5. 文档 ---------- */
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.doc-card h3 {
+  font-size: 16px;
+}
+/* 权限表行数多、用途列长：整行铺开，别塞进三分之一列 */
+.doc-card-wide {
+  grid-column: 1 / -1;
+}
+/* 权限名列定宽不换行，把宽度让给用途列；窄屏放开换行避免横向滚动 */
+.doc-card-wide .data-table th[scope='row'] {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .doc-card-wide .data-table th[scope='row'] {
+    white-space: normal;
+  }
+}
+
+/* ---------- 6. 常见问题 ---------- */
+.faq-list {
+  display: grid;
+  gap: var(--sp-3);
+  max-width: 760px;
+}
+.faq-item h3 {
+  font-size: 16px;
+}
+.faq-item p {
+  margin-top: var(--sp-3);
+  font-size: 15px;
+}
+
+/* ---------- 信任数字带 ---------- */
+/*
+ * 替代业界常见的 Logo 墙：产品未上架、没有真实用户，编出来的背书一眼假。
+ * 这四个数字全部可核验（出处见 content/proof.ts）。
+ */
+.proof-bar {
+  padding-block: var(--sp-6);
+  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--c-brand-500) 7%, transparent),
+    transparent
+  );
+}
+.proof-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-5);
+  max-width: var(--container);
+  margin: 0 auto;
+  padding-inline: clamp(16px, 4vw, 32px);
+  list-style: none;
+}
+.proof-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.proof-value {
+  color: var(--c-brand-600);
+  font-size: clamp(32px, 4vw, 44px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.proof-label {
+  color: var(--c-gray-800);
+  font-size: 15px;
+  font-weight: 600;
+}
+.proof-note {
+  color: var(--c-gray-500);
+  font-size: 13px;
+}
+
+/* ---------- 四大主题（图文交替） ---------- */
+.pillars {
+  display: grid;
+  gap: clamp(32px, 5vw, 64px);
+}
+.pillar {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(24px, 4vw, 48px);
+  align-items: center;
+}
+.pillar.is-reverse .pillar-art {
+  order: 2;
+}
+.pillar.is-reverse .pillar-copy {
+  order: 1;
+}
+.pillar-copy h3 {
+  margin-top: var(--sp-2);
+}
+.pillar-copy > p {
+  color: var(--c-gray-500);
+  font-size: 16px;
+}
+.feature-subhead {
+  margin-top: clamp(40px, 6vw, 64px);
+  margin-bottom: var(--sp-4);
+  font-size: 18px;
+}
+@media (max-width: 900px) {
+  .pillar {
+    grid-template-columns: 1fr;
+  }
+  .pillar.is-reverse .pillar-art,
+  .pillar.is-reverse .pillar-copy {
+    order: initial;
+  }
+}
+
+/* ---------- 场景卡 ---------- */
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scenario-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.scenario-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-2);
+}
+.scenario-art-wrap {
+  display: grid;
+  place-items: center;
+  padding: var(--sp-3);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--c-brand-500) 8%, transparent),
+    transparent 70%
+  );
+}
+.scenario-card h3 {
+  font-size: 16px;
+}
+.scenario-card p {
+  font-size: 14px;
+}
+
+/* ---------- 原理三步 ---------- */
+.work-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* 左侧竖线把三步串成一条流程：最后一步收尾用中性色，表示"流程到这里结束" */
+.work-step {
+  padding: var(--sp-5);
+  border-left: 2px solid var(--c-brand-200);
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+}
+.work-step:last-child {
+  border-left-color: var(--border-subtle);
+}
+.work-index {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: var(--sp-3);
+  border-radius: 50%;
+  background: var(--c-brand-500);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.work-step h3 {
+  font-size: 17px;
+}
+.work-step p {
+  font-size: 14px;
+}
+
+/* ---------- 数据流转 ---------- */
+.flow-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(24px, 4vw, 48px);
+  align-items: center;
+}
+.flow-notes {
+  font-size: 15px;
+}
+@media (max-width: 900px) {
+  .flow-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- 对比表 ---------- */
+.compare-table th,
+.compare-table td {
+  font-size: 14px;
+}
+/* 本产品列轻轻染一层品牌底：三列并排时，视线要能落在自己的那一列 */
+.compare-table .is-brand {
+  background: color-mix(in srgb, var(--c-brand-500) 7%, transparent);
+  color: var(--c-gray-800);
+}
+.compare-table thead .is-brand {
+  color: var(--c-brand-700);
+}
+
+/* ---------- 结尾 CTA ---------- */
+.cta-band {
+  margin-top: var(--sp-section);
+  padding-block: clamp(48px, 7vw, 88px);
+  border-top: 1px solid var(--border-subtle);
+  background:
+    radial-gradient(
+      120% 120% at 50% 0%,
+      color-mix(in srgb, var(--c-brand-500) 16%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+  text-align: center;
+}
+.cta-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.cta-inner p {
+  max-width: 52ch;
+  color: var(--c-gray-500);
+}
+.cta-band .btn {
+  margin-top: var(--sp-3);
+}
+.cta-note {
+  color: var(--c-gray-400);
+  font-size: 13px;
+}
+
+/* ---------- 滚动进场 ---------- */
+/*
+ * 纯 CSS 滚动驱动动画，零 JS。三条约束缺一不可：
+ *
+ * 1. `@supports (animation-timeline: view())` —— 不支持的浏览器**根本不应用**这段，
+ *    内容直接是终态可见，绝不会出现「永远淡出看不见」。这是渐进增强，不是前提。
+ * 2. `animation-fill-mode: backwards` 而不是 `both` —— both 会让动画结束后继续
+ *    压着终态的 transform，把卡片 hover 的上浮（`.scenario-card:hover`）吃掉。
+ *    backwards 只在进入视口前保持起始态，播完即交还给基础样式。
+ * 3. 包在 `prefers-reduced-motion: no-preference` 里 —— 用户要求减少动效时整段失效。
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .section-head,
+    .feature-card,
+    .scenario-card,
+    .pillar,
+    .work-step,
+    .proof-item,
+    .table-wrap,
+    .demo-figure,
+    .cta-inner {
+      animation-name: reveal-in;
+      animation-fill-mode: backwards;
+      animation-timeline: view();
+      /* 元素顶部进入视口 10% 时起，覆盖到 30% 时结束 */
+      animation-range: entry 10% cover 30%;
+    }
+  }
+}
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,0 +1,41 @@
+---
+description: 提交规范——Conventional Commits 中文描述、scope 约定、提交前门禁；生成提交信息或用户提到提交/ commit 时适用
+alwaysApply: false
+enabled: true
+---
+
+# 提交规范
+
+## 格式（Conventional Commits，描述用中文）
+
+```
+<type>(<scope>): <中文描述>
+
+[可选正文：动机、影响面、关联 issue]
+```
+
+- type：`feat` / `fix` / `docs` / `style` / `refactor` / `perf` / `test` / `build` / `chore` / `revert`。
+- scope 用层级目录或入口名：`core/url`、`platform/storage`、`sidepanel`、`options`、`background`、`i18n`、`build` 等。
+- 描述一句话说清「用户能感知的变化」，不以"修改 xxx 文件"充数。
+
+示例（来自 CONTRIBUTING）：
+
+```
+feat(sidepanel): 新增按域名聚合的折叠记忆
+fix(background): newTabPosition 全局生效
+docs: 完善发布文档与 CI 配置
+chore: 清理误提交的覆盖率产物
+```
+
+## 提交前检查单（交付给用户确认）
+
+1. `pnpm check` 全绿（typecheck → lint → check:i18n → check:ui → test → build → check:privacy）。
+2. `pnpm format:check` 通过（pre-commit 的 lint-staged 会自动修，但 CI 单独把关格式）。
+3. 新增权限 → `wxt.config.ts` + `PRIVACY.md` 双改；新增文案 → 双语 locale 同补；持久化结构变更 → schema + PRIVACY.md 第 3 节同步。
+4. 提交信息草稿交用户确认；**AI 不执行 git add / commit**，由用户自行提交。
+
+## 常见拒绝项（CI/评审会打回）
+
+- 夹带与本次主题无关的改动；
+- 覆盖率下降但阈值被调低；
+- 为通过门禁修改 lint/format 配置。

@@ -1,0 +1,21 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "resolveJsonModule": true,
+    // i18n-kit 的源码由 Node 直接加载（原生 ESM 不做扩展名补全），故相对导入
+    // 一律带 `.ts` 后缀；TS 侧需显式允许这种写法才能跟着检查包内代码。
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  // 注意：exclude 会**整体覆盖** .wxt/tsconfig.json 里的 exclude（不合并），
+  // 故 node_modules / .output 必须在此重新声明，否则 tsc 会把依赖源码与产物收进来。
+  // （官网 apps/site 已不在本包目录树内，无需再排除。）
+  "exclude": ["**/node_modules", "**/node_modules/**", ".output/**"]
+}

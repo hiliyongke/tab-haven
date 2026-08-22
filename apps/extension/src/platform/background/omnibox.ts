@@ -1,0 +1,140 @@
+import { browser } from 'wxt/browser';
+import { activateTabAcrossWindows, createTabsWithUrls, queryAllWindowTabs } from '@/platform/tabs';
+import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
+import { t } from '@/i18n/headless';
+import { openSidePanel } from '@/platform/sidePanel';
+import { hostnameOf, runPanelSearch } from './shared';
+
+interface OmniSuggestion {
+  content: string;
+  description: string;
+}
+
+/**
+ * 转义建议描述中的 XML 标记字符。
+ *
+ * Chrome 把 omnibox 的 description 当作受限 XML 解析（支持 `<url>` / `<match>` / `<dim>`），
+ * 而文件夹名与固定条目标题可来自**导入的备份文件**——含 `<url>` 之类片段时会被
+ * 当成样式指令解析，轻则吞掉文案，重则把普通文本渲染成可点击链接的观感。
+ */
+function escapeSuggestionText(text: string): string {
+  return text.replace(/[<>&]/g, (char) =>
+    char === '<' ? '&lt;' : char === '>' ? '&gt;' : '&amp;'
+  );
+}
+
+/** 仅 http(s) 才允许经地址栏打开（固定图标可来自导入的备份）。 */
+function isOpenableUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/** 实时建议：已打开标签直达 / 文件夹 / 固定条目 / 站内搜索。 */
+async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
+  const q = text.trim().toLowerCase();
+  const [folders, pins, tabs] = await Promise.all([
+    foldersRepository.read(),
+    pinsRepository.read(),
+    queryAllWindowTabs()
+  ]);
+  const out: OmniSuggestion[] = [];
+  // 已打开标签直达并置顶：地址栏的高频意图是「切回去」而非再开一个。
+  // 当前激活标签排最后（用户正看着它）；上限 5 条，给下方建议留展示位。
+  if (q) {
+    const matchedTabs = tabs
+      .filter(
+        (tab) =>
+          tab.title?.toLowerCase().includes(q) === true ||
+          tab.url?.toLowerCase().includes(q) === true
+      )
+      .sort((a, b) => {
+        if (a.active !== b.active) return a.active ? 1 : -1;
+        return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0);
+      })
+      .slice(0, 5);
+    for (const tab of matchedTabs) {
+      out.push({
+        content: `tab:${tab.id}`,
+        description: t('切换到标签：{{name}}', {
+          name: escapeSuggestionText(tab.title || tab.url || '')
+        })
+      });
+    }
+  }
+  for (const folder of folders) {
+    if (!q || folder.name.toLowerCase().includes(q)) {
+      out.push({
+        content: `folder:${folder.id}`,
+        description: t('打开文件夹：{{name}}', { name: escapeSuggestionText(folder.name) })
+      });
+    }
+  }
+  for (const pin of pins) {
+    // 非 http(s) 的固定图标不给建议（同时下方回车路径也会再校验一次）。
+    if (!isOpenableUrl(pin.url)) continue;
+    const host = hostnameOf(pin.url);
+    if (!q || host.includes(q) || pin.title.toLowerCase().includes(q)) {
+      out.push({
+        content: `pin:${pin.url}`,
+        description: t('打开固定：{{name}}', { name: escapeSuggestionText(pin.title) })
+      });
+    }
+  }
+  if (q) {
+    out.push({
+      content: `search:${q}`,
+      description: t('搜索标签：{{query}}', { query: escapeSuggestionText(q) })
+    });
+  }
+  return out;
+}
+
+/** 回车处理：按建议类型打开。 */
+async function handleOmniboxEnter(text: string, disposition?: string): Promise<void> {
+  const raw = text.trim();
+  const foreground = disposition === 'newForegroundTab';
+  // 已打开标签直达：重新取窗口归属（建议生成后标签可能已跨窗口移动），
+  // 标签已关闭时兜底开面板。
+  if (raw.startsWith('tab:')) {
+    const tabId = Number(raw.slice('tab:'.length));
+    if (Number.isInteger(tabId)) {
+      try {
+        const tab = await browser.tabs.get(tabId);
+        if (tab.id !== undefined) {
+          await activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
+          return;
+        }
+      } catch {
+        // 标签在建议生成后已被关闭：落到开面板兜底
+      }
+    }
+    await openSidePanel().catch(() => undefined);
+    return;
+  }
+  if (raw.startsWith('folder:')) {
+    const id = raw.slice('folder:'.length);
+    const folders = await foldersRepository.read();
+    const folder = folders.find((f) => f.id === id);
+    if (folder) {
+      // url 可选：过滤掉尚未转正的待定条目，避免把 undefined 传给创建逻辑。
+      const urls = folder.items.map((i) => i.url).filter((u): u is string => Boolean(u));
+      await createTabsWithUrls(urls, undefined, foreground);
+    }
+    return;
+  }
+  if (raw.startsWith('pin:')) {
+    const url = raw.slice('pin:'.length).trim();
+    // 必须再校验一次：用户可以直接敲 `t pin:javascript:...` 而不选建议，
+    // 建议列表的过滤拦不住手输内容。
+    if (isOpenableUrl(url)) await createTabsWithUrls([url], undefined, foreground);
+    return;
+  }
+  if (raw.startsWith('search:')) {
+    const query = raw.slice('search:'.length);
+    await runPanelSearch(query);
+    return;
+  }
+  // 纯文本默认站内搜索
+  await runPanelSearch(raw);
+}
+
+export { queryOmnibox, handleOmniboxEnter };
