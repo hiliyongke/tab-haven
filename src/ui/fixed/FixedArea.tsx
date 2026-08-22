@@ -1,0 +1,145 @@
+import { useTranslation } from 'react-i18next';
+import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
+import { useDataStore } from '@/stores/dataStore';
+import { useTabStore } from '@/stores/tabStore';
+import { Favicon } from '@/ui/common/Favicon';
+import { Icon, Icons } from '@/ui/common/Icon';
+
+/** 固定条目行：图标 + 标题 + 挂起态 + 悬停关闭。 */
+function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolderItem }) {
+  const openSavedItem = useDataStore((state) => state.openSavedItem);
+  const removeFolderItem = useDataStore((state) => state.removeFolderItem);
+  const tabs = useTabStore((state) => state.tabs);
+
+  const isOpen = item.pendingTabId !== undefined || tabs.some((tab) => tab.url === item.url);
+  const isActive = item.pendingTabId !== undefined
+    ? tabs.some((tab) => tab.id === item.pendingTabId && tab.active)
+    : tabs.some((tab) => tab.url === item.url && tab.active);
+
+  return (
+    <article
+      className={
+        'group flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-100' +
+        (isOpen ? '' : ' opacity-60') +
+        (isActive ? ' bg-gray-100' : '')
+      }
+    >
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        onClick={() => void openSavedItem(item)}
+        title={item.title || item.url}
+      >
+        {item.pendingTabId !== undefined ? (
+          <span className="h-4 w-4 shrink-0 rounded-full border border-dashed border-gray-300" aria-hidden="true" />
+        ) : (
+          <Favicon src={item.favIconUrl} title={item.title} size={16} />
+        )}
+        <span className="truncate">{item.title || '新标签页'}</span>
+      </button>
+      <button
+        type="button"
+        className="text-gray-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+        title="关闭标签并移出文件夹"
+        onClick={() => {
+          if (item.pendingTabId !== undefined) {
+            void useTabStore.getState().closeTabs([item.pendingTabId]);
+          } else {
+            const match = tabs.find((tab) => tab.url === item.url);
+            if (match) void useTabStore.getState().closeTabs([match.id]);
+          }
+          void removeFolderItem(folder.id, item.id);
+        }}
+      >
+        <Icon d={Icons.close} className="h-3.5 w-3.5" />
+      </button>
+    </article>
+  );
+}
+
+/** 固定文件夹：折叠头 + 条目列表。 */
+function FolderRow({ folder }: { folder: FixedFolder }) {
+  const { t } = useTranslation();
+  const renameFolder = useDataStore((state) => state.renameFolder);
+  const deleteFolder = useDataStore((state) => state.deleteFolder);
+  const toggleFolderCollapsed = useDataStore((state) => state.toggleFolderCollapsed);
+
+  return (
+    <section className="mb-1">
+      <div className="group flex items-center gap-1 px-2 py-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-medium"
+          onClick={() => void toggleFolderCollapsed(folder.id)}
+        >
+          <Icon d={Icons.chevron} className={'h-3 w-3 text-gray-400 ' + (folder.collapsed ? '' : 'rotate-90')} />
+          <span className="truncate">{folder.name}</span>
+          <span className="text-xs text-gray-400">{folder.items.length}</span>
+        </button>
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            className="row-action"
+            title={t('fixed.rename')}
+            onClick={() => {
+              const name = window.prompt(t('fixed.renamePrompt'), folder.name);
+              if (name) void renameFolder(folder.id, name);
+            }}
+          >
+            <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="row-action hover:text-red-500"
+            title={t('fixed.delete')}
+            onClick={() => {
+              if (window.confirm(t('fixed.deleteConfirm', { name: folder.name }))) {
+                void deleteFolder(folder.id);
+              }
+            }}
+          >
+            <Icon d={Icons.close} className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      </div>
+      {!folder.collapsed && (
+        <div>
+          {folder.items.map((item) => (
+            <FolderItemRow key={item.id} folder={folder} item={item} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 固定空间区域：header（折叠/新建）+ 文件夹列表。 */
+export function FixedArea() {
+  const { t } = useTranslation();
+  const folders = useDataStore((state) => state.folders);
+  const createFolder = useDataStore((state) => state.createFolder);
+
+  if (folders.length === 0) return null;
+
+  return (
+    <section className="border-b border-gray-100 py-1" aria-label={t('fixed.areaLabel')}>
+      <div className="flex items-center gap-1 px-2 py-1">
+        <span className="flex-1 text-xs font-semibold text-gray-500">{t('fixed.areaTitle')}</span>
+        <button
+          type="button"
+          className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          title={t('fixed.newFolder')}
+          onClick={() => {
+            const name = window.prompt(t('fixed.newFolderPrompt'));
+            if (name) void createFolder(name);
+          }}
+        >
+          <Icon d={Icons.plus} className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {folders.map((folder) => (
+        <FolderRow key={folder.id} folder={folder} />
+      ))}
+    </section>
+  );
+}

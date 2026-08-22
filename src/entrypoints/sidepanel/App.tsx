@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
 import { deriveSections } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
+import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { FixedArea } from '@/ui/fixed/FixedArea';
+import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 
 export default function App() {
@@ -18,13 +21,33 @@ export default function App() {
   const setGroupCollapsed = useTabStore((state) => state.setGroupCollapsed);
   const createNewTab = useTabStore((state) => state.createNewTab);
   const startTabSync = useTabStore((state) => state.startTabSync);
+  const initializeData = useDataStore((state) => state.initialize);
+  const boundTabIds = useDataStore((state) => state.boundTabIds);
+  const folders = useDataStore((state) => state.folders);
 
   const [collapsedSites, setCollapsedSites] = useState<ReadonlySet<string>>(new Set());
 
   // 同步服务：事件 → 快照 → store 订阅自动重渲染
-  useEffect(() => startTabSync(), [startTabSync]);
+  useEffect(() => {
+    void initializeData();
+    return startTabSync();
+  }, [initializeData, startTabSync]);
 
-  const sections = useMemo(() => deriveSections({ tabs, groups }), [tabs, groups]);
+  // 固定空间排除集：挂起条目标签 + 绑定标签
+  const fixedExcludedTabIds = useMemo(() => {
+    const excluded = new Set<number>(boundTabIds);
+    for (const folder of folders) {
+      for (const item of folder.items) {
+        if (item.pendingTabId !== undefined) excluded.add(item.pendingTabId);
+      }
+    }
+    return excluded;
+  }, [boundTabIds, folders]);
+
+  const sections = useMemo(
+    () => deriveSections({ tabs, groups, excludedTabIds: fixedExcludedTabIds }),
+    [tabs, groups, fixedExcludedTabIds]
+  );
   const duplicateCounts = useMemo(() => DuplicateIndex.build(tabs).counts(), [tabs]);
   const removableCount = useMemo(
     () => DuplicateIndex.build(tabs).removable(KeeperPolicy.default).length,
@@ -47,6 +70,8 @@ export default function App() {
 
   return (
     <main className="app flex h-full flex-col">
+      <PinnedStrip />
+      <FixedArea />
       <div className="flex-1 overflow-y-auto p-2">
         {tabs.length === 0 ? (
           <div className="px-2 py-8 text-center text-sm text-gray-400">

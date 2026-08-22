@@ -12,6 +12,7 @@ import {
   togglePinned as togglePinnedPlatform
 } from '@/platform/tabs';
 import { TabSyncService } from '@/platform/sync/TabSyncService';
+import { useDataStore } from '@/stores/dataStore';
 
 /**
  * 标签镜像 store（docs/ARCHITECTURE.md 5.5）。
@@ -90,6 +91,8 @@ export const useTabStore = create<TabState>()((set, get) => ({
         currentWindowId: snapshot.windowId,
         generation: snapshot.generation
       });
+      // 快照联动：挂起转正 + 绑定维护（固定空间一致性）
+      void useDataStore.getState().reconcileWithTabs(snapshot.tabs);
     })
 }));
 

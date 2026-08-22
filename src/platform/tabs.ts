@@ -90,9 +90,15 @@ export async function createTabInGroup(groupId: number, windowId: number): Promi
   await browser.tabs.group({ tabIds: [tab.id ?? -1], groupId });
 }
 
-/** 在当前窗口新建标签。 */
-export async function createNewTab(windowId: number | undefined): Promise<void> {
+/** 在当前窗口新建标签，返回领域记录。 */
+export async function createNewTab(windowId: number | undefined): Promise<TabRecord> {
   const properties: { active: boolean; windowId?: number } = { active: true };
   if (windowId !== undefined) properties.windowId = windowId;
-  await browser.tabs.create(properties);
+  const tab = await browser.tabs.create(properties);
+  return mapTab(tab);
+}
+
+/** 更新标签 URL（固定条目打开等场景）。 */
+export async function updateTabUrl(tabId: number, url: string): Promise<void> {
+  await browser.tabs.update(tabId, { url });
 }

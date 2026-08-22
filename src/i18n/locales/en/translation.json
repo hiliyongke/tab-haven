@@ -23,5 +23,17 @@
   "duplicates": {
     "none": "No duplicates to clean up",
     "cleanTooltip": "Clean up {{count}} duplicate tabs; keeps the active, pinned, or earliest tab"
+  },
+  "fixed": {
+    "areaLabel": "Fixed space",
+    "areaTitle": "Fixed space",
+    "newFolder": "New folder in fixed space",
+    "newFolderPrompt": "New fixed folder",
+    "rename": "Rename folder",
+    "renamePrompt": "Rename fixed folder",
+    "delete": "Delete folder",
+    "deleteConfirm": "Delete fixed folder \"{{name}}\"? Open tabs will not be closed.",
+    "itemClose": "Close tab and remove from folder",
+    "pendingHint": "Waiting for a URL; the page will be saved here once opened"
   }
 }

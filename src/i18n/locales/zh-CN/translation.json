@@ -23,5 +23,17 @@
   "duplicates": {
     "none": "暂无可清理的重复标签",
     "cleanTooltip": "清理 {{count}} 个重复标签；保留当前、固定或最早打开的标签"
+  },
+  "fixed": {
+    "areaLabel": "固定空间",
+    "areaTitle": "固定空间",
+    "newFolder": "在固定空间中新建文件夹",
+    "newFolderPrompt": "新建固定文件夹",
+    "rename": "重命名文件夹",
+    "renamePrompt": "重命名固定文件夹",
+    "delete": "删除文件夹",
+    "deleteConfirm": "删除固定文件夹“{{name}}”？正在打开的标签不会关闭。",
+    "itemClose": "关闭标签并移出文件夹",
+    "pendingHint": "等待输入网址，打开页面后会自动保存到此文件夹"
   }
 }
