@@ -23,8 +23,12 @@ ALLOWED_PERMISSIONS = {
     "tabGroups",
     "storage",
     "commands",
-    "activeTab",  # 用户主动开启预览时截取当前可见标签
     "alarms",  # 用户开启自动休眠后周期检查
+    "contextMenus",  # 右键菜单快捷操作（休眠/固定/入文件夹/按站点搜索）
+    "omnibox",  # 地址栏 th 命令搜索标签/固定条目/文件夹
+    "sessions",  # 撤销历史面板恢复浏览器最近关闭
+    "bookmarks",  # 用户主动的固定文件夹 ↔ 书签互转
+    "notifications",  # 自动休眠完成的本机通知
 }
 
 # 禁止出现的网络通道调用

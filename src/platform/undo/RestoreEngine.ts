@@ -1,10 +1,16 @@
 import { browser } from 'wxt/browser';
 import type { UndoTabRecord } from '@/core/schema/models';
 import { NO_GROUP } from '@/core/tab-types';
+import { AllowDuplicateOnceMessageSchema } from '@/platform/messages';
 
 /** 向 background 申请一次复用豁免（显式保留副本语义）。 */
 async function grantReuseAllowance(windowId: number, url: string): Promise<void> {
-  await browser.runtime.sendMessage({ type: 'allow-duplicate-once', windowId, url }).catch(() => {});
+  const message = AllowDuplicateOnceMessageSchema.parse({
+    type: 'allow-duplicate-once',
+    windowId,
+    url
+  });
+  await browser.runtime.sendMessage(message).catch(() => {});
 }
 
 /**

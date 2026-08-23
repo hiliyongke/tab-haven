@@ -115,16 +115,20 @@ export async function setGroupCollapsed(groupId: number, collapsed: boolean): Pr
   await browser.tabGroups.update(groupId, { collapsed });
 }
 
-/** 在原生组内新建标签（新标签自动入组）。 */
-export async function createTabInGroup(groupId: number, windowId: number): Promise<void> {
-  const tab = await browser.tabs.create({ windowId, active: true });
-  await browser.tabs.group({ tabIds: [tab.id ?? -1], groupId });
-}
-
-/** 在当前窗口新建标签，返回领域记录。 */
-export async function createNewTab(windowId: number | undefined): Promise<TabRecord> {
-  const properties: { active: boolean; windowId?: number } = { active: true };
+/**
+ * 在当前窗口新建标签，返回领域记录。
+ * position：end 窗口末尾（默认）/ after-active 当前激活标签之后。
+ */
+export async function createNewTab(
+  windowId: number | undefined,
+  position: 'end' | 'after-active' = 'end'
+): Promise<TabRecord> {
+  const properties: { active: boolean; windowId?: number; index?: number } = { active: true };
   if (windowId !== undefined) properties.windowId = windowId;
+  if (position === 'after-active' && windowId !== undefined) {
+    const [active] = await browser.tabs.query({ windowId, active: true });
+    if (active?.index !== undefined) properties.index = active.index + 1;
+  }
   const tab = await browser.tabs.create(properties);
   return mapTab(tab);
 }
@@ -199,30 +203,6 @@ export async function updateGroupMeta(groupId: number, title: string, color?: st
   await tabGroups.update(groupId, color ? { title, color } : { title });
 }
 
-/** 截取当前窗口激活标签的可见区域为 dataURL（标签预览，P1④）。跳过隐身由调用方判断。 */
-export async function captureVisibleTab(windowId: number): Promise<string | undefined> {
-  try {
-    return await browser.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 60 });
-  } catch {
-    return undefined;
-  }
-}
-
-/** 新建命名原生组，返回组 id；可附带初始成员。 */
-export async function createGroup(
-  title: string,
-  color?: string,
-  tabIds?: readonly number[]
-): Promise<number | undefined> {
-  const created = await tabGroups.create({});
-  if (!created?.id) return undefined;
-  await tabGroups.update(created.id, color ? { title, color } : { title });
-  if (tabIds && tabIds.length > 0) {
-    await browser.tabs.group({ tabIds: [...tabIds] as [number, ...number[]], groupId: created.id });
-  }
-  return created.id;
-}
-
 /** 重命名原生组（P1⑤）。 */
 export async function renameGroup(groupId: number, title: string): Promise<void> {
   await browser.tabGroups.update(groupId, { title });
@@ -243,39 +223,71 @@ export async function moveGroup(groupId: number, index: number): Promise<void> {
   await browser.tabGroups.move(groupId, { index });
 }
 
-/** 激活标签后退（Chrome 114+，P2⑦）。 */
-export async function goBack(tabId: number): Promise<void> {
-  try {
-    await browser.tabs.goBack(tabId);
-  } catch {
-    // 无历史记录的标签无法后退，静默忽略
-  }
-}
-
-/** 激活标签前进（Chrome 114+，P2⑦）。 */
-export async function goForward(tabId: number): Promise<void> {
-  try {
-    await browser.tabs.goForward(tabId);
-  } catch {
-    // 无历史记录的标签无法前进，静默忽略
-  }
-}
-
-/** 高亮多个标签（与浏览器 multi-select 同步，P2⑧）。 */
-export async function highlightTabs(tabIds: readonly number[]): Promise<void> {
-  if (tabIds.length === 0) return;
-  try {
-    await browser.tabs.highlight({ tabs: [...tabIds] });
-  } catch {
-    // 某些标签无法高亮，静默忽略
-  }
-}
-
 /** 检测标签页面语言，返回 BCP-47 代码（P3⑩）。不支持时返回 "und"。 */
 export async function detectLanguage(tabId: number): Promise<string> {
   try {
     return await browser.tabs.detectLanguage(tabId);
   } catch {
     return 'und';
+  }
+}
+
+/** 重新加载（唤醒）一组标签，返回成功的标签 id（撤销「自动休眠」用）。 */
+export async function reloadTabs(tabIds: readonly number[]): Promise<number[]> {
+  const reloaded: number[] = [];
+  for (const tabId of tabIds) {
+    try {
+      await browser.tabs.reload(tabId);
+      reloaded.push(tabId);
+    } catch {
+      // 已关闭或无法重载的标签跳过
+    }
+  }
+  return reloaded;
+}
+
+/** 激活任意窗口中的标签：必要时先聚焦其所在窗口（跨窗口搜索切换用）。 */
+export async function activateTabAcrossWindows(tab: { id: number; windowId: number }): Promise<void> {
+  try {
+    await browser.windows.update(tab.windowId, { focused: true });
+  } catch {
+    // 窗口可能已关闭，忽略
+  }
+  await activateTab(tab.id);
+}
+
+/** 查询全部窗口的普通标签（跨窗口搜索数据源）。 */
+export async function queryAllWindowTabs(): Promise<TabRecord[]> {
+  const queriedTabs = await browser.tabs.query({ windowType: 'normal' });
+  return queriedTabs.map(mapTab);
+}
+
+/** 将当前窗口全部标签的缩放重置为 100%。 */
+export async function resetZoomCurrentWindow(): Promise<number> {
+  const tabs = await browser.tabs.query({ currentWindow: true });
+  let resetCount = 0;
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      const zoom = await browser.tabs.getZoom(tab.id);
+      if (zoom !== 1) {
+        await browser.tabs.setZoom(tab.id, 1);
+        resetCount += 1;
+      }
+    } catch {
+      // 浏览器内部页面（chrome:// 等）无法设置缩放，跳过
+    }
+  }
+  return resetCount;
+}
+
+/** 批量新建标签并导航（「打开文件夹全部条目」用）。 */
+export async function createTabsWithUrls(urls: readonly string[]): Promise<void> {
+  for (const url of urls) {
+    try {
+      await browser.tabs.create({ url, active: false });
+    } catch {
+      // 无效 URL 跳过，其余继续
+    }
   }
 }

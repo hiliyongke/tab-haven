@@ -1,6 +1,6 @@
 import type { TabRecord } from '@/core/tab-types';
 import { rankForKeep } from '@/core/dup/DedupeByUrl';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 复用决策：给定新标签与窗口标签快照，决定是否复用既有标签。
@@ -12,7 +12,7 @@ import { inspectUrl } from '@/core/url/UrlInspector';
  *  2. 无既有标签时，本次同时新建的同址标签中排序靠前者胜出。
  */
 
-export type ReuseDecision =
+type ReuseDecision =
   | { kind: 'reuse'; targetId: number }
   | { kind: 'standalone' };
 
@@ -27,16 +27,12 @@ export class ReusePolicy {
     windowTabs: readonly TabRecord[],
     newlyOpenedTabIds: ReadonlySet<number>
   ): ReuseDecision {
-    const inspection = inspectUrl(newTab.url, newTab.pendingUrl);
-    if (inspection.category !== 'web') return { kind: 'standalone' };
+    const key = webComparisonKey(newTab.url, newTab.pendingUrl);
+    if (!key) return { kind: 'standalone' };
 
     const candidates = windowTabs.filter((candidate) => {
       if (candidate.id === newTab.id) return false;
-      const candidateInspection = inspectUrl(candidate.url, candidate.pendingUrl);
-      return (
-        candidateInspection.category === 'web' &&
-        candidateInspection.comparisonKey === inspection.comparisonKey
-      );
+      return webComparisonKey(candidate.url, candidate.pendingUrl) === key;
     });
     if (candidates.length === 0) return { kind: 'standalone' };
 

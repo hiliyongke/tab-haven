@@ -54,7 +54,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="split"
-        className="rounded border border-dashed border-accent-400 px-0.5 text-[10px] text-accent-500"
+        className="rounded bg-accent-500 px-1 text-[10px] font-medium text-white"
         title={t('status.split')}
       >
         {t('status.splitGlyph')}
@@ -66,7 +66,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="companion"
-        className="rounded bg-accent-100 px-0.5 text-[10px] text-accent-700"
+        className="rounded bg-accent-100 px-1 text-[10px] font-medium text-accent-700"
         title={t('status.companion')}
       >
         {t('status.companionGlyph')}

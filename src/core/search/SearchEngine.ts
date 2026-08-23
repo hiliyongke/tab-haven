@@ -11,25 +11,25 @@ import { pinyin } from 'pinyin-pro';
  *  - 命中高亮：fuzzysort.highlight 的受控输出（<b> 标记）。
  */
 
-export interface SearchableTab {
+interface SearchableTab {
   id: number;
   title: string;
   url: string;
   active: boolean;
 }
 
-export interface SearchEngineOptions {
+interface SearchEngineOptions {
   /** 是否包含中文拼音首字母匹配（默认 true）。 */
   pinyin?: boolean;
 }
 
-export interface HighlightSegment {
+interface HighlightSegment {
   text: string;
   /** 是否命中（命中段由渲染层加粗，文本由 React 自动转义，杜绝 XSS）。 */
   hit: boolean;
 }
 
-export interface SearchHit {
+interface SearchHit {
   tabId: number;
   /** 标题按命中索引展开的分段（纯文本，渲染层负责转义与加粗）。 */
   titleSegments: HighlightSegment[];

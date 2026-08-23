@@ -5,7 +5,7 @@ import { browser } from 'wxt/browser';
  * 用于固定条目与真实标签的会话绑定（挂起条目追踪）。
  */
 
-export interface SessionData {
+interface SessionData {
   /** 固定条目 id → 真实标签 id。 */
   itemTabBindings: Record<string, number>;
   /** 手动移出网站聚合的标签 id。 */
@@ -29,7 +29,7 @@ export async function readSession(): Promise<SessionData> {
   }
 }
 
-export async function writeSession(data: SessionData): Promise<void> {
+async function writeSession(data: SessionData): Promise<void> {
   try {
     await browser.storage.session.set({ [SESSION_KEY]: data });
   } catch {

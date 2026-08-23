@@ -72,6 +72,66 @@ describe('aggregateBySite', () => {
     const { groups } = aggregateBySite(tabs);
     expect(groups.map((group) => group.key.value)).toEqual(['a.com', 'z.com']);
   });
+
+  it('子域密度自动展开：同注册域 ≥ 3 子域时各子域独立成组（用户截图场景）', () => {
+    // qq.com 下 4 子域各 1 标签 → 自动展开为 4 个 SiteGroup（不再折叠大组）。
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/' }),
+      makeTab({ id: 2, index: 1, url: 'https://docs.qq.com/' }),
+      makeTab({ id: 3, index: 2, url: 'https://v.qq.com/' }),
+      makeTab({ id: 4, index: 3, url: 'https://browser.qq.com/' })
+    ];
+    const { groups, singles } = aggregateBySite(tabs);
+    // 4 个标签各占独立组（子域即业务），且每个组达到默认阈值（mail 数量 ≥2 才入组，这里阈值默认 2，所以单标签的进 singles）。
+    // 重要断言：不会合并成 qq.com 大组。
+    expect(groups.map((g) => g.key.value).sort()).toEqual(['browser.qq.com', 'docs.qq.com', 'v.qq.com'].sort());
+    // 单标签子域因未达默认阈值进入 singles（不与大组合并）。
+    expect(singles.map((t) => t.id)).toContain(1);
+    expect(singles.map((t) => t.id)).toContain(2);
+    expect(singles.map((t) => t.id)).toContain(3);
+    expect(singles.map((t) => t.id)).toContain(4);
+    // 关键断言：QQ 域没有形成聚合大组（子域各自独立、阈值与算法自动判断）。
+    expect(groups.find((g) => g.key.value === 'qq.com')).toBeUndefined();
+  });
+
+  it('子域密度自动展开：同子域 ≥ 阈值才入组，单标签子域进 singles', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/1' }),
+      makeTab({ id: 2, index: 1, url: 'https://mail.qq.com/2' }),
+      makeTab({ id: 3, index: 2, url: 'https://v.qq.com/' }),
+      makeTab({ id: 4, index: 3, url: 'https://docs.qq.com/' })
+    ];
+    const { groups, singles } = aggregateBySite(tabs);
+    // mail.qq.com 2 个标签 → 独立成组；其余单标签子域 → singles。
+    const mailGroup = groups.find((g) => g.key.value === 'mail.qq.com');
+    expect(mailGroup).toBeDefined();
+    expect(mailGroup?.subgroups).toHaveLength(0);
+    expect(singles.map((t) => t.id).sort()).toEqual([3, 4]);
+  });
+
+  it('阈值 1：单标签站点也独立成组（不落未分组）', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://single-site.com/' }),
+      makeTab({ id: 2, index: 1, url: 'https://pair.com/a' }),
+      makeTab({ id: 3, index: 2, url: 'https://pair.com/b' })
+    ];
+    const { groups, singles } = aggregateBySite(tabs, { threshold: 1 });
+    // 单标签站点成组，双标签站点成组，无 singles。
+    expect(singles).toHaveLength(0);
+    expect(groups.map((g) => g.key.value).sort()).toEqual(['pair.com', 'single-site.com']);
+  });
+
+  it('阈值 1 + 子域自动展开：单标签子域也各自成组', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/' }),
+      makeTab({ id: 2, index: 1, url: 'https://v.qq.com/' }),
+      makeTab({ id: 3, index: 2, url: 'https://docs.qq.com/' })
+    ];
+    const { groups, singles } = aggregateBySite(tabs, { threshold: 1 });
+    // 3 个不同子域 → 自动展开为 3 个独立组（阈值 1 下无 singles）。
+    expect(singles).toHaveLength(0);
+    expect(groups.map((g) => g.key.value).sort()).toEqual(['docs.qq.com', 'mail.qq.com', 'v.qq.com']);
+  });
 });
 
 describe('deriveSections', () => {

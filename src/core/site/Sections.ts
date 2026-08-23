@@ -45,7 +45,7 @@ export type TemporarySection =
       depths?: ReadonlyMap<number, number>;
     };
 
-export interface SectionDerivation {
+interface SectionDerivation {
   tabs: readonly TabRecord[];
   groups: readonly TabGroupRecord[];
   /** 从临时区排除的标签（固定空间挂起/绑定、手动移出等）。 */
@@ -83,7 +83,7 @@ function languageLabel(code: string): string {
  * 由 openerTabId 构建来源树：把 opener 也在当前集合内的标签挂在父节点下，
  * 其余作为根（depth 0）。返回按 DFS 前序排列的标签与每层缩进深度。
  */
-export function buildOpenerTree(tabs: readonly TabRecord[]): {
+function buildOpenerTree(tabs: readonly TabRecord[]): {
   ordered: TabRecord[];
   depths: Map<number, number>;
 } {
@@ -208,7 +208,7 @@ export function deriveSections({
     return sections;
   }
 
-  // 站点聚合 + 未分组（默认）。
+  // 站点聚合 + 未分组（默认）。子域密度自动展开由 aggregateBySite 内部决定。
   const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold });
 
   for (const group of siteGroups) {

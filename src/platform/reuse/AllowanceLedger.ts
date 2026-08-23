@@ -13,7 +13,7 @@ interface Allowance {
   expiresAt: number;
 }
 
-export interface AllowanceLedgerOptions {
+interface AllowanceLedgerOptions {
   /** 令牌有效期（毫秒），默认 10_000。 */
   ttlMs?: number;
   /** 时钟源（测试注入）。 */

@@ -22,5 +22,53 @@
   "commandFocusSearch": {
     "message": "聚焦标签搜索",
     "description": "快捷键命令的描述"
+  },
+  "commandOpenPanel": {
+    "message": "打开 / 聚焦 TabHaven 面板",
+    "description": "快捷键命令的描述"
+  },
+  "commandLocateActive": {
+    "message": "在面板中定位当前激活标签",
+    "description": "快捷键命令的描述"
+  },
+  "commandDiscardInactive": {
+    "message": "休眠当前窗口的非激活标签",
+    "description": "快捷键命令的描述"
+  },
+  "menuDiscardPage": {
+    "message": "休眠此页面",
+    "description": "右键菜单项：休眠（冻结）当前页面释放内存"
+  },
+  "menuPinPage": {
+    "message": "固定此页面",
+    "description": "右键菜单项：将当前页面加入顶部固定图标区"
+  },
+  "menuSearchSite": {
+    "message": "搜索此站点下的标签",
+    "description": "右键菜单项：搜索同一站点的标签"
+  },
+  "menuAddPageToFolder": {
+    "message": "将页面加入固定文件夹",
+    "description": "右键菜单父项：将当前页面加入某个固定文件夹"
+  },
+  "menuAddLinkToFolder": {
+    "message": "将链接加入固定文件夹",
+    "description": "右键菜单父项：将链接加入某个固定文件夹"
+  },
+  "menuDiscardTab": {
+    "message": "休眠此标签",
+    "description": "标签栏右键菜单项"
+  },
+  "menuOpenPanel": {
+    "message": "打开 TabHaven 面板",
+    "description": "工具栏图标右键菜单项"
+  },
+  "menuDiscardInactive": {
+    "message": "休眠非激活标签",
+    "description": "工具栏图标右键菜单项"
+  },
+  "menuOpenSettings": {
+    "message": "打开 TabHaven 设置",
+    "description": "工具栏图标右键菜单项"
   }
 }

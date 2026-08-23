@@ -8,9 +8,12 @@ import { siteResolver } from '@/core/site/SiteResolver';
  * 行为规格（PRD 附录 C-4 / FR-D3.1）：
  *  - 同注册域标签达到阈值（默认 2）成组，未达阈值归独立；
  *  - 排除集（用户手动移出的标签）永不参与聚合；
- *  - 多级子域名智能识别：注册域内按子域再分亚组，单子域多标签时扁平展示，
- *    多子域时主组标题用注册域、可折叠展开各子域分组（兼顾层级）；
+ *  - 子域自动展开：同一注册域下不同子域数 ≥ {@link AUTO_EXPAND_THRESHOLD} 时，
+ *    自动按子域独立成组（子域即业务，避免 mail.qq.com 与 v.qq.com 强行合并）；
+ *    否则折叠为注册域大组 + 子域亚组（少子域时信息密度优先）。
  *  - 组按组内首标签的位置排序。
+ *
+ * 算法让用户无需配置"分几级"：算法按子域密度自动判断。
  */
 
 export interface SiteSubGroup {
@@ -21,29 +24,44 @@ export interface SiteSubGroup {
   tabs: TabRecord[];
 }
 
-export interface SiteGroup {
+interface SiteGroup {
   key: SiteKey;
   /** 组内全部标签（兼容字段）。 */
   tabs: TabRecord[];
-  /** 按子域再分的亚组；仅当组内存在多个不同子域时非空（用于折叠展示）。 */
+  /**
+   * 按子域再分的亚组；折叠模式（子域数 < 阈值）下非空时用于展示子分组；
+   * 自动展开模式下恒为空。
+   */
   subgroups: SiteSubGroup[];
 }
 
-export interface SiteAggregation {
+interface SiteAggregation {
   groups: SiteGroup[];
   singles: TabRecord[];
 }
 
-export interface AggregationOptions {
+interface AggregationOptions {
   /** 成组阈值，默认 2。 */
   threshold?: number;
   /** 排除的标签 id（手动移出），永不聚合。 */
   excludedTabIds?: ReadonlySet<number>;
 }
 
+/**
+ * 同一注册域下不同子域数达到该阈值时，自动按子域独立成组（不再折叠到大组）。
+ * 用户无需配置：qq.com 这种 6+ 子域门户会自动展开；example.com 这种 2 子域保持折叠。
+ */
+export const AUTO_EXPAND_THRESHOLD = 3;
+
 /** 单子域分组展示标签：裸域为注册域，否则 "子域.注册域"。 */
 function subLabel(subdomain: string, registrableDomain: string): string {
   return subdomain ? `${subdomain}.${registrableDomain}` : registrableDomain;
+}
+
+interface RegBucket {
+  registrableDomain: string;
+  /** 空字符串 key 表示裸域（无子域）。 */
+  subdomainToTabs: Map<string, TabRecord[]>;
 }
 
 export function aggregateBySite(
@@ -53,8 +71,8 @@ export function aggregateBySite(
   const threshold = options.threshold ?? 2;
   const excluded = options.excludedTabIds ?? new Set<number>();
 
-  // 第一层：按注册域归组
-  const domainBuckets = new Map<string, { key: SiteKey; tabs: TabRecord[] }>();
+  // 第一遍：按注册域分桶，桶内按子域再分小桶（含裸域空串）。
+  const regBuckets = new Map<string, RegBucket>();
   const singles: TabRecord[] = [];
 
   for (const tab of tabs) {
@@ -67,39 +85,73 @@ export function aggregateBySite(
       singles.push(tab);
       continue;
     }
-    const bucket = domainBuckets.get(key.value) || { key, tabs: [] };
-    bucket.tabs.push(tab);
-    domainBuckets.set(key.value, bucket);
+    const bucket =
+      regBuckets.get(key.value) ??
+      ({ registrableDomain: key.value, subdomainToTabs: new Map<string, TabRecord[]>() } as RegBucket);
+    const sub = key.subdomain;
+    const list = bucket.subdomainToTabs.get(sub) ?? [];
+    list.push(tab);
+    bucket.subdomainToTabs.set(sub, list);
+    regBuckets.set(key.value, bucket);
   }
 
   const groups: SiteGroup[] = [];
-  for (const bucket of domainBuckets.values()) {
-    if (bucket.tabs.length < threshold) {
-      singles.push(...bucket.tabs);
+  for (const bucket of regBuckets.values()) {
+    let totalTabs = 0;
+    for (const subTabs of bucket.subdomainToTabs.values()) totalTabs += subTabs.length;
+    if (totalTabs < threshold) {
+      // 注册域桶总标签不足阈值，全部进 singles。
+      for (const subTabs of bucket.subdomainToTabs.values()) singles.push(...subTabs);
       continue;
     }
 
-    // 第二层：注册域内按子域分亚组
-    const subBuckets = new Map<string, TabRecord[]>();
-    for (const tab of bucket.tabs) {
-      const sub = tab.url ? siteResolver.resolve(tab.url)?.subdomain ?? '' : '';
-      const arr = subBuckets.get(sub) || [];
-      arr.push(tab);
-      subBuckets.set(sub, arr);
-    }
+    const subEntries = [...bucket.subdomainToTabs.entries()].sort(
+      (a, b) => (a[1][0]?.index ?? 0) - (b[1][0]?.index ?? 0)
+    );
 
-    const subgroups: SiteSubGroup[] =
-      subBuckets.size > 1
-        ? [...subBuckets.entries()]
-            .map(([sub, subTabs]) => ({
+    if (bucket.subdomainToTabs.size >= AUTO_EXPAND_THRESHOLD) {
+      // 自动展开：每个子域独立成组（不折叠大组，避免多业务子域强行合并）。
+      for (const [sub, subTabs] of subEntries) {
+        if (subTabs.length < threshold) {
+          singles.push(...subTabs);
+          continue;
+        }
+        const value = sub
+          ? `${sub}.${bucket.registrableDomain}`
+          : bucket.registrableDomain;
+        groups.push({
+          key: {
+            value,
+            label: value,
+            registrableDomain: bucket.registrableDomain,
+            subdomain: sub
+          },
+          tabs: subTabs,
+          subgroups: []
+        });
+      }
+    } else {
+      // 折叠：原注册域大组 + 子域亚组（少子域时信息密度优先）。
+      const subgroups: SiteSubGroup[] =
+        subEntries.length > 1
+          ? subEntries.map(([sub, subTabs]) => ({
               subdomain: sub,
-              label: subLabel(sub, bucket.key.registrableDomain),
+              label: subLabel(sub, bucket.registrableDomain),
               tabs: subTabs
             }))
-            .sort((a, b) => (a.tabs[0]?.index ?? 0) - (b.tabs[0]?.index ?? 0))
-        : [];
-
-    groups.push({ key: bucket.key, tabs: bucket.tabs, subgroups });
+          : [];
+      const flat = subEntries.flatMap(([, subTabs]) => subTabs);
+      groups.push({
+        key: {
+          value: bucket.registrableDomain,
+          label: bucket.registrableDomain,
+          registrableDomain: bucket.registrableDomain,
+          subdomain: ''
+        },
+        tabs: flat,
+        subgroups
+      });
+    }
   }
   groups.sort((a, b) => (a.tabs[0]?.index ?? 0) - (b.tabs[0]?.index ?? 0));
 

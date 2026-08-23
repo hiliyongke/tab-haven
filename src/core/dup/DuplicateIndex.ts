@@ -1,5 +1,5 @@
 import type { TabRecord } from '@/core/tab-types';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 重复标签索引：以 URL 比较键为分组键的只读索引。
@@ -8,7 +8,7 @@ import { inspectUrl } from '@/core/url/UrlInspector';
  * 索引只回答"哪些标签共享同一个网址"，策略回答"保留哪一个"。
  */
 
-export interface DuplicateGroup {
+interface DuplicateGroup {
   /** 比较键（与检视结果的 comparisonKey 一致）。 */
   key: string;
   /** 共享该网址的全部标签（按传入顺序）。 */
@@ -26,11 +26,11 @@ export class DuplicateIndex {
   static build(tabs: readonly TabRecord[]): DuplicateIndex {
     const groupsByKey = new Map<string, TabRecord[]>();
     for (const tab of tabs) {
-      const inspection = inspectUrl(tab.url, tab.pendingUrl);
-      if (inspection.category !== 'web') continue;
-      const group = groupsByKey.get(inspection.comparisonKey) || [];
+      const key = webComparisonKey(tab.url, tab.pendingUrl);
+      if (!key) continue;
+      const group = groupsByKey.get(key) || [];
       group.push(tab);
-      groupsByKey.set(inspection.comparisonKey, group);
+      groupsByKey.set(key, group);
     }
     return new DuplicateIndex(groupsByKey);
   }

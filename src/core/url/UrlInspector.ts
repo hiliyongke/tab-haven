@@ -60,3 +60,18 @@ export function inspectUrl(
 
   return { category: 'internal', comparisonKey: pending || committed, committedUrl: committed };
 }
+
+/**
+ * 快捷判定：返回可参与复用/聚合的网页比较键。
+ * 非 web 页（内部页/空白起始页）返回 null，供调用方直接跳过。
+ * 复用引擎、重复清理、固定空间共用此单一判定。
+ */
+export function webComparisonKey(
+  committedUrl: string | undefined,
+  pendingUrl: string | undefined
+): string | null {
+  const inspection = inspectUrl(committedUrl, pendingUrl);
+  return inspection.category === 'web' && inspection.comparisonKey
+    ? inspection.comparisonKey
+    : null;
+}

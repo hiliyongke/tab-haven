@@ -50,4 +50,31 @@ describe('SiteResolver', () => {
   it('托管域本体（无用户子域）不误伤', () => {
     expect(siteResolver.resolve('https://github.io/')?.value).toBe('github.io');
   });
+
+  it('内网多级子域（.corp.local）归组并按子域分亚组', () => {
+    const git = siteResolver.resolve('http://git.corp.local/');
+    const wiki = siteResolver.resolve('http://wiki.corp.local/');
+    expect(git?.value).toBe('corp.local');
+    expect(wiki?.value).toBe('corp.local');
+    expect(git?.subdomain).toBe('git');
+    expect(wiki?.subdomain).toBe('wiki');
+  });
+
+  it('内网两段域名（wiki.corp）整体为键（未知后缀不拆分，各自独立成组）', () => {
+    const key = siteResolver.resolve('http://wiki.corp/');
+    expect(key?.value).toBe('wiki.corp');
+    expect(key?.subdomain).toBe('');
+  });
+
+  it('内网单标签主机（intranet）回退为自身为键', () => {
+    const key = siteResolver.resolve('http://intranet/');
+    expect(key?.value).toBe('intranet');
+    expect(key?.subdomain).toBe('');
+  });
+
+  it('深层内网子域（a.b.corp.local）子域取完整前缀', () => {
+    const key = siteResolver.resolve('http://a.b.corp.local/');
+    expect(key?.value).toBe('corp.local');
+    expect(key?.subdomain).toBe('a.b');
+  });
 });

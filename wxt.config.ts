@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 // TABHAVEN_VARIANT=compat：兼容变体（剥离 sidePanel，面向不支持侧边栏的 Chromium 内核）
-// 见 docs/ARCHITECTURE.md 第 6.2 节。V1.0 只发布标准版，兼容版管道建成但随 V2.0 交付。
+// 见 docs/ARCHITECTURE.md 第 5 章「已知约束」的兼容变体条目。V1.0 只发布标准版，兼容版管道建成但随 V2.0 交付。
 //
 // 实现说明：WXT 会自动检测 sidepanel.html 入口并合并 side_panel 字段与
 // sidePanel 权限，manifest 配置函数无法可靠覆盖（实测）。因此兼容变体的
@@ -23,11 +23,33 @@ export default defineConfig({
     minimum_chrome_version: '114',
     // options_ui 由 WXT 检测 options 入口自动生成（含 page），此处仅覆盖 open_in_tab
     options_ui: { open_in_tab: true },
-    permissions: ['tabs', 'tabGroups', 'storage', 'activeTab', 'alarms'],
+    permissions: [
+      'tabs',
+      'tabGroups',
+      'storage',
+      'alarms',
+      'contextMenus',
+      'omnibox',
+      'sessions',
+      'bookmarks',
+      'notifications'
+    ],
     commands: {
       'focus-search': {
         suggested_key: { default: 'Ctrl+Shift+F' },
         description: '__MSG_commandFocusSearch__'
+      },
+      'open-panel': {
+        suggested_key: { default: 'Ctrl+Shift+O' },
+        description: '__MSG_commandOpenPanel__'
+      },
+      'locate-active': {
+        suggested_key: { default: 'Ctrl+Shift+L' },
+        description: '__MSG_commandLocateActive__'
+      },
+      'discard-inactive': {
+        suggested_key: { default: 'Ctrl+Shift+U' },
+        description: '__MSG_commandDiscardInactive__'
       }
     }
     // side_panel 字段与 sidePanel 权限由 WXT 检测 sidepanel 入口自动生成；

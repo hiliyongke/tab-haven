@@ -47,26 +47,34 @@ export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
  */
 export const SettingsSchema = z.object({
   themePreference: z.enum(['system', 'light', 'dark']),
-  language: z.string().optional(),
-  aggregationThreshold: z.number().int().min(2).max(5),
+  /** 语言覆盖（BCP-47）。宽松校验兼容旧数据，仅约束长度与格式。 */
+  language: z.string().min(2).max(32).optional(),
+  /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
+  aggregationThreshold: z.number().int().min(1).max(5),
   /** 标签顺序双向同步：侧边栏拖拽重排写回原生顺序，原生改动反向同步。 */
   tabOrderSync: z.boolean(),
 
   // —— 外观 appearance ——
   /** 顶部固定磁贴条（固定空间）显示开关。 */
   showPinnedStrip: z.boolean().default(true),
+  /** 顶部固定磁贴尺寸：sm 紧凑 / md 标准 / lg 大磁贴。 */
+  pinnedStripSize: z.enum(['sm', 'md', 'lg']).default('md'),
   /** 列表密度：compact 紧凑 / cozy 宽松。 */
   density: z.enum(['compact', 'cozy']).default('compact'),
   /** 标签行标题下方显示完整网址。 */
   showUrl: z.boolean().default(false),
   /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
   showSplitBadges: z.boolean().default(true),
+  /** 站点组强调色：auto 按域名/favicon 自动配色 / mono 统一中性色。 */
+  groupAccentStyle: z.enum(['auto', 'mono']).default('auto'),
 
   // —— 行为 behavior ——
   /** 切换标签时把当前激活标签滚动进可视区。 */
   autoScrollActive: z.boolean().default(true),
   /** 标签行上按鼠标中键关闭该标签。 */
   closeOnMiddleClick: z.boolean().default(true),
+  /** 新建标签位置：end 窗口末尾 / after-active 当前激活标签之后。 */
+  newTabPosition: z.enum(['end', 'after-active']).default('end'),
   /** 临时区排序：browser 浏览器原生顺序 / recency 最近访问优先。 */
   sortMode: z.enum(['browser', 'recency']).default('browser'),
 
@@ -75,8 +83,6 @@ export const SettingsSchema = z.object({
   autoDiscardEnabled: z.boolean().default(false),
   /** 自动休眠等待时长（分钟），5–240。 */
   autoDiscardMinutes: z.number().int().min(5).max(240).default(30),
-  /** 标签预览：悬停时按需截取激活标签缩略图（captureVisibleTab），默认关闭以保护页面隐私。 */
-  previewEnabled: z.boolean().default(false),
   /** 临时区非固定标签聚合模式：site 按网站 / opener 按来源树 / language 按语言。 */
   groupMode: z.enum(['site', 'opener', 'language']).default('site'),
   /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups；关闭开关会解散本功能创建的组。 */
@@ -85,8 +91,6 @@ export const SettingsSchema = z.object({
   undoStackLimit: z.number().int().min(5).max(50).default(10),
   /** 状态提示条显示时长（秒）。 */
   toastDurationSec: z.number().int().min(3).max(15).default(7),
-  /** 清理重复标签时豁免固定标签。 */
-  keepPinnedInCleanup: z.boolean().default(true),
   /** 标签行操作按钮常显（关闭则悬停显示）。 */
   rowActionsVisible: z.boolean().default(false),
   /** 搜索是否包含中文拼音首字母匹配。 */
@@ -94,7 +98,21 @@ export const SettingsSchema = z.object({
   /** 撤销记录跨重启持久化（关闭后仅会话内可撤销）。 */
   persistUndo: z.boolean().default(true),
   /** 同一网址只保留一个标签：新开已存在则切到最近访问的既有标签，其余（含新建）关闭。 */
-  uniqueUrlTabs: z.boolean().default(true)
+  uniqueUrlTabs: z.boolean().default(true),
+  /** 自动休眠白名单：这些域名（hostname）永不被自动休眠（手动休眠不受限）。 */
+  discardWhitelist: z.array(z.string()).default([]),
+  /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
+  searchAllWindows: z.boolean().default(false),
+  /** 自动休眠完成时的系统通知（通知面板内始终有「全部唤醒」可撤销）。 */
+  discardNotifyEnabled: z.boolean().default(true),
+  /** 重复标签自动合并（同网址唯一化）时的状态提示。 */
+  reuseNotifyEnabled: z.boolean().default(true),
+  /** 工具栏角标模式：auto 有重复显重复数/否则显标签数 / count 恒显标签数 / dups 恒显重复组数 / off 关闭。 */
+  badgeMode: z.enum(['auto', 'count', 'dups', 'off']).default('auto'),
+  /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
+  contextMenusEnabled: z.boolean().default(true),
+  /** 地址栏命令（th <关键词>）总开关。 */
+  omniboxEnabled: z.boolean().default(true)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -104,24 +122,32 @@ export const DEFAULT_SETTINGS: Settings = {
   aggregationThreshold: 2,
   tabOrderSync: true,
   showPinnedStrip: true,
+  pinnedStripSize: 'md',
   density: 'compact',
   showUrl: false,
   showSplitBadges: true,
+  groupAccentStyle: 'auto',
   autoScrollActive: true,
   closeOnMiddleClick: true,
+  newTabPosition: 'end',
   sortMode: 'browser',
   autoDiscardEnabled: false,
   autoDiscardMinutes: 30,
-  previewEnabled: false,
   groupMode: 'site',
   autoGroupNative: false,
   undoStackLimit: 10,
   toastDurationSec: 7,
-  keepPinnedInCleanup: true,
   rowActionsVisible: false,
   pinyinSearch: true,
   persistUndo: true,
-  uniqueUrlTabs: true
+  uniqueUrlTabs: true,
+  discardWhitelist: [],
+  searchAllWindows: false,
+  discardNotifyEnabled: true,
+  reuseNotifyEnabled: true,
+  badgeMode: 'auto',
+  contextMenusEnabled: true,
+  omniboxEnabled: true
 };
 
 /** 撤销栈条目（Phase 5 使用，先行定义以固定数据形态）。 */
@@ -143,6 +169,14 @@ export const UndoBatchSchema = z.object({
   entries: z.array(UndoTabRecordSchema)
 });
 export type UndoBatch = z.infer<typeof UndoBatchSchema>;
+
+/** 自动休眠批次台账：SW 自动休眠后记录，UI 据此提供「全部唤醒」撤销。 */
+export const AutoDiscardBatchSchema = z.object({
+  tabIds: z.array(z.number().int()),
+  at: z.number(),
+  count: z.number().int()
+});
+export type AutoDiscardBatch = z.infer<typeof AutoDiscardBatchSchema>;
 
 /** 导出文件格式（FR-D9.1）。 */
 export const ExportFileSchema = z.object({

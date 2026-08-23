@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useUndoStore } from '@/stores/undoStore';
+import { Button } from '@/ui/common/Button';
+import { Icon, Icons } from '@/ui/common/Icon';
 
 /** 状态提示条：消息 + 可选撤销按钮（FR-D8.1 的撤销入口）。 */
 export function StatusToast() {
@@ -18,21 +20,22 @@ export function StatusToast() {
     >
       <span className="flex-1 truncate">{toast.message}</span>
       {toast.canUndo && (
-        <button
-          type="button"
-          className="rounded bg-accent-50 px-2 py-0.5 font-medium text-accent-600 hover:bg-accent-100"
-          onClick={() => void undo()}
-        >
+        <Button variant="soft" size="sm" onClick={() => void undo()}>
           {t('undo.action')}
-        </button>
+        </Button>
+      )}
+      {toast.action && (
+        <Button variant="soft" size="sm" onClick={() => void toast.action?.run()}>
+          {toast.action.label}
+        </Button>
       )}
       <button
         type="button"
-        className="text-gray-400 hover:text-gray-600"
+        className="rounded p-0.5 text-gray-400 transition-base hover:text-gray-600"
         aria-label={t('undo.dismiss')}
         onClick={clearToast}
       >
-        ×
+        <Icon d={Icons.close} className="h-3.5 w-3.5" />
       </button>
     </div>
   );

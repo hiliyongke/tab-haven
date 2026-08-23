@@ -22,5 +22,53 @@
   "commandFocusSearch": {
     "message": "Focus tab search",
     "description": "Command description for the keyboard shortcut"
+  },
+  "commandOpenPanel": {
+    "message": "Open / focus the TabHaven panel",
+    "description": "Command description for the keyboard shortcut"
+  },
+  "commandLocateActive": {
+    "message": "Locate the active tab in the panel",
+    "description": "Command description for the keyboard shortcut"
+  },
+  "commandDiscardInactive": {
+    "message": "Discard inactive tabs in the current window",
+    "description": "Command description for the keyboard shortcut"
+  },
+  "menuDiscardPage": {
+    "message": "Discard this page",
+    "description": "Context menu item: discard (freeze) the current page"
+  },
+  "menuPinPage": {
+    "message": "Pin this page",
+    "description": "Context menu item: pin the current page to the pinned strip"
+  },
+  "menuSearchSite": {
+    "message": "Search tabs from this site",
+    "description": "Context menu item: search tabs under the same site"
+  },
+  "menuAddPageToFolder": {
+    "message": "Add page to folder",
+    "description": "Context menu parent item: add the current page to a fixed folder"
+  },
+  "menuAddLinkToFolder": {
+    "message": "Add link to folder",
+    "description": "Context menu parent item: add the link to a fixed folder"
+  },
+  "menuDiscardTab": {
+    "message": "Discard this tab",
+    "description": "Context menu item on the tab strip"
+  },
+  "menuOpenPanel": {
+    "message": "Open TabHaven panel",
+    "description": "Context menu item on the toolbar icon"
+  },
+  "menuDiscardInactive": {
+    "message": "Discard inactive tabs",
+    "description": "Context menu item on the toolbar icon"
+  },
+  "menuOpenSettings": {
+    "message": "Open TabHaven settings",
+    "description": "Context menu item on the toolbar icon"
   }
 }

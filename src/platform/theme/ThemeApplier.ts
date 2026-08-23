@@ -7,11 +7,11 @@
  * 任何主题变更必须同时写镜像与 documentElement 数据属性。
  */
 
-export type ThemePreference = 'system' | 'light' | 'dark';
+type ThemePreference = 'system' | 'light' | 'dark';
 
-export const THEME_MIRROR_KEY = 'tabhaven:theme';
+const THEME_MIRROR_KEY = 'tabhaven:theme';
 
-export function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
+function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
   if (preference !== 'system') return preference;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }

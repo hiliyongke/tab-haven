@@ -13,7 +13,7 @@ export const DragType = {
   FolderItem: 'folder-item'
 } as const;
 
-export interface TabDragData {
+interface TabDragData {
   type: (typeof DragType)['Tab'];
   tabId: number;
   /** 所属容器 key（section key），用于判断同容器排序。 */
@@ -31,20 +31,23 @@ export interface SectionDragData {
   tabIds: number[];
 }
 
-export interface PinDragData {
+interface PinDragData {
   type: (typeof DragType)['Pin'];
-  pinId: string;
+  /** 持久化 pin id（PinnedStrip 场景）。 */
+  pinId?: string;
+  /** 浏览器原生标签 id（SectionList 内浏览器置顶场景）。 */
+  tabId?: number;
   title: string;
   favIconUrl?: string;
 }
 
-export interface FolderDragData {
+interface FolderDragData {
   type: (typeof DragType)['Folder'];
   folderId: string;
   name: string;
 }
 
-export interface FolderItemDragData {
+interface FolderItemDragData {
   type: (typeof DragType)['FolderItem'];
   folderId: string;
   itemId: string;

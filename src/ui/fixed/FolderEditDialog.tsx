@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/ui/common/Button';
+import { TextField } from '@/ui/common/TextField';
 import { DialogShell } from '@/ui/dialog/Dialog';
 
 /**
@@ -26,20 +28,12 @@ export function FolderEditDialog({
       <DialogShell title={t('fixed.delete')} onClose={() => setConfirmDelete(false)}>
         <p className="mb-3 text-sm text-gray-600">{t('fixed.deleteConfirm', { name: initialName })}</p>
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-            onClick={() => setConfirmDelete(false)}
-          >
+          <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
             {t('dialog.cancel')}
-          </button>
-          <button
-            type="button"
-            className="rounded bg-red-600 px-3 py-1 text-sm text-on-accent hover:opacity-90"
-            onClick={onDelete}
-          >
+          </Button>
+          <Button variant="danger" onClick={onDelete}>
             {t('dialog.confirm')}
-          </button>
+          </Button>
         </div>
       </DialogShell>
     );
@@ -47,44 +41,34 @@ export function FolderEditDialog({
 
   return (
     <DialogShell title={t('fixed.edit')} onClose={onClose}>
-      <input
-        className="mb-3 w-full rounded border border-gray-300 bg-surface px-2 py-1.5 text-sm text-gray-800 outline-none focus:border-accent-500"
+      <TextField
+        className="mb-3 w-full"
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        placeholder={t('fixed.folderNamePlaceholder')}
+        onChange={(value) => setDraft(value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             onRename(draft.trim() || initialName);
             onClose();
           }
         }}
-        placeholder={t('fixed.folderNamePlaceholder')}
       />
       <div className="flex items-center justify-between">
-        <button
-          type="button"
-          className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
-          onClick={() => setConfirmDelete(true)}
-        >
+        <Button variant="danger-ghost" onClick={() => setConfirmDelete(true)}>
           {t('fixed.delete')}
-        </button>
+        </Button>
         <div className="flex gap-2">
-          <button
-            type="button"
-            className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-            onClick={onClose}
-          >
+          <Button variant="secondary" onClick={onClose}>
             {t('dialog.cancel')}
-          </button>
-          <button
-            type="button"
-            className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
+          </Button>
+          <Button
             onClick={() => {
               onRename(draft.trim() || initialName);
               onClose();
             }}
           >
             {t('dialog.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </DialogShell>

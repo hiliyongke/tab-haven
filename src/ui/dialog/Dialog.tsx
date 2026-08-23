@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/ui/common/Button';
+import { TextField } from '@/ui/common/TextField';
 
 /**
  * 自制弹窗族（FR-D10.3）：替代浏览器原生 prompt/confirm。
@@ -10,6 +12,8 @@ interface DialogShellProps {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  /** 覆盖默认宽度（如撤销历史面板需要更宽）。 */
+  widthClassName?: string;
 }
 
 /** 弹窗内可聚焦元素选择器。 */
@@ -19,7 +23,12 @@ const FOCUSABLE_SELECTOR =
 /**
  * 弹窗外壳（focus trap + Esc + 焦点恢复）。供扩展弹窗复用统一行为契约。
  */
-export function DialogShell({ title, children, onClose }: DialogShellProps) {
+export function DialogShell({
+  title,
+  children,
+  onClose,
+  widthClassName = 'w-[min(360px,88vw)]'
+}: DialogShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -69,7 +78,7 @@ export function DialogShell({ title, children, onClose }: DialogShellProps) {
     >
       <div
         ref={shellRef}
-        className="w-[min(360px,88vw)] rounded-xl border border-gray-200 bg-surface p-4 shadow-xl"
+        className={`${widthClassName} rounded-xl border border-gray-200 bg-surface p-4 shadow-xl`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -105,31 +114,20 @@ export function PromptDialog({
 
   return (
     <DialogShell title={title} onClose={onCancel}>
-      <input
-        ref={inputRef}
-        type="text"
-        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-accent-500"
+      <TextField
+        inputRef={inputRef}
         defaultValue={initialValue}
         placeholder={placeholder}
+        className="w-full"
         onKeyDown={(event) => {
           if (event.key === 'Enter') submit();
         }}
       />
       <div className="mt-3 flex justify-end gap-2">
-        <button
-          type="button"
-          className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-          onClick={onCancel}
-        >
+        <Button variant="secondary" onClick={onCancel}>
           {t('dialog.cancel')}
-        </button>
-        <button
-          type="button"
-          className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
-          onClick={submit}
-        >
-          {t('dialog.confirm')}
-        </button>
+        </Button>
+        <Button onClick={submit}>{t('dialog.confirm')}</Button>
       </div>
     </DialogShell>
   );
@@ -154,23 +152,12 @@ export function ConfirmDialog({
     <DialogShell title={title} onClose={onCancel}>
       <p className="mb-3 text-sm text-gray-600">{message}</p>
       <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-          onClick={onCancel}
-        >
+        <Button variant="secondary" onClick={onCancel}>
           {t('dialog.cancel')}
-        </button>
-        <button
-          type="button"
-          className={
-            'rounded px-3 py-1 text-sm text-on-accent hover:opacity-90' +
-            (danger ? ' bg-red-600' : ' bg-accent-600')
-          }
-          onClick={onConfirm}
-        >
+        </Button>
+        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
           {t('dialog.confirm')}
-        </button>
+        </Button>
       </div>
     </DialogShell>
   );

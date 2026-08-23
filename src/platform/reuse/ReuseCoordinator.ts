@@ -1,6 +1,6 @@
 import type { TabRecord } from '@/core/tab-types';
 import { rankForKeep } from '@/core/dup/DedupeByUrl';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { inspectUrl, webComparisonKey } from '@/core/url/UrlInspector';
 import { AllowanceLedger } from '@/platform/reuse/AllowanceLedger';
 import { ReusePolicy } from '@/platform/reuse/ReusePolicy';
 
@@ -23,12 +23,12 @@ interface PendingTask {
   status: TaskStatus;
 }
 
-export type ReuseOutcome =
+type ReuseOutcome =
   | { action: 'reuse'; targetId: number }
   | { action: 'keep' }
   | { action: 'release' };
 
-export interface ReuseCoordinatorDependencies {
+interface ReuseCoordinatorDependencies {
   /** 扫描窗口内全部标签（查询服务注入，便于测试）。 */
   scanWindow: (windowId: number) => Promise<TabRecord[]>;
   /** 激活目标标签。 */
@@ -150,12 +150,10 @@ export class ReuseCoordinator {
           return tab.status === 'complete' ? { action: 'keep' } : 'wait';
         }
         // 全量唯一化：保留「最近访问」的既有标签，关闭其余既有 + 新建标签。
-        const inspection = inspectUrl(tab.url, tab.pendingUrl);
+        const key = inspection.comparisonKey;
         const existing = windowTabs.filter(
           (candidate) =>
-            candidate.id !== tab.id &&
-            inspectUrl(candidate.url, candidate.pendingUrl).comparisonKey ===
-              inspection.comparisonKey
+            candidate.id !== tab.id && webComparisonKey(candidate.url, candidate.pendingUrl) === key
         );
         const keep = rankForKeep(existing);
         if (!keep) return { action: 'keep' }; // 防御：既有标签已全部消失

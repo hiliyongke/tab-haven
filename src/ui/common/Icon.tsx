@@ -2,25 +2,28 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Bookmark,
+  BookmarkPlus,
   Copy,
   Folder,
-  FolderDown,
   FolderInput,
+  FolderOpen,
   GripVertical,
-  Group,
-  Layers,
-  List,
+  History,
+  Keyboard,
   LocateFixed,
   Pencil,
+  Percent,
   Pin,
   Plus,
   Search,
   Settings,
   Snowflake,
-  Star,
-  Trash2,
+  Sunrise,
+  Tags,
   Volume2,
   VolumeX,
+  Wand2,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -41,23 +44,35 @@ export const Icons = {
   pin: Pin,
   mute: Volume2,
   muted: VolumeX,
-  list: List,
   search: Search,
-  trash: Trash2,
   pencil: Pencil,
   grip: GripVertical,
   copy: Copy,
+  /** 休眠标签（释放内存）。 */
   snowflake: Snowflake,
-  group: Group,
+  /** 转换为原生分组：标签集图标，表达「归类成组」。 */
+  toNativeGroup: Tags,
+  /** 快速整理（自动分组）：魔法棒表达「一键自动归组」。 */
+  quickRegroup: Wand2,
   folder: Folder,
-  folderInput: FolderInput,
-  /** 存为固定文件夹（文件夹 + 存入箭头，替代 FolderInput 的不直观表达）。 */
-  folderDown: FolderDown,
-  /** 新建标签组（分层归类语义，替代 FolderInput 的不贴切表达）。 */
-  layers: Layers,
+  /** 存为固定文件夹：书签表达「收藏固定」。 */
+  saveToFolder: Bookmark,
   locate: LocateFixed,
   settings: Settings,
-  star: Star,
+  /** 打开文件夹全部条目。 */
+  openAll: FolderOpen,
+  /** 唤醒全部休眠标签。 */
+  wakeAll: Sunrise,
+  /** 缩放一键重置。 */
+  zoomReset: Percent,
+  /** 撤销历史。 */
+  history: History,
+  /** 快捷键帮助。 */
+  shortcuts: Keyboard,
+  /** 固定文件夹保存为书签。 */
+  bookmarkAdd: BookmarkPlus,
+  /** 从书签导入。 */
+  bookmarkImport: FolderInput,
 } as const;
 
 /** 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。 */

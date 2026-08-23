@@ -1,11 +1,9 @@
 import { create } from 'zustand';
 import { createUndoBatch, popBatch, pushBatch, toUndoTabRecord } from '@/core/undo/UndoStack';
 import type { UndoBatch } from '@/core/schema/models';
-import { UndoBatchSchema } from '@/core/schema/models';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
-import { DataRepository } from '@/platform/storage/DataRepository';
-import { settingsRepository } from '@/platform/storage/repositories';
+import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
 import { restoreTabRecords } from '@/platform/undo/RestoreEngine';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -14,18 +12,21 @@ import { useTabStore } from '@/stores/tabStore';
  * 撤销 store（FR-D8.1）：批次入栈（含持久化）、撤销执行、状态提示。
  *
  * 编排入口 closeWithUndo：记录五元组 → 关闭 → 状态提示（可撤销）。
+ * undoRepository 单例与 storage key 统一由 repositories.ts 管理。
  */
 
-const undoRepository = new DataRepository<UndoBatch[]>(
-  'tabhaven.undo-stack.v1',
-  UndoBatchSchema.array(),
-  []
-);
+/** toast 上的自定义动作（如「唤醒全部休眠标签」）。 */
+export interface ToastAction {
+  label: string;
+  run: () => void | Promise<void>;
+}
 
 interface ToastState {
   message: string;
   canUndo: boolean;
   batchId: string | undefined;
+  /** 自定义动作按钮（自动休眠撤销等非关闭类操作）。 */
+  action?: ToastAction;
 }
 
 interface UndoState {
@@ -36,10 +37,13 @@ interface UndoState {
   load: () => Promise<void>;
   /** 统一关闭入口：记录 + 执行 + 提示。 */
   closeWithUndo: (tabs: readonly TabRecord[], tabIds: readonly number[]) => Promise<void>;
+  /** 撤销最近一步。 */
   undo: () => Promise<void>;
+  /** 撤销指定批次（撤销历史面板用）。 */
+  undoBatch: (batchId: string) => Promise<void>;
   clearToast: () => void;
-  /** 通用状态提示（无可撤销动作），如后台自动合并通知。 */
-  notify: (message: string) => void;
+  /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
+  notify: (message: string, action?: ToastAction) => void;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -131,13 +135,30 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       scheduleToastClear();
     },
 
+    undoBatch: async (batchId) => {
+      const windowId = useTabStore.getState().currentWindowId;
+      if (windowId === undefined) return;
+      const batch = get().batches.find((entry) => entry.id === batchId);
+      if (!batch) return;
+      const remaining = get().batches.filter((entry) => entry.id !== batchId);
+      set({ batches: remaining });
+      const settings = await settingsRepository.read();
+      if (settings.persistUndo) await undoRepository.write(remaining);
+      clearTimeout(toastTimer);
+      set({ toast: null });
+
+      const count = await restoreTabRecords(batch.entries, windowId);
+      set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
+      scheduleToastClear();
+    },
+
     clearToast: () => {
       clearTimeout(toastTimer);
       set({ toast: null });
     },
 
-    notify: (message) => {
-      set({ toast: { message, canUndo: false, batchId: undefined } });
+    notify: (message, action) => {
+      set({ toast: { message, canUndo: false, batchId: undefined, action } });
       scheduleToastClear();
     }
   };

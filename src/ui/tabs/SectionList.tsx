@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
@@ -9,9 +8,10 @@ import { CategoryModule } from '@/ui/common/CategoryModule';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TabRow } from '@/ui/tabs/TabRow';
-import { PinnedTile } from '@/ui/tabs/PinnedTile';
 import { DragType } from '@/ui/dnd/types';
 import { groupAccentVar, useDomainAccent } from '@/ui/tabs/accent';
+import { computeSplitGroupRoles } from '@/ui/tabs/splitGroupRoles';
+import { useDataStore } from '@/stores/dataStore';
 /** 用户主动定位当前标签时，请求临时区展开其所属分组。 */
 export const LOCATE_SECTION_EVENT = 'tabhaven:locate-section';
 
@@ -140,7 +140,7 @@ function GroupEditDialog({
  * 折叠状态由调用方（本地态）持有并通过 props 回传。
  */
 
-export interface SectionCallbacks {
+interface SectionCallbacks {
   onActivate: (tabId: number) => void;
   onToggleMute: (tab: TabRecord) => void;
   onTogglePin: (tab: TabRecord) => void;
@@ -158,8 +158,6 @@ export interface SectionCallbacks {
   onReorder?: (sourceId: number, targetId: number, placeAfter: boolean) => void;
   /** 键盘重排（Alt+↑/↓）：把标签向相邻位置移动。 */
   onMoveTab?: (tabId: number, direction: -1 | 1) => void;
-  /** 新建命名原生组（可附带初始成员）。 */
-  onGroupCreate?: (tabIds?: readonly number[]) => void;
   /** 重命名原生组。 */
   onGroupRename: (groupId: number, title: string) => void;
   /** 改变原生组颜色。 */
@@ -170,8 +168,6 @@ export interface SectionCallbacks {
   onGroupMove: (groupId: number, index: number) => void;
   /** 高亮当前选中的标签（与浏览器多选同步）。 */
   onHighlightSelected?: () => void;
-  /** 用户悬停标签时按需请求当前可见页预览。 */
-  onRequestPreview?: (tab: TabRecord) => void;
 }
 
 function RowList({
@@ -187,7 +183,6 @@ function RowList({
   density,
   showSplitBadges,
   depths,
-  previews,
   highlightedIds,
   searchActiveTabId,
   callbacks,
@@ -206,8 +201,6 @@ function RowList({
   showSplitBadges?: boolean;
   /** 来源树模式下按标签 id 提供的缩进层级。 */
   depths?: ReadonlyMap<number, number>;
-  /** 标签预览缩略图缓存（tabId → dataURL）。 */
-  previews?: ReadonlyMap<number, string>;
   /** 当前浏览器高亮选区的标签 id 集合。 */
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
@@ -216,6 +209,9 @@ function RowList({
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
   containerKey: string;
 }) {
+  // 分屏组竖线角色：同一 splitViewId 的「连续」标签段 → 组首/组中/组尾（单标签段也画线）。
+  const splitGroupRoles = useMemo(() => computeSplitGroupRoles(tabs), [tabs]);
+
   return (
     <SortableContext items={tabs.map((tab) => tab.id)} strategy={verticalListSortingStrategy}>
       <ul>
@@ -226,6 +222,7 @@ function RowList({
             duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
             isActive={tab.id === activeTabId}
             isSplitCompanion={splitPartners.has(tab.id)}
+            splitGroupRole={splitGroupRoles.get(tab.id)}
             reorderEnabled={reorderEnabled}
             showUrl={showUrl}
             rowActionsVisible={rowActionsVisible}
@@ -234,10 +231,8 @@ function RowList({
             density={density}
             showSplitBadges={showSplitBadges}
             indent={depths?.get(tab.id)}
-            preview={previews?.get(tab.id)}
             isHighlighted={highlightedIds?.has(tab.id)}
             isSearchActive={tab.id === searchActiveTabId}
-            onRequestPreview={callbacks.onRequestPreview}
             onActivate={callbacks.onActivate}
             onToggleMute={callbacks.onToggleMute}
             onTogglePin={callbacks.onTogglePin}
@@ -253,105 +248,8 @@ function RowList({
   );
 }
 
-/** 卡片头部：标题 + 计数胶囊；可点击折叠，可选关闭（解散网站组）。
- *  排序用 dnd-kit（head 容器承载 listeners）；跨容器拖出（到固定空间）由全局 DndContext 处理。
- *  固定文件夹头也复用此组件，保证视觉与分组一致。 */
-export function SectionHead({
-  icon,
-  accent,
-  title,
-  count,
-  onToggle,
-  onClose,
-  closeTitle,
-  action,
-  mediaIndicator,
-  dragHandleRef,
-  dragHandleProps
-}: {
-  icon?: ReactNode;
-  /** 分组强调色；存在时在标题前渲染一条竖色条。 */
-  accent?: string;
-  title: string;
-  count: number;
-  onToggle?: () => void;
-  onClose?: () => void;
-  closeTitle?: string;
-  /** 标题行右侧的可选操作按钮（如「存为固定文件夹」）。 */
-  action?: ReactNode;
-  /** 分组内媒体播放提示，可在折叠时显示并快速定位。 */
-  mediaIndicator?: ReactNode;
-  /** dnd-kit 排序节点引用。 */
-  dragHandleRef?: (node: HTMLDivElement | null) => void;
-  /** dnd-kit 排序监听（attributes + listeners）。 */
-  dragHandleProps?: Record<string, unknown>;
-}) {
-  const content = (
-    <>
-      {accent && <span className="accent-bar" aria-hidden="true" />}
-      {icon}
-      <span className="title">{title}</span>
-    </>
-  );
-  return (
-    <div
-      className="section-head"
-      ref={dragHandleRef}
-      {...dragHandleProps}
-    >
-      {onToggle ? (
-        <button
-          type="button"
-          className="toggle"
-          aria-label={title}
-          onClick={onToggle}
-        >
-          {content}
-        </button>
-      ) : (
-        <div className="toggle">{content}</div>
-      )}
-      <span className="count-pill">{count}</span>
-      {mediaIndicator}
-      {action}
-      {onClose && (
-        <button
-          type="button"
-          className="row-action close-site"
-          title={closeTitle}
-          aria-label={closeTitle}
-          onClick={onClose}
-        >
-          <Icon d={Icons.close} className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-/**
- * 单个分组卡片：根据分组类型推导强调色（原生组用 Chrome 组色、站点组用
- * 域名哈希色 / favicon 主色），并以「标题前竖色条 + 卡片淡背景」呈现。
- */
-function SectionCard({
-  section,
-  collapsedGroups,
-  collapsedSites,
-  duplicateCounts,
-  activeTabId,
-  splitPartners,
-  reorderEnabled,
-  showUrl,
-  autoScrollActive,
-  closeOnMiddleClick,
-  density,
-  rowActionsVisible,
-  showSplitBadges,
-  previews,
-  highlightedIds,
-  searchActiveTabId,
-  callbacks
-}: {
+/** SectionCard 全部输入（跨子组件共享）。 */
+interface SectionCardProps {
   section: TemporarySection;
   collapsedGroups: ReadonlySet<number>;
   collapsedSites: ReadonlySet<string>;
@@ -365,173 +263,85 @@ function SectionCard({
   density?: 'compact' | 'cozy';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
-  /** 标签预览缩略图缓存（tabId → dataURL）。 */
-  previews?: ReadonlyMap<number, string>;
   /** 当前浏览器高亮选区的标签 id 集合。 */
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
   callbacks: SectionCallbacks;
-}) {
-  const isCollapsed =
-    section.kind === 'native'
-      ? collapsedGroups.has(section.groupId)
-      : section.kind === 'site'
-        ? collapsedSites.has(section.siteKey)
-        : false;
+}
 
-  const count = section.tabs.length;
+/** RowList 的透传输入（SectionCardProps 中与行渲染相关的字段）。 */
+type RowListPassthrough = Pick<
+  SectionCardProps,
+  | 'duplicateCounts'
+  | 'activeTabId'
+  | 'splitPartners'
+  | 'reorderEnabled'
+  | 'showUrl'
+  | 'rowActionsVisible'
+  | 'autoScrollActive'
+  | 'closeOnMiddleClick'
+  | 'density'
+  | 'showSplitBadges'
+  | 'highlightedIds'
+  | 'searchActiveTabId'
+  | 'callbacks'
+>;
 
-  const { t } = useTranslation();
+/** 统一的行列表渲染（RowList 的输入 props 在此一次性透传）。 */
+function SectionRows({
+  tabs,
+  depths,
+  containerKey,
+  ...rest
+}: { tabs: readonly TabRecord[]; depths?: ReadonlyMap<number, number>; containerKey: string } & RowListPassthrough) {
+  return <RowList tabs={tabs} depths={depths} containerKey={containerKey} {...rest} />;
+}
 
-  // 原生组编辑对话框状态（改名 / 换色 / 删除），统一走 DialogShell 保证焦点与键盘行为。
-  const [editOpen, setEditOpen] = useState(false);
-  // 从折叠分组的播放提示进入后，临时只展示播放中的标签。
-  const [playingOnly, setPlayingOnly] = useState(false);
-  useEffect(() => {
-    if (isCollapsed) setPlayingOnly(false);
-  }, [isCollapsed]);
-
-  // 拖拽数据 + 排序开关：原生组参与排序；站点组仅支持拖出到固定空间（不在外层
-  // SortableContext items 中，不会误排序）；置顶/未分组禁用 sortable。
-  const sectionDragData = {
+/** 拖拽数据：原生组参与排序；站点组仅支持拖出到固定空间；置顶/未分组禁用 sortable。 */
+function sectionDragDataFor(section: TemporarySection) {
+  return {
     type: DragType.Section,
     sectionKey: section.key,
     groupId: section.kind === 'native' ? section.groupId : undefined,
     title: section.title,
     tabIds: section.tabs.map((tab) => tab.id)
   } as const;
-  const sortableDisabled = section.kind === 'pinned' || section.kind === 'ungrouped';
+}
 
-  // 原生组头部操作：存为固定文件夹 + 编辑（拖拽事件由 dnd-kit 在 head 接管，无需独立手柄按钮）。
-  const headerAction =
-    section.kind === 'native' ? (
-      <>
-        {callbacks.onSaveGroupAsFolder && (
-          <button
-            type="button"
-            className="row-action"
-            title={t('fixed.saveGroupAsFolder')}
-            aria-label={t('fixed.saveGroupAsFolder')}
-            onClick={(event) => {
-              event.stopPropagation();
-              callbacks.onSaveGroupAsFolder?.(section.groupId);
-            }}
-          >
-            <Icon d={Icons.folderDown} className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <button
-          type="button"
-          className="row-action"
-          title={t('groups.edit')}
-          aria-label={t('groups.edit')}
-          onClick={(event) => {
-            event.stopPropagation();
-            setEditOpen(true);
-          }}
-        >
-          <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
-        </button>
-      </>
-    ) : undefined;
+const isSortableDisabled = (section: TemporarySection): boolean =>
+  section.kind === 'pinned' || section.kind === 'ungrouped';
 
+/** 分组强调色推导：原生组用 Chrome 组色、站点组用域名哈希色 / favicon 主色（mono 模式统一中性）。 */
+function useSectionAccent(section: TemporarySection): string | undefined {
+  const mono = useDataStore((state) => state.settings.groupAccentStyle === 'mono');
   const firstFavicon =
     section.kind === 'site'
       ? section.tabs.find((tab) => tab.favIconUrl)?.favIconUrl
       : undefined;
   const siteDomain = section.kind === 'site' ? section.siteKey : undefined;
   const siteAccent = useDomainAccent(firstFavicon, siteDomain);
-  const accent =
-    section.kind === 'native'
-      ? groupAccentVar(section.color)
-      : section.kind === 'site'
-        ? siteAccent
-        : undefined;
+  if (section.kind === 'native') return groupAccentVar(section.color);
+  if (section.kind === 'site') return mono ? undefined : siteAccent;
+  return undefined;
+}
 
-  // 固定区：浏览器置顶标签 → 紧凑图标磁贴（与顶部 PinnedStrip 视觉一致，不再一行行铺开）
-  if (section.kind === 'pinned') {
-    return (
-      <GroupCard
-        id={section.key}
-        dragData={sectionDragData}
-        disabled={sortableDisabled}
-        title={section.title}
-        count={count}
-        accent={accent}
-        icon={<Icon d={Icons.pin} className="icon h-3.5 w-3.5 text-accent-500" />}
-        className="is-pinned"
-      >
-        <div className="section-body">
-          <div className="pinned-grid">
-            {section.tabs.map((tab) => (
-              <PinnedTile
-                key={tab.id}
-                title={tab.title || ''}
-                favIconUrl={tab.favIconUrl}
-                url={tab.url}
-                isActive={tab.active}
-                isDiscarded={tab.discarded}
-                isAudible={tab.audible}
-                onClick={() => callbacks.onActivate(tab.id)}
-                onMiddleClick={() => callbacks.onCloseTab(tab)}
-                onUnpin={() => callbacks.onTogglePin(tab)}
-                onDuplicate={() => callbacks.onDuplicate?.(tab)}
-              />
-            ))}
-          </div>
-        </div>
-      </GroupCard>
-    );
-  }
-
-  // 未分组：普通标签整行列表
-  if (section.kind === 'ungrouped') {
-    return (
-      <GroupCard
-        id={section.key}
-        dragData={sectionDragData}
-        disabled={sortableDisabled}
-        title={section.title}
-        count={count}
-        accent={accent}
-      >
-        <div className="section-body">
-          <RowList
-            tabs={section.tabs}
-            duplicateCounts={duplicateCounts}
-            activeTabId={activeTabId}
-            splitPartners={splitPartners}
-            reorderEnabled={reorderEnabled}
-            showUrl={showUrl}
-            rowActionsVisible={rowActionsVisible}
-            autoScrollActive={autoScrollActive}
-            closeOnMiddleClick={closeOnMiddleClick}
-            density={density}
-            showSplitBadges={showSplitBadges}
-            depths={section.depths}
-            previews={previews}
-            highlightedIds={highlightedIds}
-            searchActiveTabId={searchActiveTabId}
-            callbacks={callbacks}
-            containerKey={section.key}
-          />
-        </div>
-      </GroupCard>
-    );
-  }
-
-  const chevron = (
-    <Icon
-      d={Icons.chevron}
-      className={'icon h-3.5 w-3.5 transition-transform' + (isCollapsed ? '' : ' rotate-90')}
-    />
-  );
-
-  const playingTab = section.tabs.find((tab) => tab.audible && !tab.muted);
-  const visibleTabs = playingOnly && playingTab ? [playingTab] : section.tabs;
-  // 播放提示只在折叠时显示；展开后通过单独的标签行状态识别，避免标题区重复提示。
-  const mediaIndicator = isCollapsed && playingTab ? (
+/** 折叠时显示的播放提示（点击展开分组并定位到播放标签）。 */
+function PlayingIndicator({
+  playingTab,
+  isCollapsed,
+  section,
+  callbacks,
+  onPlay
+}: {
+  playingTab: TabRecord;
+  isCollapsed: boolean;
+  section: Extract<TemporarySection, { kind: 'native' | 'site' }>;
+  callbacks: SectionCallbacks;
+  onPlay: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
     <button
       type="button"
       className="section-media-indicator"
@@ -539,7 +349,7 @@ function SectionCard({
       aria-label={t('status.jumpToPlaying')}
       onClick={(event) => {
         event.stopPropagation();
-        setPlayingOnly(true);
+        onPlay();
         if (isCollapsed) {
           if (section.kind === 'native') {
             callbacks.onToggleGroupCollapsed(section.groupId, false);
@@ -554,19 +364,120 @@ function SectionCard({
       <span className="section-media-label">{t('status.playing')}</span>
       <span className="section-media-dot" aria-hidden="true" />
     </button>
+  );
+}
+
+/** 未分组：普通标签整行列表。 */
+function UngroupedSectionCard({
+  section,
+  ...rowProps
+}: Omit<SectionCardProps, 'section'> & { section: Extract<TemporarySection, { kind: 'ungrouped' }> }) {
+  const accent = useSectionAccent(section);
+  return (
+    <GroupCard
+      id={section.key}
+      dragData={sectionDragDataFor(section)}
+      disabled={isSortableDisabled(section)}
+      title={section.title}
+      count={section.tabs.length}
+      accent={accent}
+    >
+      <div className="section-body">
+        <SectionRows tabs={section.tabs} depths={section.depths} containerKey={section.key} {...rowProps} />
+      </div>
+    </GroupCard>
+  );
+}
+
+/** 可折叠分组卡（原生组 / 站点组）：折叠、播放提示、子域分块、原生组编辑弹窗。 */
+function CollapsibleSectionCard({
+  section,
+  collapsedGroups,
+  collapsedSites,
+  ...rowProps
+}: Omit<SectionCardProps, 'section'> & {
+  section: Extract<TemporarySection, { kind: 'native' | 'site' }>;
+}) {
+  const { t } = useTranslation();
+  const isCollapsed =
+    section.kind === 'native'
+      ? collapsedGroups.has(section.groupId)
+      : collapsedSites.has(section.siteKey);
+  const count = section.tabs.length;
+
+  // 原生组编辑对话框状态（改名 / 换色 / 删除），统一走 DialogShell 保证焦点与键盘行为。
+  const [editOpen, setEditOpen] = useState(false);
+  // 从折叠分组的播放提示进入后，临时只展示播放中的标签。
+  const [playingOnly, setPlayingOnly] = useState(false);
+  useEffect(() => {
+    if (isCollapsed) setPlayingOnly(false);
+  }, [isCollapsed]);
+
+  const accent = useSectionAccent(section);
+  const chevron = (
+    <Icon
+      d={Icons.chevron}
+      className={'icon h-3.5 w-3.5 transition-transform' + (isCollapsed ? '' : ' rotate-90')}
+    />
+  );
+
+  const playingTab = section.tabs.find((tab) => tab.audible && !tab.muted);
+  const visibleTabs = playingOnly && playingTab ? [playingTab] : section.tabs;
+  // 播放提示只在折叠时显示；展开后通过单独的标签行状态识别，避免标题区重复提示。
+  const mediaIndicator =
+    isCollapsed && playingTab ? (
+      <PlayingIndicator
+        playingTab={playingTab}
+        isCollapsed={isCollapsed}
+        section={section}
+        callbacks={rowProps.callbacks}
+        onPlay={() => setPlayingOnly(true)}
+      />
+    ) : undefined;
+
+  // 原生组头部操作：存为固定文件夹 + 编辑（拖拽事件由 dnd-kit 在 head 接管，无需独立手柄按钮）。
+  const headerAction = section.kind === 'native' ? (
+    <>
+      {rowProps.callbacks.onSaveGroupAsFolder && (
+        <button
+          type="button"
+          className="row-action"
+          title={t('fixed.saveGroupAsFolder')}
+          aria-label={t('fixed.saveGroupAsFolder')}
+          onClick={(event) => {
+            event.stopPropagation();
+            rowProps.callbacks.onSaveGroupAsFolder?.(section.groupId);
+          }}
+        >
+          <Icon d={Icons.saveToFolder} className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button
+        type="button"
+        className="row-action"
+        title={t('groups.edit')}
+        aria-label={t('groups.edit')}
+        onClick={(event) => {
+          event.stopPropagation();
+          setEditOpen(true);
+        }}
+      >
+        <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
+      </button>
+    </>
   ) : undefined;
 
   const onToggle = () => {
     setPlayingOnly(false);
     if (section.kind === 'native') {
-      callbacks.onToggleGroupCollapsed(section.groupId, !isCollapsed);
+      rowProps.callbacks.onToggleGroupCollapsed(section.groupId, !isCollapsed);
     } else {
-      callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
+      rowProps.callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
     }
   };
   const onClose =
     section.kind === 'site'
-      ? () => callbacks.onCloseSiteGroup(section.siteKey, section.tabs)
+      ? () => rowProps.callbacks.onCloseSiteGroup(section.siteKey, section.tabs)
       : undefined;
 
   // 展开态：site 多子域时按子域再分块（折叠子标题）；媒体定位模式只保留播放标签所在子域。
@@ -586,9 +497,9 @@ function SectionCard({
         <GroupEditDialog
           title={section.title}
           color={section.color}
-          onRename={(name) => callbacks.onGroupRename(section.groupId, name)}
-          onRecolor={(color) => callbacks.onGroupRecolor(section.groupId, color)}
-          onDelete={() => callbacks.onGroupRemove(section.groupId)}
+          onRename={(name) => rowProps.callbacks.onGroupRename(section.groupId, name)}
+          onRecolor={(color) => rowProps.callbacks.onGroupRecolor(section.groupId, color)}
+          onDelete={() => rowProps.callbacks.onGroupRemove(section.groupId)}
           onClose={() => setEditOpen(false)}
         />
       )}
@@ -598,46 +509,16 @@ function SectionCard({
             {subGroups.map((sub) => (
               <div key={sub.subdomain || 'root'}>
                 <div className="px-1.5 py-0 text-2xs leading-tight text-gray-500">{sub.label}</div>
-                <RowList
-                  tabs={sub.tabs}
-                  duplicateCounts={duplicateCounts}
-                  activeTabId={activeTabId}
-                  splitPartners={splitPartners}
-                  reorderEnabled={reorderEnabled}
-                  showUrl={showUrl}
-                  rowActionsVisible={rowActionsVisible}
-                  autoScrollActive={autoScrollActive}
-                  closeOnMiddleClick={closeOnMiddleClick}
-                  density={density}
-                  showSplitBadges={showSplitBadges}
-                  previews={previews}
-                  highlightedIds={highlightedIds}
-                  searchActiveTabId={searchActiveTabId}
-                  callbacks={callbacks}
-                  containerKey={section.key}
-                />
+                <SectionRows tabs={sub.tabs} containerKey={section.key} {...rowProps} />
               </div>
             ))}
           </div>
         ) : (
-          <RowList
+          <SectionRows
             tabs={visibleTabs}
-            duplicateCounts={duplicateCounts}
-            activeTabId={activeTabId}
-            splitPartners={splitPartners}
-            reorderEnabled={reorderEnabled}
-            showUrl={showUrl}
-            rowActionsVisible={rowActionsVisible}
-            autoScrollActive={autoScrollActive}
-            closeOnMiddleClick={closeOnMiddleClick}
-            density={density}
-            showSplitBadges={showSplitBadges}
             depths={section.depths}
-            previews={previews}
-            highlightedIds={highlightedIds}
-            searchActiveTabId={searchActiveTabId}
-            callbacks={callbacks}
             containerKey={section.key}
+            {...rowProps}
           />
         )}
       </div>
@@ -647,8 +528,8 @@ function SectionCard({
   return (
     <GroupCard
       id={section.key}
-      dragData={sectionDragData}
-      disabled={sortableDisabled}
+      dragData={sectionDragDataFor(section)}
+      disabled={isSortableDisabled(section)}
       title={section.title}
       count={count}
       accent={accent}
@@ -663,6 +544,19 @@ function SectionCard({
       {isCollapsed ? null : renderBody()}
     </GroupCard>
   );
+}
+
+/**
+ * 单个分组卡片：按类型分发到未分组 / 可折叠（原生组 + 站点组）子组件。
+ * 强调色推导（原生组 Chrome 组色、站点组域名哈希色 / favicon 主色）由 useSectionAccent 统一处理。
+ * 注意：浏览器置顶（pinned）由 App 层 CategoryModule 单独渲染，不会进入本列表。
+ */
+function SectionCard(props: SectionCardProps) {
+  const { section } = props;
+  if (section.kind === 'pinned') return null;
+  if (section.kind === 'ungrouped') return <UngroupedSectionCard {...props} section={section} />;
+  // 走到这里 section 已收窄为 native | site
+  return <CollapsibleSectionCard {...props} section={section} />;
 }
 
 export const SectionList = memo(SectionListImpl);
@@ -681,7 +575,6 @@ function SectionListImpl({
   density,
   rowActionsVisible,
   showSplitBadges,
-  previews,
   highlightedIds,
   searchActiveTabId,
   callbacks
@@ -700,8 +593,6 @@ function SectionListImpl({
   density?: 'compact' | 'cozy';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
-  /** 标签预览缩略图缓存（tabId → dataURL）。 */
-  previews?: ReadonlyMap<number, string>;
   /** 当前浏览器高亮选区的标签 id 集合。 */
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
@@ -756,7 +647,6 @@ function SectionListImpl({
       closeOnMiddleClick={closeOnMiddleClick}
       density={density}
       showSplitBadges={showSplitBadges}
-      previews={previews}
       highlightedIds={highlightedIds}
       searchActiveTabId={searchActiveTabId}
       callbacks={callbacks}

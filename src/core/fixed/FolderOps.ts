@@ -42,6 +42,30 @@ export function createFolder(name: string): FixedFolder {
 }
 
 /**
+ * 把数组元素移到目标前/后（不可变；source/target 不存在或相同则原样返回）。
+ * 三个 reorder 场景（文件夹条目/文件夹/pin）共用此实现。
+ */
+function moveElement<T>(options: {
+  items: readonly T[];
+  sourceId: string;
+  targetId: string;
+  placeAfter: boolean;
+  idOf: (item: T) => string;
+}): T[] {
+  const { items, sourceId, targetId, placeAfter, idOf } = options;
+  const sourceIndex = items.findIndex((item) => idOf(item) === sourceId);
+  const targetIndex = items.findIndex((item) => idOf(item) === targetId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return items as T[];
+
+  const next = [...items];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) return items as T[];
+  const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
+  next.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
+  return next;
+}
+
+/**
  * 文件夹内条目重排：source 移到 target 之前/之后。
  * 返回新数组（不可变）。
  */
@@ -51,15 +75,8 @@ export function reorderFolderItems(
   targetId: string,
   placeAfter: boolean
 ): FixedFolder {
-  const sourceIndex = folder.items.findIndex((item) => item.id === sourceId);
-  const targetIndex = folder.items.findIndex((item) => item.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return folder;
-
-  const items = [...folder.items];
-  const [moved] = items.splice(sourceIndex, 1);
-  if (!moved) return folder;
-  const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
-  items.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
+  const items = moveElement({ items: folder.items, sourceId, targetId, placeAfter, idOf: (item) => item.id });
+  if (items === folder.items) return folder;
   return { ...folder, items };
 }
 
@@ -70,16 +87,7 @@ export function reorderFolders(
   targetId: string,
   placeAfter: boolean
 ): FixedFolder[] {
-  const sourceIndex = folders.findIndex((folder) => folder.id === sourceId);
-  const targetIndex = folders.findIndex((folder) => folder.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return folders;
-
-  const next = [...folders];
-  const [moved] = next.splice(sourceIndex, 1);
-  if (!moved) return folders;
-  const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
-  next.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
-  return next;
+  return moveElement({ items: folders, sourceId, targetId, placeAfter, idOf: (folder) => folder.id });
 }
 
 /** 永久固定标签排序：把 source 移到 target 前/后。 */
@@ -88,16 +96,7 @@ export function reorderPins(
   options: { sourceId: string; targetId: string; placeAfter: boolean }
 ): PersistentPin[] {
   const { sourceId, targetId, placeAfter } = options;
-  const sourceIndex = pins.findIndex((pin) => pin.id === sourceId);
-  const targetIndex = pins.findIndex((pin) => pin.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return pins;
-
-  const next = [...pins];
-  const [moved] = next.splice(sourceIndex, 1);
-  if (!moved) return pins;
-  const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
-  next.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
-  return next;
+  return moveElement({ items: pins, sourceId, targetId, placeAfter, idOf: (pin) => pin.id });
 }
 
 /** pin 身份去重（保留首个，过滤后续同身份）。 */

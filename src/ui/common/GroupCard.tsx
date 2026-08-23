@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { SectionHead } from '@/ui/tabs/SectionList';
+import { SectionHead } from '@/ui/common/SectionHead';
 import { DragType, type DragData } from '@/ui/dnd/types';
 
 /**

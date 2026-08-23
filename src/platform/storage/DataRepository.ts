@@ -12,7 +12,7 @@ import type { ZodType } from 'zod';
  * 存储不可用（权限被策略禁用）时降级为内存态（写入静默跳过并告警回调）。
  */
 
-export interface DataRepositoryOptions {
+interface DataRepositoryOptions {
   /** 存储不可用时告警。 */
   onUnavailable?: () => void;
 }

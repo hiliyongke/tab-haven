@@ -1,5 +1,5 @@
 import type { TabRecord } from '@/core/tab-types';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 同 URL 唯一化（设置「同一网址只保留一个标签」的决策内核）。
@@ -14,7 +14,7 @@ import { inspectUrl } from '@/core/url/UrlInspector';
  *  - 开关开启时对窗口内全部标签执行一次清理。
  */
 
-export interface UrlDedupePlan {
+interface UrlDedupePlan {
   /** 保留者（最近访问）。 */
   keep: TabRecord;
   /** 待关闭的其余标签（不含 keep）。 */
@@ -41,11 +41,11 @@ export function rankForKeep(tabs: readonly TabRecord[]): TabRecord | undefined {
 export function planUrlDedupe(tabs: readonly TabRecord[]): UrlDedupePlan[] {
   const buckets = new Map<string, TabRecord[]>();
   for (const tab of tabs) {
-    const inspection = inspectUrl(tab.url, tab.pendingUrl);
-    if (inspection.category !== 'web' || !inspection.comparisonKey) continue;
-    const list = buckets.get(inspection.comparisonKey);
+    const key = webComparisonKey(tab.url, tab.pendingUrl);
+    if (!key) continue;
+    const list = buckets.get(key);
     if (list) list.push(tab);
-    else buckets.set(inspection.comparisonKey, [tab]);
+    else buckets.set(key, [tab]);
   }
   const plans: UrlDedupePlan[] = [];
   for (const group of buckets.values()) {

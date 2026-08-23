@@ -67,16 +67,3 @@ export function canSafelyDiscardTab(
 }
 
 export const NO_GROUP = -1;
-
-/** 原生组 9 色（展示用，与 Chrome 对齐）。 */
-export const GROUP_COLORS = [
-  'grey',
-  'blue',
-  'red',
-  'yellow',
-  'green',
-  'pink',
-  'purple',
-  'cyan',
-  'orange'
-] as const;

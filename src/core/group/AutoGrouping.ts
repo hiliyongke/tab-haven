@@ -1,5 +1,7 @@
 import type { TemporarySection } from '@/core/site/Sections';
+import { deriveSections } from '@/core/site/Sections';
 import { NO_GROUP } from '@/core/tab-types';
+import type { TabRecord } from '@/core/tab-types';
 
 /**
  * 自动原生分组（FR-D3.1 扩展）：把展示层聚合结果落成浏览器原生 tabGroups。
@@ -54,7 +56,7 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
   const plans: AutoGroupPlan[] = [];
   for (const section of sections) {
     if (section.kind !== 'site') continue;
-    if (section.tabs.length < 2) continue;
+    // site section 已满足聚合阈值（阈值 1 时单标签站点也成组），此处不再设下限。
     if (section.tabs.some((tab) => tab.groupId !== NO_GROUP)) continue;
     plans.push({
       title: section.title,
@@ -63,4 +65,63 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
     });
   }
   return plans;
+}
+
+/** 快速整理（完全重新初始化）的决策结果。 */
+export interface RegroupPlan {
+  /** 需要移出现有原生组的标签（打散临时区旧分组；opener 模式仅打散不建组）。 */
+  ungroupTabIds: number[];
+  /** 重新聚合后的目标分组方案（site/language 模式非空，opener 模式为空）。 */
+  plans: AutoGroupPlan[];
+}
+
+/**
+ * 快速整理（完全重新初始化）决策：
+ * 忽略当前分组状态，把临时区全部标签（已分组 + 未分组，排除固定区域）
+ * 按当前聚合方式重新聚合。
+ *  - 临时区定义：非固定标签（浏览器置顶/顶部固定磁贴不动）且不在固定空间绑定内；
+ *  - 返回需要打散的标签（临时区内所有已在原生组的标签）；
+ *  - 返回新分组方案（site/language 按聚合结果建组；opener 为层级结构，
+ *    无法表达为原生组，plans 为空，仅完成打散）。
+ */
+export function planRegroup({
+  tabs,
+  excludedTabIds,
+  groupMode,
+  threshold
+}: {
+  tabs: readonly TabRecord[];
+  excludedTabIds?: ReadonlySet<number>;
+  groupMode?: 'site' | 'opener' | 'language';
+  threshold?: number;
+}): RegroupPlan {
+  const excluded = excludedTabIds ?? new Set<number>();
+  const tempTabs = tabs.filter((tab) => !tab.pinned && !excluded.has(tab.id));
+
+  const ungroupTabIds = tempTabs
+    .filter((tab) => tab.groupId !== NO_GROUP)
+    .map((tab) => tab.id);
+
+  // 忽略当前分组状态重新聚合：把临时区标签全部视为「未分组」再派生。
+  const normalized = tempTabs.map((tab) => ({ ...tab, groupId: NO_GROUP }));
+  const sections = deriveSections({
+    tabs: normalized,
+    groups: [],
+    excludedTabIds,
+    groupMode,
+    threshold
+  });
+
+  const plans: AutoGroupPlan[] = [];
+  for (const section of sections) {
+    if (section.kind !== 'site') continue;
+    // 同上：site section 已满足聚合阈值，单标签站点（阈值 1）同样建组。
+    plans.push({
+      title: section.title,
+      color: groupColorForLabel(section.title),
+      tabIds: section.tabs.map((tab) => tab.id)
+    });
+  }
+
+  return { ungroupTabIds, plans };
 }

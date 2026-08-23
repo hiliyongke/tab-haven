@@ -9,7 +9,7 @@ export function groupAccentVar(color?: string): string {
  * 域名 → 稳定强调色（HSL）。同一域名永远得到同一颜色，且饱和度/亮度收敛在
  * 不刺眼的区间，保证「不同组不同色」又不破坏侧边栏的低干扰基调。
  */
-export function domainAccent(domain: string): string {
+function domainAccent(domain: string): string {
   let hash = 0;
   for (let i = 0; i < domain.length; i++) {
     hash = (hash * 31 + domain.charCodeAt(i)) | 0;

@@ -5,7 +5,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 
 /** 拖拽容器接入点：listeners / style / className 会合并到 RowItem 内部 div，
  *  ref 转发到该 div。供 dnd-kit useSortable 接入。 */
-export interface RowItemContainer {
+interface RowItemContainer {
   ref?: (node: HTMLElement | null) => void;
   listeners?: object | undefined;
   style?: CSSProperties;
@@ -31,6 +31,8 @@ export const RowItem = forwardRef<HTMLDivElement, {
   isMediaPlaying?: boolean;
   isDiscarded?: boolean;
   isSplitCompanion?: boolean;
+  /** 分屏组括弧角色（组首/组中/组尾），视觉上连成左括号。 */
+  splitGroupRole?: 'first' | 'middle' | 'last';
   isHighlighted?: boolean;
   isSearchActive?: boolean;
   isDropTarget?: boolean;
@@ -46,7 +48,6 @@ export const RowItem = forwardRef<HTMLDivElement, {
   badges?: ReactNode;
   actions?: ReactNode;
   dragGripTitle?: string;
-  preview?: string;
   container?: RowItemContainer;
 }>(function RowItem(
   {
@@ -60,6 +61,7 @@ export const RowItem = forwardRef<HTMLDivElement, {
     isMediaPlaying,
     isDiscarded,
     isSplitCompanion,
+    splitGroupRole,
     isHighlighted,
     isSearchActive,
     isDropTarget,
@@ -74,7 +76,6 @@ export const RowItem = forwardRef<HTMLDivElement, {
     badges,
     actions,
     dragGripTitle,
-    preview,
     container
   },
   ref
@@ -85,8 +86,8 @@ export const RowItem = forwardRef<HTMLDivElement, {
     (isActive ? ' is-active' : '') +
     (isMediaPlaying ? ' is-media-playing' : '') +
     (isDiscarded ? ' opacity-60' : '') +
-    (isSplitCompanion ? ' bg-accent-50/60' : '') +
-    (isHighlighted ? ' is-highlighted ring-1 ring-warn-600' : '') +
+    (isSplitCompanion ? ' is-split-companion' : '') +
+    (isHighlighted ? ' is-highlighted' : '') +
     (isSearchActive ? ' is-search-active' : '') +
     (isDropTarget ? ' is-drop-target' : '') +
     (indent ? ' has-indent' : '') +
@@ -104,7 +105,13 @@ export const RowItem = forwardRef<HTMLDivElement, {
   };
 
   return (
-    <div ref={setRef} className={className} style={style} {...(container?.listeners || {})}>
+    <div
+      ref={setRef}
+      className={className}
+      style={style}
+      data-split-role={splitGroupRole ?? undefined}
+      {...(container?.listeners || {})}
+    >
       <span
         className="drag-grip inline-flex shrink-0 cursor-grab items-center"
         title={dragGripTitle || t('tabs.dragToMove')}
@@ -130,11 +137,6 @@ export const RowItem = forwardRef<HTMLDivElement, {
       </button>
       {badges}
       {actions}
-      {preview && (
-        <div className="pointer-events-none absolute left-full top-0 z-30 ml-2 hidden w-48 rounded border border-gray-200 bg-surface p-1 shadow-lg group-hover:block">
-          <img src={preview} alt="preview" className="h-32 w-full rounded object-cover" />
-        </div>
-      )}
     </div>
   );
 });

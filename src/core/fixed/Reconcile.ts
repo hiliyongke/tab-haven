@@ -1,6 +1,6 @@
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 固定空间一致性协调（纯函数）：
@@ -29,13 +29,13 @@ export function reconcilePendingItems(
       if (current.pendingTabId !== undefined) {
         const tab = tabs.find((candidate) => candidate.id === current.pendingTabId);
         if (tab) {
-          const inspection = inspectUrl(tab.url, tab.pendingUrl);
-          if (inspection.category === 'web' && inspection.comparisonKey) {
+          const key = webComparisonKey(tab.url, tab.pendingUrl);
+          if (key) {
             // 转正：写入真实网址信息
             current = {
               ...current,
-              url: inspection.comparisonKey,
-              title: tab.title || inspection.comparisonKey,
+              url: key,
+              title: tab.title || key,
               favIconUrl: tab.favIconUrl,
               pendingTabId: undefined
             };

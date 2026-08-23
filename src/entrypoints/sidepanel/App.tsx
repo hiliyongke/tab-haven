@@ -1,37 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
-import type { DragEndEvent } from '@dnd-kit/core';
-import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
-import { planAutoGroups } from '@/core/group/AutoGrouping';
+import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
+import { planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import { deriveSections } from '@/core/site/Sections';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
-import { DuplicateReusedMessageSchema, SearchFocusMessageSchema } from '@/platform/messages';
-import { moveTab, computeReorderIndex, captureVisibleTab, detectLanguage } from '@/platform/tabs';
-import { syncAutoGroups, disbandAutoGroups } from '@/platform/group/AutoGroupSync';
+import {
+  AutoDiscardedMessageSchema,
+  DuplicateReusedMessageSchema,
+  LocateActiveMessageSchema,
+  PENDING_ACTIONS_KEY,
+  SearchDomainMessageSchema,
+  SearchFocusMessageSchema,
+  SettingsSyncedMessageSchema
+} from '@/platform/messages';
+import {
+  activateTabAcrossWindows,
+  detectLanguage,
+  queryAllWindowTabs,
+  reloadTabs,
+  resetZoomCurrentWindow
+} from '@/platform/tabs';
+import { autoDiscardRepository } from '@/platform/storage/repositories';
+import {
+  syncAutoGroups,
+  disbandAutoGroups,
+  regroupTempArea
+} from '@/platform/group/AutoGroupSync';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { SettingsSync } from '@/ui/common/SettingsSync';
 import { StatusToast } from '@/ui/common/StatusToast';
+import { UndoHistoryPanel } from '@/ui/common/UndoHistoryPanel';
 import { DndRoot } from '@/ui/dnd/DndRoot';
-import {
-  DragType,
-  FIXED_AREA_DROPPABLE,
-  isSameContainer,
-  PINNED_STRIP_DROPPABLE,
-  type DragData,
-  type SectionDragData
-} from '@/ui/dnd/types';
-import { CREATE_FOLDER_REQUEST_EVENT, FixedArea, LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
+import { FixedArea, LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { LOCATE_SECTION_EVENT, SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
+import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
-import { PinnedTile } from '@/ui/tabs/PinnedTile';
+import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
+import { EmptyTabs, LoadingSkeleton, NoSearchResults } from '@/entrypoints/sidepanel/ListStates';
+import { useTabDragHandlers } from '@/entrypoints/sidepanel/useTabDragHandlers';
 
 export default function App() {
   const { t } = useTranslation();
@@ -44,26 +59,14 @@ export default function App() {
   const discardTab = useTabStore((state) => state.discardTab);
   const setGroupCollapsed = useTabStore((state) => state.setGroupCollapsed);
   const createFolderFromNativeGroup = useDataStore((state) => state.createFolderFromNativeGroup);
-  const addTabsToFolder = useDataStore((state) => state.addTabsToFolder);
-  const moveFolder = useDataStore((state) => state.moveFolder);
-  const moveFolderItem = useDataStore((state) => state.moveFolderItem);
-  const removeFolderItem = useDataStore((state) => state.removeFolderItem);
-  const reorderFolderItems = useDataStore((state) => state.reorderFolderItems);
-  const reorderPins = useDataStore((state) => state.reorderPins);
-  const addPin = useDataStore((state) => state.addPin);
   const createNewTab = useTabStore((state) => state.createNewTab);
-  const previews = useTabStore((state) => state.previews);
   const highlightedIds = useTabStore((state) => state.highlightedIds);
-  const setPreview = useTabStore((state) => state.setPreview);
-  const prunePreviews = useTabStore((state) => state.prunePreviews);
   const setHighlighted = useTabStore((state) => state.setHighlighted);
   const setLanguage = useTabStore((state) => state.setLanguage);
-  const createGroup = useTabStore((state) => state.createGroup);
   const renameGroup = useTabStore((state) => state.renameGroup);
   const recolorGroup = useTabStore((state) => state.recolorGroup);
   const removeGroup = useTabStore((state) => state.removeGroup);
   const moveGroup = useTabStore((state) => state.moveGroup);
-  const currentWindowId = useTabStore((state) => state.currentWindowId);
   const startTabSync = useTabStore((state) => state.startTabSync);
   const initializeData = useDataStore((state) => state.initialize);
   const dataReady = useDataStore((state) => state.ready);
@@ -80,14 +83,51 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
   const [quickRegrouping, setQuickRegrouping] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const locateRequestRef = useRef(0);
+  const currentWindowId = useTabStore((state) => state.currentWindowId);
+
+  // 全窗口搜索数据源（设置开启且输入非空时，异步补充其他窗口标签；默认仅当前窗口）
+  const [otherTabs, setOtherTabs] = useState<TabRecord[]>([]);
+  useEffect(() => {
+    if (!settings.searchAllWindows || !query.trim()) {
+      setOtherTabs([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void queryAllWindowTabs()
+        .then((all) => {
+          if (!cancelled) {
+            setOtherTabs(all.filter((tab) => tab.windowId !== currentWindowId && !tab.incognito));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setOtherTabs([]);
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [settings.searchAllWindows, query, currentWindowId]);
+
+  const isFiltering = query.trim().length > 0;
+  // 搜索用标签集：开启全窗口搜索且输入中时并入其他窗口标签（其余场景恒等于当前窗口）
+  const effectiveTabs = useMemo(
+    () =>
+      isFiltering && settings.searchAllWindows
+        ? [...tabs, ...otherTabs]
+        : (tabs as TabRecord[]),
+    [tabs, otherTabs, isFiltering, settings.searchAllWindows]
+  );
 
   // 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）
   const engine = useMemo(
     () =>
       new SearchEngine(
-        tabs.map((tab) => ({
+        effectiveTabs.map((tab) => ({
           id: tab.id,
           title: tab.title || t('tabs.untitled'),
           url: tab.url || '',
@@ -95,19 +135,30 @@ export default function App() {
         })),
         { pinyin: settings.pinyinSearch }
       ),
-    [tabs, t, settings.pinyinSearch]
+    [effectiveTabs, t, settings.pinyinSearch]
   );
   const searchHits = useMemo(
-    () => engine.search(query, Math.max(tabs.length, 50)),
-    [engine, query, tabs.length]
+    () => engine.search(query, Math.max(effectiveTabs.length, 50)),
+    [engine, query, effectiveTabs.length]
   );
   const filteredTabs = useMemo(() => {
-    if (!query.trim()) return tabs;
+    if (!query.trim()) return effectiveTabs;
     const hitIds = new Set(searchHits.map((hit) => hit.tabId));
-    return tabs.filter((tab) => hitIds.has(tab.id));
-  }, [query, searchHits, tabs]);
-  const isFiltering = query.trim().length > 0;
+    return effectiveTabs.filter((tab) => hitIds.has(tab.id));
+  }, [query, searchHits, effectiveTabs]);
   const selectedSearchTabId = searchHits[searchIndex]?.tabId;
+
+  /** 智能激活：目标标签在其他窗口时先聚焦窗口再激活（全窗口搜索用）。 */
+  const smartActivate = useCallback(
+    (tabId: number) => {
+      const tab = effectiveTabs.find((candidate) => candidate.id === tabId);
+      if (tab && tab.windowId !== currentWindowId) {
+        return activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
+      }
+      return activateTab(tabId);
+    },
+    [effectiveTabs, currentWindowId, activateTab]
+  );
 
   useEffect(() => {
     setSearchIndex(0);
@@ -125,7 +176,7 @@ export default function App() {
       const tabId = selectedSearchTabId;
       if (tabId === undefined) return;
       event.preventDefault();
-      void activateTab(tabId);
+      void smartActivate(tabId);
       return;
     }
     if (event.key === 'Escape') {
@@ -149,10 +200,12 @@ export default function App() {
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
-      target.classList.remove('is-located');
-      void target.offsetWidth;
-      target.classList.add('is-located');
-      window.setTimeout(() => target.classList.remove('is-located'), 1200);
+      // 高亮动画定义在 .row-item 上：滚动锚点是 li，视觉行是内部 .row-item。
+      const row = target.querySelector<HTMLElement>('.row-item') ?? target;
+      row.classList.remove('is-located');
+      void row.offsetWidth;
+      row.classList.add('is-located');
+      window.setTimeout(() => row.classList.remove('is-located'), 1200);
       return true;
     };
     if (locateTarget()) return;
@@ -170,6 +223,21 @@ export default function App() {
     window.setTimeout(retryLocate, 0);
   }, [activeTabId, notify, query, setQuery, t]);
 
+  /** 自动休眠撤销提示：toast + 「全部唤醒」动作（唤醒后清台账）。 */
+  const showDiscardUndoToast = useCallback(
+    (batch: { tabIds: number[]; count: number }) => {
+      notify(t('discard.autoDiscarded', { count: batch.count }), {
+        label: t('discard.wakeAll'),
+        run: async () => {
+          const woken = (await reloadTabs(batch.tabIds)).length;
+          await autoDiscardRepository.write(null);
+          useUndoStore.getState().notify(t('discard.woken', { count: woken }));
+        }
+      });
+    },
+    [notify, t]
+  );
+
   // 同步服务：事件 → 快照 → store 订阅自动重渲染
   useEffect(() => {
     void initializeData().catch(() => notify(t('errors.dataLoadFailed')));
@@ -181,8 +249,7 @@ export default function App() {
   // 避免 tabStore ↔ dataStore 相互依赖）。
   useEffect(() => {
     void reconcileWithTabs(tabs);
-    prunePreviews(new Set(tabs.map((tab) => tab.id)));
-  }, [tabs, reconcileWithTabs, prunePreviews]);
+  }, [tabs, reconcileWithTabs]);
 
   // ⌘J / Ctrl+J 定位激活标签；⌘K / Ctrl+K 打开搜索
   useEffect(() => {
@@ -206,6 +273,26 @@ export default function App() {
       }
       if (DuplicateReusedMessageSchema.safeParse(message).success) {
         notify(t('duplicates.reused'));
+        return;
+      }
+      const auto = AutoDiscardedMessageSchema.safeParse(message);
+      if (auto.success) {
+        showDiscardUndoToast(auto.data);
+        return;
+      }
+      const searchDomain = SearchDomainMessageSchema.safeParse(message);
+      if (searchDomain.success) {
+        setQuery(searchDomain.data.query);
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (LocateActiveMessageSchema.safeParse(message).success) {
+        handleLocateActive();
+        return;
+      }
+      // 设置落盘通知（storage.onChanged 之外的兜底同步）。
+      if (SettingsSyncedMessageSchema.safeParse(message).success) {
+        void useDataStore.getState().refreshSettings();
       }
     };
     document.addEventListener('keydown', onKeyDown);
@@ -214,7 +301,53 @@ export default function App() {
       document.removeEventListener('keydown', onKeyDown);
       browser.runtime.onMessage.removeListener(onMessage);
     };
-  }, [handleLocateActive, notify, t]);
+  }, [handleLocateActive, notify, showDiscardUndoToast, t]);
+
+  // 自动休眠台账：面板打开时若有未撤销批次，提示可一键唤醒
+  useEffect(() => {
+    void autoDiscardRepository
+      .read()
+      .then((batch) => {
+        if (batch && batch.tabIds.length > 0) showDiscardUndoToast(batch);
+      })
+      .catch(() => {});
+  }, [showDiscardUndoToast]);
+
+  // 面板未开时挂起的动作（搜索域名 / 定位激活）：打开面板后消费
+  useEffect(() => {
+    const handleAction = (action: unknown) => {
+      const search = SearchDomainMessageSchema.safeParse(action);
+      if (search.success) {
+        setQuery(search.data.query);
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (LocateActiveMessageSchema.safeParse(action).success) handleLocateActive();
+    };
+    const sessionArea = browser.storage?.session;
+    if (sessionArea) {
+      void sessionArea
+        .get(PENDING_ACTIONS_KEY)
+        .then((record) => {
+          const list = record[PENDING_ACTIONS_KEY];
+          if (Array.isArray(list)) {
+            for (const action of list) handleAction(action);
+            void sessionArea.remove(PENDING_ACTIONS_KEY).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+    const onStorageChanged = (
+      changes: Record<string, { newValue?: unknown }>,
+      areaName: string
+    ) => {
+      if (areaName !== 'session' || !changes[PENDING_ACTIONS_KEY]) return;
+      const list = changes[PENDING_ACTIONS_KEY]?.newValue;
+      if (Array.isArray(list)) for (const action of list) handleAction(action);
+    };
+    browser.storage?.onChanged?.addListener(onStorageChanged);
+    return () => browser.storage?.onChanged?.removeListener(onStorageChanged);
+  }, [handleLocateActive]);
 
   // 固定空间排除集：挂起条目标签 + 绑定标签
   const fixedExcludedTabIds = useMemo(() => {
@@ -267,39 +400,25 @@ export default function App() {
         groupMode: settings.groupMode,
         threshold: settings.aggregationThreshold
       }),
-    [filteredTabs, groups, fixedExcludedTabIds, settings.sortMode, settings.groupMode, settings.aggregationThreshold]
+    [
+      filteredTabs,
+      groups,
+      fixedExcludedTabIds,
+      settings.sortMode,
+      settings.groupMode,
+      settings.aggregationThreshold
+    ]
   );
 
   /** 浏览器原生固定标签单独提取，渲染在搜索栏正下方 */
   const pinnedSection = allSections.find((s) => s.kind === 'pinned');
   const restSections = allSections.filter((s) => s.kind !== 'pinned');
-  const duplicateCounts = useMemo(() => DuplicateIndex.build(tabs).counts(), [tabs]);
-  // 保留策略随设置：固定标签是否豁免清理
-  const keeperPolicy = useMemo(
-    () => new KeeperPolicy({ pinnedExempt: settings.keepPinnedInCleanup }),
-    [settings.keepPinnedInCleanup]
-  );
-  const removableCount = useMemo(
-    () => DuplicateIndex.build(tabs).removable(keeperPolicy).length,
-    [tabs, keeperPolicy]
-  );
+  // 拖拽分发（排序/投放/建文件夹/固定）独立为 hook，handler 引用稳定。
+  const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers(restSections);
+  const duplicateIndex = useMemo(() => DuplicateIndex.build(tabs), [tabs]);
+  const duplicateCounts = useMemo(() => duplicateIndex.counts(), [duplicateIndex]);
 
   const partners = useMemo(() => splitPartnerIds(tabs, activeTabId), [tabs, activeTabId]);
-
-  // 标签预览：仅在用户悬停当前激活标签时按需截图，默认关闭且不持久化。
-  const handlePreviewRequest = (tab: TabRecord) => {
-    if (
-      !settings.previewEnabled ||
-      tab.id !== activeTabId ||
-      tab.incognito ||
-      previews.has(tab.id)
-    ) {
-      return;
-    }
-    void captureVisibleTab(currentWindowId ?? browser.windows.WINDOW_ID_CURRENT).then((url) => {
-      if (url) setPreview(tab.id, url);
-    });
-  };
 
   // 与浏览器多选高亮同步（tabs.onHighlighted）。
   useEffect(() => {
@@ -348,22 +467,36 @@ export default function App() {
     }
   };
 
-  const handleCloseTab = (tab: TabRecord) => {
-    void closeWithUndo(tabs, [tab.id]);
-  };
-  const handleCloseSiteGroup = (_siteKey: string, groupTabs: readonly TabRecord[]) => {
-    void closeWithUndo(tabs, groupTabs.map((tab) => tab.id));
-  };
-  const handleDuplicateTab = (tab: TabRecord) => {
-    void duplicateTab(tab.id).then(() => notify(t('toast.duplicated')));
-  };
-  const handleDiscardTab = (tab: TabRecord) => {
-    if (!canSafelyDiscardTab(tab) || boundTabIds.includes(tab.id)) {
-      notify(t('toast.discardSkipped'));
-      return;
-    }
-    void discardTab(tab.id).then((discarded) => notify(discarded ? t('toast.discarded') : t('toast.discardSkipped')));
-  };
+  const handleCloseTab = useCallback(
+    (tab: TabRecord) => {
+      void closeWithUndo(useTabStore.getState().tabs, [tab.id]);
+    },
+    [closeWithUndo]
+  );
+  const handleCloseSiteGroup = useCallback(
+    (_siteKey: string, groupTabs: readonly TabRecord[]) => {
+      void closeWithUndo(useTabStore.getState().tabs, groupTabs.map((tab) => tab.id));
+    },
+    [closeWithUndo]
+  );
+  const handleDuplicateTab = useCallback(
+    (tab: TabRecord) => {
+      void duplicateTab(tab.id).then(() => notify(t('toast.duplicated')));
+    },
+    [duplicateTab, notify, t]
+  );
+  const handleDiscardTab = useCallback(
+    (tab: TabRecord) => {
+      if (!canSafelyDiscardTab(tab) || useDataStore.getState().boundTabIds.includes(tab.id)) {
+        notify(t('toast.discardSkipped'));
+        return;
+      }
+      void discardTab(tab.id).then((discarded) =>
+        notify(discarded ? t('toast.discarded') : t('toast.discardSkipped'))
+      );
+    },
+    [discardTab, notify, t]
+  );
   // 一键休眠全部非激活、未固定的标签（释放内存）。
   const handleDiscardInactive = () => {
     void (async () => {
@@ -383,229 +516,120 @@ export default function App() {
       }
     })();
   };
-  // 原生标签组 → 固定文件夹（桥接反向）。
-  const handleSaveGroupAsFolder = (groupId: number) => {
-    const name = groups.find((g) => g.id === groupId)?.title || t('tabs.unnamedGroup');
-    const groupTabs = useTabStore.getState().tabs.filter((tab) => tab.groupId === groupId);
-    void createFolderFromNativeGroup(name, groupTabs).then(() => notify(t('toast.savedAsFolder')));
-  };
-
-  // 新建原生组：优先把选中标签成组，否则将当前未分组标签全部成组。
-  const handleCreateGroup = (tabIds?: readonly number[]) => {
-    const members =
-      tabIds && tabIds.length > 0
-        ? [...tabIds]
-        : useTabStore
-            .getState()
-            .tabs.filter((tab) => !tab.pinned && tab.groupId === NO_GROUP)
-            .map((tab) => tab.id);
-    if (members.length === 0) return;
-    void createGroup(t('groups.newGroup'), undefined, members).then(() =>
-      notify(t('toast.groupCreated'))
+  // 一键唤醒全部休眠标签（与批量休眠成对）。
+  const handleWakeAll = useCallback(() => {
+    const discardedIds = useTabStore
+      .getState()
+      .tabs.filter((tab) => tab.discarded)
+      .map((tab) => tab.id);
+    if (discardedIds.length === 0) return;
+    void reloadTabs(discardedIds).then((woken) =>
+      notify(t('discard.woken', { count: woken.length }))
     );
-  };
-  const handleRenameGroup = (groupId: number, title: string) => void renameGroup(groupId, title);
-  const handleRecolorGroup = (groupId: number, color: string) => void recolorGroup(groupId, color);
-  const handleRemoveGroup = (groupId: number) =>
-    void removeGroup(groupId).then(() => notify(t('toast.groupRemoved')));
-  const handleMoveGroup = (groupId: number, index: number) => void moveGroup(groupId, index);
+  }, [notify, t]);
+  // 当前窗口全部标签缩放重置为 100%。
+  const handleResetZoom = useCallback(() => {
+    void resetZoomCurrentWindow().then((count) =>
+      notify(t('discard.zoomResetDone', { count }))
+    );
+  }, [notify, t]);
+  const discardedCount = tabs.filter((tab) => tab.discarded).length;
+  // 原生标签组 → 固定文件夹（桥接反向）。
+  const handleSaveGroupAsFolder = useCallback(
+    (groupId: number) => {
+      const name =
+        useTabStore.getState().groups.find((g) => g.id === groupId)?.title || t('tabs.unnamedGroup');
+      const groupTabs = useTabStore.getState().tabs.filter((tab) => tab.groupId === groupId);
+      void createFolderFromNativeGroup(name, groupTabs).then(() => notify(t('toast.savedAsFolder')));
+    },
+    [createFolderFromNativeGroup, notify, t]
+  );
 
-  // 快速整理只处理当前窗口内的未分组网页标签，不触碰固定标签、固定空间绑定标签和已有原生组。
+  const handleRenameGroup = useCallback(
+    (groupId: number, title: string) => void renameGroup(groupId, title),
+    [renameGroup]
+  );
+  const handleRecolorGroup = useCallback(
+    (groupId: number, color: string) => void recolorGroup(groupId, color),
+    [recolorGroup]
+  );
+  const handleRemoveGroup = useCallback(
+    (groupId: number) => void removeGroup(groupId).then(() => notify(t('toast.groupRemoved'))),
+    [removeGroup, notify, t]
+  );
+  const handleMoveGroup = useCallback(
+    (groupId: number, index: number) => void moveGroup(groupId, index),
+    [moveGroup]
+  );
+
+  // 快速整理：完全重新初始化临时区分组 —— 打散现有临时区原生组（分组+未分组），
+  // 按当前聚合方式重组全部非固定标签；固定区域（浏览器置顶/顶部固定磁贴/固定空间）不受影响。
   const handleQuickRegroup = () => {
     if (quickRegrouping) return;
-    if (settings.groupMode === 'opener') {
-      notify(t('footer.quickRegroupNone'));
-      return;
-    }
-    const sections = deriveSections({
+    const plan = planRegroup({
       tabs,
-      groups,
       excludedTabIds: fixedExcludedTabIds,
-      sortMode: settings.sortMode,
       groupMode: settings.groupMode,
       threshold: settings.aggregationThreshold
     });
-    const plans = planAutoGroups(sections);
-    if (plans.length === 0) {
+    if (plan.ungroupTabIds.length === 0 && plan.plans.length === 0) {
       notify(t('footer.quickRegroupNone'));
       return;
     }
     setQuickRegrouping(true);
-    void syncAutoGroups(plans)
+    void regroupTempArea(plan.ungroupTabIds, plan.plans)
       .then((count) => notify(t('footer.quickRegroupDone', { count })))
       .catch(() => notify(t('errors.operationFailed')))
       .finally(() => setQuickRegrouping(false));
   };
 
-  // 拖拽重排：用当前全部标签计算目标原生索引并写回浏览器。
-  const handleReorder = (sourceId: number, targetId: number, placeAfter: boolean) => {
-    const allTabs = useTabStore.getState().tabs;
-    const index = computeReorderIndex({ tabs: allTabs, sourceId, targetId, placeAfter });
-    if (index >= 0) void moveTab(sourceId, index);
-  };
-
-  // 键盘重排（Alt+↑/↓）：把标签向相邻展示位置移动。
-  const handleMoveTab = (tabId: number, direction: -1 | 1) => {
-    if (!settings.tabOrderSync) return;
-    const allTabs = useTabStore.getState().tabs;
-    const idx = allTabs.findIndex((tab) => tab.id === tabId);
-    if (idx < 0) return;
-    const target = allTabs[idx + direction];
-    if (!target) return;
-    handleReorder(tabId, target.id, direction > 0);
-  };
-
-  // 拖拽落点相对位置：纵向列表用 Y（在下方 = 插后），横向磁贴用 X（在右侧 = 插后）。
-  const isPlaceAfter = (event: DragEndEvent): boolean => {
-    const activeRect = event.active.rect.current.translated;
-    const overRect = event.over?.rect;
-    if (!activeRect || !overRect) return true;
-    const activeData = event.active.data.current as DragData | undefined;
-    if (activeData?.type === DragType.Pin) {
-      return activeRect.left + activeRect.width / 2 > overRect.left + overRect.width / 2;
-    }
-    return activeRect.top + activeRect.height / 2 > overRect.top + overRect.height / 2;
-  };
-
-  // 拖标签/分组到固定空间空白区：请求 FixedArea 弹出命名弹窗。
-  const requestCreateFolder = (name: string, tabIds: number[]) => {
-    window.dispatchEvent(
-      new CustomEvent<{ name: string; tabIds: number[] }>(CREATE_FOLDER_REQUEST_EVENT, {
-        detail: { name, tabIds }
-      })
-    );
-  };
-
-  // 分组头排序：按目标组首/末 tab 的真实索引换算 Chrome tabGroups.move 目标。
-  const handleSectionReorder = (activeData: SectionDragData, overData: SectionDragData) => {
-    if (activeData.groupId === undefined || overData.groupId === undefined) return;
-    const oldIndex = restSections.findIndex((s) => s.key === activeData.sectionKey);
-    const newIndex = restSections.findIndex((s) => s.key === overData.sectionKey);
-    if (oldIndex < 0 || newIndex < 0) return;
-    const overSection = restSections[newIndex];
-    if (!overSection || overSection.kind !== 'native' || overSection.tabs.length === 0) return;
-    const overFirst = overSection.tabs[0]!.index;
-    const overLast = overSection.tabs.at(-1)!.index;
-    // 前移 → 插到目标组首 tab；后移 → 插到目标组末 tab + 1。
-    moveGroup(activeData.groupId, newIndex < oldIndex ? overFirst : overLast + 1);
-  };
-
-  // 全局 dnd-kit 拖拽结束：按 data 类型分派排序 / 跨容器投放。
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over) return;
-    const activeData = active.data.current as DragData | undefined;
-    const overData = over.data.current as DragData | undefined;
-    if (!activeData) return;
-
-    // 标签：跨容器排序（受排序开关控制）/ 拖入文件夹 / 拖到固定空间空白（建文件夹）/ 拖到顶部固定区（固定）。
-    if (activeData.type === DragType.Tab) {
-      if (overData?.type === DragType.Tab) {
-        if (settings.tabOrderSync) {
-          handleReorder(activeData.tabId, overData.tabId, isPlaceAfter(event));
-          // 跨原生组：把 source 标签加入目标组（moveTab 只改位置不改归属）。
-          const latest = useTabStore.getState().tabs;
-          const sourceTab = latest.find((candidate) => candidate.id === activeData.tabId);
-          const overTab = latest.find((candidate) => candidate.id === overData.tabId);
-          if (
-            sourceTab &&
-            overTab &&
-            overTab.groupId !== undefined &&
-            overTab.groupId >= 0 &&
-            sourceTab.groupId !== overTab.groupId
-          ) {
-            void browser.tabs.group({ tabIds: [sourceTab.id], groupId: overTab.groupId });
-          }
-        }
-        return;
-      }
-      if (overData?.type === DragType.FolderItem || overData?.type === DragType.Folder) {
-        const target = useTabStore.getState().tabs.find((candidate) => candidate.id === activeData.tabId);
-        if (target) {
-          void addTabsToFolder([target], overData.folderId)
-            .then((result) => notify(t('fixed.dropResult', { ...result })))
-            .catch(() => notify(t('errors.operationFailed')));
-        }
-        return;
-      }
-      if (over.id === FIXED_AREA_DROPPABLE) {
-        const tab = useTabStore.getState().tabs.find((candidate) => candidate.id === activeData.tabId);
-        if (tab) requestCreateFolder(tab.title || t('tabs.untitled'), [tab.id]);
-        return;
-      }
-      if (overData?.type === DragType.Pin || over.id === PINNED_STRIP_DROPPABLE) {
-        const tab = useTabStore.getState().tabs.find((candidate) => candidate.id === activeData.tabId);
-        if (tab) void addPin(tab);
-      }
-      return;
-    }
-
-    // 分组：同容器排序 / 拖入文件夹 / 拖到固定空间空白（建文件夹）。
-    if (activeData.type === DragType.Section) {
-      if (overData?.type === DragType.Section && isSameContainer(activeData, overData)) {
-        handleSectionReorder(activeData, overData);
-        return;
-      }
-      if (overData?.type === DragType.FolderItem || overData?.type === DragType.Folder) {
-        const targetTabs = useTabStore
-          .getState()
-          .tabs.filter((tab) => activeData.tabIds.includes(tab.id));
-        if (targetTabs.length > 0) {
-          void addTabsToFolder(targetTabs, overData.folderId)
-            .then((result) => notify(t('fixed.dropResult', { ...result })))
-            .catch(() => notify(t('errors.operationFailed')));
-        }
-        return;
-      }
-      if (over.id === FIXED_AREA_DROPPABLE) {
-        requestCreateFolder(activeData.title, activeData.tabIds);
-      }
-      return;
-    }
-
-    // 固定条目：同文件夹排序 / 跨文件夹移动。
-    if (activeData.type === DragType.FolderItem) {
-      if (overData?.type === DragType.FolderItem && isSameContainer(activeData, overData)) {
-        void reorderFolderItems(activeData.folderId, activeData.itemId, overData.itemId, isPlaceAfter(event));
-        return;
-      }
-      // 跨文件夹：拖到目标文件夹（或其条目）上时，把条目移入目标文件夹。
-      const targetFolderId =
-        overData?.type === DragType.Folder
-          ? overData.folderId
-          : overData?.type === DragType.FolderItem && overData.folderId !== activeData.folderId
-            ? overData.folderId
-            : undefined;
-      if (targetFolderId !== undefined) {
-        void moveFolderItem(activeData.folderId, activeData.itemId, targetFolderId)
-          .then(() => notify(t('toast.folderItemMoved')))
-          .catch(() => notify(t('errors.operationFailed')));
-        return;
-      }
-      // 移出固定空间：拖到临时区（标签行 / 分组卡）时移除条目，标签随之回到临时区。
-      if (overData?.type === DragType.Tab || overData?.type === DragType.Section) {
-        void removeFolderItem(activeData.folderId, activeData.itemId)
-          .then(() => notify(t('toast.removedFromFolder')))
-          .catch(() => notify(t('errors.operationFailed')));
-      }
-      return;
-    }
-
-    // 文件夹排序。
-    if (activeData.type === DragType.Folder && overData?.type === DragType.Folder) {
-      void moveFolder(activeData.folderId, overData.folderId, isPlaceAfter(event));
-      return;
-    }
-
-    // 顶部永久固定磁贴排序。
-    if (activeData.type === DragType.Pin && overData?.type === DragType.Pin) {
-      void reorderPins(activeData.pinId, overData.pinId, isPlaceAfter(event));
-    }
-  };
+  // SectionList 为 memo 组件：callbacks 必须保持引用稳定（仅语言与 store 函数变化时重建），
+  // 否则每次渲染都会导致整个列表树重渲染。所有 handler 均从 store getState 读取最新数据。
+  const sectionCallbacks = useMemo(
+    () => ({
+      onActivate: (tabId: number) => void smartActivate(tabId),
+      onToggleMute: (tab: TabRecord) => void toggleMute(tab),
+      onTogglePin: (tab: TabRecord) => void togglePinned(tab),
+      onCloseTab: handleCloseTab,
+      onDuplicate: handleDuplicateTab,
+      onDiscard: handleDiscardTab,
+      onSaveGroupAsFolder: handleSaveGroupAsFolder,
+      onGroupRename: handleRenameGroup,
+      onGroupRecolor: handleRecolorGroup,
+      onGroupRemove: handleRemoveGroup,
+      onGroupMove: handleMoveGroup,
+      onToggleGroupCollapsed: (groupId: number, collapsed: boolean) =>
+        void setGroupCollapsed(groupId, collapsed),
+      onToggleSiteCollapsed: (siteKey: string, collapsed: boolean) => {
+        void toggleSiteCollapsed(siteKey, collapsed);
+      },
+      onCloseSiteGroup: handleCloseSiteGroup,
+      onReorder: handleReorder,
+      onMoveTab: handleMoveTab
+    }),
+    [
+      smartActivate,
+      toggleMute,
+      togglePinned,
+      setGroupCollapsed,
+      toggleSiteCollapsed,
+      handleCloseTab,
+      handleDuplicateTab,
+      handleDiscardTab,
+      handleSaveGroupAsFolder,
+      handleRenameGroup,
+      handleRecolorGroup,
+      handleRemoveGroup,
+      handleMoveGroup,
+      handleCloseSiteGroup,
+      handleReorder,
+      handleMoveTab
+    ]
+  );
 
   return (
     <main className="app flex h-full flex-col">
-      <DndRoot onDragEnd={handleDragEnd}>
+      <DndRoot onDragEnd={onDragEnd}>
       <SettingsSync />
       <SearchBar
         query={query}
@@ -614,70 +638,56 @@ export default function App() {
         onKeyDown={handleSearchKeyDown}
       />
       {settings.showPinnedStrip && <PinnedStrip />}
-      {/* 浏览器原生固定标签 — 始终在搜索栏下方、标签列表上方 */}
-      {pinnedSection && (
+      {/* 浏览器原生固定标签区 — 同样受 showPinnedStrip 控制，与顶部固定空间条联动隐藏，避免
+          用户关闭开关后磁贴区仍残留造成"开关没作用"的困惑。pinnedSection 本身为空（用户没原生
+          固定标签）时仍按需不渲染。 */}
+      {settings.showPinnedStrip && pinnedSection && (
         <CategoryModule
           title={pinnedSection.title}
           count={pinnedSection.tabs.length}
-          className="shrink-0 is-pinned"
+          className={'shrink-0 is-pinned size-' + settings.pinnedStripSize}
         >
           <div className="section-body">
-            <div className="pinned-grid">
-              {pinnedSection.tabs.map((tab) => (
-                <PinnedTile
-                  key={tab.id}
-                  title={tab.title || ''}
-                  favIconUrl={tab.favIconUrl}
-                  url={tab.url}
-                  isActive={tab.active}
-                  isDiscarded={tab.discarded}
-                  isAudible={tab.audible}
-                  onClick={() => activateTab(tab.id)}
-                  onMiddleClick={() => handleCloseTab(tab)}
-                  onUnpin={() => togglePinned(tab)}
-                  onDuplicate={() => handleDuplicateTab(tab)}
-                />
-              ))}
-            </div>
+            <SortableContext
+              items={pinnedSection.tabs.map((tab) => tab.id)}
+              strategy={rectSortingStrategy}
+            >
+              <div className="pinned-grid">
+                {pinnedSection.tabs.map((tab) => (
+                  <SortablePinnedTile
+                    key={tab.id}
+                    id={tab.id}
+                    tabId={tab.id}
+                    title={tab.title || ''}
+                    favIconUrl={tab.favIconUrl}
+                    url={tab.url}
+                    isActive={tab.active}
+                    isDiscarded={tab.discarded}
+                    isAudible={tab.audible}
+                    onOpen={() => activateTab(tab.id)}
+                    onMiddleClick={() => handleCloseTab(tab)}
+                    onUnpin={() => togglePinned(tab)}
+                    onDuplicate={() => handleDuplicateTab(tab)}
+                    unpinTitle={t('tabs.unpin')}
+                  />
+                ))}
+              </div>
+            </SortableContext>
           </div>
         </CategoryModule>
       )}
-      <FixedArea />
+      <div className="px-1 py-0.5">
+        <FixedArea />
+      </div>
       <StatusToast />
       <div className="flex-1 overflow-y-auto px-1 py-0.5">
         {!dataReady ? (
           // 加载骨架：区分「同步中」与「真的没有标签」
-          <div className="flex flex-col gap-1 px-1 py-1">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-2 px-1.5 py-[7px]">
-                <span className="skeleton h-4 w-4 shrink-0" />
-                <span className="skeleton h-3 flex-1" />
-                <span className="skeleton h-3 w-8" />
-              </div>
-            ))}
-          </div>
+          <LoadingSkeleton />
         ) : tabs.length === 0 ? (
-          <div className="flex flex-col items-center gap-1.5 px-2 py-6 text-center">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-400">
-              <Icon d={Icons.plus} className="h-4.5 w-4.5" />
-            </span>
-            <p className="text-xs font-medium text-gray-600">{t('empty.title')}</p>
-            <p className="max-w-[200px] text-2xs text-gray-500">{t('empty.hint')}</p>
-          </div>
+          <EmptyTabs />
         ) : isFiltering && filteredTabs.length === 0 ? (
-          <div className="flex flex-col items-center gap-1.5 px-2 py-6 text-center">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-400">
-              <Icon d={Icons.search} className="h-4.5 w-4.5" />
-            </span>
-            <p className="text-xs font-medium text-gray-600">{t('search.noResults')}</p>
-            <button
-              type="button"
-              className="rounded px-2 py-1 text-2xs text-accent-600 transition-base hover:bg-accent-50"
-              onClick={() => setQuery('')}
-            >
-              {t('search.clear')}
-            </button>
-          </div>
+          <NoSearchResults onClear={() => setQuery('')} />
         ) : (
           <SectionList
             sections={restSections}
@@ -693,32 +703,9 @@ export default function App() {
             density={settings.density}
             rowActionsVisible={settings.rowActionsVisible}
             showSplitBadges={settings.showSplitBadges}
-            previews={previews}
             highlightedIds={highlightedIds}
             searchActiveTabId={selectedSearchTabId}
-            callbacks={{
-              onActivate: (tabId) => void activateTab(tabId),
-              onToggleMute: (tab) => void toggleMute(tab),
-              onTogglePin: (tab) => void togglePinned(tab),
-              onCloseTab: handleCloseTab,
-              onDuplicate: handleDuplicateTab,
-              onDiscard: handleDiscardTab,
-              onRequestPreview: handlePreviewRequest,
-              onSaveGroupAsFolder: handleSaveGroupAsFolder,
-              onGroupCreate: handleCreateGroup,
-              onGroupRename: handleRenameGroup,
-              onGroupRecolor: handleRecolorGroup,
-              onGroupRemove: handleRemoveGroup,
-              onGroupMove: handleMoveGroup,
-              onToggleGroupCollapsed: (groupId, collapsed) =>
-                void setGroupCollapsed(groupId, collapsed),
-              onToggleSiteCollapsed: (siteKey, collapsed) => {
-                void toggleSiteCollapsed(siteKey, collapsed);
-              },
-              onCloseSiteGroup: handleCloseSiteGroup,
-              onReorder: handleReorder,
-              onMoveTab: handleMoveTab
-            }}
+            callbacks={sectionCallbacks}
           />
         )}
       </div>
@@ -734,99 +721,23 @@ export default function App() {
         </button>
       </div>
 
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-gray-200 px-2.5 py-0.5 text-2xs text-gray-500">
-        <span className="whitespace-nowrap">
-          {t('tabs.currentOpen')} <strong>{tabs.length}</strong> {t('tabs.tabCountUnit')}
-        </span>
-        <nav className="flex items-center gap-1" aria-label={t('footer.utilityLabel')}>
-          <button
-            type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35"
-            title={t(allSectionsCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
-            aria-label={t(allSectionsCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
-            disabled={collapsibleSections.length === 0}
-            onClick={handleToggleAllSections}
-          >
-            <Icon d={allSectionsCollapsed ? Icons.expandAll : Icons.collapseAll} className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            className={
-              'relative rounded p-1 transition-base hover:bg-gray-100' +
-              (removableCount === 0 ? ' cursor-default opacity-40' : '')
-            }
-            title={
-              removableCount > 0
-                ? t('duplicates.cleanTooltip', { count: removableCount })
-                : t('duplicates.none')
-            }
-            aria-label={t('footer.cleanDuplicates')}
-            // aria-disabled 而非 disabled：保留 title 提示「为什么不可点」
-            aria-disabled={removableCount === 0}
-            onClick={() => {
-              if (removableCount === 0) return;
-              const removable = DuplicateIndex.build(tabs).removable(keeperPolicy);
-              if (removable.length > 0) void closeWithUndo(tabs, removable.map((tab) => tab.id));
-            }}
-          >
-            <Icon d={Icons.trash} className="h-4 w-4" />
-            {removableCount > 0 && (
-              <span className="count-badge absolute -right-0.5 -top-0.5" aria-hidden="true">
-                {removableCount}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100"
-            title={t('discard.allInactive')}
-            aria-label={t('discard.allInactive')}
-            onClick={handleDiscardInactive}
-          >
-            <Icon d={Icons.snowflake} className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100"
-            title={t('groups.newGroup')}
-            aria-label={t('groups.newGroup')}
-            onClick={() => handleCreateGroup()}
-          >
-            <Icon d={Icons.layers} className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35"
-            title={t('footer.quickRegroupHint')}
-            aria-label={t('footer.quickRegroup')}
-            disabled={quickRegrouping}
-            onClick={handleQuickRegroup}
-          >
-            <Icon d={Icons.group} className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            className="rounded p-1 transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35"
-            title={t('tabs.locateActive')}
-            aria-label={t('tabs.locateActive')}
-            disabled={activeTabId === undefined}
-            onClick={handleLocateActive}
-          >
-            <Icon d={Icons.locate} className="h-4 w-4" />
-          </button>
-          <span className="ml-1 flex items-center border-l border-gray-200 pl-1">
-            <button
-              type="button"
-              className="rounded p-1.5 text-gray-600 transition-base hover:bg-gray-100 hover:text-accent-600"
-              title={t('settings.title')}
-              aria-label={t('settings.title')}
-              onClick={() => void browser.runtime.openOptionsPage()}
-            >
-              <Icon d={Icons.settings} className="h-4 w-4" />
-            </button>
-          </span>
-        </nav>
-      </footer>
+      <FooterToolbar
+        tabCount={tabs.length}
+        collapsibleCount={collapsibleSections.length}
+        allCollapsed={allSectionsCollapsed}
+        quickRegrouping={quickRegrouping}
+        activeTabId={activeTabId}
+        discardedCount={discardedCount}
+        onToggleAllSections={handleToggleAllSections}
+        onDiscardInactive={handleDiscardInactive}
+        onWakeAll={handleWakeAll}
+        onQuickRegroup={handleQuickRegroup}
+        onLocateActive={handleLocateActive}
+        onResetZoom={handleResetZoom}
+        onOpenHistory={() => setShowHistory(true)}
+        onOpenSettings={() => void browser.runtime.openOptionsPage()}
+      />
+      {showHistory && <UndoHistoryPanel onClose={() => setShowHistory(false)} />}
       </DndRoot>
     </main>
   );

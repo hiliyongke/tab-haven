@@ -1,0 +1,63 @@
+import type { LucideIcon } from 'lucide-react';
+import { Icon } from '@/ui/common/Icon';
+
+/**
+ * 统一图标按钮（工具条/弹窗/头部共用）。
+ * 收敛此前散落的 `rounded p-1 transition-base hover:bg-gray-100` 系列：
+ * 统一 title/aria-label、disabled、激活态、危险态与计数徽章。
+ */
+export function IconButton({
+  icon,
+  title,
+  iconClass = 'h-4 w-4',
+  box = 'sm',
+  tone = 'default',
+  disabled,
+  isOn,
+  danger,
+  badge,
+  onClick
+}: {
+  icon: LucideIcon;
+  /** tooltip + aria-label（icon-only 按钮的可达性必须项）。 */
+  title: string;
+  /** 图标尺寸类（默认 16px）。 */
+  iconClass?: string;
+  /** 按钮盒子大小：sm = p-1（16px 图标），md = p-1.5。 */
+  box?: 'sm' | 'md';
+  /** 默认灰字；accent = 灰字 + hover 品牌绿（设置入口等）。 */
+  tone?: 'default' | 'accent';
+  disabled?: boolean;
+  /** 激活态（如 pin 已固定、开关已开）。 */
+  isOn?: boolean;
+  /** 危险操作：hover 转砖红。 */
+  danger?: boolean;
+  /** 右上角计数徽章（>0 时显示）。 */
+  badge?: number;
+  onClick?: () => void;
+}) {
+  const className =
+    'relative rounded transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35' +
+    (box === 'md' ? ' p-1.5' : ' p-1') +
+    (tone === 'accent' ? ' text-gray-600 hover:text-accent-600' : '') +
+    (isOn ? ' bg-accent-50 text-accent-600 hover:bg-accent-100' : '') +
+    (danger ? ' hover:bg-red-50 hover:text-red-600' : '');
+  return (
+    <button
+      type="button"
+      className={className}
+      title={title}
+      aria-label={title}
+      aria-disabled={disabled || undefined}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon d={icon} className={iconClass} />
+      {badge !== undefined && badge > 0 && (
+        <span className="count-badge absolute -right-0.5 -top-0.5" aria-hidden="true">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}

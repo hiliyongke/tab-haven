@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { SearchEngine } from '@/core/search/SearchEngine';
+import type { TabRecord } from '@/core/tab-types';
+import { activateTabAcrossWindows, queryAllWindowTabs } from '@/platform/tabs';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
+import { EmptyState } from '@/ui/common/EmptyState';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { IconButton } from '@/ui/common/IconButton';
 import { SettingsSync } from '@/ui/common/SettingsSync';
+import { TextField } from '@/ui/common/TextField';
 
 /**
  * 快速切换器（降级形态 FR-D10.1 / popup 入口）：
@@ -15,7 +20,6 @@ import { SettingsSync } from '@/ui/common/SettingsSync';
 export default function App() {
   const { t } = useTranslation();
   const tabs = useTabStore((state) => state.tabs);
-  const activateTab = useTabStore((state) => state.activateTab);
   const startTabSync = useTabStore((state) => state.startTabSync);
   const initializeData = useDataStore((state) => state.initialize);
   const reconcileWithTabs = useDataStore((state) => state.reconcileWithTabs);
@@ -38,10 +42,42 @@ export default function App() {
     inputRef.current?.focus();
   }, []);
 
+  // 全窗口搜索：设置开启且输入非空时并入其他窗口标签（与侧边栏行为一致）
+  const [otherTabs, setOtherTabs] = useState<TabRecord[]>([]);
+  useEffect(() => {
+    if (!settings.searchAllWindows || !query.trim()) {
+      setOtherTabs([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void queryAllWindowTabs()
+        .then((all) => {
+          if (!cancelled) {
+            const currentWindowId = useTabStore.getState().currentWindowId;
+            setOtherTabs(all.filter((tab) => tab.windowId !== currentWindowId && !tab.incognito));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setOtherTabs([]);
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [settings.searchAllWindows, query]);
+
+  const effectiveTabs = useMemo(
+    () =>
+      query.trim() && settings.searchAllWindows ? [...tabs, ...otherTabs] : (tabs as TabRecord[]),
+    [tabs, otherTabs, query, settings.searchAllWindows]
+  );
+
   const engine = useMemo(
     () =>
       new SearchEngine(
-        tabs.map((tab) => ({
+        effectiveTabs.map((tab) => ({
           id: tab.id,
           title: tab.title || t('tabs.untitled'),
           url: tab.url || '',
@@ -49,10 +85,20 @@ export default function App() {
         })),
         { pinyin: settings.pinyinSearch }
       ),
-    [tabs, t, settings.pinyinSearch]
+    [effectiveTabs, t, settings.pinyinSearch]
   );
 
   const hits = useMemo(() => engine.search(query, 20), [engine, query]);
+
+  /** 智能激活：目标标签在其他窗口时先聚焦窗口再激活。 */
+  const smartActivate = (tabId: number) => {
+    const tab = effectiveTabs.find((candidate) => candidate.id === tabId);
+    const currentWindowId = useTabStore.getState().currentWindowId;
+    if (tab && tab.windowId !== currentWindowId) {
+      return activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
+    }
+    return useTabStore.getState().activateTab(tabId);
+  };
 
   useEffect(() => {
     document
@@ -69,7 +115,7 @@ export default function App() {
     } else if (event.key === 'Enter') {
       event.preventDefault();
       const hit = hits[selectedIndex];
-      if (hit) void activateTab(hit.tabId);
+      if (hit) void smartActivate(hit.tabId);
       window.close();
     } else if (event.key === 'Escape') {
       window.close();
@@ -79,23 +125,25 @@ export default function App() {
   return (
     <main className="w-[420px] max-w-[calc(100vw-8px)] p-2">
       <SettingsSync />
-      <input
-        ref={inputRef}
+      <TextField
         type="search"
-        className="w-full rounded border border-gray-200 px-3 py-2 text-sm outline-none focus:border-accent-500"
+        size="lg"
+        inputRef={inputRef}
+        className="w-full"
         placeholder={t('search.placeholder')}
         value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
+        onChange={(value) => {
+          setQuery(value);
           setSelectedIndex(0);
         }}
         onKeyDown={handleKeyDown}
       />
       <div className="mt-1 max-h-[360px] overflow-y-auto">
         {hits.length === 0 ? (
-          <p className="px-2 py-3 text-center text-sm text-gray-400">
-            {query ? t('search.noResults') : t('search.typeHint')}
-          </p>
+          <EmptyState
+            icon={<Icon d={Icons.search} className="h-4.5 w-4.5" />}
+            title={query ? t('search.noResults') : t('search.typeHint')}
+          />
         ) : (
           hits.map((hit, index) => {
             const tab = tabs.find((candidate) => candidate.id === hit.tabId);
@@ -106,26 +154,26 @@ export default function App() {
                 id={`popup-hit-${index}`}
                 type="button"
                 className={
-                  'flex w-full items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-sm' +
+                  'flex w-full cursor-pointer items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-sm' +
                   (index === selectedIndex
                     ? ' border-accent-500 bg-accent-50'
                     : ' border-transparent hover:bg-gray-50')
                 }
                 onMouseEnter={() => setSelectedIndex(index)}
                 onClick={() => {
-                  void activateTab(hit.tabId);
+                  void smartActivate(hit.tabId);
                   window.close();
                 }}
               >
                 <Favicon src={tab.favIconUrl} title={tab.title || ''} size={16} />
                 <span className="min-w-0 flex-1 truncate">
-                  {hit.titleSegments.map((segment, index) =>
+                  {hit.titleSegments.map((segment, segmentIndex) =>
                     segment.hit ? (
-                      <b key={index} className="bg-warn-200">
+                      <b key={segmentIndex} className="bg-warn-200">
                         {segment.text}
                       </b>
                     ) : (
-                      <span key={index}>{segment.text}</span>
+                      <span key={segmentIndex}>{segment.text}</span>
                     )
                   )}
                 </span>
@@ -135,18 +183,16 @@ export default function App() {
         )}
       </div>
       <footer className="mt-2 flex justify-end border-t border-gray-200 pt-2">
-        <button
-          type="button"
-          className="rounded p-1.5 text-gray-600 transition-base hover:bg-gray-100 hover:text-accent-600"
+        <IconButton
+          icon={Icons.settings}
           title={t('settings.title')}
-          aria-label={t('settings.title')}
+          box="md"
+          tone="accent"
           onClick={() => {
             void browser.runtime.openOptionsPage();
             window.close();
           }}
-        >
-          <Icon d={Icons.settings} className="h-4 w-4" />
-        </button>
+        />
       </footer>
     </main>
   );

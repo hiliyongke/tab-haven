@@ -4,6 +4,8 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { canSafelyDiscardTab } from '@/core/tab-types';
+import { saveFolderToBookmarks } from '@/platform/bookmarks';
+import { createTabsWithUrls } from '@/platform/tabs';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -12,6 +14,7 @@ import { FolderEditDialog } from '@/ui/fixed/FolderEditDialog';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { RowActions } from '@/ui/common/RowActions';
 import { RowItem } from '@/ui/common/RowItem';
 import { StatusBadges } from '@/ui/common/StatusBadges';
 import { DragType, FIXED_AREA_DROPPABLE } from '@/ui/dnd/types';
@@ -80,7 +83,7 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
           ) : null
         }
         actions={
-          <span className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100">
+          <RowActions>
             {runtimeTab && (runtimeTab.audible || runtimeTab.muted) && (
               <button
                 type="button"
@@ -121,7 +124,7 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
             >
               <Icon d={Icons.close} className="h-3.5 w-3.5" />
             </button>
-          </span>
+          </RowActions>
         }
         dragGripTitle={t('fixed.reorderItem')}
         container={{
@@ -175,9 +178,51 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
     name: folder.name
   } as const;
 
-  // 头部操作：与原生组同款布局 [转原生组 / 编辑]，删除整合到 FolderEditDialog。
+  // 头部操作：与原生组同款布局 [打开全部 / 存为书签 / 转原生组 / 编辑]，删除整合到 FolderEditDialog。
+  const handleOpenAll = () => {
+    const missing = folder.items.filter(
+      (item) => item.url && item.pendingTabId === undefined &&
+        !tabs.some((tab) => tab.url === item.url && !tab.incognito)
+    );
+    if (missing.length === 0) {
+      notify(t('fixed.allOpen'));
+      return;
+    }
+    void createTabsWithUrls(missing.map((item) => item.url))
+      .then(() => notify(t('fixed.openedAll', { count: missing.length })))
+      .catch(() => notify(t('errors.operationFailed')));
+  };
+  const handleExportBookmarks = () => {
+    void saveFolderToBookmarks(folder)
+      .then((count) => notify(count > 0 ? t('fixed.bookmarked', { count }) : t('fixed.bookmarkEmpty')))
+      .catch(() => notify(t('errors.operationFailed')));
+  };
   const headerAction = (
     <>
+      <button
+        type="button"
+        className="row-action"
+        title={t('fixed.openAll')}
+        aria-label={t('fixed.openAll')}
+        onClick={(event) => {
+          event.stopPropagation();
+          handleOpenAll();
+        }}
+      >
+        <Icon d={Icons.openAll} className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="row-action"
+        title={t('fixed.toBookmarks')}
+        aria-label={t('fixed.toBookmarks')}
+        onClick={(event) => {
+          event.stopPropagation();
+          handleExportBookmarks();
+        }}
+      >
+        <Icon d={Icons.bookmarkAdd} className="h-3.5 w-3.5" />
+      </button>
       <button
         type="button"
         className="row-action"
@@ -188,7 +233,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
           setDialog({ type: 'convert' });
         }}
       >
-        <Icon d={Icons.group} className="h-3.5 w-3.5" />
+        <Icon d={Icons.toNativeGroup} className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"

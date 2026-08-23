@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { SectionHead } from '@/ui/tabs/SectionList';
+import { SectionHead } from '@/ui/common/SectionHead';
 
 /**
  * 分类模块外壳：固定标签 / 固定空间 / 站点分组 / 未分组 四类共用同一个视觉壳。

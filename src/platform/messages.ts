@@ -14,24 +14,40 @@ export const AllowDuplicateOnceMessageSchema = z.object({
   windowId: z.number().int(),
   url: z.string()
 });
-export type AllowDuplicateOnceMessage = z.infer<typeof AllowDuplicateOnceMessageSchema>;
 
 /** SW → UI：发生了一次重复标签复用（通知 UI 显示状态提示）。 */
 export const DuplicateReusedMessageSchema = z.object({
   type: z.literal('duplicate-reused')
 });
-export type DuplicateReusedMessage = z.infer<typeof DuplicateReusedMessageSchema>;
 
 /** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
 export const SearchFocusMessageSchema = z.object({
   type: z.literal('focus-search')
 });
-export type SearchFocusMessage = z.infer<typeof SearchFocusMessageSchema>;
 
-/** 全量消息判别联合。 */
-export const TabHavenMessageSchema = z.discriminatedUnion('type', [
-  AllowDuplicateOnceMessageSchema,
-  DuplicateReusedMessageSchema,
-  SearchFocusMessageSchema
-]);
-export type TabHavenMessage = z.infer<typeof TabHavenMessageSchema>;
+/** SW → UI：请求按关键词搜索（右键菜单「搜索此域名」触发，面板未开时先开面板）。 */
+export const SearchDomainMessageSchema = z.object({
+  type: z.literal('search-domain'),
+  query: z.string()
+});
+
+/** SW → UI：自动休眠执行完成（通知 UI 显示可撤销提示）。 */
+export const AutoDiscardedMessageSchema = z.object({
+  type: z.literal('auto-discarded'),
+  tabIds: z.array(z.number().int()),
+  count: z.number().int(),
+  at: z.number()
+});
+
+/** SW → UI：请求定位当前激活标签（浏览器级快捷键触发）。 */
+export const LocateActiveMessageSchema = z.object({
+  type: z.literal('locate-active')
+});
+
+/** SW → UI 待面板执行动作的挂起队列（面板未开时存储于 storage.session）。 */
+export const PENDING_ACTIONS_KEY = 'tabhaven.pending-actions';
+
+/** 设置已落盘的通知（storage.onChanged 之外的显式同步兜底通道）。 */
+export const SettingsSyncedMessageSchema = z.object({
+  type: z.literal('settings-synced')
+});

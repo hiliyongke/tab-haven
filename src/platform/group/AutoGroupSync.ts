@@ -1,8 +1,7 @@
 import { browser } from 'wxt/browser';
-import { z } from 'zod';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
 import { removeGroup, updateGroupMeta } from '@/platform/tabs';
-import { DataRepository } from '@/platform/storage/DataRepository';
+import { autoGroupsRepository } from '@/platform/storage/repositories';
 
 /**
  * 自动分组执行器：把 plan 落成浏览器原生 tabGroups。
@@ -14,13 +13,6 @@ import { DataRepository } from '@/platform/storage/DataRepository';
  *  - 创建成功的组 id 持久化记录（tabhaven.auto-groups.v1）；
  *  - 关闭开关时由 disbandAutoGroups 解散记录的组（标签回到未分组）。
  */
-
-/** 本功能创建的组 id 记录（用于关闭开关时解散）。 */
-const autoGroupsRepository = new DataRepository<number[]>(
-  'tabhaven.auto-groups.v1',
-  z.array(z.number()),
-  []
-);
 
 export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<number> {
   const createdIds: number[] = [];
@@ -41,6 +33,38 @@ export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<n
     await autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
   }
   return createdIds.length;
+}
+
+/**
+ * 快速整理执行：先打散临时区现有原生组（tabs.ungroup，空组由浏览器自动回收），
+ * 再按计划创建新组。返回成功创建/整理的组数。
+ * 固定区域（浏览器置顶/顶部固定磁贴/固定空间绑定）不在此集合内，天然不受影响。
+ */
+export async function regroupTempArea(
+  ungroupTabIds: readonly number[],
+  plans: readonly AutoGroupPlan[]
+): Promise<number> {
+  if (ungroupTabIds.length > 0) {
+    try {
+      await browser.tabs.ungroup([...ungroupTabIds] as [number, ...number[]]);
+    } catch {
+      // 部分标签可能已不在组内，静默忽略
+    }
+  }
+  let count = 0;
+  for (const plan of plans) {
+    try {
+      const tabIds = [...plan.tabIds] as [number, ...number[]];
+      const groupId = await browser.tabs.group({ tabIds });
+      if (groupId !== undefined) {
+        await updateGroupMeta(groupId, plan.title, plan.color);
+        count += 1;
+      }
+    } catch {
+      // 单组失败静默跳过，标签保持未分组
+    }
+  }
+  return count;
 }
 
 /**

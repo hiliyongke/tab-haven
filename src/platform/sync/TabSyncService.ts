@@ -15,7 +15,7 @@ import { queryCurrentWindowGroups, queryCurrentWindowTabs } from '@/platform/tab
  * 快照的真相源始终是浏览器（每次查询），本服务不缓存中间状态。
  */
 
-export interface TabSnapshot {
+interface TabSnapshot {
   tabs: readonly TabRecord[];
   groups: readonly TabGroupRecord[];
   windowId: number | undefined;

@@ -1,10 +1,12 @@
+import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { useDomainAccent } from '@/ui/tabs/accent';
 
 /** dnd-kit 排序接入点（顶部永久固定区 PinnedStrip 传入；无排序的场景不传）。 */
-export interface PinnedTileSortable {
+interface PinnedTileSortable {
   setNodeRef: (node: HTMLElement | null) => void;
   attributes: object;
   listeners: object | undefined;
@@ -47,6 +49,16 @@ export function PinnedTile({
   sortable?: PinnedTileSortable;
 }) {
   const { t } = useTranslation();
+  // 磁贴主色：优先 favicon（data: URL 可取色）主色，否则域名哈希色——与站点组圆点同源。
+  const domain = useMemo(() => {
+    if (!url) return undefined;
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return undefined;
+    }
+  }, [url]);
+  const accent = useDomainAccent(favIconUrl, domain);
   const tileClass =
     'pinned-tile' +
     (isActive ? ' is-active' : '') +
@@ -55,7 +67,10 @@ export function PinnedTile({
     (sortable?.isDragging ? ' is-dragging' : '');
 
   return (
-    <article className={tileClass}>
+    <article
+      className={tileClass}
+      style={accent ? ({ '--tile-accent': accent } as CSSProperties) : undefined}
+    >
       <button
         ref={sortable?.setNodeRef}
         type="button"

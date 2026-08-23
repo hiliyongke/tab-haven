@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { browser } from 'wxt/browser';
+import i18n from '@/i18n';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import {
   createFolder as createFolderModel,
@@ -14,6 +15,8 @@ import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile
 import {
   DEFAULT_SETTINGS,
   ExportFileSchema,
+  FixedFolderSchema,
+  PersistentPinSchema,
   SettingsSchema,
   type ExportFile,
   type FixedFolder,
@@ -23,13 +26,18 @@ import {
   type SiteCollapseState
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { webComparisonKey } from '@/core/url/UrlInspector';
+import { AllowDuplicateOnceMessageSchema } from '@/platform/messages';
 import {
   collapseRepository,
   foldersRepository,
   pinsRepository,
+  seededRepository,
   settingsRepository
 } from '@/platform/storage/repositories';
+import { syncMirror } from '@/platform/storage/SyncMirror';
+import { readBookmarkBar } from '@/platform/bookmarks';
+import { SettingsSyncedMessageSchema } from '@/platform/messages';
 import { readSession, mutateSession } from '@/platform/storage/session';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import {
@@ -41,14 +49,13 @@ import {
   updateGroupMeta,
   updateTabUrl
 } from '@/platform/tabs';
-import { useTabStore } from '@/stores/tabStore';
 
 /**
  * 固定空间数据 store：文件夹、永久固定图标、设置、折叠状态。
  * 持久化经 DataRepository（chrome.storage.local + zod + 坏数据隔离）。
  */
 
-export interface AddTabsToFolderResult {
+interface AddTabsToFolderResult {
   added: number;
   moved: number;
   skipped: number;
@@ -70,12 +77,8 @@ interface DataState {
   renameFolder: (folderId: string, name: string) => Promise<void>;
   deleteFolder: (folderId: string) => Promise<void>;
   toggleFolderCollapsed: (folderId: string) => Promise<void>;
-  /** 拖标签入文件夹（URL 全局唯一）。 */
-  addTabToFolder: (tab: TabRecord, folderId: string) => Promise<void>;
   /** 将一组标签拖入文件夹（URL 全局唯一）。 */
   addTabsToFolder: (tabs: readonly TabRecord[], folderId: string) => Promise<AddTabsToFolderResult>;
-  /** 组内新建标签（挂起条目）。 */
-  createTabInFixedFolder: (folder: FixedFolder) => Promise<void>;
   removeFolderItem: (folderId: string, itemId: string) => Promise<void>;
   reorderFolderItems: (
     folderId: string,
@@ -102,43 +105,118 @@ interface DataState {
   /** 设置站点分组折叠状态（持久化）。 */
   toggleSiteCollapsed: (siteKey: string, collapsed: boolean) => Promise<void>;
   updateSettings: (partial: Partial<Settings>) => Promise<void>;
+  /** 恢复全部设置为默认值。 */
+  resetSettings: () => Promise<void>;
+  /** 重新从存储读取设置并应用到 store（跨页面同步兜底）。 */
+  refreshSettings: () => Promise<void>;
   /** 导出固定空间与设置，不包含当前打开标签或撤销栈。 */
   exportData: () => ExportFile;
   /** 校验并覆盖导入固定空间与设置，不触碰当前打开标签。 */
   importData: (raw: unknown) => Promise<void>;
+  /** 从书签栏导入固定文件夹（同名合并，URL 全局去重）。 */
+  importBookmarksFromBar: () => Promise<{ foldersCreated: number; itemsImported: number }>;
 
   /** 快照联动：挂起转正 + 绑定维护（由 tabStore 每次刷新后调用）。 */
   reconcileWithTabs: (tabs: readonly TabRecord[]) => Promise<void>;
 }
 
-async function writeFolders(folders: FixedFolder[]): Promise<void> {
-  await foldersRepository.write(folders);
-  useDataStore.setState({ folders });
-}
+/**
+ * 高频写合并器：同一写入批次（上一次写完成前到达的调用）只落盘最终值，
+ * 消除拖拽重排等连续操作时的 chrome.storage 全量写入放大。
+ * 语义：调用方 await 的 Promise 在“本批最终值已落盘”后 resolve。
+ * 注意：DataRepository.write 内部已捕获错误，此合并器不改变错误处理语义。
+ */
+function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<void> }) {
+  let inflight: Promise<void> | null = null;
+  let queued: T | undefined;
+  let hasQueued = false;
 
-async function writePins(pins: PersistentPin[]): Promise<void> {
-  await pinsRepository.write(pins);
-  useDataStore.setState({ pins });
+  return (value: T): Promise<void> => {
+    queued = value;
+    hasQueued = true;
+    if (inflight) return inflight;
+    inflight = (async () => {
+      while (hasQueued) {
+        hasQueued = false;
+        const target = queued as T;
+        await repo.write(target);
+      }
+    })();
+    void inflight.finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
 }
 
 function fixedItemKey(url: string): string {
-  const inspection = inspectUrl(url, undefined);
-  return inspection.category === 'web' && inspection.comparisonKey
-    ? inspection.comparisonKey
-    : url;
+  return webComparisonKey(url, undefined) ?? url;
 }
 
 /** 向 background 申请一次复用豁免（显式打开/复制的标签不被自动合并）。 */
 async function grantReuseAllowance(windowId: number, url: string): Promise<void> {
-  await browser.runtime
-    .sendMessage({ type: 'allow-duplicate-once', windowId, url })
-    .catch(() => {});
+  const message = AllowDuplicateOnceMessageSchema.parse({
+    type: 'allow-duplicate-once',
+    windowId,
+    url
+  });
+  await browser.runtime.sendMessage(message).catch(() => {});
 }
 
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
 let initialized = false;
 
-export const useDataStore = create<DataState>()((set, get) => ({
+export const useDataStore = create<DataState>()((set, get) => {
+  // 写入工具：闭包内定义，用 set/get 访问 store，避免模块级声明顺序依赖（no-use-before-define）。
+  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[]>(foldersRepository);
+  const writePinsCoalesced = createCoalescedWriter<PersistentPin[]>(pinsRepository);
+
+  /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
+  const scheduleMirror = (state: {
+    folders: FixedFolder[];
+    pins: PersistentPin[];
+    settings: Settings;
+  }): void => {
+    syncMirror.schedule({ folders: state.folders, pins: state.pins, settings: state.settings });
+  };
+
+  async function writeFolders(folders: FixedFolder[]): Promise<void> {
+    // 先更新内存态（UI 即时响应），storage 落盘合并为最终值。
+    set({ folders });
+    await writeFoldersCoalesced(folders);
+    scheduleMirror(get());
+  }
+
+  async function writePins(pins: PersistentPin[]): Promise<void> {
+    set({ pins });
+    await writePinsCoalesced(pins);
+    scheduleMirror(get());
+  }
+
+  // 跨页面设置同步：设置页 / 侧边栏 / popup 各自持有独立 dataStore 实例，
+  // 通过 storage.onChanged 感知其他页面写入的设置并实时应用（否则改完设置需重开面板才生效）。
+  // 另提供 refreshSettings（重新读存储）与 settings-synced 广播消息作为双保险。
+  const syncSettingsFromStorage = async (): Promise<void> => {
+    try {
+      const next = await settingsRepository.read();
+      set({ settings: next });
+      applyTheme(next.themePreference);
+    } catch {
+      // 读取失败保持当前状态
+    }
+  };
+  const broadcastSettingsSynced = (): void => {
+    const message = SettingsSyncedMessageSchema.parse({ type: 'settings-synced' });
+    browser.runtime.sendMessage(message).catch(() => {});
+  };
+  let settingsWatcherStarted = false;
+  const startSettingsWatcher = (): void => {
+    if (settingsWatcherStarted) return;
+    settingsWatcherStarted = true;
+    settingsRepository.watch(() => void syncSettingsFromStorage());
+  };
+
+  return {
   folders: [],
   pins: [],
   collapsedSites: [],
@@ -149,18 +227,39 @@ export const useDataStore = create<DataState>()((set, get) => ({
   initialize: async () => {
     if (initialized) return;
     initialized = true;
-    const [folders, pins, collapsedSites, settings, session] = await Promise.all([
+    startSettingsWatcher();
+    const [folders, pins, collapsedSites, settings, session, seeded] = await Promise.all([
       foldersRepository.read(),
       pinsRepository.read(),
       collapseRepository.read(),
       settingsRepository.read(),
-      readSession()
+      readSession(),
+      seededRepository.read()
     ]);
+    let effectiveFolders = folders;
+    let effectivePins = pins;
+    let effectiveSettings = settings;
+    if (!seeded) {
+      // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）
+      const mirror = await syncMirror.pull();
+      if (mirror) {
+        const parsedFolders = FixedFolderSchema.array().safeParse(mirror.folders);
+        const parsedPins = PersistentPinSchema.array().safeParse(mirror.pins);
+        const parsedSettings = SettingsSchema.safeParse(mirror.settings);
+        if (parsedFolders.success && folders.length === 0) effectiveFolders = parsedFolders.data;
+        if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
+        if (parsedSettings.success) effectiveSettings = parsedSettings.data;
+      }
+      await seededRepository.write(true);
+      if (effectiveFolders !== folders) await foldersRepository.write(effectiveFolders);
+      if (effectivePins !== pins) await pinsRepository.write(effectivePins);
+      if (effectiveSettings !== settings) await settingsRepository.write(effectiveSettings);
+    }
     set({
-      folders,
-      pins: dedupePins(pins),
+      folders: effectiveFolders,
+      pins: dedupePins(effectivePins),
       collapsedSites,
-      settings,
+      settings: effectiveSettings,
       boundTabIds: Object.values(session.itemTabBindings),
       ready: true
     });
@@ -204,19 +303,15 @@ export const useDataStore = create<DataState>()((set, get) => ({
     );
   },
 
-  addTabToFolder: async (tab, folderId) => {
-    await get().addTabsToFolder([tab], folderId);
-  },
-
   addTabsToFolder: async (tabs, folderId) => {
     const currentFolders = get().folders;
     const candidates = new Map<string, { url: string; title: string; favIconUrl?: string }>();
     for (const tab of tabs) {
-      const inspection = inspectUrl(tab.url, tab.pendingUrl);
-      if (inspection.category !== 'web' || !inspection.comparisonKey) continue;
-      candidates.set(inspection.comparisonKey, {
-        url: inspection.comparisonKey,
-        title: tab.title || inspection.comparisonKey,
+      const key = webComparisonKey(tab.url, tab.pendingUrl);
+      if (!key) continue;
+      candidates.set(key, {
+        url: key,
+        title: tab.title || key,
         favIconUrl: tab.favIconUrl
       });
     }
@@ -290,9 +385,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
       for (const newItem of newItems) {
         const key = fixedItemKey(newItem.url);
         const tab = tabs.find((candidate) => {
-          const inspection = inspectUrl(candidate.url, candidate.pendingUrl);
           return (
-            inspection.comparisonKey === key &&
+            webComparisonKey(candidate.url, candidate.pendingUrl) === key &&
             !candidate.pinned &&
             !candidate.incognito &&
             !boundTabIds.has(candidate.id)
@@ -312,22 +406,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
       moved,
       skipped: tabs.length - candidates.size + targetDuplicates
     };
-  },
-
-  createTabInFixedFolder: async (folder) => {
-    const windowId = useTabStore.getState().currentWindowId;
-    if (windowId === undefined) return;
-    const newTab = await createNewTabPlatform(windowId);
-    const item = createFolderItem({
-      url: '',
-      // 空标题由 UI 层按当前语言渲染「新标签页」
-      title: '',
-      pendingTabId: newTab.id
-    });
-    const next = get().folders.map((f) =>
-      f.id === folder.id ? { ...f, collapsed: false, items: [...f.items, item] } : f
-    );
-    await writeFolders(next);
   },
 
   removeFolderItem: async (folderId, itemId) => {
@@ -430,11 +508,11 @@ export const useDataStore = create<DataState>()((set, get) => ({
   createFolderFromNativeGroup: async (name, groupTabs) => {
     const savable = new Map<string, { url: string; title: string; favIconUrl?: string }>();
     for (const tab of groupTabs) {
-      const inspection = inspectUrl(tab.url, tab.pendingUrl);
-      if (inspection.category === 'web' && inspection.comparisonKey) {
-        savable.set(inspection.comparisonKey, {
-          url: inspection.comparisonKey,
-          title: tab.title || inspection.comparisonKey,
+      const key = webComparisonKey(tab.url, tab.pendingUrl);
+      if (key) {
+        savable.set(key, {
+          url: key,
+          title: tab.title || key,
           favIconUrl: tab.favIconUrl
         });
       }
@@ -469,9 +547,10 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (items.length === 0) return false;
 
     // 先恢复已关闭的固定条目，确保转换不是“只处理当前碰巧打开的标签”。
+    // 窗口内标签集合在一次查询内复用（openSavedItem 新建的标签由末尾补查感知）。
+    const initialTabs = await queryCurrentWindowTabs();
     for (const item of items) {
-      const tabs = await queryCurrentWindowTabs();
-      const alreadyOpen = tabs.some(
+      const alreadyOpen = initialTabs.some(
         (tab) => tab.url === item.url && !tab.incognito && !tab.pinned
       );
       if (!alreadyOpen) await get().openSavedItem(item);
@@ -567,7 +646,19 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (!parsed.success) throw new Error('invalid-settings');
     await settingsRepository.write(parsed.data);
     set({ settings: parsed.data });
+    scheduleMirror(get());
+    broadcastSettingsSynced();
   },
+
+  resetSettings: async () => {
+    await settingsRepository.write(DEFAULT_SETTINGS);
+    set({ settings: DEFAULT_SETTINGS });
+    applyTheme(DEFAULT_SETTINGS.themePreference);
+    scheduleMirror(get());
+    broadcastSettingsSynced();
+  },
+
+  refreshSettings: () => syncSettingsFromStorage(),
 
   exportData: () =>
     ExportFileSchema.parse({
@@ -597,6 +688,68 @@ export const useDataStore = create<DataState>()((set, get) => ({
       settings: data.settings
     });
     applyTheme(data.settings.themePreference);
+    scheduleMirror(get());
+    broadcastSettingsSynced();
+  },
+
+  importBookmarksFromBar: async () => {
+    const bar = await readBookmarkBar();
+    const { folders } = get();
+    const seen = new Set<string>();
+    for (const folder of folders) {
+      for (const item of folder.items) {
+        seen.add(webComparisonKey(item.url, undefined) ?? item.url);
+      }
+    }
+    const uniqueLeaves = (
+      leaves: { url: string; title: string }[]
+    ): { url: string; title: string }[] => {
+      const next: { url: string; title: string }[] = [];
+      for (const leaf of leaves) {
+        const key = webComparisonKey(leaf.url, undefined) ?? leaf.url;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        next.push(leaf);
+      }
+      return next;
+    };
+    let foldersCreated = 0;
+    let itemsImported = 0;
+    let next = folders;
+    for (const spec of bar.folders) {
+      const leaves = uniqueLeaves(spec.leaves);
+      if (leaves.length === 0) continue;
+      const items = leaves.map((leaf) => createFolderItem({ url: leaf.url, title: leaf.title }));
+      const existing = next.find((folder) => folder.name === spec.name);
+      if (existing) {
+        next = next.map((folder) =>
+          folder.id === existing.id ? { ...folder, items: [...folder.items, ...items] } : folder
+        );
+      } else {
+        next = [...next, { ...createFolderModel(spec.name), items }];
+        foldersCreated += 1;
+      }
+      itemsImported += items.length;
+    }
+    if (bar.looseLeaves.length > 0) {
+      const leaves = uniqueLeaves(bar.looseLeaves);
+      if (leaves.length > 0) {
+        const name = i18n.t('fixed.bookmarksImportName');
+        const items = leaves.map((leaf) => createFolderItem({ url: leaf.url, title: leaf.title }));
+        const existing = next.find((folder) => folder.name === name);
+        if (existing) {
+          next = next.map((folder) =>
+            folder.id === existing.id ? { ...folder, items: [...folder.items, ...items] } : folder
+          );
+        } else {
+          next = [...next, { ...createFolderModel(name), items }];
+          foldersCreated += 1;
+        }
+        itemsImported += items.length;
+      }
+    }
+    if (next !== folders) await writeFolders(next);
+    return { foldersCreated, itemsImported };
   },
 
   reconcileWithTabs: async (tabs) => {
@@ -614,4 +767,5 @@ export const useDataStore = create<DataState>()((set, get) => ({
     });
     set({ boundTabIds: Object.values(result.itemTabBindings) });
   }
-}));
+  };
+});

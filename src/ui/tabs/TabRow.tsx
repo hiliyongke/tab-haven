@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { RowActions } from '@/ui/common/RowActions';
 import { RowItem } from '@/ui/common/RowItem';
 import { StatusBadges } from '@/ui/common/StatusBadges';
 import { DragType } from '@/ui/dnd/types';
@@ -18,6 +19,7 @@ export function TabRow({
   duplicateCount,
   isActive,
   isSplitCompanion,
+  splitGroupRole,
   onActivate,
   onToggleMute,
   onTogglePin,
@@ -32,10 +34,8 @@ export function TabRow({
   density = 'compact',
   showSplitBadges = true,
   indent,
-  preview,
   isHighlighted,
   isSearchActive,
-  onRequestPreview,
   rowActionsVisible = true,
   containerKey
 }: {
@@ -43,6 +43,8 @@ export function TabRow({
   duplicateCount: number;
   isActive: boolean;
   isSplitCompanion: boolean;
+  /** 分屏组括弧角色（组首/组中/组尾），视觉上连成左括号。 */
+  splitGroupRole?: 'first' | 'middle' | 'last';
   onActivate: (tabId: number) => void;
   onToggleMute: (tab: TabRecord) => void;
   onTogglePin: (tab: TabRecord) => void;
@@ -67,14 +69,10 @@ export function TabRow({
   showSplitBadges?: boolean;
   /** 来源树模式下的缩进层级（0 为根）。 */
   indent?: number;
-  /** 悬停预览缩略图 dataURL（captureVisibleTab 缓存）。 */
-  preview?: string;
   /** 是否被浏览器高亮（多选选区）。 */
   isHighlighted?: boolean;
   /** 是否为当前搜索结果。 */
   isSearchActive?: boolean;
-  /** 用户悬停时按需请求预览。 */
-  onRequestPreview?: (tab: TabRecord) => void;
   /** 是否显示行尾快捷操作。 */
   rowActionsVisible?: boolean;
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
@@ -111,8 +109,8 @@ export function TabRow({
     }
   }, [isSearchActive]);
 
-  const tabActions = rowActionsVisible ? (
-    <span className="flex shrink-0 items-center gap-0.5 w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100">
+  const tabActions = (
+    <RowActions forceVisible={rowActionsVisible}>
       {(tab.audible || tab.muted) && (
         <button
           type="button"
@@ -158,11 +156,11 @@ export function TabRow({
       <button type="button" className="row-action" title={t('tabs.closeTab')} aria-label={t('tabs.closeTab')} onClick={() => onClose(tab)}>
         <Icon d={Icons.close} className="h-3.5 w-3.5" />
       </button>
-    </span>
-  ) : null;
+    </RowActions>
+  );
 
   return (
-    <li ref={liRef}>
+    <li ref={liRef} data-tabhaven-tab-id={tab.id}>
       <RowItem
         faviconSrc={tab.favIconUrl}
         faviconTitle={tab.title || ''}
@@ -170,6 +168,7 @@ export function TabRow({
         isMediaPlaying={tab.audible && !tab.muted}
         isDiscarded={tab.discarded}
         isSplitCompanion={isSplitCompanion}
+        splitGroupRole={splitGroupRole}
         isHighlighted={isHighlighted}
         isSearchActive={isSearchActive}
         density={density}
@@ -178,7 +177,6 @@ export function TabRow({
         onAuxClick={(event) => {
           if (event.button === 1 && closeOnMiddleClick) onClose(tab);
         }}
-        onMouseEnter={() => onRequestPreview?.(tab)}
         onKeyDown={(event) => {
           if (reorderEnabled && onMoveTab && event.altKey) {
             if (event.key === 'ArrowUp') {
@@ -215,7 +213,6 @@ export function TabRow({
           />
         }
         actions={tabActions}
-        preview={preview}
         container={{
           ref: sortable.setNodeRef,
           listeners: sortable.listeners,
