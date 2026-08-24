@@ -21,6 +21,7 @@ import {
   Snowflake,
   Sunrise,
   Tags,
+  Trash2,
   Volume2,
   VolumeX,
   Wand2,
@@ -73,6 +74,8 @@ export const Icons = {
   bookmarkAdd: BookmarkPlus,
   /** 从书签导入。 */
   bookmarkImport: FolderInput,
+  /** 一键删除（固定文件夹 / 原生分组），标签保留。 */
+  trash: Trash2,
 } as const;
 
 /** 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。 */

@@ -65,7 +65,6 @@ export default function App() {
   const setLanguage = useTabStore((state) => state.setLanguage);
   const renameGroup = useTabStore((state) => state.renameGroup);
   const recolorGroup = useTabStore((state) => state.recolorGroup);
-  const removeGroup = useTabStore((state) => state.removeGroup);
   const moveGroup = useTabStore((state) => state.moveGroup);
   const startTabSync = useTabStore((state) => state.startTabSync);
   const initializeData = useDataStore((state) => state.initialize);
@@ -473,12 +472,6 @@ export default function App() {
     },
     [closeWithUndo]
   );
-  const handleCloseSiteGroup = useCallback(
-    (_siteKey: string, groupTabs: readonly TabRecord[]) => {
-      void closeWithUndo(useTabStore.getState().tabs, groupTabs.map((tab) => tab.id));
-    },
-    [closeWithUndo]
-  );
   const handleDuplicateTab = useCallback(
     (tab: TabRecord) => {
       void duplicateTab(tab.id).then(() => notify(t('toast.duplicated')));
@@ -553,10 +546,6 @@ export default function App() {
     (groupId: number, color: string) => void recolorGroup(groupId, color),
     [recolorGroup]
   );
-  const handleRemoveGroup = useCallback(
-    (groupId: number) => void removeGroup(groupId).then(() => notify(t('toast.groupRemoved'))),
-    [removeGroup, notify, t]
-  );
   const handleMoveGroup = useCallback(
     (groupId: number, index: number) => void moveGroup(groupId, index),
     [moveGroup]
@@ -596,14 +585,12 @@ export default function App() {
       onSaveGroupAsFolder: handleSaveGroupAsFolder,
       onGroupRename: handleRenameGroup,
       onGroupRecolor: handleRecolorGroup,
-      onGroupRemove: handleRemoveGroup,
       onGroupMove: handleMoveGroup,
       onToggleGroupCollapsed: (groupId: number, collapsed: boolean) =>
         void setGroupCollapsed(groupId, collapsed),
       onToggleSiteCollapsed: (siteKey: string, collapsed: boolean) => {
         void toggleSiteCollapsed(siteKey, collapsed);
       },
-      onCloseSiteGroup: handleCloseSiteGroup,
       onReorder: handleReorder,
       onMoveTab: handleMoveTab
     }),
@@ -619,9 +606,7 @@ export default function App() {
       handleSaveGroupAsFolder,
       handleRenameGroup,
       handleRecolorGroup,
-      handleRemoveGroup,
       handleMoveGroup,
-      handleCloseSiteGroup,
       handleReorder,
       handleMoveTab
     ]

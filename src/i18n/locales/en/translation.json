@@ -13,7 +13,6 @@
     "untitled": "Untitled",
     "unnamedGroup": "Unnamed group",
     "ungrouped": "Ungrouped",
-    "closeGroup": "Close all tabs in group",
     "back": "Back",
     "forward": "Forward",
     "highlight": "Highlight selected tabs",
@@ -64,6 +63,7 @@
     "rename": "Rename folder",
     "renamePrompt": "Rename fixed folder",
     "delete": "Delete folder",
+    "deleteFolder": "Delete folder (keep tabs)",
     "deleteConfirm": "Delete fixed folder \"{{name}}\"? Open tabs will not be closed.",
     "itemClose": "Close tab and remove from folder",
     "pendingHint": "Waiting for a URL; the page will be saved here once opened",
@@ -85,8 +85,7 @@
     "label": "Site groups",
     "edit": "Edit group",
     "drag": "Drag to reorder",
-    "namePlaceholder": "Group name",
-    "delete": "Delete group (keep tabs)"
+    "namePlaceholder": "Group name"
   },
   "search": {
     "title": "Search tabs",
@@ -284,7 +283,7 @@
     "folderConverted": "Restored as native tab group",
     "folderConvertSkipped": "No web tabs to convert in this fixed folder",
     "folderConvertFailed": "Failed to restore native tab group",
-    "groupRemoved": "Tab group deleted",
+    "folderRemoved": "Fixed folder deleted",
     "pinned": "Tab pinned",
     "unpinned": "Tab unpinned",
     "folderCreated": "Fixed folder created",

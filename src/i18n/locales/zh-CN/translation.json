@@ -13,7 +13,6 @@
     "untitled": "无标题标签页",
     "unnamedGroup": "未命名标签组",
     "ungrouped": "未分组",
-    "closeGroup": "关闭组内全部标签",
     "back": "后退",
     "forward": "前进",
     "highlight": "高亮选中标签",
@@ -66,6 +65,7 @@
     "edit": "编辑固定文件夹",
     "folderNamePlaceholder": "文件夹名称",
     "delete": "删除文件夹",
+    "deleteFolder": "删除文件夹（标签保留）",
     "deleteConfirm": "删除固定文件夹“{{name}}”？正在打开的标签不会关闭。",
     "confirmDelete": "确认删除",
     "itemClose": "关闭标签并移出文件夹",
@@ -88,8 +88,7 @@
     "label": "站点分组",
     "edit": "编辑标签组",
     "drag": "拖拽以重新排序",
-    "namePlaceholder": "组名称",
-    "delete": "删除组（标签保留）"
+    "namePlaceholder": "组名称"
   },
   "search": {
     "title": "搜索标签",
@@ -285,7 +284,7 @@
     "folderConverted": "已恢复为原生标签组",
     "folderConvertSkipped": "固定文件夹中没有可转换的网页标签",
     "folderConvertFailed": "恢复原生标签组失败",
-    "groupRemoved": "已删除标签组",
+    "folderRemoved": "已删除固定文件夹",
     "pinned": "已固定标签",
     "unpinned": "已取消固定",
     "folderCreated": "已新建固定文件夹",

@@ -28,49 +28,22 @@ const GROUP_COLORS = [
   'orange'
 ] as const;
 
-/** 原生组编辑弹窗：改名 + 换色 + 删除（复用 DialogShell 的焦点/键盘行为）。 */
+/** 原生组编辑弹窗：改名 + 换色（复用 DialogShell 的焦点/键盘行为）。 */
 function GroupEditDialog({
   title,
   color,
   onRename,
   onRecolor,
-  onDelete,
   onClose
 }: {
   title: string;
   color?: string;
   onRename: (name: string) => void;
   onRecolor: (color: string) => void;
-  onDelete: () => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(title);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  if (confirmDelete) {
-    return (
-      <DialogShell title={t('groups.delete')} onClose={() => setConfirmDelete(false)}>
-        <p className="mb-3 text-sm text-gray-600">{t('groups.deleteConfirm', { name: title })}</p>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-            onClick={() => setConfirmDelete(false)}
-          >
-            {t('dialog.cancel')}
-          </button>
-          <button
-            type="button"
-            className="rounded bg-red-600 px-3 py-1 text-sm text-on-accent hover:opacity-90"
-            onClick={onDelete}
-          >
-            {t('dialog.confirm')}
-          </button>
-        </div>
-      </DialogShell>
-    );
-  }
 
   return (
     <DialogShell title={t('groups.edit')} onClose={onClose}>
@@ -102,33 +75,24 @@ function GroupEditDialog({
           />
         ))}
       </div>
-      <div className="flex justify-between">
+      <div className="flex justify-end gap-2">
         <button
           type="button"
-          className="rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
-          onClick={() => setConfirmDelete(true)}
+          className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          onClick={onClose}
         >
-          {t('groups.delete')}
+          {t('dialog.cancel')}
         </button>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-            onClick={onClose}
-          >
-            {t('dialog.cancel')}
-          </button>
-          <button
-            type="button"
-            className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
-            onClick={() => {
-              onRename(draft.trim() || title);
-              onClose();
-            }}
-          >
-            {t('dialog.confirm')}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
+          onClick={() => {
+            onRename(draft.trim() || title);
+            onClose();
+          }}
+        >
+          {t('dialog.confirm')}
+        </button>
       </div>
     </DialogShell>
   );
@@ -153,7 +117,6 @@ interface SectionCallbacks {
   onSaveGroupAsFolder?: (groupId: number) => void;
   onToggleGroupCollapsed: (groupId: number, collapsed: boolean) => void;
   onToggleSiteCollapsed: (siteKey: string, collapsed: boolean) => void;
-  onCloseSiteGroup: (siteKey: string, tabs: readonly TabRecord[]) => void;
   /** 拖拽重排写回原生顺序（可选能力，由设置开关控制）。 */
   onReorder?: (sourceId: number, targetId: number, placeAfter: boolean) => void;
   /** 键盘重排（Alt+↑/↓）：把标签向相邻位置移动。 */
@@ -162,8 +125,6 @@ interface SectionCallbacks {
   onGroupRename: (groupId: number, title: string) => void;
   /** 改变原生组颜色。 */
   onGroupRecolor: (groupId: number, color: string) => void;
-  /** 删除原生组（解散，不关闭标签）。 */
-  onGroupRemove: (groupId: number) => void;
   /** 移动原生组到指定索引（组排序）。 */
   onGroupMove: (groupId: number, index: number) => void;
   /** 高亮当前选中的标签（与浏览器多选同步）。 */
@@ -475,11 +436,6 @@ function CollapsibleSectionCard({
       rowProps.callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
     }
   };
-  const onClose =
-    section.kind === 'site'
-      ? () => rowProps.callbacks.onCloseSiteGroup(section.siteKey, section.tabs)
-      : undefined;
-
   // 展开态：site 多子域时按子域再分块（折叠子标题）；媒体定位模式只保留播放标签所在子域。
   const subGroups: SiteSubGroup[] =
     section.kind === 'site'
@@ -499,7 +455,6 @@ function CollapsibleSectionCard({
           color={section.color}
           onRename={(name) => rowProps.callbacks.onGroupRename(section.groupId, name)}
           onRecolor={(color) => rowProps.callbacks.onGroupRecolor(section.groupId, color)}
-          onDelete={() => rowProps.callbacks.onGroupRemove(section.groupId)}
           onClose={() => setEditOpen(false)}
         />
       )}
@@ -535,8 +490,6 @@ function CollapsibleSectionCard({
       accent={accent}
       icon={chevron}
       onToggle={onToggle}
-      onClose={onClose}
-      closeTitle={t('tabs.closeGroup')}
       mediaIndicator={mediaIndicator}
       action={headerAction}
       collapsed={isCollapsed}

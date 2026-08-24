@@ -999,19 +999,6 @@ body {
   background: var(--c-brand-100);
   color: var(--c-brand-700);
 }
-.section-card .close-site {
-  opacity: 0;
-  color: var(--c-gray-400);
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-.section-card:hover .close-site,
-.section-card .close-site:focus-visible {
-  opacity: 1;
-}
-.section-card .close-site:hover {
-  background: var(--c-red-50);
-  color: var(--c-red-600);
-}
 .section-body {
   /* 左右 8px 与 .section-head 对齐，让色条与标签行 favicon 左边缘对齐 */
   padding: 0 8px 2px;
@@ -1077,7 +1064,6 @@ body {
   .section-media-dot { animation: none; }
   .row-item .drag-grip,
   .section-head button.toggle,
-  .section-card .close-site,
   .add-tab-btn,
   .pinned-grid .pinned-unpin,
   .search-bar-clear { transition: none; }

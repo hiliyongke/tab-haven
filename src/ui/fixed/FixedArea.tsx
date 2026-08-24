@@ -247,6 +247,19 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
       >
         <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
       </button>
+      <button
+        type="button"
+        className="row-action text-red-500"
+        title={t('fixed.deleteFolder')}
+        aria-label={t('fixed.deleteFolder')}
+        onClick={(event) => {
+          event.stopPropagation();
+          void deleteFolder(folder.id);
+          notify(t('toast.folderRemoved'));
+        }}
+      >
+        <Icon d={Icons.trash} className="h-3.5 w-3.5" />
+      </button>
     </>
   );
 

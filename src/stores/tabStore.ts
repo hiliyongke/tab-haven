@@ -8,7 +8,6 @@ import {
   duplicateTab as duplicateTabPlatform,
   moveGroup as moveGroupPlatform,
   recolorGroup as recolorGroupPlatform,
-  removeGroup as removeGroupPlatform,
   renameGroup as renameGroupPlatform,
   setGroupCollapsed as setGroupCollapsedPlatform,
   toggleMute as toggleMutePlatform,
@@ -56,8 +55,6 @@ interface TabState {
   renameGroup: (groupId: number, title: string) => Promise<void>;
   /** 改变原生组颜色。 */
   recolorGroup: (groupId: number, color: string) => Promise<void>;
-  /** 删除原生组（组内标签解散，不关闭）。 */
-  removeGroup: (groupId: number) => Promise<void>;
   /** 移动原生组到指定索引（组排序）。 */
   moveGroup: (groupId: number, index: number) => Promise<void>;
   /** 启动同步服务（组件挂载时调用一次）；返回清理函数。 */
@@ -124,10 +121,6 @@ export const useTabStore = create<TabState>()((set, get) => ({
 
   recolorGroup: async (groupId, color) => {
     await recolorGroupPlatform(groupId, color);
-  },
-
-  removeGroup: async (groupId) => {
-    await removeGroupPlatform(groupId);
   },
 
   moveGroup: async (groupId, index) => {
