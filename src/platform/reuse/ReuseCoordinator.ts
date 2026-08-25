@@ -110,8 +110,15 @@ export class ReuseCoordinator {
       if (!entry) return;
       const { tabId, task } = entry;
       task.dirty = false;
-      const outcome = await this.inspect(task.latest);
-      if (outcome !== 'wait') this.tasks.delete(tabId);
+      try {
+        const outcome = await this.inspect(task.latest);
+        if (outcome !== 'wait') this.tasks.delete(tabId);
+      } catch (error) {
+        // 单任务异常（典型：扫描与结算之间标签被用户关闭）不得中断整个调度循环，
+        // 否则队列中其余脏任务会被永久滞留。按结算处理；若处理期间又收到更新则保留任务。
+        console.warn(`[ReuseCoordinator] inspect failed for tab ${tabId}`, error);
+        if (!task.dirty) this.tasks.delete(tabId);
+      }
     }
   }
 

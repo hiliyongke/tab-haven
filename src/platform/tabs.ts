@@ -1,5 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
+import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 
 /**
  * tabs 平台适配层：chrome API 映射与查询。
@@ -12,8 +13,10 @@ import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types'
 type ChromeTab = Browser.tabs.Tab;
 type ChromeTabGroup = Browser.tabGroups.TabGroup;
 
-// wxt 生成的 browser 类型对 tabGroups 的 create/remove 以及 update 的
+// wxt 生成的 browser 类型对 tabGroups 的 create 以及 update 的
 // title/color 属性覆盖不全，这里做一次性、受控的类型桥接（集中声明，避免散落的 never 绕过）。
+// 注：chrome.tabGroups 没有 remove API（公开方法仅 get/query/update/move），
+// 解散组的标准做法是 tabs.ungroup 成员，见下方 removeGroup。
 interface TabGroupMutableProps {
   title?: string;
   color?: string;
@@ -21,7 +24,6 @@ interface TabGroupMutableProps {
 }
 const tabGroups = browser.tabGroups as unknown as {
   create: (options: object) => Promise<{ id: number }>;
-  remove: (groupId: number) => Promise<void>;
   update: (groupId: number, updateProperties: TabGroupMutableProps) => Promise<unknown>;
 };
 
@@ -213,9 +215,14 @@ export async function recolorGroup(groupId: number, color: string): Promise<void
   await tabGroups.update(groupId, { color });
 }
 
-/** 删除原生组，组内标签随之解散（不关闭）。 */
+/**
+ * 解散原生组：把组内全部标签移出分组（标签保留不关闭，空组由浏览器自动回收）。
+ * chrome.tabGroups 无 remove API，ungroup 是唯一标准做法。
+ */
 export async function removeGroup(groupId: number): Promise<void> {
-  await tabGroups.remove(groupId);
+  const members = await browser.tabs.query({ groupId });
+  const tabIds = members.map((tab) => tab.id).filter((id): id is number => id !== undefined);
+  if (tabIds.length > 0) await browser.tabs.ungroup(tabIds as [number, ...number[]]);
 }
 
 /** 移动原生组到指定索引（组排序，P1⑤）。 */
@@ -262,32 +269,33 @@ export async function queryAllWindowTabs(): Promise<TabRecord[]> {
   return queriedTabs.map(mapTab);
 }
 
-/** 将当前窗口全部标签的缩放重置为 100%。 */
-export async function resetZoomCurrentWindow(): Promise<number> {
-  const tabs = await browser.tabs.query({ currentWindow: true });
-  let resetCount = 0;
-  for (const tab of tabs) {
-    if (tab.id === undefined) continue;
-    try {
-      const zoom = await browser.tabs.getZoom(tab.id);
-      if (zoom !== 1) {
-        await browser.tabs.setZoom(tab.id, 1);
-        resetCount += 1;
-      }
-    } catch {
-      // 浏览器内部页面（chrome:// 等）无法设置缩放，跳过
-    }
+/**
+ * 批量新建标签并导航（「打开文件夹全部条目」/「恢复快照」等显式打开场景用）。
+ * 每个 URL 先申请复用豁免再创建——显式打开不应被 uniqueUrlTabs 复用引擎合并；
+ * 返回实际创建成功的标签数。
+ */
+export async function createTabsWithUrls(
+  urls: readonly string[],
+  windowId?: number
+): Promise<number> {
+  let target = windowId;
+  if (target === undefined) {
+    const win = await browser.windows.getLastFocused().catch(() => undefined);
+    target = win?.id;
   }
-  return resetCount;
-}
-
-/** 批量新建标签并导航（「打开文件夹全部条目」用）。 */
-export async function createTabsWithUrls(urls: readonly string[]): Promise<void> {
+  let created = 0;
   for (const url of urls) {
     try {
-      await browser.tabs.create({ url, active: false });
+      if (target !== undefined) await grantReuseAllowance(target, url);
+      await browser.tabs.create({
+        url,
+        active: false,
+        ...(target !== undefined ? { windowId: target } : {})
+      });
+      created += 1;
     } catch {
       // 无效 URL 跳过，其余继续
     }
   }
+  return created;
 }

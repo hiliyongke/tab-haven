@@ -28,7 +28,9 @@ export const SearchFocusMessageSchema = z.object({
 /** SW → UI：请求按关键词搜索（右键菜单「搜索此域名」触发，面板未开时先开面板）。 */
 export const SearchDomainMessageSchema = z.object({
   type: z.literal('search-domain'),
-  query: z.string()
+  query: z.string(),
+  /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
+  at: z.number().optional()
 });
 
 /** SW → UI：自动休眠执行完成（通知 UI 显示可撤销提示）。 */
@@ -41,7 +43,15 @@ export const AutoDiscardedMessageSchema = z.object({
 
 /** SW → UI：请求定位当前激活标签（浏览器级快捷键触发）。 */
 export const LocateActiveMessageSchema = z.object({
-  type: z.literal('locate-active')
+  type: z.literal('locate-active'),
+  /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
+  at: z.number().optional()
+});
+
+/** UI → SW：下一次该窗口关闭时跳过关窗自动快照（归档流程已自行留档，防重复保存）。 */
+export const SkipAutoSaveOnceMessageSchema = z.object({
+  type: z.literal('skip-auto-save-once'),
+  windowId: z.number().int()
 });
 
 /** SW → UI 待面板执行动作的挂起队列（面板未开时存储于 storage.session）。 */

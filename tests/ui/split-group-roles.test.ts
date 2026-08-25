@@ -45,7 +45,7 @@ describe('computeSplitGroupRoles', () => {
   });
 
   it('同 splitViewId 但被打散（中间隔其它标签）→ 只对连续段画线', () => {
-    const tabs = [makeTab(1, 5), makeTab(2, 8), makeTab(3, 5)];
+    const tabs = [makeTab(1, 5), makeTab(2), makeTab(3, 5)];
     const roles = computeSplitGroupRoles(tabs);
     // 1 单独一段（画线），2 无分屏，3 单独一段（画线）
     expect(roles.get(1)).toBe('first');

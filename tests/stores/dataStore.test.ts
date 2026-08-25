@@ -64,15 +64,17 @@ describe('dataStore 固定空间事务', () => {
       .addTabsToFolder([makeTab({ id: 1, url: 'https://a.com/', title: 'A' })], folderId);
     expect(first.added).toBe(1);
 
-    // 同 URL 再拖：不新增，算「移动」（条目仍在目标文件夹）
+    // 同 URL 再拖入同一文件夹：已在目标文件夹，不算移动（skipped），条目保持原位
     const second = await useDataStore
       .getState()
       .addTabsToFolder([makeTab({ id: 2, url: 'https://a.com/', title: 'A2' })], folderId);
     expect(second.added).toBe(0);
-    expect(second.moved).toBe(1);
+    expect(second.moved).toBe(0);
+    expect(second.skipped).toBe(1);
 
-    // 全局唯一约束：文件夹内始终只有 1 条
+    // 全局唯一约束：文件夹内始终只有 1 条，且保持原位（不被移到末尾）
     expect(useDataStore.getState().folders[0]!.items).toHaveLength(1);
+    expect(useDataStore.getState().folders[0]!.items[0]!.url).toBe('https://a.com/');
   });
 
   it('addTabsToFolder：非 web 页不加入（skipped）', async () => {

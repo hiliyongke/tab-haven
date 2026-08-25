@@ -71,8 +71,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   es: 'Español',
   pt: 'Português',
   it: 'Italiano',
-  ar: 'العربية',
-  unknown: 'unknown'
+  ar: 'العربية'
 };
 function languageLabel(code: string): string {
   if (code === 'unknown') return i18n.t('sections.unknownLanguage');
@@ -82,6 +81,15 @@ function languageLabel(code: string): string {
 /**
  * 由 openerTabId 构建来源树：把 opener 也在当前集合内的标签挂在父节点下，
  * 其余作为根（depth 0）。返回按 DFS 前序排列的标签与每层缩进深度。
+ *
+ * 健壮性：
+ *  - 迭代式 DFS，避免极端长 opener 链递归栈溢出；
+ *  - opener 自引用（openerTabId === id）按根处理；
+ *  - opener 关系成环（A.opener=B 且 B.opener=A，可用 chrome.tabs.create 构造或
+ *    会话恢复数据异常）时环上节点没有根可达路径，DFS 后按 index 补为 depth 0 根，
+ *    保证任何标签都不会从侧边栏消失；
+ *  - 子节点固定按浏览器顺序（index）排列：树结构按 recency 排序会打散层级，
+ *    因此 sortMode 对 opener 模式不生效（有意取舍）。
  */
 function buildOpenerTree(tabs: readonly TabRecord[]): {
   ordered: TabRecord[];
@@ -96,20 +104,34 @@ function buildOpenerTree(tabs: readonly TabRecord[]): {
   };
   for (const tab of tabs) {
     const opener = tab.openerTabId;
-    const parent = opener !== undefined && byId.has(opener) ? opener : undefined;
+    const parent = opener !== undefined && opener !== tab.id && byId.has(opener) ? opener : undefined;
     pushChild(parent, tab);
   }
+
   const ordered: TabRecord[] = [];
   const depths = new Map<number, number>();
-  const visit = (parentId: number | undefined, depth: number) => {
-    const children = (childrenOf.get(parentId) ?? []).sort((a, b) => a.index - b.index);
-    for (const child of children) {
-      depths.set(child.id, depth);
-      ordered.push(child);
-      visit(child.id, depth + 1);
+  const visited = new Set<number>();
+  const walkRoots = (roots: readonly TabRecord[], depth: number) => {
+    const sorted = roots.filter((tab) => !visited.has(tab.id)).sort((a, b) => a.index - b.index);
+    const stack: Array<{ tab: TabRecord; depth: number }> = [];
+    for (let i = sorted.length - 1; i >= 0; i -= 1) stack.push({ tab: sorted[i]!, depth });
+    while (stack.length > 0) {
+      const { tab, depth: current } = stack.pop()!;
+      if (visited.has(tab.id)) continue;
+      visited.add(tab.id);
+      depths.set(tab.id, current);
+      ordered.push(tab);
+      const children = (childrenOf.get(tab.id) ?? [])
+        .filter((child) => !visited.has(child.id))
+        .sort((a, b) => a.index - b.index);
+      for (let i = children.length - 1; i >= 0; i -= 1) {
+        stack.push({ tab: children[i]!, depth: current + 1 });
+      }
     }
   };
-  visit(undefined, 0);
+  walkRoots(childrenOf.get(undefined) ?? [], 0);
+  // 成环/孤儿节点兜底：按 index 补为 depth 0 根。
+  if (visited.size < tabs.length) walkRoots(tabs, 0);
   return { ordered, depths };
 }
 
@@ -212,10 +234,8 @@ export function deriveSections({
   const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold });
 
   for (const group of siteGroups) {
-    // 多子域时标题用注册域（子域以 subgroups 折叠展示）；
-    // 单子域时标题直接用子域标签，subgroups 为空保持扁平。
-    const title =
-      group.subgroups.length > 0 ? group.key.value : group.key.label;
+    // 标题统一用展示标签（label 已做 IDN→Unicode；value 保留 punycode 仅作比较键）。
+    const title = group.key.label;
     sections.push({
       kind: 'site',
       key: `site-${group.key.value}`,

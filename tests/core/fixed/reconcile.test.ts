@@ -67,6 +67,27 @@ describe('reconcilePendingItems', () => {
     expect(folders[0]?.items[0]?.title).toBe('加载中…');
   });
 
+  it('仅 favicon 变化也要同步（标题不变时）', () => {
+    const folder = {
+      ...createFolder('A'),
+      items: [
+        {
+          ...createFolderItem({ url: '', title: '加载中…' }),
+          id: 'item1',
+          pendingTabId: 10,
+          favIconUrl: 'https://a.com/old.ico'
+        }
+      ]
+    };
+    const tabs = [
+      makeTab({ id: 10, url: 'about:blank', title: '加载中…', favIconUrl: 'https://a.com/new.ico' })
+    ];
+    const { folders, changed } = reconcilePendingItems([folder], tabs);
+    expect(changed).toBe(true);
+    expect(folders[0]?.items[0]?.favIconUrl).toBe('https://a.com/new.ico');
+    expect(folders[0]?.items[0]?.title).toBe('加载中…');
+  });
+
   it('转正时同 URL 全局去重', () => {
     const folder = {
       ...createFolder('A'),

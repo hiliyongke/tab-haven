@@ -32,6 +32,8 @@ describe('undoStore', () => {
     useTabStore.setState({
       tabs: [],
       groups: [],
+      // undo 需要当前窗口 id（恢复目标窗口），缺省会提前返回不弹栈。
+      currentWindowId: 1,
       closeTabs: async (tabIds: readonly number[]) => [...tabIds]
     });
   });

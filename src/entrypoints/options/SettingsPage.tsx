@@ -7,6 +7,7 @@ import type { Settings } from '@/core/schema/models';
 import { Button } from '@/ui/common/Button';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { Select } from '@/ui/common/Select';
 import { Toggle } from '@/ui/common/Toggle';
 
@@ -17,7 +18,7 @@ type SidePanelLayoutApi = { getLayout?: () => Promise<{ side: 'left' | 'right' }
 function SectionCount({ count }: { count?: number }) {
   if (count === undefined) return null;
   return (
-    <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs leading-none text-gray-400">
+    <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs leading-none text-gray-500">
       {count}
     </span>
   );
@@ -41,7 +42,7 @@ function Section({
   if (!collapsible) {
     return (
       <section className="mb-8">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-600">
           <span>{title}</span>
           <SectionCount count={count} />
         </h2>
@@ -53,7 +54,7 @@ function Section({
   }
   return (
     <details className="group mb-8" open={forceOpen}>
-      <summary className="mb-3 flex cursor-pointer items-center justify-between text-sm font-semibold uppercase tracking-wide text-gray-500 select-none">
+      <summary className="mb-3 flex cursor-pointer items-center justify-between text-sm font-semibold tracking-wide text-gray-600 select-none">
         <span className="flex items-center gap-2">
           {title}
           <SectionCount count={count} />
@@ -116,6 +117,7 @@ function WhitelistEditor({
           type="text"
           className="w-32 rounded border border-gray-300 bg-surface px-2 py-1 text-xs text-gray-800 outline-none focus:border-accent-500"
           placeholder={t('settings.whitelistPlaceholder')}
+          aria-label={t('settings.whitelistPlaceholder')}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -135,7 +137,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
     <div className="flex items-center justify-between gap-4 px-4 py-3">
       <div className="min-w-0">
         <div className="text-sm text-gray-800">{label}</div>
-        {hint && <div className="mt-0.5 text-2xs text-gray-500">{hint}</div>}
+        {hint && <div className="mt-0.5 text-2xs text-gray-600">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -155,6 +157,7 @@ type BooleanSettingKey =
   | 'rowActionsVisible'
   | 'pinyinSearch'
   | 'persistUndo'
+  | 'autoSaveSnapshots'
   | 'uniqueUrlTabs'
   | 'searchAllWindows'
   | 'discardNotifyEnabled'
@@ -245,6 +248,7 @@ function SettingRow({ spec, settings, update }: { spec: SettingSpec; settings: S
           value={String(settings[spec.key])}
           onChange={(v) => update(spec.key, spec.parse ? spec.parse(v) : v)}
           options={spec.options}
+          ariaLabel={label}
         />
       </Row>
     );
@@ -254,6 +258,118 @@ function SettingRow({ spec, settings, update }: { spec: SettingSpec; settings: S
     <Row label={label} hint={spec.hintKey ? t(spec.hintKey) : undefined}>
       {spec.render({ settings, update, t })}
     </Row>
+  );
+}
+
+/** 主题色预设色板（与 main.css data-hue 预设一一对应，hex 取各预设浅色 500 主色）。 */
+const COLOR_THEME_SWATCHES = [
+  { id: 'forest', labelKey: 'settings.colorThemeForest', hex: '#347554' },
+  { id: 'ocean', labelKey: 'settings.colorThemeOcean', hex: '#3a6ea8' },
+  { id: 'violet', labelKey: 'settings.colorThemeViolet', hex: '#6f4ba6' },
+  { id: 'sunset', labelKey: 'settings.colorThemeSunset', hex: '#b85f22' },
+  { id: 'mono', labelKey: 'settings.colorThemeMono', hex: '#4a524a' }
+] as const;
+
+/** 预设画像：一键套用一组相关设置，降低 33 项设置的决策疲劳（P2 高价值）。 */
+type PresetProfile = {
+  id: 'researcher' | 'saver' | 'efficiency';
+  nameKey: string;
+  descKey: string;
+  patch: Partial<Settings>;
+};
+
+const PRESET_PROFILES: PresetProfile[] = [
+  {
+    id: 'researcher',
+    nameKey: 'presets.researcher',
+    descKey: 'presets.researcherDesc',
+    patch: { groupMode: 'site', aggregationThreshold: 2, sortMode: 'recency', pinyinSearch: true, searchAllWindows: false }
+  },
+  {
+    id: 'saver',
+    nameKey: 'presets.saver',
+    descKey: 'presets.saverDesc',
+    patch: { autoDiscardEnabled: true, autoDiscardMinutes: 30, discardNotifyEnabled: true }
+  },
+  {
+    id: 'efficiency',
+    nameKey: 'presets.efficiency',
+    descKey: 'presets.efficiencyDesc',
+    patch: { rowActionsVisible: true, closeOnMiddleClick: true, pinyinSearch: true, searchAllWindows: false }
+  }
+];
+
+function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
+  const { t } = useTranslation();
+  const updateSettings = useDataStore((state) => state.updateSettings);
+  return (
+    <section className="mb-8 rounded-lg border border-gray-200 bg-surface p-4">
+      <h2 className="mb-1 text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
+      <p className="mb-3 text-2xs text-gray-600">{t('presets.hint')}</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {PRESET_PROFILES.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            className="flex flex-col items-start gap-1 rounded-lg border border-gray-200 bg-surface px-3 py-2 text-left transition-base hover:border-accent-400 hover:bg-accent-50"
+            onClick={() => {
+              void updateSettings(preset.patch);
+              onApplied(t('presets.applied', { name: t(preset.nameKey) }));
+            }}
+          >
+            <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
+            <span className="text-2xs leading-snug text-gray-600">{t(preset.descKey)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** 能力发现清单（P0 可发现性）：用图标 + 一句话 +「试用」把藏得深的能力推到用户面前。 */
+const CAPABILITIES = [
+  { icon: Icons.menu, titleKey: 'cap.contextMenuTitle', howKey: 'cap.contextMenuHow' },
+  { icon: Icons.search, titleKey: 'cap.omniboxTitle', howKey: 'cap.omniboxHow' },
+  { icon: Icons.shortcuts, titleKey: 'cap.paletteTitle', howKey: 'cap.paletteHow' },
+  { icon: Icons.pin, titleKey: 'cap.pinTitle', howKey: 'cap.pinHow' },
+  { icon: Icons.snapshot, titleKey: 'cap.snapshotTitle', howKey: 'cap.snapshotHow' },
+  { icon: Icons.history, titleKey: 'cap.undoTitle', howKey: 'cap.undoHow' }
+] as const;
+
+function CapabilitiesGuide() {
+  const { t } = useTranslation();
+  return (
+    <Section title={t('settings.capabilitiesGuide')}>
+      <div className="divide-y divide-gray-100">
+        {CAPABILITIES.map((cap) => (
+          <div key={cap.titleKey} className="flex items-center gap-3 px-4 py-3">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-50 text-accent-600">
+              <Icon d={cap.icon} className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-gray-800">{t(cap.titleKey)}</p>
+              <p className="mt-0.5 text-2xs leading-snug text-gray-600">{t(cap.howKey)}</p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const win = await browser.windows.getCurrent();
+                    if (win.id !== undefined) await browser.sidePanel.open({ windowId: win.id });
+                  } catch {
+                    /* 侧边栏打开失败不阻断设置页 */
+                  }
+                })();
+              }}
+            >
+              {t('settings.capTry')}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 
@@ -373,6 +489,28 @@ export function SettingsPage() {
           ]
         },
         {
+          kind: 'custom',
+          labelKey: 'settings.colorTheme',
+          hintKey: 'settings.colorThemeHint',
+          render: ({ settings, update, t }) => (
+            <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t('settings.colorTheme')}>
+              {COLOR_THEME_SWATCHES.map((swatch) => (
+                <input
+                  key={swatch.id}
+                  type="radio"
+                  name="colorTheme"
+                  checked={settings.colorTheme === swatch.id}
+                  title={t(swatch.labelKey)}
+                  aria-label={t(swatch.labelKey)}
+                  className="h-5 w-5 cursor-pointer appearance-none rounded-full border border-gray-300 transition-base checked:ring-2 checked:ring-gray-400 checked:ring-offset-1 hover:scale-110"
+                  style={{ backgroundColor: swatch.hex }}
+                  onChange={() => update('colorTheme', swatch.id)}
+                />
+              ))}
+            </div>
+          )
+        },
+        {
           kind: 'toggle',
           key: 'showPinnedStrip',
           labelKey: 'settings.showPinnedStrip',
@@ -437,7 +575,7 @@ export function SettingsPage() {
         {
           kind: 'custom',
           labelKey: 'settings.language',
-          render: ({ update }) => (
+          render: ({ update, t }) => (
             <Select
               value={settings.language ?? 'zh-CN'}
               onChange={(v) => update('language', v)}
@@ -445,6 +583,7 @@ export function SettingsPage() {
                 { value: 'zh-CN', label: '简体中文' },
                 { value: 'en', label: 'English' }
               ]}
+              ariaLabel={t('settings.language')}
             />
           )
         },
@@ -514,12 +653,13 @@ export function SettingsPage() {
           kind: 'custom',
           labelKey: 'settings.autoDiscardMinutes',
           visible: (s) => s.autoDiscardEnabled,
-          render: ({ settings, update }) => (
+          render: ({ settings, update, t }) => (
             <input
               type="number"
               min={5}
               max={240}
               value={settings.autoDiscardMinutes}
+              aria-label={t('settings.autoDiscardMinutes')}
               onChange={(e) =>
                 update('autoDiscardMinutes', Math.min(240, Math.max(5, Number(e.target.value) || 30)))
               }
@@ -646,12 +786,35 @@ export function SettingsPage() {
           key: 'persistUndo',
           labelKey: 'settings.persistUndo',
           hintKey: 'settings.persistUndoHint'
-        }
+        },
+        {
+          kind: 'toggle',
+          key: 'autoSaveSnapshots',
+          labelKey: 'settings.autoSaveSnapshots',
+          hintKey: 'settings.autoSaveSnapshotsHint'
+        },
+        {
+          kind: 'select',
+          key: 'maxAutoSnapshots',
+          labelKey: 'settings.maxAutoSnapshots',
+          hintKey: 'settings.maxAutoSnapshotsHint',
+          visible: (s) => s.autoSaveSnapshots,
+          parse: (v) => Number(v),
+          options: [
+            { value: '5', label: '5' },
+            { value: '10', label: '10' },
+            { value: '20', label: '20' },
+            { value: '30', label: '30' },
+            { value: '50', label: '50' }
+          ]
+        },
       ]
     }
   ];
 
   const isSearching = settingsSearch.trim().length > 0;
+  // 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl+Shift
+  const isMac = navigator.platform.toUpperCase().includes('MAC');
   const matchesSearch = (spec: SettingSpec): boolean => {
     if (!isSearching) return true;
     const q = settingsSearch.trim().toLowerCase();
@@ -669,7 +832,7 @@ export function SettingsPage() {
           </span>
           <div>
             <h1 className="text-lg font-semibold text-gray-900">{t('settings.title')}</h1>
-            <p className="mt-0.5 text-2xs text-gray-500">{t('settings.subtitle')}</p>
+            <p className="mt-0.5 text-2xs text-gray-600">{t('settings.subtitle')}</p>
           </div>
         </div>
         <Button variant="danger-ghost" onClick={() => setConfirmingReset(true)}>
@@ -687,6 +850,16 @@ export function SettingsPage() {
           aria-label={t('settings.searchPlaceholder')}
         />
       </div>
+
+      <PresetsPanel onApplied={setTransferStatus} />
+
+      <CapabilitiesGuide />
+
+      <Section title={t('fixedMap.title')}>
+        <div className="p-4">
+          <FixedConceptsMap />
+        </div>
+      </Section>
 
       {sections.map((section) => {
         const specs = section.specs
@@ -709,23 +882,22 @@ export function SettingsPage() {
       })}
 
       <Section title={t('settings.shortcuts')}>
-        <Row label="Ctrl+Shift+F" hint={t('settings.shortcutFocusSearch')}>
-          <span className="text-2xs text-gray-400">{t('settings.shortcutBrowser')}</span>
-        </Row>
-        <Row label="Ctrl+Shift+O" hint={t('settings.shortcutOpenPanel')}>
-          <span className="text-2xs text-gray-400">{t('settings.shortcutBrowser')}</span>
-        </Row>
-        <Row label="Ctrl+Shift+L" hint={t('settings.shortcutLocateActive')}>
-          <span className="text-2xs text-gray-400">{t('settings.shortcutBrowser')}</span>
-        </Row>
-        <Row label="Ctrl+Shift+U" hint={t('settings.shortcutDiscardInactive')}>
-          <span className="text-2xs text-gray-400">{t('settings.shortcutBrowser')}</span>
-        </Row>
+        {/* 浏览器命令快捷键按平台渲染修饰键：mac 显示 ⌃⇧ 符号，Windows/Linux 显示 Ctrl+Shift 文案 */}
+        {([
+          ['F', t('settings.shortcutFocusSearch')],
+          ['O', t('settings.shortcutOpenPanel')],
+          ['L', t('settings.shortcutLocateActive')],
+          ['U', t('settings.shortcutDiscardInactive')]
+        ] as const).map(([key, hint]) => (
+          <Row key={key} label={isMac ? `⌃⇧${key}` : `Ctrl+Shift+${key}`} hint={hint}>
+            <span className="text-2xs text-gray-500">{t('settings.shortcutBrowser')}</span>
+          </Row>
+        ))}
         <Row label="⌘K / Ctrl+K" hint={t('settings.shortcutPanelSearch')}>
-          <span className="text-2xs text-gray-400">{t('settings.shortcutPanel')}</span>
+          <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
         </Row>
         <Row label="⌘J / Ctrl+J" hint={t('settings.shortcutLocatePanel')}>
-          <span className="text-2xs text-gray-400">{t('settings.shortcutPanel')}</span>
+          <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
         </Row>
         <Row label={t('settings.shortcutCustomize')} hint={t('settings.shortcutCustomizeHint')}>
           <Button variant="secondary" onClick={openShortcutSettings}>

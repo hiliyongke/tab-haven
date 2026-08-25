@@ -46,13 +46,15 @@ export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
  *   capabilities 进阶能力开关
  */
 export const SettingsSchema = z.object({
-  themePreference: z.enum(['system', 'light', 'dark']),
+  themePreference: z.enum(['system', 'light', 'dark']).default('system'),
+  /** 主题色预设：forest 石墨绿（默认）/ ocean 雾霾蓝 / violet 暮山紫 / sunset 暖阳橙 / mono 中性灰。 */
+  colorTheme: z.enum(['forest', 'ocean', 'violet', 'sunset', 'mono']).default('forest'),
   /** 语言覆盖（BCP-47）。宽松校验兼容旧数据，仅约束长度与格式。 */
   language: z.string().min(2).max(32).optional(),
   /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
-  aggregationThreshold: z.number().int().min(1).max(5),
+  aggregationThreshold: z.number().int().min(1).max(5).default(2),
   /** 标签顺序双向同步：侧边栏拖拽重排写回原生顺序，原生改动反向同步。 */
-  tabOrderSync: z.boolean(),
+  tabOrderSync: z.boolean().default(true),
 
   // —— 外观 appearance ——
   /** 顶部固定磁贴条（固定空间）显示开关。 */
@@ -89,6 +91,12 @@ export const SettingsSchema = z.object({
   autoGroupNative: z.boolean().default(false),
   /** 撤销栈深度（FIFO 淘汰上限）。 */
   undoStackLimit: z.number().int().min(5).max(50).default(10),
+  /** 关窗自动保存：窗口关闭时自动存为快照（画像二生死线兜底）。 */
+  autoSaveSnapshots: z.boolean().default(true),
+  /** 自动快照最大保留数（超出淘汰最旧）。 */
+  maxAutoSnapshots: z.number().int().min(1).max(50).default(10),
+  /** 命名快照最大保留数（防存储膨胀）。 */
+  snapshotLimit: z.number().int().min(1).max(100).default(30),
   /** 状态提示条显示时长（秒）。 */
   toastDurationSec: z.number().int().min(3).max(15).default(7),
   /** 标签行操作按钮常显（关闭则悬停显示）。 */
@@ -112,12 +120,17 @@ export const SettingsSchema = z.object({
   /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
   contextMenusEnabled: z.boolean().default(true),
   /** 地址栏命令（th <关键词>）总开关。 */
-  omniboxEnabled: z.boolean().default(true)
+  omniboxEnabled: z.boolean().default(true),
+  /** 首启引导是否已看过（仅首次展示交互式引导）。 */
+  onboarded: z.boolean().default(false),
+  /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
+  tipSeen: z.boolean().default(false)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
   themePreference: 'system',
+  colorTheme: 'forest',
   language: undefined,
   aggregationThreshold: 2,
   tabOrderSync: true,
@@ -136,6 +149,9 @@ export const DEFAULT_SETTINGS: Settings = {
   groupMode: 'site',
   autoGroupNative: false,
   undoStackLimit: 10,
+  autoSaveSnapshots: true,
+  maxAutoSnapshots: 10,
+  snapshotLimit: 30,
   toastDurationSec: 7,
   rowActionsVisible: false,
   pinyinSearch: true,
@@ -147,7 +163,9 @@ export const DEFAULT_SETTINGS: Settings = {
   reuseNotifyEnabled: true,
   badgeMode: 'auto',
   contextMenusEnabled: true,
-  omniboxEnabled: true
+  omniboxEnabled: true,
+  onboarded: false,
+  tipSeen: false
 };
 
 /** 撤销栈条目（Phase 5 使用，先行定义以固定数据形态）。 */
@@ -171,12 +189,39 @@ export const UndoBatchSchema = z.object({
 export type UndoBatch = z.infer<typeof UndoBatchSchema>;
 
 /** 自动休眠批次台账：SW 自动休眠后记录，UI 据此提供「全部唤醒」撤销。 */
-export const AutoDiscardBatchSchema = z.object({
-  tabIds: z.array(z.number().int()),
-  at: z.number(),
-  count: z.number().int()
-});
+export const AutoDiscardBatchSchema = z
+  .object({
+    tabIds: z.array(z.number().int()),
+    at: z.number(),
+    count: z.number().int()
+  })
+  // count 与 tabIds.length 冗余，入库时锁定一致性，防脏数据带偏消费方。
+  .refine((batch) => batch.count === batch.tabIds.length, {
+    message: 'count must equal tabIds.length'
+  });
 export type AutoDiscardBatch = z.infer<typeof AutoDiscardBatchSchema>;
+
+/** 快照内单条标签（轻量，仅恢复所需字段）。 */
+export const SnapshotTabSchema = z.object({
+  url: z.string(),
+  title: z.string().default(''),
+  favIconUrl: z.string().optional(),
+  pinned: z.boolean().default(false)
+});
+export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
+
+/** 会话快照（命名快照 + 关窗自动保存），本地优先、零账号。 */
+export const SnapshotSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** manual 用户手动命名 / auto 关窗自动保存 / archive 归档中心（关闭但留档）/ space 轻量空间（复用快照）。 */
+  origin: z.enum(['manual', 'auto', 'archive', 'space']),
+  createdAt: z.number(),
+  windowId: z.number().optional(),
+  tabCount: z.number().int().nonnegative(),
+  tabs: z.array(SnapshotTabSchema)
+});
+export type Snapshot = z.infer<typeof SnapshotSchema>;
 
 /** 导出文件格式（FR-D9.1）。 */
 export const ExportFileSchema = z.object({

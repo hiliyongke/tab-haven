@@ -27,7 +27,7 @@ import {
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
-import { AllowDuplicateOnceMessageSchema } from '@/platform/messages';
+import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import {
   collapseRepository,
   foldersRepository,
@@ -124,9 +124,9 @@ interface DataState {
  * 高频写合并器：同一写入批次（上一次写完成前到达的调用）只落盘最终值，
  * 消除拖拽重排等连续操作时的 chrome.storage 全量写入放大。
  * 语义：调用方 await 的 Promise 在“本批最终值已落盘”后 resolve。
- * 注意：DataRepository.write 内部已捕获错误，此合并器不改变错误处理语义。
+ * 注意：DataRepository.write 内部已捕获错误并返回成败标志，此合并器不改变该语义。
  */
-function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<void> }) {
+function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<unknown> }) {
   let inflight: Promise<void> | null = null;
   let queued: T | undefined;
   let hasQueued = false;
@@ -151,16 +151,6 @@ function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<void> }) 
 
 function fixedItemKey(url: string): string {
   return webComparisonKey(url, undefined) ?? url;
-}
-
-/** 向 background 申请一次复用豁免（显式打开/复制的标签不被自动合并）。 */
-async function grantReuseAllowance(windowId: number, url: string): Promise<void> {
-  const message = AllowDuplicateOnceMessageSchema.parse({
-    type: 'allow-duplicate-once',
-    windowId,
-    url
-  });
-  await browser.runtime.sendMessage(message).catch(() => {});
 }
 
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
@@ -199,8 +189,9 @@ export const useDataStore = create<DataState>()((set, get) => {
   const syncSettingsFromStorage = async (): Promise<void> => {
     try {
       const next = await settingsRepository.read();
-      set({ settings: next });
-      applyTheme(next.themePreference);
+      // 回显守卫：本页面自身写入触发的回放内容相同，跳过 set 避免双倍渲染。
+      if (JSON.stringify(next) !== JSON.stringify(get().settings)) set({ settings: next });
+      applyTheme(next.themePreference, next.colorTheme);
     } catch {
       // 读取失败保持当前状态
     }
@@ -228,47 +219,65 @@ export const useDataStore = create<DataState>()((set, get) => {
     if (initialized) return;
     initialized = true;
     startSettingsWatcher();
-    const [folders, pins, collapsedSites, settings, session, seeded] = await Promise.all([
-      foldersRepository.read(),
-      pinsRepository.read(),
-      collapseRepository.read(),
-      settingsRepository.read(),
-      readSession(),
-      seededRepository.read()
-    ]);
-    let effectiveFolders = folders;
-    let effectivePins = pins;
-    let effectiveSettings = settings;
-    if (!seeded) {
-      // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）
-      const mirror = await syncMirror.pull();
-      if (mirror) {
-        const parsedFolders = FixedFolderSchema.array().safeParse(mirror.folders);
-        const parsedPins = PersistentPinSchema.array().safeParse(mirror.pins);
-        const parsedSettings = SettingsSchema.safeParse(mirror.settings);
-        if (parsedFolders.success && folders.length === 0) effectiveFolders = parsedFolders.data;
-        if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
-        if (parsedSettings.success) effectiveSettings = parsedSettings.data;
+    try {
+      const [folders, pins, collapsedSites, settings, session, seeded] = await Promise.all([
+        foldersRepository.read(),
+        pinsRepository.read(),
+        collapseRepository.read(),
+        settingsRepository.read(),
+        readSession(),
+        seededRepository.read()
+      ]);
+      let effectiveFolders = folders;
+      let effectivePins = pins;
+      let effectiveSettings = settings;
+      if (!seeded) {
+        // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）
+        const mirror = await syncMirror.pull();
+        if (mirror) {
+          const parsedFolders = FixedFolderSchema.array().safeParse(mirror.folders);
+          const parsedPins = PersistentPinSchema.array().safeParse(mirror.pins);
+          const parsedSettings = SettingsSchema.safeParse(mirror.settings);
+          if (parsedFolders.success && folders.length === 0) effectiveFolders = parsedFolders.data;
+          if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
+          if (parsedSettings.success) effectiveSettings = parsedSettings.data;
+        }
+        await seededRepository.write(true);
+        if (effectiveFolders !== folders) await foldersRepository.write(effectiveFolders);
+        if (effectivePins !== pins) await pinsRepository.write(effectivePins);
+        if (effectiveSettings !== settings) await settingsRepository.write(effectiveSettings);
       }
-      await seededRepository.write(true);
-      if (effectiveFolders !== folders) await foldersRepository.write(effectiveFolders);
-      if (effectivePins !== pins) await pinsRepository.write(effectivePins);
-      if (effectiveSettings !== settings) await settingsRepository.write(effectiveSettings);
+      set({
+        folders: effectiveFolders,
+        pins: dedupePins(effectivePins),
+        collapsedSites,
+        settings: effectiveSettings,
+        boundTabIds: Object.values(session.itemTabBindings),
+        ready: true
+      });
+      // 数据加载后立即同步主题镜像，确保防闪烁初始化与最新设置一致（单一数据源）。
+      applyTheme(effectiveSettings.themePreference, effectiveSettings.colorTheme);
+      // 回显守卫：本页面自身写入触发的 watch 回放内容相同，直接跳过，避免双倍渲染。
+      foldersRepository.watch((value) => {
+        if (JSON.stringify(value) === JSON.stringify(get().folders)) return;
+        set({ folders: value });
+      });
+      pinsRepository.watch((value) => {
+        const next = dedupePins(value);
+        if (JSON.stringify(next) === JSON.stringify(get().pins)) return;
+        set({ pins: next });
+      });
+      collapseRepository.watch((value) => {
+        if (JSON.stringify(value) === JSON.stringify(get().collapsedSites)) return;
+        set({ collapsedSites: value });
+      });
+      // 设置变更由 startSettingsWatcher 统一处理（重读 + 主题应用），不再重复 watch。
+    } catch (error) {
+      // 初始化失败：回滚守卫以允许重试（否则面板永久停在 Loading 骨架屏）。
+      initialized = false;
+      set({ ready: false });
+      throw error;
     }
-    set({
-      folders: effectiveFolders,
-      pins: dedupePins(effectivePins),
-      collapsedSites,
-      settings: effectiveSettings,
-      boundTabIds: Object.values(session.itemTabBindings),
-      ready: true
-    });
-    // 数据加载后立即同步主题镜像，确保防闪烁初始化与最新设置一致（单一数据源）。
-    applyTheme(settings.themePreference);
-    foldersRepository.watch((value) => set({ folders: value }));
-    pinsRepository.watch((value) => set({ pins: dedupePins(value) }));
-    collapseRepository.watch((value) => set({ collapsedSites: value }));
-    settingsRepository.watch((value) => set({ settings: value }));
   },
 
   createFolder: async (name) => {
@@ -349,19 +358,29 @@ export const useDataStore = create<DataState>()((set, get) => {
       ...folder,
       items: folder.items.filter((item) => {
         const key = fixedItemKey(item.url);
-        return !duplicateItemIds.has(item.id) && !comparisonKeys.has(key);
+        if (duplicateItemIds.has(item.id)) return false;
+        if (!comparisonKeys.has(key)) return true;
+        // 同文件夹内已存在的条目保持原位（重复拖入同文件夹不应把它移到末尾）。
+        return folder.id === folderId && selectedExisting.get(key)?.id === item.id;
       })
     }));
     const newItems = [...candidates.entries()]
       .filter(([key]) => !selectedExisting.has(key))
       .map(([, entry]) => createFolderItem(entry));
-    const existingItems = [...selectedExisting.values()];
+    // 仅跨文件夹移动的条目追加到目标文件夹末尾；同文件夹条目已在原位保留。
+    const movedItems = [...comparisonKeys]
+      .map((key) => existingByKey.get(key))
+      .filter(
+        (existing): existing is { folderId: string; item: FixedFolderItem } =>
+          existing !== undefined && existing.folderId !== folderId
+      )
+      .map((existing) => existing.item);
     const next = foldersWithoutCandidates.map((folder) =>
       folder.id === folderId
         ? {
             ...folder,
             collapsed: false,
-            items: [...folder.items, ...existingItems, ...newItems]
+            items: [...folder.items, ...movedItems, ...newItems]
           }
         : folder
     );
@@ -496,9 +515,12 @@ export const useDataStore = create<DataState>()((set, get) => {
     // 3) 新建并绑定
     if (windowId === undefined) return;
     const created = await createNewTabPlatform(windowId);
-    if (item.url) await updateTabUrl(created.id, item.url);
-    // 豁免复用：显式打开的固定项不允许被自动合并（与 RestoreEngine 一致）
-    await grantReuseAllowance(windowId, item.url);
+    // 豁免复用：显式打开的固定项不允许被自动合并（与 RestoreEngine 一致）。
+    // 须在导航前发放（onUpdated 先到时令牌未就位会被合并），创建失败则不发放（避免令牌残留误豁免）。
+    if (item.url) {
+      await grantReuseAllowance(windowId, item.url);
+      await updateTabUrl(created.id, item.url);
+    }
     const result = await mutateSession((session) => ({
       itemTabBindings: { ...session.itemTabBindings, [item.id]: created.id }
     }));
@@ -624,9 +646,9 @@ export const useDataStore = create<DataState>()((set, get) => {
     }
     if (windowId === undefined) return;
     const created = await createNewTabPlatform(windowId);
-    await updateTabUrl(created.id, pin.url);
-    // 豁免复用：显式打开的固定图标不允许被自动合并
+    // 豁免复用：显式打开的固定图标不允许被自动合并；须在导航前发放（同 openSavedItem）。
     await grantReuseAllowance(windowId, pin.url);
+    await updateTabUrl(created.id, pin.url);
     // togglePinned 为翻转语义：传入「当前未固定 false」→ 翻转为固定。
     await togglePinnedPlatform(created.id, false);
   },
@@ -653,7 +675,7 @@ export const useDataStore = create<DataState>()((set, get) => {
   resetSettings: async () => {
     await settingsRepository.write(DEFAULT_SETTINGS);
     set({ settings: DEFAULT_SETTINGS });
-    applyTheme(DEFAULT_SETTINGS.themePreference);
+    applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
     scheduleMirror(get());
     broadcastSettingsSynced();
   },
@@ -687,7 +709,7 @@ export const useDataStore = create<DataState>()((set, get) => {
       collapsedSites: data.siteCollapse,
       settings: data.settings
     });
-    applyTheme(data.settings.themePreference);
+    applyTheme(data.settings.themePreference, data.settings.colorTheme);
     scheduleMirror(get());
     broadcastSettingsSynced();
   },

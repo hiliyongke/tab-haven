@@ -17,6 +17,13 @@ export interface HostClassification {
 
 const IPV4_PATTERN = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
+/** 段值 0-255 校验：WHATWG URL 把 999.1.2.3 这类非法 IPv4 当域名解析，不能误判为 ip。 */
+function isValidIpv4(hostname: string): boolean {
+  return (
+    IPV4_PATTERN.test(hostname) && hostname.split('.').every((segment) => Number(segment) <= 255)
+  );
+}
+
 /** 托管公共后缀清单（业务规则，随产品版本维护）。 */
 export const HOSTED_PUBLIC_SUFFIXES: ReadonlySet<string> = new Set([
   'blogspot.com',
@@ -36,7 +43,7 @@ export function isLocalHost(hostname: string): boolean {
 }
 
 export function isIpHost(hostname: string): boolean {
-  return IPV4_PATTERN.test(hostname) || hostname.includes(':');
+  return isValidIpv4(hostname) || hostname.includes(':');
 }
 
 export function classifyHost(hostname: string): HostClassification {

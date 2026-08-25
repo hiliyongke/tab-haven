@@ -1,28 +1,21 @@
 import type { ReactNode } from 'react';
 
 /**
- * 行尾操作容器：默认悬停/聚焦时从 0 宽度展开（与行 hover 状态联动）；
- * forceVisible 时常显（设置「操作按钮常显」）。
- * TabRow 与固定条目行共用同一展开逻辑，此前为逐字相同的长 className。
+ * 行内操作按钮容器。
+ * - 默认（forceVisible=false）：绝对定位浮层，悬停/聚焦时 opacity 淡入，
+ *   不参与布局 —— 标题区零位移（替代旧 w-0→w-auto 的宽度挤压与不可过渡问题），
+ *   左缘用渐变淡出到行底色（--row-bg，由各状态规则同步赋值），盖住长标题不突兀；
+ * - forceVisible：回归静态占位（用户设置"操作按钮常显"时保留布局宽度）。
  */
 export function RowActions({
-  children,
-  forceVisible = false
+  forceVisible = false,
+  children
 }: {
-  children: ReactNode;
-  /** 常显操作按钮（否则仅悬停/聚焦时展开）。 */
   forceVisible?: boolean;
+  children: ReactNode;
 }) {
-  return (
-    <span
-      className={
-        'flex shrink-0 items-center gap-0.5 overflow-hidden transition-all duration-150' +
-        (forceVisible
-          ? ' w-auto opacity-100'
-          : ' w-0 opacity-0 group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100')
-      }
-    >
-      {children}
-    </span>
-  );
+  if (forceVisible) {
+    return <span className="flex shrink-0 items-center gap-0.5">{children}</span>;
+  }
+  return <span className="row-actions">{children}</span>;
 }

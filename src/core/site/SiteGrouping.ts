@@ -1,6 +1,7 @@
 import type { TabRecord } from '@/core/tab-types';
 import type { SiteKey } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
+import { domainToUnicode } from '@/core/url/punycode';
 
 /**
  * 站点聚合：把一组标签按归组键聚合为"站点组 + 独立标签"。
@@ -122,7 +123,7 @@ export function aggregateBySite(
         groups.push({
           key: {
             value,
-            label: value,
+            label: domainToUnicode(value),
             registrableDomain: bucket.registrableDomain,
             subdomain: sub
           },
@@ -136,17 +137,25 @@ export function aggregateBySite(
         subEntries.length > 1
           ? subEntries.map(([sub, subTabs]) => ({
               subdomain: sub,
-              label: subLabel(sub, bucket.registrableDomain),
+              label: domainToUnicode(subLabel(sub, bucket.registrableDomain)),
               tabs: subTabs
             }))
           : [];
+      // 注：tabs 按子域块排序（块内按 index），非全局 index——组内展示与子分组一致，属有意取舍。
       const flat = subEntries.flatMap(([, subTabs]) => subTabs);
+      // 单子域：标题用子域多级标签（cloud.tencent.com），避免裸注册域丢失去子域信息；
+      // 多子域：父级用注册域根（tencent.com）作为集合标题，子域在组内折叠展示。
+      const rootSub = subEntries[0]?.[0] ?? '';
+      const title =
+        subEntries.length === 1
+          ? subLabel(rootSub, bucket.registrableDomain)
+          : bucket.registrableDomain;
       groups.push({
         key: {
-          value: bucket.registrableDomain,
-          label: bucket.registrableDomain,
+          value: title,
+          label: domainToUnicode(title),
           registrableDomain: bucket.registrableDomain,
-          subdomain: ''
+          subdomain: subEntries.length === 1 ? rootSub : ''
         },
         tabs: flat,
         subgroups

@@ -14,6 +14,8 @@ import {
   togglePinned as togglePinnedPlatform
 } from '@/platform/tabs';
 import { TabSyncService } from '@/platform/sync/TabSyncService';
+import { webComparisonKey } from '@/core/url/UrlInspector';
+import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { useDataStore } from '@/stores/dataStore';
 
 /**
@@ -27,8 +29,6 @@ interface TabState {
   tabs: readonly TabRecord[];
   groups: readonly TabGroupRecord[];
   currentWindowId: number | undefined;
-  /** 快照代数（来自 TabSyncService，用于判断数据新鲜度）。 */
-  generation: number;
   /** 当前浏览器高亮（多选区）的标签 id 集合，与 tabs.onHighlighted 同步。 */
   highlightedIds: ReadonlySet<number>;
   /** 切换标签（点击行为）。 */
@@ -67,7 +67,6 @@ export const useTabStore = create<TabState>()((set, get) => ({
   tabs: [],
   groups: [],
   currentWindowId: undefined,
-  generation: 0,
   highlightedIds: new Set<number>(),
 
   activateTab: async (tabId) => {
@@ -94,6 +93,11 @@ export const useTabStore = create<TabState>()((set, get) => ({
   },
 
   duplicateTab: async (tabId) => {
+    // 显式复制须先申请复用豁免：uniqueUrlTabs 开启时，副本若不豁免
+    // 会被复用引擎合并关闭（用户看到「已复制」但标签并不存在）。
+    const source = get().tabs.find((tab) => tab.id === tabId);
+    const key = source ? webComparisonKey(source.url, source.pendingUrl) : null;
+    if (source && key) await grantReuseAllowance(source.windowId, key);
     await duplicateTabPlatform(tabId);
   },
 
@@ -129,11 +133,26 @@ export const useTabStore = create<TabState>()((set, get) => ({
 
   startTabSync: () =>
     tabSyncService.start((snapshot) => {
-      set(() => ({
-        tabs: snapshot.tabs,
-        groups: snapshot.groups,
-        currentWindowId: snapshot.windowId,
-        generation: snapshot.generation
-      }));
+      set((state) => {
+        // 语言是面板侧异步探测的增量信息（chrome.tabs.Tab 无此字段），快照广播不含语言：
+        // 按 id 保留既有探测结果（URL 变化说明已导航，语言需重新探测，不保留旧值），
+        // 否则每次广播都会清空语言并触发 App 全量重探测。
+        const prevById = new Map(state.tabs.map((tab) => [tab.id, tab]));
+        const tabs = snapshot.tabs.map((tab) => {
+          const prev = prevById.get(tab.id);
+          if (!prev || prev.language === undefined) return tab;
+          if (prev.url !== tab.url || prev.pendingUrl !== tab.pendingUrl) return tab;
+          return { ...tab, language: prev.language };
+        });
+        // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
+        if (
+          state.currentWindowId === snapshot.windowId &&
+          JSON.stringify(tabs) === JSON.stringify(state.tabs) &&
+          JSON.stringify(snapshot.groups) === JSON.stringify(state.groups)
+        ) {
+          return {};
+        }
+        return { tabs, groups: snapshot.groups, currentWindowId: snapshot.windowId };
+      });
     })
 }));

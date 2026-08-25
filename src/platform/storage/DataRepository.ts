@@ -10,6 +10,8 @@ import type { ZodType } from 'zod';
  *  - 订阅：storage.onChanged 过滤本 key，解析后回调。
  *
  * 存储不可用（权限被策略禁用）时降级为内存态（写入静默跳过并告警回调）。
+ *
+ * write 返回是否落盘成功：关键业务（如快照）必须检查返回值并向用户提示失败。
  */
 
 interface DataRepositoryOptions {
@@ -48,17 +50,20 @@ export class DataRepository<T> {
     }
   }
 
-  async write(value: T): Promise<void> {
+  /** 写入。返回是否真实落盘（quota 超限/schema 校验失败/存储不可用均为 false）。 */
+  async write(value: T): Promise<boolean> {
     const area = browser.storage?.local;
     if (!area) {
       this.options.onUnavailable?.();
-      return;
+      return false;
     }
     try {
       await area.set({ [this.key]: this.schema.parse(value) });
+      return true;
     } catch (error) {
       console.error(`[DataRepository] write failed for ${this.key}`, error);
       this.options.onUnavailable?.();
+      return false;
     }
   }
 

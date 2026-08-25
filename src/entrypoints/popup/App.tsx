@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import type { TabRecord } from '@/core/tab-types';
-import { activateTabAcrossWindows, queryAllWindowTabs } from '@/platform/tabs';
+import { activateTabAcrossWindows } from '@/platform/tabs';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { EmptyState } from '@/ui/common/EmptyState';
@@ -12,6 +12,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { IconButton } from '@/ui/common/IconButton';
 import { SettingsSync } from '@/ui/common/SettingsSync';
 import { TextField } from '@/ui/common/TextField';
+import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
 
 /**
  * 快速切换器（降级形态 FR-D10.1 / popup 入口）：
@@ -42,31 +43,8 @@ export default function App() {
     inputRef.current?.focus();
   }, []);
 
-  // 全窗口搜索：设置开启且输入非空时并入其他窗口标签（与侧边栏行为一致）
-  const [otherTabs, setOtherTabs] = useState<TabRecord[]>([]);
-  useEffect(() => {
-    if (!settings.searchAllWindows || !query.trim()) {
-      setOtherTabs([]);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void queryAllWindowTabs()
-        .then((all) => {
-          if (!cancelled) {
-            const currentWindowId = useTabStore.getState().currentWindowId;
-            setOtherTabs(all.filter((tab) => tab.windowId !== currentWindowId && !tab.incognito));
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setOtherTabs([]);
-        });
-    }, 120);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [settings.searchAllWindows, query]);
+  // 全窗口搜索：设置开启且输入非空时并入其他窗口标签（与侧边栏行为一致，共用 hook）
+  const otherTabs = useAllWindowTabs(settings.searchAllWindows, query);
 
   const effectiveTabs = useMemo(
     () =>
@@ -131,6 +109,13 @@ export default function App() {
         inputRef={inputRef}
         className="w-full"
         placeholder={t('search.placeholder')}
+        ariaLabel={t('search.placeholder')}
+        inputProps={{
+          role: 'combobox',
+          'aria-expanded': hits.length > 0,
+          'aria-controls': 'popup-hits',
+          'aria-activedescendant': hits.length > 0 ? `popup-hit-${selectedIndex}` : undefined
+        }}
         value={query}
         onChange={(value) => {
           setQuery(value);
@@ -138,7 +123,11 @@ export default function App() {
         }}
         onKeyDown={handleKeyDown}
       />
-      <div className="mt-1 max-h-[360px] overflow-y-auto">
+      {/* 命中数对读屏播报（<output> 原生隐含 role=status） */}
+      <output className="sr-only" aria-live="polite">
+        {query.trim() ? t('search.hits', { count: hits.length }) : ''}
+      </output>
+      <div id="popup-hits" className="mt-1 max-h-[360px] overflow-y-auto">
         {hits.length === 0 ? (
           <EmptyState
             icon={<Icon d={Icons.search} className="h-4.5 w-4.5" />}
@@ -153,6 +142,7 @@ export default function App() {
                 key={hit.tabId}
                 id={`popup-hit-${index}`}
                 type="button"
+                tabIndex={-1}
                 className={
                   'flex w-full cursor-pointer items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-sm' +
                   (index === selectedIndex

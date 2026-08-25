@@ -23,7 +23,7 @@ export function EmptyState({
         </span>
       )}
       <p className="text-xs font-medium text-gray-600">{title}</p>
-      {hint && <p className="max-w-[200px] text-2xs text-gray-500">{hint}</p>}
+      {hint && <p className="max-w-52 text-2xs text-gray-600">{hint}</p>}
       {action}
     </div>
   );

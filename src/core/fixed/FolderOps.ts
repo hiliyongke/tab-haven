@@ -44,6 +44,9 @@ export function createFolder(name: string): FixedFolder {
 /**
  * 把数组元素移到目标前/后（不可变；source/target 不存在或相同则原样返回）。
  * 三个 reorder 场景（文件夹条目/文件夹/pin）共用此实现。
+ *
+ * 契约：no-op 时返回**同一引用**（reorderFolderItems 据此判断未变化并跳过重渲染），
+ * 调用方不得原地修改返回值（zustand set 语义下满足）。
  */
 function moveElement<T>(options: {
   items: readonly T[];
@@ -58,8 +61,8 @@ function moveElement<T>(options: {
   if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return items as T[];
 
   const next = [...items];
-  const [moved] = next.splice(sourceIndex, 1);
-  if (!moved) return items as T[];
+  // sourceIndex 有效，splice 必返回一个元素。
+  const moved = next.splice(sourceIndex, 1)[0]!;
   const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
   next.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
   return next;

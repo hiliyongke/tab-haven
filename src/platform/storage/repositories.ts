@@ -7,6 +7,7 @@ import {
   PersistentPinSchema,
   SettingsSchema,
   SiteCollapseSchema,
+  SnapshotSchema,
   UndoBatchSchema
 } from '@/core/schema/models';
 import type {
@@ -15,6 +16,7 @@ import type {
   PersistentPin,
   Settings,
   SiteCollapseState,
+  Snapshot,
   UndoBatch
 } from '@/core/schema/models';
 
@@ -73,4 +75,11 @@ export const seededRepository = new DataRepository<boolean>(
   'tabhaven.sync-seeded.v1',
   z.boolean(),
   false
+);
+
+/** 会话快照列表（命名快照 + 关窗自动保存），本地优先、零账号。 */
+export const snapshotsRepository = new DataRepository<Snapshot[]>(
+  'tabhaven.snapshots.v1',
+  SnapshotSchema.array(),
+  []
 );

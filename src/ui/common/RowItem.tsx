@@ -4,7 +4,10 @@ import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /** 拖拽容器接入点：listeners / style / className 会合并到 RowItem 内部 div，
- *  ref 转发到该 div。供 dnd-kit useSortable 接入。 */
+ *  ref 转发到该 div。供 dnd-kit useSortable 接入。
+ *  键盘拖拽走主按钮：KeyboardSensor 要求 keydown 目标即 activator 本体，
+ *  因此 activatorRef/buttonAttributes/buttonListeners 挂到主按钮上，
+ *  容器 listeners 只承担指针拖拽（整行可拖），与按钮键盘监听互不重复激活。 */
 interface RowItemContainer {
   ref?: (node: HTMLElement | null) => void;
   listeners?: object | undefined;
@@ -12,6 +15,9 @@ interface RowItemContainer {
   className?: string;
   /** 由调用方决定是否在容器上挂 sortable.attributes（默认不挂，避免按钮 tabIndex 被改）。 */
   attributes?: object;
+  activatorRef?: (node: HTMLElement | null) => void;
+  buttonAttributes?: object;
+  buttonListeners?: { onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void };
 }
 
 /**
@@ -81,7 +87,7 @@ export const RowItem = forwardRef<HTMLDivElement, {
   ref
 ) {
   const className =
-    'group relative flex items-center gap-1 rounded pl-2 pr-1.5 py-[2px] text-xs transition-base hover:bg-gray-50 row-item' +
+    'group relative flex items-center gap-1 rounded pl-1.5 pr-1.5 py-[2px] text-xs transition-base hover:bg-gray-50 row-item' +
     (density === 'cozy' ? ' density-cozy' : '') +
     (isActive ? ' is-active' : '') +
     (isMediaPlaying ? ' is-media-playing' : '') +
@@ -112,30 +118,39 @@ export const RowItem = forwardRef<HTMLDivElement, {
       data-split-role={splitGroupRole ?? undefined}
       {...(container?.listeners || {})}
     >
-      <span
-        className="drag-grip inline-flex shrink-0 cursor-grab items-center"
-        title={dragGripTitle || t('tabs.dragToMove')}
-        aria-hidden="true"
-      >
-        <Icon d={Icons.grip} className="h-3.5 w-3.5" />
-      </span>
       <button
         type="button"
+        ref={container?.activatorRef}
         className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         onClick={onClick}
         onAuxClick={onAuxClick}
         onMouseEnter={onMouseEnter}
-        onKeyDown={onKeyDown}
+        onKeyDown={(event) => {
+          container?.buttonListeners?.onKeyDown?.(event);
+          onKeyDown?.(event);
+        }}
         title={buttonTitle}
+        {...(container?.buttonAttributes || {})}
       >
-        {faviconFallback || <Favicon src={faviconSrc} title={faviconTitle} size={faviconSize} />}
+        {/* 拖拽手柄悬停时覆盖 favicon 原位（零布局占位）：整行鼠标可拖、键盘走 Space，
+            grip 仅为视觉提示；底色用 --row-bg 与行底一致，浮现时自然盖住 favicon。 */}
+        <span className="row-favicon relative inline-flex shrink-0 items-center">
+          {faviconFallback || <Favicon src={faviconSrc} title={faviconTitle} size={faviconSize} />}
+          <span
+            className="drag-grip"
+            title={dragGripTitle || t('tabs.dragToMove')}
+            aria-hidden="true"
+          >
+            <Icon d={Icons.grip} className="h-3.5 w-3.5" />
+          </span>
+        </span>
         <span className="flex min-w-0 flex-col">
           <span className="truncate title-text">{title}</span>
           {secondary}
         </span>
         {trailing}
       </button>
-      {badges}
+      {badges ? <span className="row-badges inline-flex shrink-0 items-center">{badges}</span> : null}
       {actions}
     </div>
   );

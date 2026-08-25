@@ -8,7 +8,8 @@ import { pinyin } from 'pinyin-pro';
  *  - 索引构建时预计算 prepare（标题/URL/拼音三目标），查询零准备；
  *  - 拼音支持：中文标题的首字母串（如 "gh" 命中 "GitHub" 前的中文标题）；
  *  - 结果排序：命中分数降序，激活标签优先；
- *  - 命中高亮：fuzzysort.highlight 的受控输出（<b> 标记）。
+ *  - 命中高亮：toSegments 输出纯文本命中分段（无 HTML），由渲染层负责加粗，
+ *    React 自动转义，XSS 面为零。
  */
 
 interface SearchableTab {

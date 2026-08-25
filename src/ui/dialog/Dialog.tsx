@@ -12,7 +12,7 @@ interface DialogShellProps {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
-  /** 覆盖默认宽度（如撤销历史面板需要更宽）。 */
+  /** 覆盖默认宽度（宽度刻度见 main.css .dialog-sm/.dialog-md）。 */
   widthClassName?: string;
 }
 
@@ -21,28 +21,27 @@ const FOCUSABLE_SELECTOR =
   'input, button, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
 
 /**
- * 弹窗外壳（focus trap + Esc + 焦点恢复）。供扩展弹窗复用统一行为契约。
+ * 弹窗行为契约 hook：打开聚焦首项、Tab 焦点陷阱、Esc 关闭、关闭后焦点恢复。
+ * DialogShell / CommandPalette / OnboardingTour 共用，保证所有浮层行为一致。
+ * onClose 用 ref 持有最新值：effect 只在挂载/卸载执行一次，避免父组件因后台
+ * 标签更新重渲染时重跑焦点逻辑抢焦、或 triggerRef 被覆盖导致焦点恢复失效。
  */
-export function DialogShell({
-  title,
-  children,
-  onClose,
-  widthClassName = 'w-[min(360px,88vw)]'
-}: DialogShellProps) {
-  const shellRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
+export function useModalA11y(
+  shellRef: React.RefObject<HTMLElement | null>,
+  onClose: () => void
+): void {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    // 记录打开前焦点，关闭后恢复
-    triggerRef.current = document.activeElement as HTMLElement | null;
+    const trigger = document.activeElement as HTMLElement | null;
     const focusable = shellRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
     focusable?.focus();
 
-    // 焦点陷阱 + Esc：capture 阶段统一处理
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab' || !shellRef.current) return;
@@ -64,10 +63,23 @@ export function DialogShell({
     document.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
-      // 关闭后焦点回到触发元素
-      triggerRef.current?.focus?.();
+      trigger?.focus?.();
     };
-  }, [onClose]);
+    // eslint 依赖提示：onClose 已通过 ref 持有，effect 仅需挂载/卸载各执行一次。
+  }, [shellRef]);
+}
+
+/**
+ * 弹窗外壳（focus trap + Esc + 焦点恢复 + 遮罩点击关闭）。供扩展弹窗复用统一行为契约。
+ */
+export function DialogShell({
+  title,
+  children,
+  onClose,
+  widthClassName = 'dialog-sm'
+}: DialogShellProps) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  useModalA11y(shellRef, onClose);
 
   return (
     <div

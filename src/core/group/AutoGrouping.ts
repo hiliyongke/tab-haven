@@ -48,6 +48,11 @@ export function groupColorForLabel(label: string): string {
   return GROUP_COLOR_NAMES[idx]!;
 }
 
+/** 语言分组 section（siteKey 形如 lang-en）：未经过站点阈值过滤，需自行设下限。 */
+function isLanguageSection(section: TemporarySection): boolean {
+  return section.kind === 'site' && section.siteKey.startsWith('lang-');
+}
+
 /**
  * 从展示 sections 推导自动分组计划。
  * 保守策略：任一标签已入原生组则整组跳过（绝不并入用户手动分组）。
@@ -56,7 +61,9 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
   const plans: AutoGroupPlan[] = [];
   for (const section of sections) {
     if (section.kind !== 'site') continue;
-    // site section 已满足聚合阈值（阈值 1 时单标签站点也成组），此处不再设下限。
+    // site section 已满足聚合阈值（阈值 1 时单标签站点也成组），此处不再设下限；
+    // 语言分组是兜底聚合（每种语言无条件成 section），单标签语言组没有组织意义，设下限 2。
+    if (isLanguageSection(section) && section.tabs.length < 2) continue;
     if (section.tabs.some((tab) => tab.groupId !== NO_GROUP)) continue;
     plans.push({
       title: section.title,
@@ -115,7 +122,9 @@ export function planRegroup({
   const plans: AutoGroupPlan[] = [];
   for (const section of sections) {
     if (section.kind !== 'site') continue;
-    // 同上：site section 已满足聚合阈值，单标签站点（阈值 1）同样建组。
+    // 同上：site section 已满足聚合阈值，单标签站点（阈值 1）同样建组；
+    // 语言分组同样设 ≥2 下限（单标签语言组不打散重建，保持未分组状态）。
+    if (isLanguageSection(section) && section.tabs.length < 2) continue;
     plans.push({
       title: section.title,
       color: groupColorForLabel(section.title),

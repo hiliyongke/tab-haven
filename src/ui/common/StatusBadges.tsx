@@ -44,7 +44,7 @@ export function StatusBadges({
     );
   } else if (tab.muted) {
     badges.push(
-      <span key="muted" className="text-[10px] text-gray-400" title={t('status.muted')}>
+      <span key="muted" className="text-[10px] text-gray-500" title={t('status.muted')}>
         {t('status.mutedGlyph')}
       </span>
     );
@@ -54,7 +54,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="split"
-        className="rounded bg-accent-500 px-1 text-[10px] font-medium text-white"
+        className="rounded bg-accent-500 px-1 text-[10px] font-medium text-on-accent"
         title={t('status.split')}
       >
         {t('status.splitGlyph')}

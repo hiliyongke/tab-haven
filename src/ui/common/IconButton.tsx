@@ -54,7 +54,7 @@ export function IconButton({
     >
       <Icon d={icon} className={iconClass} />
       {badge !== undefined && badge > 0 && (
-        <span className="count-badge absolute -right-0.5 -top-0.5" aria-hidden="true">
+        <span className="count-badge absolute -right-1 -top-1" aria-hidden="true">
           {badge}
         </span>
       )}

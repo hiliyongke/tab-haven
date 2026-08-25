@@ -26,6 +26,7 @@ export function SearchBar({
         type="search"
         className="search-bar-input"
         placeholder={t('search.placeholder')}
+        aria-label={t('search.title')}
         value={query}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {

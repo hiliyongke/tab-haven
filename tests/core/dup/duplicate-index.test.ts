@@ -95,4 +95,16 @@ describe('KeeperPolicy', () => {
     const removable = DuplicateIndex.build(groupTabs).removable(KeeperPolicy.default);
     expect(removable.map((tab) => tab.id)).toEqual([2, 3]);
   });
+
+  it('乱序输入时仍保留 index 最小者（不依赖传入顺序）', () => {
+    // 传入顺序乱序：兜底「位置靠前」必须按 index 判定，行为确定。
+    const group = [
+      makeTab({ id: 3, index: 7, url: 'https://a.com/' }),
+      makeTab({ id: 1, index: 2, url: 'https://a.com/' }),
+      makeTab({ id: 2, index: 5, url: 'https://a.com/' })
+    ];
+    const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
+    expect(keeper.id).toBe(1);
+    expect(removable.map((tab) => tab.id).sort()).toEqual([2, 3]);
+  });
 });

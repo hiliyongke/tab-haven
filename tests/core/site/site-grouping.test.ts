@@ -73,8 +73,9 @@ describe('aggregateBySite', () => {
     expect(groups.map((group) => group.key.value)).toEqual(['a.com', 'z.com']);
   });
 
-  it('子域密度自动展开：同注册域 ≥ 3 子域时各子域独立成组（用户截图场景）', () => {
-    // qq.com 下 4 子域各 1 标签 → 自动展开为 4 个 SiteGroup（不再折叠大组）。
+  it('同注册域多子域但均未达阈值：全部进 singles，不成任何组', () => {
+    // qq.com 下 4 子域各 1 标签：每个子域 1 个标签，未达默认阈值 2，
+    // 自动展开分支要求子域 ≥2 标签才成组，因此没有任何组产出。
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/' }),
       makeTab({ id: 2, index: 1, url: 'https://docs.qq.com/' }),
@@ -82,16 +83,10 @@ describe('aggregateBySite', () => {
       makeTab({ id: 4, index: 3, url: 'https://browser.qq.com/' })
     ];
     const { groups, singles } = aggregateBySite(tabs);
-    // 4 个标签各占独立组（子域即业务），且每个组达到默认阈值（mail 数量 ≥2 才入组，这里阈值默认 2，所以单标签的进 singles）。
-    // 重要断言：不会合并成 qq.com 大组。
-    expect(groups.map((g) => g.key.value).sort()).toEqual(['browser.qq.com', 'docs.qq.com', 'v.qq.com'].sort());
-    // 单标签子域因未达默认阈值进入 singles（不与大组合并）。
-    expect(singles.map((t) => t.id)).toContain(1);
-    expect(singles.map((t) => t.id)).toContain(2);
-    expect(singles.map((t) => t.id)).toContain(3);
-    expect(singles.map((t) => t.id)).toContain(4);
-    // 关键断言：QQ 域没有形成聚合大组（子域各自独立、阈值与算法自动判断）。
+    expect(groups).toHaveLength(0);
+    // 关键断言：QQ 域没有形成聚合大组，全部标签以单标签平铺。
     expect(groups.find((g) => g.key.value === 'qq.com')).toBeUndefined();
+    expect(singles.map((t) => t.id)).toEqual([1, 2, 3, 4]);
   });
 
   it('子域密度自动展开：同子域 ≥ 阈值才入组，单标签子域进 singles', () => {

@@ -9,14 +9,15 @@ import { useDataStore } from '@/stores/dataStore';
  */
 export function SettingsSync() {
   const preference = useDataStore((state) => state.settings.themePreference);
+  const colorTheme = useDataStore((state) => state.settings.colorTheme);
   const language = useDataStore((state) => state.settings.language);
   const { i18n } = useTranslation();
 
   useEffect(() => {
-    applyTheme(preference);
+    applyTheme(preference, colorTheme);
     if (preference !== 'system') return;
-    return watchSystemTheme(() => applyTheme('system'));
-  }, [preference]);
+    return watchSystemTheme(() => applyTheme('system', colorTheme));
+  }, [preference, colorTheme]);
 
   useEffect(() => {
     if (language) void i18n.changeLanguage(language);

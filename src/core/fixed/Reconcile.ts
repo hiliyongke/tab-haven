@@ -40,9 +40,16 @@ export function reconcilePendingItems(
               pendingTabId: undefined
             };
             changed = true;
-          } else if (tab.title && tab.title !== current.title) {
-            // 导航未完成：实时同步标题/图标
-            current = { ...current, title: tab.title, favIconUrl: tab.favIconUrl };
+          } else if (
+            (tab.title && tab.title !== current.title) ||
+            tab.favIconUrl !== current.favIconUrl
+          ) {
+            // 导航未完成：实时同步标题/图标（仅 favicon 变化也要同步；标题为空时保留旧值）
+            current = {
+              ...current,
+              title: tab.title || current.title,
+              favIconUrl: tab.favIconUrl
+            };
             changed = true;
           }
         } else {
@@ -80,9 +87,10 @@ export function reconcileBindings(
   const next: Record<string, number> = {};
   let changed = false;
 
-  // 清理失效绑定（item 或 tab 已不存在）
+  // 清理失效绑定（item 或 tab 已不存在）；同一 tab 被多个条目占用时
+  // 保留首条（插入序），丢弃其余，维护「一个 tab 只服务一个条目」不变量。
   for (const [itemId, tabId] of Object.entries(bindings)) {
-    if (itemIds.has(itemId) && tabIds.has(tabId)) {
+    if (itemIds.has(itemId) && tabIds.has(tabId) && !boundTabIds.has(tabId)) {
       next[itemId] = tabId;
       boundTabIds.add(tabId);
     } else {

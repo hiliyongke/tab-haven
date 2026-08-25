@@ -45,6 +45,7 @@ export function FolderEditDialog({
         className="mb-3 w-full"
         value={draft}
         placeholder={t('fixed.folderNamePlaceholder')}
+        ariaLabel={t('fixed.folderNamePlaceholder')}
         onChange={(value) => setDraft(value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {

@@ -54,7 +54,10 @@ export function mutateSession(
   let result!: SessionData;
   chain = chain.then(async () => {
     const current = await readSession();
-    result = { ...current, ...updater(current) };
+    const partial = updater(current);
+    result = { ...current, ...partial };
+    // updater 无变更（空 partial）时跳过写盘，消除高频路径（如 reconcileWithTabs）的写放大。
+    if (Object.keys(partial).length === 0) return;
     await writeSession(result);
   });
   return chain.then(() => result);

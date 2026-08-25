@@ -23,9 +23,8 @@
  */
 
 @theme {
-  /* 字号刻度（12px 起步，向下两档供密集侧栏小字使用） */
+  /* 字号刻度：text-xs(12px) 向下一步即为最小字号，供密集侧栏小字使用 */
   --text-2xs: 0.625rem;  /* 10px */
-  --text-3xs: 0.6875rem; /* 11px */
 
   --color-gray-50: var(--c-gray-50);
   --color-gray-100: var(--c-gray-100);
@@ -170,6 +169,189 @@
   --c-on-accent: #1d2220;
 }
 
+/* ---------- 主题色预设（data-hue） ----------
+ * forest 为默认（:root 内置梯度，无需覆盖）；其余预设覆盖品牌色梯度及派生变量。
+ * 浅色：品牌梯度 + 带色调的画布/浅灰阶（灰阶深档保持暖调中性，与各色调兼容）；
+ * 深色：品牌梯度 + 整套灰阶 + 画布（默认绿灰底与其他色相冲突，须整体替换）。
+ * 徽章/进度等派生变量引用 var(--c-brand-*)，随梯度自动换肤。 */
+
+/* 雾霾蓝 ocean */
+:root[data-hue='ocean'] {
+  --c-brand-50: #eaf1f7;
+  --c-brand-100: #d7e5f2;
+  --c-brand-200: #b3cde6;
+  --c-brand-300: #7ba6d4;
+  --c-brand-400: #5285c2;
+  --c-brand-500: #3a6ea8;
+  --c-brand-600: #2f5b8c;
+  --c-brand-700: #274a73;
+  /* 浅色画布与浅灰阶同步带色调（背景换肤的感知主体） */
+  --c-gray-50: #eef3f8;
+  --c-gray-100: #e2eaf1;
+  --canvas: #f1f5f9;
+  --ring: rgba(58, 110, 168, 0.32);
+  --drop-line: #3a6ea8;
+}
+:root[data-theme='dark'][data-hue='ocean'] {
+  --c-brand-50: #1e2c3a;
+  --c-brand-100: #26394c;
+  --c-brand-200: #2e4a63;
+  --c-brand-300: #5c85ad;
+  --c-brand-400: #6f9cc4;
+  --c-brand-500: #85b4dc;
+  --c-brand-600: #9cc4e5;
+  --c-brand-700: #b4d2ea;
+  --c-gray-50: #1c2126;
+  --c-gray-100: #272d34;
+  --c-gray-200: #353d46;
+  --c-gray-300: #47505a;
+  --c-gray-400: #78828c;
+  --c-gray-500: #98a2ac;
+  --c-gray-600: #b1bcc4;
+  --c-gray-700: #c7d0d8;
+  --c-gray-800: #dce5ec;
+  --c-gray-900: #e4eaf0;
+  --surface: #272d34;
+  --surface-muted: rgba(39, 45, 52, 0.72);
+  --canvas: #1c2126;
+  --border-subtle: #353d46;
+  --ring: rgba(133, 180, 220, 0.4);
+  --drop-line: #85b4dc;
+  --c-on-accent: #1c2126;
+}
+
+/* 暮山紫 violet */
+:root[data-hue='violet'] {
+  --c-brand-50: #f1edf8;
+  --c-brand-100: #e4dcf2;
+  --c-brand-200: #cbb9e6;
+  --c-brand-300: #a685d2;
+  --c-brand-400: #8a63c2;
+  --c-brand-500: #6f4ba6;
+  --c-brand-600: #5d3d8c;
+  --c-brand-700: #4c3273;
+  --c-gray-50: #f3f1f8;
+  --c-gray-100: #e9e5f2;
+  --canvas: #f4f2f8;
+  --ring: rgba(111, 75, 166, 0.32);
+  --drop-line: #6f4ba6;
+}
+:root[data-theme='dark'][data-hue='violet'] {
+  --c-brand-50: #292137;
+  --c-brand-100: #352a48;
+  --c-brand-200: #43355c;
+  --c-brand-300: #7d63a8;
+  --c-brand-400: #9377c2;
+  --c-brand-500: #a98fd6;
+  --c-brand-600: #bca3e0;
+  --c-brand-700: #cdb8e8;
+  --c-gray-50: #211e26;
+  --c-gray-100: #2c2833;
+  --c-gray-200: #3a3542;
+  --c-gray-300: #4d4756;
+  --c-gray-400: #7d7886;
+  --c-gray-500: #9d99a6;
+  --c-gray-600: #b6b3bd;
+  --c-gray-700: #cbc8d1;
+  --c-gray-800: #e0dee4;
+  --c-gray-900: #e8e6eb;
+  --surface: #2c2833;
+  --surface-muted: rgba(44, 40, 51, 0.72);
+  --canvas: #211e26;
+  --border-subtle: #3a3542;
+  --ring: rgba(169, 143, 214, 0.4);
+  --drop-line: #a98fd6;
+  --c-on-accent: #211e26;
+}
+
+/* 暖阳橙 sunset */
+:root[data-hue='sunset'] {
+  --c-brand-50: #faf0e6;
+  --c-brand-100: #f6e2cf;
+  --c-brand-200: #eec49e;
+  --c-brand-300: #e09a5e;
+  --c-brand-400: #d27936;
+  --c-brand-500: #b85f22;
+  --c-brand-600: #9c4f1b;
+  --c-brand-700: #7f4117;
+  --c-gray-50: #f7f2ea;
+  --c-gray-100: #f1e7d8;
+  --canvas: #f8f3ec;
+  --ring: rgba(184, 95, 34, 0.32);
+  --drop-line: #b85f22;
+}
+:root[data-theme='dark'][data-hue='sunset'] {
+  --c-brand-50: #362920;
+  --c-brand-100: #473422;
+  --c-brand-200: #5c4326;
+  --c-brand-300: #ad7c4a;
+  --c-brand-400: #c79360;
+  --c-brand-500: #dcab7a;
+  --c-brand-600: #e5bc91;
+  --c-brand-700: #eacba8;
+  --c-gray-50: #241f1c;
+  --c-gray-100: #302a26;
+  --c-gray-200: #403832;
+  --c-gray-300: #544a42;
+  --c-gray-400: #877a70;
+  --c-gray-500: #a69a90;
+  --c-gray-600: #beb4ac;
+  --c-gray-700: #d0c8c2;
+  --c-gray-800: #e5ded9;
+  --c-gray-900: #ebe6e2;
+  --surface: #302a26;
+  --surface-muted: rgba(48, 42, 38, 0.72);
+  --canvas: #241f1c;
+  --border-subtle: #403832;
+  --ring: rgba(220, 171, 122, 0.4);
+  --drop-line: #dcab7a;
+  --c-on-accent: #241f1c;
+}
+
+/* 中性灰 mono */
+:root[data-hue='mono'] {
+  --c-brand-50: #f0f1f0;
+  --c-brand-100: #e2e4e2;
+  --c-brand-200: #c6c9c6;
+  --c-brand-300: #9aa09a;
+  --c-brand-400: #6f766f;
+  --c-brand-500: #4a524a;
+  --c-brand-600: #3c433c;
+  --c-brand-700: #303630;
+  --c-gray-50: #f2f2f2;
+  --c-gray-100: #e8e8e8;
+  --canvas: #f4f4f4;
+  --ring: rgba(74, 82, 74, 0.32);
+  --drop-line: #4a524a;
+}
+:root[data-theme='dark'][data-hue='mono'] {
+  --c-brand-50: #26282a;
+  --c-brand-100: #313438;
+  --c-brand-200: #3f4348;
+  --c-brand-300: #7d838a;
+  --c-brand-400: #98a0a8;
+  --c-brand-500: #b0b8c0;
+  --c-brand-600: #c2c9d0;
+  --c-brand-700: #d2d8de;
+  --c-gray-50: #1e1f20;
+  --c-gray-100: #292a2c;
+  --c-gray-200: #37393c;
+  --c-gray-300: #4a4d51;
+  --c-gray-400: #7b7f85;
+  --c-gray-500: #9ba0a6;
+  --c-gray-600: #b4b8be;
+  --c-gray-700: #c9cdd2;
+  --c-gray-800: #dee2e6;
+  --c-gray-900: #e6eaed;
+  --surface: #292a2c;
+  --surface-muted: rgba(41, 42, 44, 0.72);
+  --canvas: #1e1f20;
+  --border-subtle: #37393c;
+  --ring: rgba(176, 184, 192, 0.4);
+  --drop-line: #b0b8c0;
+  --c-on-accent: #1e1f20;
+}
+
 html,
 body,
 #root {
@@ -254,6 +436,11 @@ body {
   transition: transform 80ms var(--ease-out);
 }
 
+/* 展开/折叠分组头部不做按压缩放：缩放回弹与列表重排叠加会产生抖动观感 */
+.section-head button.toggle:active {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -272,8 +459,8 @@ body {
   scrollbar-color: var(--c-gray-300) transparent;
 }
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
@@ -290,6 +477,7 @@ body {
 
 /* ---------- 行内操作按钮 ---------- */
 .row-action {
+  position: relative;
   display: grid;
   width: 20px;
   height: 20px;
@@ -302,6 +490,17 @@ body {
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
+}
+/* 透明命中扩区：视觉 20px、命中 24px（WCAG 2.5.8 下限），不占布局空间 */
+.row-action::after {
+  position: absolute;
+  inset: -2px;
+  border-radius: 6px;
+  content: '';
+}
+/* 磁贴角标只有 16px：再扩一圈到 24px 命中 */
+.pinned-tile :is(.pinned-unpin, .pinned-duplicate)::after {
+  inset: -4px;
 }
 
 .row-action:hover {
@@ -332,19 +531,23 @@ body {
   color: var(--c-red-600);
 }
 
-/* 计数徽章（可清理重复标签等）：品牌绿底，满足对比度 */
+/* 计数徽章（工具条角标等）：品牌绿底，满足对比度；
+   11px 迷你尺寸挂在 24px 图标按钮角落，外圈 canvas 描边与图标视觉分离；
+   两位数自动呈小胶囊（min-width + 横向 padding），不挤成正圆大球。 */
 .count-badge {
   display: inline-grid;
-  min-width: 16px;
-  height: 16px;
+  min-width: 11px;
+  height: 11px;
   place-items: center;
-  padding: 0 4px;
+  padding: 0 2.5px;
   border-radius: 999px;
   background: var(--count-badge-bg);
   color: var(--c-on-accent);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 8px;
+  font-weight: 600;
   line-height: 1;
+  letter-spacing: -0.01em;
+  box-shadow: 0 0 0 1px var(--canvas);
 }
 
 /* ---------- 常驻顶部搜索框（替代弹窗式覆盖层） ---------- */
@@ -358,6 +561,10 @@ body {
   padding: 4px 8px;
   background: var(--canvas);
   border-bottom: 1px solid var(--border-subtle);
+}
+/* 键盘流主入口：输入框聚焦时给容器一道品牌色边，焦点位置一眼可辨 */
+.search-bar:focus-within {
+  border-color: color-mix(in srgb, var(--c-brand-500) 45%, var(--border-subtle));
 }
 
 .search-bar-icon {
@@ -376,7 +583,7 @@ body {
   background: transparent;
   color: var(--c-gray-800);
   font-size: 12px;
-  outline: none;
+  /* 不清除 outline：全局 focus-visible 焦点环在此生效（键盘流主入口必须焦点可见） */
 }
 
 .search-bar-input::placeholder {
@@ -406,10 +613,6 @@ body {
   color: var(--c-gray-700);
 }
 
-:root[data-theme='dark'] .search-bar {
-  background: var(--canvas);
-}
-
 /* Toast 浮层不参与主内容排版，避免撤销提示出现时标签列表跳动。 */
 .status-toast {
   position: absolute;
@@ -422,6 +625,10 @@ body {
   background: color-mix(in srgb, var(--surface) 94%, var(--c-brand-50));
   box-shadow: 0 4px 14px rgb(var(--shadow-tint) / 14%);
 }
+
+/* ---------- 弹窗宽度刻度（两档收敛，替代散落的任意宽度值） ---------- */
+.dialog-sm { width: min(360px, 88vw); }
+.dialog-md { width: min(440px, 92vw); }
 
 /* ---------- 分类模块外壳：固定空间 / 站点分组 统一视觉壳（扁平分隔，零背景） ---------- */
 /* 左 0 + 内部 .section-head padding-left 8px：内容起始与 .pinned-strip / .section-card 统一到距侧边栏 8px */
@@ -563,16 +770,18 @@ body {
   font-weight: 700;
 }
 
-/* Favicon 回退字母与图标统一去掉自带背景，交给 wrap 容器 */
+/* Favicon 回退字母与图标统一去掉自带背景，交给 wrap 容器；
+   图标尺寸由 CSS 接管（Favicon cssSized 模式），尺寸变体直接级联覆盖，无需 !important */
 .pinned-favicon-wrap > span,
 .pinned-favicon-wrap > img {
+  width: 18px;
+  height: 18px;
   background: transparent !important;
 }
 
 /* 固定磁贴尺寸变体（设置 pinnedStripSize）：
    同时作用于「固定空间磁贴条」（.pinned-strip）与「浏览器原生固定标签区」（.is-pinned），
-   避免用户改了设置但看到的固定磁贴毫无变化。
-   Favicon 用 inline width/height（18px），须以 !important 覆盖才有尺寸变化。 */
+   避免用户改了设置但看到的固定磁贴毫无变化。 */
 .pinned-strip.size-sm .pinned-tile,
 .is-pinned.size-sm .pinned-tile {
   width: 28px;
@@ -607,8 +816,8 @@ body {
 .pinned-strip.size-lg .pinned-favicon-wrap span,
 .is-pinned.size-lg .pinned-favicon-wrap img,
 .is-pinned.size-lg .pinned-favicon-wrap span {
-  width: 24px !important;
-  height: 24px !important;
+  width: 24px;
+  height: 24px;
   font-size: 13px;
 }
 
@@ -685,26 +894,6 @@ body {
   color: var(--c-brand-600);
 }
 
-:root[data-theme='dark'] .pinned-strip {
-  border-color: var(--border-subtle);
-}
-
-:root[data-theme='dark'] .pinned-main {
-  background: transparent;
-}
-
-:root[data-theme='dark'] .pinned-main:hover,
-:root[data-theme='dark'] .pinned-main:focus-visible {
-  border-color: transparent;
-  background: transparent;
-}
-
-:root[data-theme='dark'] .pinned-tile.is-active .pinned-main {
-  border-color: transparent;
-  background: transparent;
-}
-
-
 :root[data-theme='dark'] .pinned-tile.is-audible::after {
   border-color: var(--surface);
   background: var(--c-brand-400);
@@ -715,10 +904,15 @@ body {
   background: color-mix(in srgb, var(--c-brand-500) 18%, var(--canvas));
 }
 
-/* ---------- 拖拽手柄（默认隐藏，悬停浮现，提升可发现性） ---------- */
+/* ---------- 拖拽手柄（悬停覆盖 favicon 原位，不占布局列） ---------- */
 .row-item .drag-grip {
-  flex: none;
-  color: var(--c-gray-400);
+  position: absolute;
+  inset: -2px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--row-bg, var(--canvas));
+  color: var(--c-gray-500);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out);
   cursor: grab;
@@ -729,8 +923,9 @@ body {
   padding-bottom: 4px;
 }
 .row-item:hover .drag-grip,
+.row-item:focus-within .drag-grip,
 .row-item.is-selected .drag-grip {
-  opacity: 0.5;
+  opacity: 1;
 }
 .row-item .drag-grip:active {
   cursor: grabbing;
@@ -742,9 +937,48 @@ body {
   box-shadow: 0 6px 16px rgb(var(--shadow-tint) / 0.16);
 }
 
+/* ---------- 行尾浮层操作（不占布局：悬停/聚焦淡入，标题零位移） ---------- */
+/* --row-bg 由各状态规则同步赋值，浮层左缘用渐变淡出到行底色，盖住长标题不突兀。
+   注意：base/hover/focus-within 三条声明放在 is-active 等状态规则之前（见上行区），
+   保证状态色（激活/搜索/媒体）在悬停时仍优先于灰底。 */
+.row-actions {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 18px;
+  background: linear-gradient(to right, transparent, var(--row-bg) 45%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.row-item:hover .row-actions,
+.row-item:focus-within .row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 浮层浮现时让位：行尾状态徽章淡出（静音/播放等状态改由浮现的快捷操作承担） */
+.row-item:hover .row-badges,
+.row-item:focus-within .row-badges {
+  opacity: 0;
+}
+.row-badges {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+/* 拖拽排序中不浮现操作，避免干扰落点判断 */
+.row-item.is-sorting .row-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 固定条目作为投放目标（拖标签/分组加入文件夹）时的落点高亮 */
 .row-item.is-drop-target {
   background: color-mix(in srgb, var(--c-brand-500) 5%, transparent);
+  --row-bg: var(--surface);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
 }
 
@@ -763,22 +997,26 @@ body {
   color: var(--c-gray-800);
 }
 
-/* 当前激活标签：淡品牌底 + 加粗深色标题 + 行首大圆点（radial-gradient 渐变 + 双层柔光晕） */
+/* 行尾浮层底色基准（--row-bg）：base/hover/focus-within 必须在下方状态规则之前声明，
+   级联后状态色（is-active/is-search-active/is-media-playing/is-highlighted）在悬停时
+   仍优先于灰底，浮层渐变始终与真实行底色一致。 */
+.row-item {
+  --row-bg: var(--canvas);
+}
+.row-item:hover {
+  --row-bg: var(--c-gray-50);
+}
+/* 键盘 Tab 进入行内按钮时行底色同步加深，焦点位置可见（此前仅悬停有底色） */
+.row-item:focus-within {
+  background: var(--c-gray-50);
+  --row-bg: var(--c-gray-50);
+}
+
+/* 当前激活标签：淡品牌底 + 加粗深色标题（去掉行首圆点——与 favicon 相叠显脏，
+   底色+字重双信号已足够，视觉更干净） */
 .row-item.is-active {
   background: color-mix(in srgb, var(--c-brand-500) 15%, var(--surface));
-}
-.row-item.is-active::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  transform: translateY(-50%);
-  /* 渐变：中心实色 → 边缘柔和过渡；不加光晕，保持克制 */
-  background: radial-gradient(circle, var(--c-brand-500) 0%, var(--c-brand-500) 55%, color-mix(in srgb, var(--c-brand-500) 30%, transparent) 100%);
-  z-index: 2;
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 15%, var(--surface));
 }
 .row-item.is-active .title-text {
   color: var(--c-gray-900);
@@ -788,6 +1026,7 @@ body {
    激活标签不叠加高亮底色（激活态主导，避免"激活+高亮"双层背景）。 */
 .row-item.is-highlighted:not(.is-active) {
   background: color-mix(in srgb, var(--c-warn-200) 16%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-warn-200) 16%, var(--surface));
 }
 .row-item.is-located {
   animation: locate-tab-pulse 1.1s var(--ease-out);
@@ -799,6 +1038,7 @@ body {
 
 .row-item.is-search-active {
   background: color-mix(in srgb, var(--c-brand-500) 8%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 8%, var(--surface));
   box-shadow: inset 2px 0 var(--c-brand-500);
 }
 
@@ -810,10 +1050,11 @@ body {
 /* 媒体播放中的标签：用整行底色、加粗标题和状态胶囊提示。 */
 .row-item.is-media-playing {
   background: color-mix(in srgb, var(--c-brand-500) 9%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 9%, var(--surface));
 }
 .row-item.is-media-playing .title-text {
   color: var(--c-brand-700);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 /* 分屏组指示：分屏的「连续」标签段左侧一条高亮竖线贯穿（简约醒目）。
@@ -828,6 +1069,7 @@ body {
 .row-item.is-active.is-search-active,
 .row-item.is-active.is-selected {
   background: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
+  --row-bg: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
 }
 .media-playing-badge {
   display: inline-flex;
@@ -840,7 +1082,7 @@ body {
   background: color-mix(in srgb, var(--c-brand-500) 13%, var(--surface));
   color: var(--c-brand-700);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 14px;
   white-space: nowrap;
 }
@@ -855,15 +1097,6 @@ body {
 @keyframes media-playing-pulse {
   0%, 100% { opacity: 0.35; transform: scale(0.75); }
   50% { opacity: 1; transform: scale(1); }
-}
-
-/* ---------- 展开体平滑入场动画 ---------- */
-@keyframes section-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.section-body {
-  animation: section-in 220ms var(--ease-out);
 }
 
 /* ---------- 搜索骨架屏 ---------- */
@@ -911,10 +1144,24 @@ body {
   background: color-mix(in srgb, var(--accent) 14%, var(--c-gray-100));
 }
 .section-head {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
+}
+/* 头部前导（色条 + chevron）：拖拽手柄浮现时淡出交换 */
+.section-head .head-leading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+/* 仅存在拖拽手柄的头才做前导交换（无手柄的头悬停不淡出） */
+.section-head:has(.section-drag-handle):hover .head-leading,
+.section-head:has(.section-drag-handle):focus-within .head-leading {
+  opacity: 0;
 }
 .section-head .toggle {
   display: flex;
@@ -933,9 +1180,28 @@ body {
 .section-head button.toggle:hover {
   background: var(--c-gray-100);
 }
+/* 分组头键盘拖拽手柄：整头鼠标可拖（指针），手柄承担键盘拖拽（Space + 方向键）。
+   绝对定位覆盖头部前导（色条/chevron 原位），零布局占位；
+   translate 属性与全局 :active scale 变换正交，按压不跳位。 */
+.section-drag-handle {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 1;
+  opacity: 0;
+  color: var(--c-gray-500);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.section-head:hover .section-drag-handle,
+.section-head:focus-within .section-drag-handle,
+.section-drag-handle:focus-visible {
+  opacity: 1;
+}
+
 .section-head .title {
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--c-gray-600);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -954,7 +1220,7 @@ body {
   background: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
   color: var(--c-brand-700);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
   transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
@@ -1058,12 +1324,14 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .section-body,
   .skeleton,
   .media-playing-badge::after,
   .section-media-dot { animation: none; }
   .row-item .drag-grip,
+  .row-actions,
+  .row-badges,
   .section-head button.toggle,
+  .section-drag-handle,
   .add-tab-btn,
   .pinned-grid .pinned-unpin,
   .search-bar-clear { transition: none; }

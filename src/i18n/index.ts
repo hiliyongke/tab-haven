@@ -24,4 +24,11 @@ i18n.use(initReactI18next).init({
   }
 });
 
+// 同步文档语言：界面语言切换后，<html lang> 跟随（读屏软件据此选择发音与断词规则）。
+const syncDocumentLang = (lng: string): void => {
+  if (typeof document !== 'undefined') document.documentElement.lang = lng;
+};
+syncDocumentLang(i18n.language);
+i18n.on('languageChanged', syncDocumentLang);
+
 export default i18n;

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   closestCenter,
   pointerWithin,
@@ -13,12 +14,15 @@ import {
   type DragEndEvent,
   type DragStartEvent
 } from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { DragType, type DragData } from './types';
 
 /** dnd-kit sensor 配置：必须模块级稳定对象引用。 */
 const POINTER_SENSOR_CONFIG = { activationConstraint: { distance: 4 } } as const;
+/** KeyboardSensor：焦点落在拖拽 activator 上时，Space/Enter 抓取 + 方向键移动 + Space/Enter 放置。 */
+const KEYBOARD_SENSOR_CONFIG = { coordinateGetter: sortableKeyboardCoordinates } as const;
 
 /**
  * 拖拽碰撞检测：优先取指针实际所在的最深层投放目标（解决拖分组头/标签到固定空间时
@@ -116,7 +120,10 @@ export function DndRoot({
   children: ReactNode;
   onDragEnd: (event: DragEndEvent) => void;
 }) {
-  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_CONFIG));
+  const sensors = useSensors(
+    useSensor(PointerSensor, POINTER_SENSOR_CONFIG),
+    useSensor(KeyboardSensor, KEYBOARD_SENSOR_CONFIG)
+  );
   const [overlay, setOverlay] = useState<ReactNode | null>(null);
 
   const handleDragStart = (event: DragStartEvent) => {

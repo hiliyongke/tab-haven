@@ -36,13 +36,18 @@ export interface MirrorData {
 
 class SyncMirror {
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** 去抖窗口内最新的待写数据（后写覆盖先写，保证最终落盘的是最新状态）。 */
+  private pendingPayload: MirrorData | undefined;
 
   /** 调度一次镜像写入（合并高频写入，500ms 后落盘）。 */
   schedule(payload: MirrorData): void {
+    this.pendingPayload = payload;
     if (this.timer) return;
     this.timer = setTimeout(() => {
       this.timer = undefined;
-      void this.write(payload);
+      const latest = this.pendingPayload;
+      this.pendingPayload = undefined;
+      if (latest) void this.write(latest);
     }, 500);
   }
 

@@ -76,14 +76,17 @@ export async function disbandAutoGroups(): Promise<number> {
   const ids = await autoGroupsRepository.read();
   if (ids.length === 0) return 0;
   let count = 0;
+  const failed: number[] = [];
   for (const groupId of ids) {
     try {
       await removeGroup(groupId);
       count += 1;
     } catch {
-      // 组已不存在（用户手动解散/浏览器清理），跳过
+      // 解散失败：保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组。
+      // 已不存在的组（用户手动解散）在 removeGroup 内查询为空、正常返回，不会落入此分支。
+      failed.push(groupId);
     }
   }
-  await autoGroupsRepository.write([]);
+  await autoGroupsRepository.write(failed);
   return count;
 }

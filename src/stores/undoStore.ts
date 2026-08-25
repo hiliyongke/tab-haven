@@ -58,6 +58,21 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     }, durationSec * 1000);
   };
 
+  /** 撤销执行体（undo / undoBatch 共用）：出栈结果由调用方算好传入。 */
+  const runUndo = async (batch: UndoBatch, remaining: UndoBatch[]): Promise<void> => {
+    const windowId = useTabStore.getState().currentWindowId;
+    if (windowId === undefined) return;
+    set({ batches: remaining });
+    const settings = await settingsRepository.read();
+    if (settings.persistUndo) await undoRepository.write(remaining);
+    clearTimeout(toastTimer);
+    set({ toast: null });
+
+    const count = await restoreTabRecords(batch.entries, windowId);
+    set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
+    scheduleToastClear();
+  };
+
   return {
     batches: [],
     toast: null,
@@ -101,8 +116,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
       const next = pushBatch(get().batches, batch, settings.undoStackLimit);
       set({ batches: next });
+      // persistUndo 关闭时不写库：load() 已清过历史库，会话内批次仅存活于内存。
       if (settings.persistUndo) await undoRepository.write(next);
-      else await undoRepository.write([]);
 
       const skipped = requested.length - closed.length;
       set({
@@ -119,37 +134,18 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     },
 
     undo: async () => {
-      const windowId = useTabStore.getState().currentWindowId;
-      if (windowId === undefined) return;
       const [latest, remaining] = popBatch(get().batches);
       if (!latest) return;
-
-      set({ batches: remaining });
-      const settings = await settingsRepository.read();
-      if (settings.persistUndo) await undoRepository.write(remaining);
-      clearTimeout(toastTimer);
-      set({ toast: null });
-
-      const count = await restoreTabRecords(latest.entries, windowId);
-      set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
-      scheduleToastClear();
+      await runUndo(latest, remaining);
     },
 
     undoBatch: async (batchId) => {
-      const windowId = useTabStore.getState().currentWindowId;
-      if (windowId === undefined) return;
       const batch = get().batches.find((entry) => entry.id === batchId);
       if (!batch) return;
-      const remaining = get().batches.filter((entry) => entry.id !== batchId);
-      set({ batches: remaining });
-      const settings = await settingsRepository.read();
-      if (settings.persistUndo) await undoRepository.write(remaining);
-      clearTimeout(toastTimer);
-      set({ toast: null });
-
-      const count = await restoreTabRecords(batch.entries, windowId);
-      set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
-      scheduleToastClear();
+      await runUndo(
+        batch,
+        get().batches.filter((entry) => entry.id !== batchId)
+      );
     },
 
     clearToast: () => {

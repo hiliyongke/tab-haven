@@ -62,6 +62,9 @@ export class DuplicateIndex {
  *
  * 行为规格（PRD 附录 C-8）：保留当前激活 > 已固定 > 位置靠前；
  * 固定标签一律豁免清理。
+ *
+ * 分工说明：本策略服务于「重复清理」面板（DuplicateIndex 消费方）；
+ * 复用引擎的「保留最近访问者」策略见 dup/DedupeByUrl.ts 的 rankForKeep，勿混用。
  */
 export class KeeperPolicy {
   /** 固定标签豁免清理。 */
@@ -74,11 +77,12 @@ export class KeeperPolicy {
   static readonly default = new KeeperPolicy();
 
   select(group: DuplicateGroup): { keeper: TabRecord; removable: TabRecord[] } {
-    // 重复组长度 ≥ 2，组内必有元素；keeper 兜底取首元素。
+    // 重复组长度 ≥ 2，组内必有元素；「位置靠前」兜底按 index 取最小，
+    // 不依赖传入顺序（调用方传入未排序数组时行为依然确定）。
     const keeper =
       group.tabs.find((tab) => tab.active) ??
       group.tabs.find((tab) => tab.pinned) ??
-      group.tabs[0]!;
+      group.tabs.reduce((front, tab) => (tab.index < front.index ? tab : front));
 
     const removable = group.tabs.filter((tab) => tab !== keeper && !(this.pinnedExempt && tab.pinned));
     return { keeper, removable };

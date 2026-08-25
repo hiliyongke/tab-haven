@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
@@ -94,6 +94,10 @@ export function TabRow({
       favIconUrl: tab.favIconUrl
     }
   });
+
+  // 键盘拖拽与指针拖拽分流：键盘监听挂主按钮（KeyboardSensor 要求 keydown 目标即 activator），
+  // 指针监听挂整行（PointerSensor 无目标限制），两者不会为同一事件重复激活。
+  const { onKeyDown: sortableKeyDown, ...sortablePointerListeners } = sortable.listeners ?? {};
 
   // 当前激活标签变化时，将其滚动进可视区（仅在不完全可见时滚动）。
   useEffect(() => {
@@ -215,7 +219,12 @@ export function TabRow({
         actions={tabActions}
         container={{
           ref: sortable.setNodeRef,
-          listeners: sortable.listeners,
+          listeners: sortablePointerListeners,
+          activatorRef: sortable.setActivatorNodeRef,
+          buttonAttributes: sortable.attributes,
+          buttonListeners: sortableKeyDown
+            ? { onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void }
+            : undefined,
           style: {
             transform: sortable.transform
               ? `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)`

@@ -163,4 +163,31 @@ describe('ReuseCoordinator', () => {
     await h.flush();
     expect(h.calls.close).toEqual([11]);
   });
+
+  it('单任务异常（标签恰被用户关闭）不中断调度，后续任务照常结算', async () => {
+    const calls = { activate: [] as number[], close: [] as number[] };
+    const windowTabs = [
+      makeTab({ id: 1, index: 0, url: 'https://a.com/' }),
+      makeTab({ id: 2, index: 1, url: 'https://b.com/' })
+    ];
+    const coordinator = new ReuseCoordinator({
+      scanWindow: async () => windowTabs,
+      activate: async (tabId) => {
+        calls.activate.push(tabId);
+      },
+      close: async (tabId) => {
+        calls.close.push(tabId);
+        if (tabId === 10) throw new Error('tab already closed');
+      },
+      notifyReuse: () => {}
+    });
+
+    coordinator.handleCreated(makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' }));
+    coordinator.handleCreated(makeTab({ id: 11, index: 3, url: 'https://b.com/', status: 'complete' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // 任务 10 的 close 抛错不影响任务 11 照常激活与关闭
+    expect(calls.activate).toEqual([1, 2]);
+    expect(calls.close).toEqual([10, 11]);
+  });
 });

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -47,6 +47,18 @@ export function GroupCard({
   children?: ReactNode;
 }) {
   const sortable = useSortable({ id, data: dragData, disabled });
+  // 指针拖拽挂整个头部（整头可拖），键盘拖拽挂专用手柄（KeyboardSensor 要求 keydown
+  // 目标即 activator；手柄是真实 button，不与头部内 toggle 按钮的 Space/Enter 冲突）。
+  const { onKeyDown: headKeyDown, ...headPointerListeners } = sortable.listeners ?? {};
+  const dragKeyboard = disabled
+    ? undefined
+    : {
+        attributes: { ...sortable.attributes } as Record<string, unknown>,
+        listeners: headKeyDown
+          ? { onKeyDown: headKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void }
+          : undefined,
+        activatorRef: sortable.setActivatorNodeRef
+      };
   // 仅「跨容器投放」（拖标签/分组到本卡片）显示整卡投放高亮；
   // 同层排序时的 isOver 只参与落点判断，不触发盒子高亮，避免排序路径上卡片乱闪。
   const { active } = useDndContext();
@@ -75,12 +87,13 @@ export function GroupCard({
         title={title}
         count={count}
         onToggle={onToggle}
+        expanded={onToggle ? !collapsed : undefined}
         onClose={onClose}
         closeTitle={closeTitle}
         mediaIndicator={mediaIndicator}
         action={action}
-        dragHandleRef={sortable.setActivatorNodeRef}
-        dragHandleProps={sortable.listeners}
+        dragHandleProps={disabled ? undefined : headPointerListeners}
+        dragKeyboard={dragKeyboard}
       />
       {!collapsed && children}
     </section>

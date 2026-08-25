@@ -1,21 +1,24 @@
 import {
+  Camera,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
   Bookmark,
   BookmarkPlus,
+  Command,
   Copy,
   Folder,
   FolderInput,
   FolderOpen,
   GripVertical,
   History,
-  Keyboard,
   LocateFixed,
+  Menu,
   Pencil,
-  Percent,
   Pin,
   Plus,
+  Shield,
+  Sparkles,
   Search,
   Settings,
   Snowflake,
@@ -64,18 +67,24 @@ export const Icons = {
   openAll: FolderOpen,
   /** 唤醒全部休眠标签。 */
   wakeAll: Sunrise,
-  /** 缩放一键重置。 */
-  zoomReset: Percent,
   /** 撤销历史。 */
   history: History,
-  /** 快捷键帮助。 */
-  shortcuts: Keyboard,
+  /** 命令面板入口（⌘ 符号，比键盘图标更直观）。 */
+  shortcuts: Command,
   /** 固定文件夹保存为书签。 */
   bookmarkAdd: BookmarkPlus,
   /** 从书签导入。 */
   bookmarkImport: FolderInput,
   /** 一键删除（固定文件夹 / 原生分组），标签保留。 */
   trash: Trash2,
+  /** 安全网指示：所有关闭都可撤销。 */
+  shield: Shield,
+  /** 会话快照（命名快照 / 关窗自动保存）。 */
+  snapshot: Camera,
+  /** 右键菜单（功能可发现性）。 */
+  menu: Menu,
+  /** 能力发现 Tip（友好高亮）。 */
+  sparkles: Sparkles,
 } as const;
 
 /** 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。 */

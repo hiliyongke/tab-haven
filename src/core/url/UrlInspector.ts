@@ -22,7 +22,15 @@ export interface UrlInspection {
 
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
-const BLANK_START_URLS = new Set(['', 'about:blank', 'chrome://newtab/', 'chrome://new-tab-page/']);
+/** 空白起始页（规范形：无尾斜杠、无 hash 片段）。 */
+const BLANK_START_URLS = new Set(['about:blank', 'chrome://newtab', 'chrome://new-tab-page']);
+
+/** 空白起始页判定：容忍尾斜杠/hash 变体（如 chrome://newtab、about:blank#blocked）。 */
+function isBlankStartUrl(raw: string): boolean {
+  if (raw === '') return true;
+  const canonical = raw.split('#')[0]!.replace(/\/$/, '').toLowerCase();
+  return BLANK_START_URLS.has(canonical);
+}
 
 function isWebUrl(raw: string): boolean {
   try {
@@ -50,7 +58,7 @@ export function inspectUrl(
     return { category: 'web', comparisonKey: pending, committedUrl: committed };
   }
 
-  if (BLANK_START_URLS.has(committed)) {
+  if (isBlankStartUrl(committed)) {
     return { category: 'blank-start', comparisonKey: pending || committed, committedUrl: committed };
   }
 

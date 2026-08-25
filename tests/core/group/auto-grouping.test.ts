@@ -39,9 +39,27 @@ describe('planAutoGroups', () => {
     expect(plans[0]).toMatchObject({ title: 'github.com', tabIds: [1, 2] });
   });
 
-  it('单一标签不产出计划', () => {
+  it('单一标签站点（阈值 1）也产出计划', () => {
+    // 规格：site section 已满足上游聚合阈值，阈值 1 时单标签站点同样建组。
     const plans = planAutoGroups([siteSection('github.com', [makeTab(1)])]);
-    expect(plans).toHaveLength(0);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ title: 'github.com', tabIds: [1] });
+  });
+
+  it('单标签语言分组不产出计划（噪音）', () => {
+    const langSection: TemporarySection = {
+      kind: 'site',
+      key: 'site-lang-en',
+      title: 'English',
+      tabs: [makeTab(1)],
+      siteKey: 'lang-en',
+      subgroups: []
+    };
+    expect(planAutoGroups([langSection])).toHaveLength(0);
+    // planRegroup（options 形式，内部派生语言 section）同样不下发单标签语言组
+    expect(
+      planRegroup({ tabs: [makeTab(1, { language: 'en' })], groupMode: 'language' }).plans
+    ).toHaveLength(0);
   });
 
   it('存在已入原生组的标签时整组跳过（不打扰手动分组）', () => {

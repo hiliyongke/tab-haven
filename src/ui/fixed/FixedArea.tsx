@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -13,6 +13,7 @@ import { ConfirmDialog, PromptDialog } from '@/ui/dialog/Dialog';
 import { FolderEditDialog } from '@/ui/fixed/FolderEditDialog';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { GroupCard } from '@/ui/common/GroupCard';
+import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { RowActions } from '@/ui/common/RowActions';
 import { RowItem } from '@/ui/common/RowItem';
@@ -54,6 +55,8 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
       favIconUrl: item.favIconUrl
     }
   });
+  // 同 TabRow：键盘监听挂主按钮，指针监听挂整行（避免同一事件双重激活）。
+  const { onKeyDown: sortableKeyDown, ...sortablePointerListeners } = sortable.listeners ?? {};
 
   return (
     <li data-tabhaven-tab-id={runtimeTab?.id}>
@@ -129,7 +132,12 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
         dragGripTitle={t('fixed.reorderItem')}
         container={{
           ref: sortable.setNodeRef,
-          listeners: sortable.listeners,
+          listeners: sortablePointerListeners,
+          activatorRef: sortable.setActivatorNodeRef,
+          buttonAttributes: sortable.attributes,
+          buttonListeners: sortableKeyDown
+            ? { onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void }
+            : undefined,
           style: {
             transform: sortable.transform
               ? `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)`
@@ -189,7 +197,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
       return;
     }
     void createTabsWithUrls(missing.map((item) => item.url))
-      .then(() => notify(t('fixed.openedAll', { count: missing.length })))
+      .then((created) => notify(t('fixed.openedAll', { count: created })))
       .catch(() => notify(t('errors.operationFailed')));
   };
   const handleExportBookmarks = () => {
@@ -387,7 +395,10 @@ export function FixedArea() {
         }
       >
         {folders.length === 0 && (
-          <p className="fixed-area-empty">{t('fixed.emptyHint')}</p>
+          <>
+            <p className="fixed-area-empty">{t('fixed.emptyHint')}</p>
+            <FixedConceptsMap className="mt-1" />
+          </>
         )}
         {folders.map((folder) => (
           <FolderRow key={folder.id} folder={folder} />

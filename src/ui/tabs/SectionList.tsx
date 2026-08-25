@@ -8,6 +8,7 @@ import { CategoryModule } from '@/ui/common/CategoryModule';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TabRow } from '@/ui/tabs/TabRow';
+import { VirtualRowList } from '@/ui/tabs/VirtualRowList';
 import { DragType } from '@/ui/dnd/types';
 import { groupAccentVar, useDomainAccent } from '@/ui/tabs/accent';
 import { computeSplitGroupRoles } from '@/ui/tabs/splitGroupRoles';
@@ -57,6 +58,7 @@ function GroupEditDialog({
             onClose();
           }
         }}
+        aria-label={t('groups.namePlaceholder')}
         placeholder={t('groups.namePlaceholder')}
       />
       <div className="mb-2 flex flex-wrap gap-1">
@@ -172,6 +174,52 @@ function RowList({
 }) {
   // 分屏组竖线角色：同一 splitViewId 的「连续」标签段 → 组首/组中/组尾（单标签段也画线）。
   const splitGroupRoles = useMemo(() => computeSplitGroupRoles(tabs), [tabs]);
+
+  // 大列表且无需拖拽重排时走虚拟滚动（零依赖窗口化）；
+  // 其余保持全量渲染——拖拽重排依赖 SortableContext 挂载全部项，不可虚拟化。
+  const VIRTUAL_THRESHOLD = 60;
+  const useVirtual = !reorderEnabled && tabs.length > VIRTUAL_THRESHOLD;
+
+  if (useVirtual) {
+    // itemSize 必须等于真实行高（行 wrapper 按 itemSize 定高：偏大产生空隙，偏小溢出重叠）：
+    // 单行 = text-xs 行高 16px + 垂直 padding（compact 4px / cozy 8px）→ 20 / 24；
+    // showUrl 副标题（text-2xs leading-tight ≈ 12.5px）取整 +13 → 33 / 37。
+    const itemSize = (density === 'cozy' ? 24 : 20) + (showUrl ? 13 : 0);
+    return (
+      <VirtualRowList
+        tabs={tabs}
+        itemSize={itemSize}
+        maxHeight={480}
+        renderRow={(tab) => (
+          <TabRow
+            tab={tab}
+            duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
+            isActive={tab.id === activeTabId}
+            isSplitCompanion={splitPartners.has(tab.id)}
+            splitGroupRole={splitGroupRoles.get(tab.id)}
+            reorderEnabled={reorderEnabled}
+            showUrl={showUrl}
+            rowActionsVisible={rowActionsVisible}
+            autoScrollActive={autoScrollActive}
+            closeOnMiddleClick={closeOnMiddleClick}
+            density={density}
+            showSplitBadges={showSplitBadges}
+            indent={depths?.get(tab.id)}
+            isHighlighted={highlightedIds?.has(tab.id)}
+            isSearchActive={tab.id === searchActiveTabId}
+            onActivate={callbacks.onActivate}
+            onToggleMute={callbacks.onToggleMute}
+            onTogglePin={callbacks.onTogglePin}
+            onClose={callbacks.onCloseTab}
+            onDuplicate={callbacks.onDuplicate}
+            onDiscard={callbacks.onDiscard}
+            onMoveTab={callbacks.onMoveTab}
+            containerKey={containerKey}
+          />
+        )}
+      />
+    );
+  }
 
   return (
     <SortableContext items={tabs.map((tab) => tab.id)} strategy={verticalListSortingStrategy}>
@@ -463,7 +511,7 @@ function CollapsibleSectionCard({
           <div className="flex flex-col gap-1">
             {subGroups.map((sub) => (
               <div key={sub.subdomain || 'root'}>
-                <div className="px-1.5 py-0 text-2xs leading-tight text-gray-500">{sub.label}</div>
+                <div className="px-1.5 py-0 text-2xs leading-tight text-gray-600">{sub.label}</div>
                 <SectionRows tabs={sub.tabs} containerKey={section.key} {...rowProps} />
               </div>
             ))}
@@ -613,7 +661,7 @@ function SectionListImpl({
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
             <Icon d={Icons.search} className="h-6 w-6 text-gray-300" />
             <div className="text-sm font-medium text-gray-600">{t('empty.title')}</div>
-            <div className="text-xs text-gray-400">{t('empty.hint')}</div>
+            <div className="text-xs text-gray-500">{t('empty.hint')}</div>
           </div>
         ) : (
           <>

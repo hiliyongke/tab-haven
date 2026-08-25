@@ -46,7 +46,8 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
   const handleReorder = useCallback((sourceId: number, targetId: number, placeAfter: boolean) => {
     const allTabs = useTabStore.getState().tabs;
     const index = computeReorderIndex({ tabs: allTabs, sourceId, targetId, placeAfter });
-    if (index >= 0) void moveTab(sourceId, index);
+    // 拖拽过程中目标标签可能已被关闭：失败静默（下一帧快照自愈），不产生未捕获 rejection。
+    if (index >= 0) void moveTab(sourceId, index).catch(() => {});
   }, []);
 
   /** 键盘重排（Alt+↑/↓）：把标签向相邻展示位置移动。 */
@@ -85,9 +86,11 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
       const overFirst = overSection.tabs[0]!.index;
       const overLast = overSection.tabs.at(-1)!.index;
       // 前移 → 插到目标组首 tab；后移 → 插到目标组末 tab + 1。
-      useTabStore
+      // 组可能在拖拽过程中被解散：失败静默（快照自愈），不产生未捕获 rejection。
+      void useTabStore
         .getState()
-        .moveGroup(activeData.groupId, newIndex < oldIndex ? overFirst : overLast + 1);
+        .moveGroup(activeData.groupId, newIndex < oldIndex ? overFirst : overLast + 1)
+        .catch(() => {});
     },
     []
   );
@@ -119,7 +122,10 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
               overTab.groupId >= 0 &&
               sourceTab.groupId !== overTab.groupId
             ) {
-              void browser.tabs.group({ tabIds: [sourceTab.id], groupId: overTab.groupId });
+              // 目标组可能刚被解散：失败静默（保持未分组），不产生未捕获 rejection。
+              void browser.tabs
+                .group({ tabIds: [sourceTab.id], groupId: overTab.groupId })
+                .catch(() => {});
             }
           }
           return;

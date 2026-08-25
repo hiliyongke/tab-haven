@@ -21,7 +21,7 @@ export function toUndoTabRecord(
     index: tab.index,
     pinned: tab.pinned,
     muted: Boolean(tab.muted),
-    groupId: tab.groupId ?? NO_GROUP,
+    groupId: tab.groupId,
     groupName: tab.groupId !== NO_GROUP ? groupNameById.get(tab.groupId) : undefined
   };
 }
@@ -32,7 +32,9 @@ export function pushBatch(
   batch: UndoBatch,
   limit = DEFAULT_UNDO_STACK_LIMIT
 ): UndoBatch[] {
-  return [...batches, batch].slice(-limit);
+  // 防御：limit ≤ 0 时 slice(-0) 等于 slice(0) 会保留全量，失去淘汰。
+  const cap = Math.max(1, Math.floor(limit));
+  return [...batches, batch].slice(-cap);
 }
 
 /** 弹栈：返回 [最新批次, 剩余批次]。 */

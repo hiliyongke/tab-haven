@@ -55,6 +55,14 @@ describe('UndoStack', () => {
     expect(batches[0]?.entries[0]?.url).toBe('https://t3.com/');
   });
 
+  it('limit ≤ 0 防御：仍按最小容量 1 淘汰（slice(-0) 不会保留全量）', () => {
+    let batches: ReturnType<typeof pushBatch> = [];
+    batches = pushBatch(batches, batch('a'), 0);
+    batches = pushBatch(batches, batch('b'), 0);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]?.entries[0]?.url).toBe('https://b.com/');
+  });
+
   it('撤销记录携带五元组（URL/位置/固定/静音/分组）', () => {
     const tab = makeTab({
       id: 9,
