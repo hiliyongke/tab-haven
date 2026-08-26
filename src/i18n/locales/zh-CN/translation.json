@@ -398,6 +398,11 @@
     "importOneTabHint": "把 OneTab 导出的文本粘贴到这里，我们会解析其中的网址并保存为一个快照",
     "importOneTabPlaceholder": "https://example.com - 网页标题",
     "imported": "已导入 {{count}} 个标签",
+    "defaultName": "快照",
+    "defaultAutoName": "自动快照",
+    "defaultSpaceName": "工作区快照",
+    "defaultArchiveName": "归档快照",
+    "oneTabImportName": "OneTab 导入",
     "reportTitle": "本周周报",
     "reportHint": "本地聚合，不涉及任何网络或账号",
     "reportThisWeek": "近 7 天",
@@ -423,5 +428,8 @@
     "snapshotHow": "关窗自动保存，也可手动把当前窗口存为快照随时恢复",
     "undoTitle": "撤销安全网",
     "undoHow": "所有关闭操作都可撤销，误关也不怕"
+  },
+  "bg": {
+    "autoDiscarded": "已休眠 {{count}} 个标签（可在面板一键唤醒）"
   }
 }

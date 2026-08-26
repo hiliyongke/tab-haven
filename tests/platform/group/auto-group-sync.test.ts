@@ -61,17 +61,32 @@ describe('AutoGroupSync 生命周期', () => {
     expect(stored['tabhaven.auto-groups.v1']).toEqual([10, 11]);
   });
 
-  it('解散：删除记录的组并清空记录，已不存在的组静默跳过', async () => {
+  it('解散：ungroup 全部成员并清空记录，失败组保留 id 供重试', async () => {
     stubTabsGroup();
-    const { removeMock } = stubTabGroups();
+    stubTabGroups();
+    // removeGroup 的标准做法是 tabs.query({groupId}) + tabs.ungroup（tabGroups 无 remove API），
+    // 这里注入对应的最小实现：组 10 的成员 ungroup 失败（模拟异常路径），组 11 正常。
+    const ungroupMock = vi.fn(async (tabIds: number[]) => {
+      if (tabIds.includes(21)) throw new Error('ungroup failed');
+    });
+    const queryMock = vi.fn(async (opts: { groupId?: number }) =>
+      opts?.groupId === 10 ? [{ id: 21 }, { id: 22 }] : [{ id: 31 }]
+    );
+    const tabs = fakeBrowser.tabs as unknown as {
+      query: typeof queryMock;
+      ungroup: typeof ungroupMock;
+    };
+    tabs.query = queryMock;
+    tabs.ungroup = ungroupMock;
 
     await syncAutoGroups([PLAN_A, PLAN_B]);
     const count = await disbandAutoGroups();
 
-    expect(count).toBe(1); // 只有 11 成功解散（10 模拟用户已手动解散）
-    expect(removeMock).toHaveBeenCalledTimes(2);
+    expect(count).toBe(1); // 只有 11 成功解散（10 的 ungroup 失败）
+    expect(ungroupMock).toHaveBeenCalledTimes(2);
     const stored = await fakeBrowser.storage.local.get('tabhaven.auto-groups.v1');
-    expect(stored['tabhaven.auto-groups.v1']).toEqual([]);
+    // 失败组保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组
+    expect(stored['tabhaven.auto-groups.v1']).toEqual([10]);
   });
 
   it('无记录时解散是空操作', async () => {

@@ -5,6 +5,7 @@ import { mapTab } from '@/platform/tabs';
 import { readSession } from '@/platform/storage/session';
 import { autoDiscardRepository, settingsRepository } from '@/platform/storage/repositories';
 import { AutoDiscardedMessageSchema } from '@/platform/messages';
+import { t } from '@/i18n/headless';
 import { cachedSettings, hostnameOf, isWhitelisted, notifyUser } from './shared';
 
 // ---------------------------------------------------------------------------
@@ -15,7 +16,8 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
   await autoDiscardRepository.write({ tabIds, at: Date.now(), count: tabIds.length });
   if (cachedSettings.discardNotifyEnabled) {
-    notifyUser('TabHaven', `Discarded ${tabIds.length} tabs (undo in panel).`);
+    // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
+    notifyUser('TabHaven', t('bg.autoDiscarded', { count: tabIds.length }));
   }
   const message = AutoDiscardedMessageSchema.parse({
     type: 'auto-discarded',

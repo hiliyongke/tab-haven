@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import { browser } from 'wxt/browser';
-import type { Snapshot, SnapshotTab } from '@/core/schema/models';
+import i18n from '@/i18n';
+import type { Snapshot } from '@/core/schema/models';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
 import { SkipAutoSaveOnceMessageSchema } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import {
   buildSnapshot,
+  collectSnapshotTabs,
   parseOneTab,
   persistSnapshot,
   restoreSnapshot
 } from '@/platform/snapshot/snapshots';
+import { queryCurrentWindowGroups } from '@/platform/tabs';
 
 /**
  * 快照 store（D5.1/D5.2）：命名快照的读取、保存、恢复、删除、重命名。
@@ -19,18 +22,6 @@ import {
  * store 仅持有内存态供 UI 渲染。关窗自动保存由 background SW 直接写入仓库，
  * 此处 load() 在面板启动时拉取最新列表。
  */
-
-/** 由窗口标签抽取轻量快照条目（仅 http(s) 页面可恢复，其余不入档）。 */
-function toSnapTabs(tabs: Awaited<ReturnType<typeof queryCurrentWindowTabs>>): SnapshotTab[] {
-  return tabs
-    .map((tab) => ({
-      url: tab.url ?? '',
-      title: tab.title || '',
-      favIconUrl: tab.favIconUrl,
-      pinned: tab.pinned
-    }))
-    .filter((tab) => /^https?:\/\//i.test(tab.url));
-}
 
 interface SnapshotState {
   snapshots: Snapshot[];
@@ -70,29 +61,47 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   saveCurrentWindow: async (name) => {
-    const tabs = await queryCurrentWindowTabs();
-    const snapTabs = toSnapTabs(tabs);
+    const [tabs, groups] = await Promise.all([queryCurrentWindowTabs(), queryCurrentWindowGroups()]);
+    const snapTabs = collectSnapshotTabs(tabs, groups);
     const win = await browser.windows.getLastFocused().catch(() => undefined);
-    const snapshot = buildSnapshot({ name: name ?? '', origin: 'manual', windowId: win?.id, tabs: snapTabs });
+    const snapshot = buildSnapshot({
+      name: name ?? '',
+      fallbackName: i18n.t('snapshots.defaultName'),
+      origin: 'manual',
+      windowId: win?.id,
+      tabs: snapTabs
+    });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
   },
 
   saveSpace: async (name) => {
-    const tabs = await queryCurrentWindowTabs();
-    const snapTabs = toSnapTabs(tabs);
+    const [tabs, groups] = await Promise.all([queryCurrentWindowTabs(), queryCurrentWindowGroups()]);
+    const snapTabs = collectSnapshotTabs(tabs, groups);
     const win = await browser.windows.getLastFocused().catch(() => undefined);
-    const snapshot = buildSnapshot({ name: name ?? '', origin: 'space', windowId: win?.id, tabs: snapTabs });
+    const snapshot = buildSnapshot({
+      name: name ?? '',
+      fallbackName: i18n.t('snapshots.defaultSpaceName'),
+      origin: 'space',
+      windowId: win?.id,
+      tabs: snapTabs
+    });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
   },
 
   archiveCurrentWindow: async (name) => {
-    const tabs = await queryCurrentWindowTabs();
+    const [tabs, groups] = await Promise.all([queryCurrentWindowTabs(), queryCurrentWindowGroups()]);
     const windowId = tabs[0]?.windowId;
-    const snapTabs = toSnapTabs(tabs);
+    const snapTabs = collectSnapshotTabs(tabs, groups);
     if (snapTabs.length > 0) {
-      const snapshot = buildSnapshot({ name: name ?? '', origin: 'archive', windowId, tabs: snapTabs });
+      const snapshot = buildSnapshot({
+        name: name ?? '',
+        fallbackName: i18n.t('snapshots.defaultArchiveName'),
+        origin: 'archive',
+        windowId,
+        tabs: snapTabs
+      });
       const next = await persistSnapshot(snapshot);
       set({ snapshots: next });
     }
@@ -118,7 +127,13 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   importOneTab: async (text, name) => {
     const tabs = parseOneTab(text);
     if (tabs.length === 0) return 0;
-    const snapshot = buildSnapshot({ name: name ?? 'OneTab 导入', origin: 'manual', windowId: undefined, tabs });
+    const snapshot = buildSnapshot({
+      name: name ?? '',
+      fallbackName: i18n.t('snapshots.oneTabImportName'),
+      origin: 'manual',
+      windowId: undefined,
+      tabs
+    });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
     return tabs.length;

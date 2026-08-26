@@ -206,7 +206,13 @@ export const SnapshotTabSchema = z.object({
   url: z.string(),
   title: z.string().default(''),
   favIconUrl: z.string().optional(),
-  pinned: z.boolean().default(false)
+  pinned: z.boolean().default(false),
+  /** 静音状态（恢复时还原；旧快照缺省为 false）。 */
+  muted: z.boolean().default(false),
+  /** 快照时所在原生组标题（未分组/旧快照缺省；恢复时按名并入或重建）。 */
+  groupTitle: z.string().optional(),
+  /** 快照时所在原生组颜色（Chrome 色名字符串，重建组时还原）。 */
+  groupColor: z.string().optional()
 });
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
 

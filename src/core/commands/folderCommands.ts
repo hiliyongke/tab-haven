@@ -8,7 +8,11 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
  * 抽出后行为完全等价，仅产出「下一版 folders + 必要中间量」，副作用（落盘/绑定）仍留在 store。
  */
 
-/** 以 web 归一化 key 去重（tags 差异忽略），与全应用 URL 唯一化口径一致。 */
+/**
+ * 固定条目的身份键：web 页取完整比较键（查询串/锚点参与身份），
+ * 与基线「同一 URL 全局唯一」的精确匹配口径一致；非 web 页降级原样、空 URL 为空串。
+ * 注：归一化匹配（忽略跟踪参数等）属 FR-D8.2（V1.2）范围，当前不做。
+ */
 export function fixedItemKey(url: string | undefined): string {
   if (!url) return '';
   return webComparisonKey(url, undefined) ?? url;

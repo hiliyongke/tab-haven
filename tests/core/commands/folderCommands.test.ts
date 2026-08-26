@@ -99,7 +99,14 @@ describe('folderCommands 纯计算', () => {
     expect(res.moved).toBe(1);
   });
 
-  it('fixedItemKey 归一化忽略 tags/查询串差异', () => {
-    expect(fixedItemKey('https://x.com/?a=1')).toBe(fixedItemKey('https://x.com/?b=2'));
+  it('fixedItemKey 以完整 web URL 为身份键（查询串参与身份）', () => {
+    // 基线规则「同一 URL 全局唯一」为精确 URL 匹配；查询串/锚点不同即不同条目。
+    // 归一化匹配（忽略跟踪参数/锚点）属 FR-D8.2（V1.2）范围，届时再扩展本用例。
+    expect(fixedItemKey('https://x.com/?a=1')).not.toBe(fixedItemKey('https://x.com/?b=2'));
+    expect(fixedItemKey('https://x.com/?a=1')).toBe(fixedItemKey('https://x.com/?a=1'));
+    // 空 URL（挂起待定条目）降级为空串，不参与唯一性判定
+    expect(fixedItemKey(undefined)).toBe('');
+    // 非 web 页（内部页）降级原样返回
+    expect(fixedItemKey('chrome://newtab')).toBe('chrome://newtab');
   });
 });

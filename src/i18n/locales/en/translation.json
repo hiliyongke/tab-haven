@@ -397,6 +397,11 @@
     "importOneTabHint": "Paste the text exported from OneTab; we parse the URLs and save them as one snapshot",
     "importOneTabPlaceholder": "https://example.com - Page title",
     "imported": "Imported {{count}} tabs",
+    "defaultName": "Snapshot",
+    "defaultAutoName": "Auto snapshot",
+    "defaultSpaceName": "Workspace snapshot",
+    "defaultArchiveName": "Archived snapshot",
+    "oneTabImportName": "OneTab import",
     "reportTitle": "Weekly report",
     "reportHint": "Local aggregation only — no network or account involved",
     "reportThisWeek": "Last 7 days",
@@ -422,5 +427,8 @@
     "snapshotHow": "Windows are auto-saved on close, or save the current window manually anytime",
     "undoTitle": "Undo safety net",
     "undoHow": "Every close is undoable — no fear of misclosing"
+  },
+  "bg": {
+    "autoDiscarded": "Discarded {{count}} tabs (wake them all from the panel)"
   }
 }

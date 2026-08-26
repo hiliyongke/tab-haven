@@ -4,6 +4,8 @@ import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
 import { mapTab } from '@/platform/tabs';
 import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
 import { foldersRepository, pinsRepository, settingsRepository } from '@/platform/storage/repositories';
+import { initHeadlessI18n } from '@/i18n/headless';
+import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 import {
   AllowDuplicateOnceMessageSchema,
   DuplicateReusedMessageSchema,
@@ -32,20 +34,31 @@ import {
 } from './background/windowCache';
 
 export default defineBackground(() => {
-  const coordinator = new ReuseCoordinator({
-    scanWindow: async (windowId) => {
-      const tabs = await browser.tabs.query({ windowId });
-      return tabs.map(mapTab);
+  // 后台文案轨道（FR-D10.2）：通知/自动快照默认名等 SW 侧文案按用户语言解析。
+  // 异步初始化不阻塞消息注册；完成前的 t() 调用回退浏览器语言判定。
+  void initHeadlessI18n();
+
+  // 豁免账本镜像到 storage.session：SW 回收后重新拉起时恢复未过期令牌，
+  // 消除「撤销恢复/快照恢复的授权因回收丢失 → 新标签被误合并」的边缘时序（R-A）。
+  const { ledger: allowanceLedger, ready: allowanceLedgerReady } = createPersistedAllowanceLedger();
+
+  const coordinator = new ReuseCoordinator(
+    {
+      scanWindow: async (windowId) => {
+        const tabs = await browser.tabs.query({ windowId });
+        return tabs.map(mapTab);
+      },
+      activate: (tabId) => browser.tabs.update(tabId, { active: true }).then(() => undefined),
+      close: (tabId) => browser.tabs.remove(tabId),
+      // 复用通知经 runtime 消息推给面板（无面板时静默丢弃）。
+      notifyReuse: () => {
+        if (!cachedSettings.reuseNotifyEnabled) return;
+        const notification = DuplicateReusedMessageSchema.parse({ type: 'duplicate-reused' });
+        browser.runtime.sendMessage(notification).catch(() => {});
+      }
     },
-    activate: (tabId) => browser.tabs.update(tabId, { active: true }).then(() => undefined),
-    close: (tabId) => browser.tabs.remove(tabId),
-    // 复用通知经 runtime 消息推给面板（无面板时静默丢弃）。
-    notifyReuse: () => {
-      if (!cachedSettings.reuseNotifyEnabled) return;
-      const notification = DuplicateReusedMessageSchema.parse({ type: 'duplicate-reused' });
-      browser.runtime.sendMessage(notification).catch(() => {});
-    }
-  });
+    { allowances: allowanceLedger, allowancesReady: allowanceLedgerReady }
+  );
 
   // 同 URL 唯一化开关联动（设置存储在 chrome.storage.local）。
   const syncCoordinatorEnabled = async () => {

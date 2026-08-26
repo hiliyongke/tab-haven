@@ -57,4 +57,61 @@ describe('AllowanceLedger', () => {
     ledger.grant(1, 'https://a.com/');
     expect(ledger.consume(1, 'https://a.com/')).toBe(true);
   });
+
+  it('snapshot/restore 往返：快照可恢复到新账本并正常消费', () => {
+    const now = 1_000;
+    const source = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    source.grant(1, 'https://a.com/');
+    source.grant(1, 'https://a.com/');
+    const snapshot = source.snapshot();
+
+    // 新账本（模拟 SW 回收后重新拉起）从快照恢复
+    const revived = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    revived.restore(snapshot);
+    expect(revived.consume(1, 'https://a.com/')).toBe(true);
+    expect(revived.consume(1, 'https://a.com/')).toBe(true);
+    expect(revived.consume(1, 'https://a.com/')).toBe(false);
+  });
+
+  it('restore 丢弃过期令牌（SW 回收超过 TTL 后镜像不复活）', () => {
+    let now = 1_000;
+    const ledger = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    ledger.grant(1, 'https://a.com/');
+    const snapshot = ledger.snapshot();
+
+    now = 100_000; // 回收期间已超过 TTL
+    const revived = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    revived.restore(snapshot);
+    expect(revived.consume(1, 'https://a.com/')).toBe(false);
+  });
+
+  it('restore 合并语义：不覆盖内存中更新的授权（恢复与新发放并发安全）', () => {
+    let now = 1_000;
+    const ledger = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    ledger.grant(1, 'https://a.com/');
+    const stale = ledger.snapshot(); // 镜像读到的旧快照
+
+    now = 2_000;
+    ledger.grant(1, 'https://a.com/'); // 恢复完成前又有新发放（内存 2 枚）
+    ledger.restore(stale); // 迟到的恢复不得把内存拉回 1 枚
+    expect(ledger.consume(1, 'https://a.com/')).toBe(true);
+    expect(ledger.consume(1, 'https://a.com/')).toBe(true);
+    expect(ledger.consume(1, 'https://a.com/')).toBe(false);
+  });
+
+  it('onMutate 在发放/消费/过期清理时携带最新快照', () => {
+    let now = 1_000;
+    const snapshots: number[] = [];
+    const ledger = new AllowanceLedger({
+      ttlMs: 10_000,
+      now: () => now,
+      onMutate: (snapshot) => snapshots.push(Object.values(snapshot)[0]?.tokens ?? 0)
+    });
+    ledger.grant(1, 'https://a.com/');
+    ledger.grant(1, 'https://a.com/');
+    ledger.consume(1, 'https://a.com/');
+    now = 100_000;
+    ledger.consume(1, 'https://a.com/'); // 过期清理（无有效令牌）
+    expect(snapshots).toEqual([1, 2, 1, 0]);
+  });
 });

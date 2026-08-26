@@ -50,13 +50,23 @@ export class ReuseCoordinator {
 
   constructor(
     deps: ReuseCoordinatorDependencies,
-    options: { allowances?: AllowanceLedger; policy?: ReusePolicy; enabled?: boolean } = {}
+    options: {
+      allowances?: AllowanceLedger;
+      policy?: ReusePolicy;
+      enabled?: boolean;
+      /** 豁免账本持久化恢复信号：首次消费前 await，防止 SW 重启早期令牌尚未恢复被漏判。 */
+      allowancesReady?: Promise<void>;
+    } = {}
   ) {
     this.deps = deps;
     this.allowances = options.allowances ?? new AllowanceLedger();
     this.policy = options.policy ?? new ReusePolicy();
     this.enabled = options.enabled ?? true;
+    this.allowancesReady = options.allowancesReady;
   }
+
+  /** 豁免恢复门闩：只在恢复期间生效，恢复完成后置空（后续 drain 零开销）。 */
+  private allowancesReady?: Promise<void>;
 
   /** 开关联动（设置变更时调用）。关闭时清空追踪任务，允许同 URL 多开。 */
   setEnabled(enabled: boolean): void {
@@ -105,6 +115,12 @@ export class ReuseCoordinator {
 
   /** 串行处理所有脏任务（latest-wins：每轮读取任务的最新快照）。 */
   private async drain(): Promise<void> {
+    // 首轮处理前等待豁免账本恢复完成（一次性门闩；无持久化时立即通过）。
+    if (this.allowancesReady) {
+      const ready = this.allowancesReady;
+      this.allowancesReady = undefined;
+      await ready.catch(() => {});
+    }
     for (;;) {
       const entry = this.nextDirty();
       if (!entry) return;

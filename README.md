@@ -59,6 +59,7 @@ python3 scripts/privacy_check.py   # 隐私回归（权限/网络/数据三项�
 | 快捷入口 | 网页/链接/标签栏/工具栏图标右键菜单（休眠、固定、加入文件夹、按站点搜索）；地址栏 `th` 命令直达标签/固定条目；工具栏角标（标签数 / 重复组数 / 休眠数） |
 | 重复治理 | 一键清理重复标签（保留激活 / 固定 / 最早打开者）                                           |
 | 安全网   | 多层撤销栈（栈深 10，可恢复关闭的标签与分组）；撤销历史面板（任意批次恢复 + 浏览器最近关闭）；所有关闭路径可撤销 |
+| 会话快照 | 命名保存当前窗口 / 归档当前窗口（留档并关闭）/ 保存固定空间 / OneTab 文本导入；关窗自动快照（默认开启，滚动保留）；恢复仅新建缺失标签并还原固定/静音/分组；快照本地周报 |
 | 休眠与资源 | 手动 / 批量 / 自动休眠（自动休眠可撤销、支持域名白名单）；一键唤醒全部；一键重置全部标签缩放 |
 | 数据     | 固定空间与设置的 JSON 版本化导出导入（不包含当前打开标签）；固定集合与设置经浏览器账号通道镜像同步（跨设备首启自动恢复） |
 | 平台     | 侧边栏主形态 + 弹窗快速切换器降级形态；中/英双语；主题三态（跟随系统/亮/暗）；自制弹窗组件；快捷键帮助面板（含浏览器设置跳转） |
@@ -79,30 +80,34 @@ src/
 │   ├── popup/           # 弹窗快速切换器（降级形态）
 │   └── options/         # 设置 / 本地数据导入导出
 ├── core/               # 纯领域逻辑（零 chrome/DOM 依赖，单测主战场）
-│   ├── url/             # UrlInspector：URL 规约 + 分类
+│   ├── url/             # UrlInspector：URL 规约 + 分类（全应用 URL 判定唯一事实来源）
 │   ├── dup/             # DuplicateIndex + KeeperPolicy：重复组索引与 keeper 策略
 │   ├── site/            # SiteKey / HostRules / SiteResolver / SiteGrouping：同站点聚合
 │   ├── fixed/           # PinIdentity / FolderOps / Reconcile：固定空间领域
+│   ├── group/           # AutoGrouping：自动分组计划（纯决策）
+│   ├── commands/        # folderCommands：固定文件夹纯计算
 │   ├── search/          # SearchEngine：fuzzysort + pinyin-pro 三目标索引
 │   ├── undo/            # UndoStack：操作记录制 + 栈深淘汰
+│   ├── util/            # structuralSignature 等通用工具
 │   └── schema/          # zod schema 族 + 导出文件格式
 ├── platform/           # chrome 适配层（唯一触碰 chrome.* 的层）
 │   ├── tabs.ts          # 标签查询 / 事件聚合 / 操作
 │   ├── reuse/           # AllowanceLedger / ReusePolicy / ReuseCoordinator：复用引擎
 │   ├── sync/            # TabSyncService：事件→快照节流调度
 │   ├── storage/         # DataRepository：zod 校验读写 + 坏数据隔离 + 变更订阅
+│   ├── snapshot/        # 快照构建 / 裁剪 / 持久化 / 恢复 / OneTab 解析
 │   ├── theme/           # ThemeApplier：主题三态落地
 │   ├── undo/            # RestoreEngine：撤销恢复管线
 │   ├── messages.ts      # 类型安全消息协议（zod）
 │   └── capabilities.ts  # 形态能力检测
-├── stores/             # zustand store 族（tab / undo / data / ui）
+├── stores/             # zustand store 族（tab / undo / data / snapshot）
 ├── ui/                 # React 组件库（common / tabs / fixed / search / dialog）
 ├── i18n/               # UI 文案（react-i18next）
 ├── theme-init.ts       # 头部同步主题，避免闪烁
 └── styles/             # Tailwind + CSS 变量
 ```
 
-完整设计见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，需求规格见 [docs/PRD.md](./docs/PRD.md)，开发计划见 [docs/DEVELOPMENT_PLAN.md](./docs/DEVELOPMENT_PLAN.md)。
+完整设计见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，需求规格见 [docs/PRD.md](./docs/PRD.md)，技术债与已知问题见 [docs/AUDIT.md](./docs/AUDIT.md)。
 
 ---
 
@@ -112,7 +117,7 @@ src/
 - **UI**：React 18 + TypeScript + Tailwind CSS
 - **状态**：zustand
 - **校验**：zod（所有持久化数据均经 schema 校验，坏数据隔离不扩散）
-- **测试**：Vitest，行为规格测试（Given/When/Then 语义），当前 106 例
+- **测试**：Vitest，行为规格测试（Given/When/Then 语义），当前 221 例（含 UI 渲染与性能规格回归）
 
 ```bash
 pnpm dev        # 开发（HMR）
