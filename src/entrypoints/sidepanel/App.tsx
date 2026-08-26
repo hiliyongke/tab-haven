@@ -404,7 +404,8 @@ export default function App() {
       excludedTabIds: fixedExcludedTabIds,
       sortMode: settings.sortMode,
       groupMode: settings.groupMode,
-      threshold: settings.aggregationThreshold
+      threshold: settings.aggregationThreshold,
+      translate: t
     });
     const plans = planAutoGroups(sections);
     if (plans.length > 0) void syncAutoGroups(plans);
@@ -425,8 +426,8 @@ export default function App() {
   }, [settings.autoGroupNative]);
 
   const allSections = useMemo(() => {
-    // i18n.language 参与 memo 键并在回调内引用：切换语言时分区标题
-    // （pinned/ungrouped 等由 deriveSections 内部读取全局 i18n 生成）需随语言重算。
+    // deriveSections 现接收 translate（来自 useTranslation 的 t）；切换语言时
+    // t 重新生成、组件重渲染，分区标题随之重算。i18n.language 仍作为 memo 键触发重算。
     void i18n.language;
     return deriveSections({
       tabs: filteredTabs,
@@ -434,7 +435,8 @@ export default function App() {
       excludedTabIds: fixedExcludedTabIds,
       sortMode: settings.sortMode,
       groupMode: settings.groupMode,
-      threshold: settings.aggregationThreshold
+      threshold: settings.aggregationThreshold,
+      translate: t
     });
   }, [
     filteredTabs,

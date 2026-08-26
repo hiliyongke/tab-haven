@@ -163,6 +163,7 @@
     "colorThemeViolet": "Violet",
     "colorThemeSunset": "Sunset",
     "colorThemeMono": "Mono",
+    "colorThemePlain": "Plain (matches Chrome)",
     "language": "Language",
     "threshold": "Site grouping threshold (tabs per domain to auto-group)",
     "thresholdHint": "Group tabs of a domain once they reach this count; set to 1 to group every domain with any tab (single-tab sites included)",

@@ -267,7 +267,8 @@ const COLOR_THEME_SWATCHES = [
   { id: 'ocean', labelKey: 'settings.colorThemeOcean', hex: '#3a6ea8' },
   { id: 'violet', labelKey: 'settings.colorThemeViolet', hex: '#6f4ba6' },
   { id: 'sunset', labelKey: 'settings.colorThemeSunset', hex: '#b85f22' },
-  { id: 'mono', labelKey: 'settings.colorThemeMono', hex: '#4a524a' }
+  { id: 'mono', labelKey: 'settings.colorThemeMono', hex: '#4a524a' },
+  { id: 'plain', labelKey: 'settings.colorThemePlain', hex: '#80868b' }
 ] as const;
 
 /** 预设画像：一键套用一组相关设置，降低 33 项设置的决策疲劳（P2 高价值）。 */

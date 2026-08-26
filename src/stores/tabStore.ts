@@ -15,6 +15,7 @@ import {
 } from '@/platform/tabs';
 import { TabSyncService } from '@/platform/sync/TabSyncService';
 import { webComparisonKey } from '@/core/url/UrlInspector';
+import { structuralSignature } from '@/core/util/signature';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { useDataStore } from '@/stores/dataStore';
 
@@ -147,8 +148,8 @@ export const useTabStore = create<TabState>()((set, get) => ({
         // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
         if (
           state.currentWindowId === snapshot.windowId &&
-          JSON.stringify(tabs) === JSON.stringify(state.tabs) &&
-          JSON.stringify(snapshot.groups) === JSON.stringify(state.groups)
+          structuralSignature(tabs) === structuralSignature(state.tabs) &&
+          structuralSignature(snapshot.groups) === structuralSignature(state.groups)
         ) {
           return {};
         }

@@ -352,6 +352,65 @@
   --c-on-accent: #1e1f20;
 }
 
+/* 纯净 plain：无色调；画布取系统色 Canvas，严格等同 Chrome 侧边栏明暗；强调色用 Chrome 中性灰 */
+:root[data-hue='plain'] {
+  --c-brand-50: #f1f3f4;
+  --c-brand-100: #e3e6e8;
+  --c-brand-200: #c8ccce;
+  --c-brand-300: #9aa0a6;
+  --c-brand-400: #80868b;
+  --c-brand-500: #5f6368;
+  --c-brand-600: #4a4d51;
+  --c-brand-700: #3c4043;
+  --c-gray-50: #f8f9fa;
+  --c-gray-100: #f1f3f4;
+  --c-gray-200: #e3e6e8;
+  --c-gray-300: #c8ccce;
+  --c-gray-400: #80868b;
+  --c-gray-500: #5f6368;
+  --c-gray-600: #4a4d51;
+  --c-gray-700: #3c4043;
+  --c-gray-800: #202124;
+  --c-gray-900: #1a1a1a;
+  --canvas: Canvas;
+  --surface: Canvas;
+  --surface-muted: color-mix(in srgb, Canvas 72%, transparent);
+  --border-subtle: #dadce0;
+  --ring: rgba(95, 99, 104, 0.35);
+  --drop-line: #5f6368;
+  --count-badge-bg: var(--c-brand-500);
+  --c-on-accent: #ffffff;
+}
+
+:root[data-theme='dark'][data-hue='plain'] {
+  --c-brand-50: #2a2b2c;
+  --c-brand-100: #353637;
+  --c-brand-200: #434445;
+  --c-brand-300: #7a7c7e;
+  --c-brand-400: #9aa0a6;
+  --c-brand-500: #bdc1c6;
+  --c-brand-600: #cdd1d5;
+  --c-brand-700: #e3e3e3;
+  --c-gray-50: #202124;
+  --c-gray-100: #2a2b2c;
+  --c-gray-200: #353637;
+  --c-gray-300: #434445;
+  --c-gray-400: #7a7c7e;
+  --c-gray-500: #9aa0a6;
+  --c-gray-600: #bdc1c6;
+  --c-gray-700: #d2d3d4;
+  --c-gray-800: #e8eaed;
+  --c-gray-900: #f1f3f4;
+  --canvas: Canvas;
+  --surface: Canvas;
+  --surface-muted: color-mix(in srgb, Canvas 72%, transparent);
+  --border-subtle: #3c4043;
+  --ring: rgba(189, 193, 198, 0.4);
+  --drop-line: #bdc1c6;
+  --count-badge-bg: var(--c-brand-700);
+  --c-on-accent: #202124;
+}
+
 html,
 body,
 #root {

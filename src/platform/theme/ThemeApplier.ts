@@ -9,12 +9,12 @@
 
 type ThemePreference = 'system' | 'light' | 'dark';
 /** 主题色预设（与 models.ts SettingsSchema.colorTheme 保持一致）。 */
-export type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono';
+export type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono' | 'plain';
 
 const THEME_MIRROR_KEY = 'tabhaven:theme';
 const HUE_MIRROR_KEY = 'tabhaven:theme-hue';
 
-export const COLOR_THEMES: readonly ColorTheme[] = ['forest', 'ocean', 'violet', 'sunset', 'mono'];
+export const COLOR_THEMES: readonly ColorTheme[] = ['forest', 'ocean', 'violet', 'sunset', 'mono', 'plain'];
 
 function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
   if (preference !== 'system') return preference;

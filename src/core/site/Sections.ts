@@ -1,4 +1,3 @@
-import i18n from '@/i18n';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { aggregateBySite, type SiteSubGroup } from '@/core/site/SiteGrouping';
 
@@ -56,6 +55,11 @@ interface SectionDerivation {
   groupMode?: 'site' | 'opener' | 'language';
   /** 网站聚合成组阈值（同注册域达到该数量才成组），默认 2。 */
   threshold?: number;
+  /**
+   * 文案翻译函数（可选）。core 不依赖 i18n，调用方（UI）注入 i18next 的 t。
+   * 缺省回退为恒等函数，便于纯逻辑单测（标题退化为 i18n key，不影响分区结构）。
+   */
+  translate?: (key: string) => string;
 }
 
 /** 常见语言的 BCP-47 代码 → 展示名（其余回退为大写代码）。 */
@@ -73,8 +77,8 @@ const LANGUAGE_LABELS: Record<string, string> = {
   it: 'Italiano',
   ar: 'العربية'
 };
-function languageLabel(code: string): string {
-  if (code === 'unknown') return i18n.t('sections.unknownLanguage');
+function languageLabel(code: string, t: (key: string) => string): string {
+  if (code === 'unknown') return t('sections.unknownLanguage');
   return LANGUAGE_LABELS[code] ?? code.toUpperCase();
 }
 
@@ -141,8 +145,10 @@ export function deriveSections({
   excludedTabIds,
   sortMode = 'browser',
   groupMode = 'site',
-  threshold
+  threshold,
+  translate
 }: SectionDerivation): TemporarySection[] {
+  const t = translate ?? ((key: string) => key);
   const excluded = excludedTabIds ?? new Set<number>();
   const sortCmp = (a: TabRecord | undefined, b: TabRecord | undefined): number =>
     sortMode === 'recency'
@@ -158,7 +164,7 @@ export function deriveSections({
     sections.push({
       kind: 'pinned',
       key: 'pinned',
-      title: i18n.t('sections.pinned'),
+      title: t('sections.pinned'),
       tabs: pinnedTabs
     });
   }
@@ -180,7 +186,7 @@ export function deriveSections({
     sections.push({
       kind: 'native',
       key: `group-${group.id}`,
-      title: group.title || i18n.t('tabs.unnamedGroup'),
+      title: group.title || t('tabs.unnamedGroup'),
       tabs: groupTabs,
       groupId: group.id,
       color: group.color,
@@ -200,7 +206,7 @@ export function deriveSections({
       sections.push({
         kind: 'ungrouped',
         key: 'opener-tree',
-        title: i18n.t('sections.openerTree'),
+        title: t('sections.openerTree'),
         tabs: ordered,
         depths
       });
@@ -221,7 +227,7 @@ export function deriveSections({
       sections.push({
         kind: 'site',
         key: `lang-${code}`,
-        title: languageLabel(code),
+        title: languageLabel(code, t),
         tabs: byLang.get(code) ?? [],
         siteKey: `lang-${code}`,
         subgroups: []
@@ -250,7 +256,7 @@ export function deriveSections({
     sections.push({
       kind: 'ungrouped',
       key: 'ungrouped',
-      title: i18n.t('tabs.ungrouped'),
+      title: t('tabs.ungrouped'),
       tabs: singles
     });
   }

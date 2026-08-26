@@ -97,8 +97,9 @@ export class DataRepository<T> {
       const list = (quarantine['tabhaven.quarantine'] as unknown[]) || [];
       list.push({ key: this.key, raw, at: new Date().toISOString() });
       await browser.storage.local.set({ 'tabhaven.quarantine': list.slice(-20) });
-    } catch {
+    } catch (error) {
       // 隔离失败不影响主流程
+      console.warn(`[DataRepository] quarantine failed for ${this.key}`, error);
     }
   }
 }

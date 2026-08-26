@@ -162,6 +162,7 @@
     "colorThemeViolet": "暮山紫",
     "colorThemeSunset": "暖阳橙",
     "colorThemeMono": "中性灰",
+    "colorThemePlain": "纯净（跟随 Chrome）",
     "language": "语言",
     "threshold": "网站聚合阈值（同一域名几个标签自动成组）",
     "thresholdHint": "同域名标签达到该数量自动成组；设为 1 时只要有标签就成组（单标签站点也分组）",

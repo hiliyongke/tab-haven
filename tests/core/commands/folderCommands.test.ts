@@ -1,0 +1,105 @@
+import { describe, it, expect } from 'vitest';
+import {
+  computeAddTabsToFolder,
+  computeMoveFolderItem,
+  computeRemoveFolder,
+  computeRenameFolder,
+  computeToggleFolderCollapsed,
+  fixedItemKey
+} from '@/core/commands/folderCommands';
+import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
+
+function item(id: string, url: string): FixedFolderItem {
+  return { id, url, title: url, createdAt: 1 };
+}
+function folder(
+  id: string,
+  name: string,
+  options: { items?: FixedFolderItem[]; collapsed?: boolean } = {}
+): FixedFolder {
+  return { id, name, items: options.items ?? [], collapsed: options.collapsed ?? false };
+}
+
+describe('folderCommands 纯计算', () => {
+  it('computeRenameFolder 仅改名字段', () => {
+    const folders = [folder('a', 'A')];
+    expect(computeRenameFolder(folders, 'a', 'Z')[0]?.name).toBe('Z');
+  });
+
+  it('computeRemoveFolder 删除目标且不动其余', () => {
+    const next = computeRemoveFolder([folder('a', 'A'), folder('b', 'B')], 'a');
+    expect(next).toHaveLength(1);
+    expect(next[0]?.id).toBe('b');
+  });
+
+  it('computeToggleFolderCollapsed 翻转折叠态', () => {
+    expect(computeToggleFolderCollapsed([folder('a', 'A', { items: [], collapsed: false })], 'a')[0]?.collapsed).toBe(
+      true
+    );
+  });
+
+  it('computeMoveFolderItem 跨文件夹移动并展开目标', () => {
+    const folders = [
+      folder('a', 'A', { items: [item('i1', 'https://x.com')] }),
+      folder('b', 'B', { items: [], collapsed: true })
+    ];
+    const next = computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'b' });
+    expect(next.find((f) => f.id === 'a')?.items).toHaveLength(0);
+    const target = next.find((f) => f.id === 'b');
+    expect(target?.items?.map((i) => i.id)).toEqual(['i1']);
+    expect(target?.collapsed).toBe(false);
+  });
+
+  it('computeMoveFolderItem 目标已含同 URL 则仅从源移除（去重）', () => {
+    const folders = [
+      folder('a', 'A', { items: [item('i1', 'https://x.com')] }),
+      folder('b', 'B', { items: [item('i2', 'https://x.com')] })
+    ];
+    const next = computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'b' });
+    expect(next.find((f) => f.id === 'a')?.items).toHaveLength(0);
+    expect(next.find((f) => f.id === 'b')?.items?.map((i) => i.id)).toEqual(['i2']);
+  });
+
+  it('computeMoveFolderItem 同文件夹内移动为 no-op（返回原引用）', () => {
+    const folders = [folder('a', 'A', { items: [item('i1', 'u')] })];
+    expect(computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'a' })).toBe(folders);
+  });
+
+  it('computeAddTabsToFolder 新增条目', () => {
+    const folders = [folder('a', 'A', { items: [item('i1', 'https://a.com')] })];
+    const candidates = new Map([['https://b.com', { url: 'https://b.com', title: 'B' }]]);
+    const res = computeAddTabsToFolder(folders, candidates, 'a');
+    expect(res.next.find((f) => f.id === 'a')?.items?.map((i) => i.url)).toEqual([
+      'https://a.com',
+      'https://b.com'
+    ]);
+    expect(res.newItems).toHaveLength(1);
+    expect(res.moved).toBe(0);
+  });
+
+  it('computeAddTabsToFolder 同文件夹重复 URL 计入 targetDuplicates 且不新增', () => {
+    const folders = [folder('a', 'A', { items: [item('i1', 'https://a.com')] })];
+    const candidates = new Map([['https://a.com', { url: 'https://a.com', title: 'A' }]]);
+    const res = computeAddTabsToFolder(folders, candidates, 'a');
+    expect(res.newItems).toHaveLength(0);
+    expect(res.targetDuplicates).toBe(1);
+    // 原条目保留原位（重复拖入同文件夹不移动）
+    expect(res.next.find((f) => f.id === 'a')?.items?.map((i) => i.id)).toEqual(['i1']);
+  });
+
+  it('computeAddTabsToFolder 跨文件夹重复 URL 触发移动', () => {
+    const folders = [
+      folder('a', 'A', { items: [item('i1', 'https://a.com')] }),
+      folder('b', 'B', { items: [item('i2', 'https://b.com')] })
+    ];
+    const candidates = new Map([['https://b.com', { url: 'https://b.com', title: 'B' }]]);
+    const res = computeAddTabsToFolder(folders, candidates, 'a');
+    expect(res.next.find((f) => f.id === 'a')?.items?.map((i) => i.id)).toEqual(['i1', 'i2']);
+    expect(res.next.find((f) => f.id === 'b')?.items).toHaveLength(0);
+    expect(res.moved).toBe(1);
+  });
+
+  it('fixedItemKey 归一化忽略 tags/查询串差异', () => {
+    expect(fixedItemKey('https://x.com/?a=1')).toBe(fixedItemKey('https://x.com/?b=2'));
+  });
+});

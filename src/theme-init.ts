@@ -13,7 +13,7 @@
   const HUE_MIRROR_KEY = 'tabhaven:theme-hue';
 
   type ThemePreference = 'system' | 'light' | 'dark';
-  type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono';
+  type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono' | 'plain';
 
   let preference: ThemePreference = 'system';
   let hue: ColorTheme = 'forest';
@@ -28,7 +28,8 @@
       storedHue === 'ocean' ||
       storedHue === 'violet' ||
       storedHue === 'sunset' ||
-      storedHue === 'mono'
+      storedHue === 'mono' ||
+      storedHue === 'plain'
     ) {
       hue = storedHue;
     }

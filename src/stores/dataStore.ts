@@ -7,10 +7,18 @@ import {
   createFolderItem,
   dedupePins,
   pinFromTab,
-  reorderFolderItems as reorderFolderItemsModel,
-  reorderFolders,
   reorderPins as reorderPinsModel
 } from '@/core/fixed/FolderOps';
+import {
+  computeAddTabsToFolder,
+  computeMoveFolder,
+  computeMoveFolderItem,
+  computeRemoveFolder,
+  computeReorderFolderItems,
+  computeRenameFolder,
+  computeToggleFolderCollapsed,
+  fixedItemKey
+} from '@/core/commands/folderCommands';
 import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
 import {
   DEFAULT_SETTINGS,
@@ -20,21 +28,15 @@ import {
   SettingsSchema,
   type ExportFile,
   type FixedFolder,
-  type FixedFolderItem,
   type PersistentPin,
   type Settings,
   type SiteCollapseState
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
+import { structuralSignature } from '@/core/util/signature';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
-import {
-  collapseRepository,
-  foldersRepository,
-  pinsRepository,
-  seededRepository,
-  settingsRepository
-} from '@/platform/storage/repositories';
+import { getRepositories } from '@/platform/storage/repositories';
 import { syncMirror } from '@/platform/storage/SyncMirror';
 import { readBookmarkBar } from '@/platform/bookmarks';
 import { SettingsSyncedMessageSchema } from '@/platform/messages';
@@ -149,17 +151,16 @@ function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<unknown> 
   };
 }
 
-function fixedItemKey(url: string): string {
-  return webComparisonKey(url, undefined) ?? url;
-}
-
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
 let initialized = false;
 
 export const useDataStore = create<DataState>()((set, get) => {
+  // 依赖访问器：经组合根取用，便于测试注入（见 registry.ts）。
+  const repos = getRepositories();
+
   // 写入工具：闭包内定义，用 set/get 访问 store，避免模块级声明顺序依赖（no-use-before-define）。
-  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[]>(foldersRepository);
-  const writePinsCoalesced = createCoalescedWriter<PersistentPin[]>(pinsRepository);
+  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[]>(repos.folders);
+  const writePinsCoalesced = createCoalescedWriter<PersistentPin[]>(repos.pins);
 
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
   const scheduleMirror = (state: {
@@ -188,12 +189,13 @@ export const useDataStore = create<DataState>()((set, get) => {
   // 另提供 refreshSettings（重新读存储）与 settings-synced 广播消息作为双保险。
   const syncSettingsFromStorage = async (): Promise<void> => {
     try {
-      const next = await settingsRepository.read();
+      const next = await repos.settings.read();
       // 回显守卫：本页面自身写入触发的回放内容相同，跳过 set 避免双倍渲染。
-      if (JSON.stringify(next) !== JSON.stringify(get().settings)) set({ settings: next });
+      if (structuralSignature(next) !== structuralSignature(get().settings)) set({ settings: next });
       applyTheme(next.themePreference, next.colorTheme);
-    } catch {
+    } catch (error) {
       // 读取失败保持当前状态
+      console.warn('[dataStore] settings replay read failed; keeping current settings', error);
     }
   };
   const broadcastSettingsSynced = (): void => {
@@ -204,7 +206,7 @@ export const useDataStore = create<DataState>()((set, get) => {
   const startSettingsWatcher = (): void => {
     if (settingsWatcherStarted) return;
     settingsWatcherStarted = true;
-    settingsRepository.watch(() => void syncSettingsFromStorage());
+    repos.settings.watch(() => void syncSettingsFromStorage());
   };
 
   return {
@@ -221,12 +223,12 @@ export const useDataStore = create<DataState>()((set, get) => {
     startSettingsWatcher();
     try {
       const [folders, pins, collapsedSites, settings, session, seeded] = await Promise.all([
-        foldersRepository.read(),
-        pinsRepository.read(),
-        collapseRepository.read(),
-        settingsRepository.read(),
+        repos.folders.read(),
+        repos.pins.read(),
+        repos.collapse.read(),
+        repos.settings.read(),
         readSession(),
-        seededRepository.read()
+        repos.seeded.read()
       ]);
       let effectiveFolders = folders;
       let effectivePins = pins;
@@ -242,10 +244,10 @@ export const useDataStore = create<DataState>()((set, get) => {
           if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
           if (parsedSettings.success) effectiveSettings = parsedSettings.data;
         }
-        await seededRepository.write(true);
-        if (effectiveFolders !== folders) await foldersRepository.write(effectiveFolders);
-        if (effectivePins !== pins) await pinsRepository.write(effectivePins);
-        if (effectiveSettings !== settings) await settingsRepository.write(effectiveSettings);
+        await repos.seeded.write(true);
+        if (effectiveFolders !== folders) await repos.folders.write(effectiveFolders);
+        if (effectivePins !== pins) await repos.pins.write(effectivePins);
+        if (effectiveSettings !== settings) await repos.settings.write(effectiveSettings);
       }
       set({
         folders: effectiveFolders,
@@ -258,17 +260,17 @@ export const useDataStore = create<DataState>()((set, get) => {
       // 数据加载后立即同步主题镜像，确保防闪烁初始化与最新设置一致（单一数据源）。
       applyTheme(effectiveSettings.themePreference, effectiveSettings.colorTheme);
       // 回显守卫：本页面自身写入触发的 watch 回放内容相同，直接跳过，避免双倍渲染。
-      foldersRepository.watch((value) => {
-        if (JSON.stringify(value) === JSON.stringify(get().folders)) return;
+      repos.folders.watch((value) => {
+        if (structuralSignature(value) === structuralSignature(get().folders)) return;
         set({ folders: value });
       });
-      pinsRepository.watch((value) => {
+      repos.pins.watch((value) => {
         const next = dedupePins(value);
-        if (JSON.stringify(next) === JSON.stringify(get().pins)) return;
+        if (structuralSignature(next) === structuralSignature(get().pins)) return;
         set({ pins: next });
       });
-      collapseRepository.watch((value) => {
-        if (JSON.stringify(value) === JSON.stringify(get().collapsedSites)) return;
+      repos.collapse.watch((value) => {
+        if (structuralSignature(value) === structuralSignature(get().collapsedSites)) return;
         set({ collapsedSites: value });
       });
       // 设置变更由 startSettingsWatcher 统一处理（重读 + 主题应用），不再重复 watch。
@@ -287,9 +289,7 @@ export const useDataStore = create<DataState>()((set, get) => {
   },
 
   renameFolder: async (folderId, name) => {
-    await writeFolders(
-      get().folders.map((folder) => (folder.id === folderId ? { ...folder, name } : folder))
-    );
+    await writeFolders(computeRenameFolder(get().folders, folderId, name));
   },
 
   deleteFolder: async (folderId) => {
@@ -300,16 +300,12 @@ export const useDataStore = create<DataState>()((set, get) => {
       }
       return { itemTabBindings: bindings };
     });
-    await writeFolders(get().folders.filter((folder) => folder.id !== folderId));
+    await writeFolders(computeRemoveFolder(get().folders, folderId));
     set({ boundTabIds: Object.values(result.itemTabBindings) });
   },
 
   toggleFolderCollapsed: async (folderId) => {
-    await writeFolders(
-      get().folders.map((folder) =>
-        folder.id === folderId ? { ...folder, collapsed: !folder.collapsed } : folder
-      )
-    );
+    await writeFolders(computeToggleFolderCollapsed(get().folders, folderId));
   },
 
   addTabsToFolder: async (tabs, folderId) => {
@@ -329,61 +325,8 @@ export const useDataStore = create<DataState>()((set, get) => {
       return { added: 0, moved: 0, skipped: tabs.length };
     }
 
-    const comparisonKeys = new Set(candidates.keys());
-    const existingByKey = new Map<string, { folderId: string; item: FixedFolderItem }>();
-    const duplicateItemIds = new Set<string>();
-    for (const folder of currentFolders) {
-      for (const item of folder.items) {
-        const key = fixedItemKey(item.url);
-        if (existingByKey.has(key)) {
-          duplicateItemIds.add(item.id);
-        } else {
-          existingByKey.set(key, { folderId: folder.id, item });
-        }
-      }
-    }
-
-    const selectedExisting = new Map<string, FixedFolderItem>();
-    let moved = 0;
-    let targetDuplicates = 0;
-    for (const key of comparisonKeys) {
-      const existing = existingByKey.get(key);
-      if (!existing) continue;
-      selectedExisting.set(key, existing.item);
-      if (existing.folderId === folderId) targetDuplicates += 1;
-      else moved += 1;
-    }
-
-    const foldersWithoutCandidates = currentFolders.map((folder) => ({
-      ...folder,
-      items: folder.items.filter((item) => {
-        const key = fixedItemKey(item.url);
-        if (duplicateItemIds.has(item.id)) return false;
-        if (!comparisonKeys.has(key)) return true;
-        // 同文件夹内已存在的条目保持原位（重复拖入同文件夹不应把它移到末尾）。
-        return folder.id === folderId && selectedExisting.get(key)?.id === item.id;
-      })
-    }));
-    const newItems = [...candidates.entries()]
-      .filter(([key]) => !selectedExisting.has(key))
-      .map(([, entry]) => createFolderItem(entry));
-    // 仅跨文件夹移动的条目追加到目标文件夹末尾；同文件夹条目已在原位保留。
-    const movedItems = [...comparisonKeys]
-      .map((key) => existingByKey.get(key))
-      .filter(
-        (existing): existing is { folderId: string; item: FixedFolderItem } =>
-          existing !== undefined && existing.folderId !== folderId
-      )
-      .map((existing) => existing.item);
-    const next = foldersWithoutCandidates.map((folder) =>
-      folder.id === folderId
-        ? {
-            ...folder,
-            collapsed: false,
-            items: [...folder.items, ...movedItems, ...newItems]
-          }
-        : folder
-    );
+    // 纯计算：下一版 folders + 绑定所需中间量（与平台无关，可单测）。
+    const computed = computeAddTabsToFolder(currentFolders, candidates, folderId);
 
     const result = await mutateSession((session) => {
       const bindings = { ...session.itemTabBindings };
@@ -391,8 +334,11 @@ export const useDataStore = create<DataState>()((set, get) => {
       for (const folder of currentFolders) {
         for (const item of folder.items) {
           const key = fixedItemKey(item.url);
-          const selected = selectedExisting.get(key);
-          if (duplicateItemIds.has(item.id) || (comparisonKeys.has(key) && selected?.id !== item.id)) {
+          const selected = computed.selectedExisting.get(key);
+          if (
+            computed.duplicateItemIds.has(item.id) ||
+            (computed.comparisonKeys.has(key) && selected?.id !== item.id)
+          ) {
             const boundId = bindings[item.id];
             delete bindings[item.id];
             if (boundId !== undefined) boundTabIds.delete(boundId);
@@ -401,7 +347,7 @@ export const useDataStore = create<DataState>()((set, get) => {
       }
       // 为新条目建立绑定：按 URL 匹配传入标签，未占用、未固定、非隐身的才绑定，
       // 让刚拖入的标签立即从临时区排除（否则要等 reconcileWithTabs 才补绑）。
-      for (const newItem of newItems) {
+      for (const newItem of computed.newItems) {
         const key = fixedItemKey(newItem.url);
         const tab = tabs.find((candidate) => {
           return (
@@ -418,12 +364,12 @@ export const useDataStore = create<DataState>()((set, get) => {
       }
       return { itemTabBindings: bindings };
     });
-    await writeFolders(next);
+    await writeFolders(computed.next);
     set({ boundTabIds: Object.values(result.itemTabBindings) });
     return {
-      added: newItems.length,
-      moved,
-      skipped: tabs.length - candidates.size + targetDuplicates
+      added: computed.newItems.length,
+      moved: computed.moved,
+      skipped: tabs.length - candidates.size + computed.targetDuplicates
     };
   },
 
@@ -446,40 +392,15 @@ export const useDataStore = create<DataState>()((set, get) => {
   },
 
   reorderFolderItems: async (folderId, sourceId, targetId, placeAfter) => {
-    await writeFolders(
-      get().folders.map((folder) =>
-        folder.id === folderId
-          ? reorderFolderItemsModel(folder, sourceId, targetId, placeAfter)
-          : folder
-      )
-    );
+    await writeFolders(computeReorderFolderItems(get().folders, { folderId, sourceId, targetId, placeAfter }));
   },
 
   moveFolder: async (sourceId, targetId, placeAfter) => {
-    await writeFolders(reorderFolders(get().folders, sourceId, targetId, placeAfter));
+    await writeFolders(computeMoveFolder(get().folders, { sourceId, targetId, placeAfter }));
   },
 
   moveFolderItem: async (sourceFolderId, itemId, targetFolderId) => {
-    if (sourceFolderId === targetFolderId) return;
-    const folders = get().folders;
-    const sourceFolder = folders.find((folder) => folder.id === sourceFolderId);
-    const targetFolder = folders.find((folder) => folder.id === targetFolderId);
-    const item = sourceFolder?.items.find((entry) => entry.id === itemId);
-    if (!item || !targetFolder) return;
-    // URL 全局唯一：目标文件夹已有同 URL 条目时仅从源移除，避免重复插入。
-    const targetHasDuplicate = targetFolder.items.some(
-      (entry) => fixedItemKey(entry.url) === fixedItemKey(item.url)
-    );
-    const next = folders.map((folder) => {
-      if (folder.id === sourceFolderId) {
-        return { ...folder, items: folder.items.filter((entry) => entry.id !== itemId) };
-      }
-      if (folder.id === targetFolderId && !targetHasDuplicate) {
-        return { ...folder, collapsed: false, items: [...folder.items, item] };
-      }
-      return folder;
-    });
-    await writeFolders(next);
+    await writeFolders(computeMoveFolderItem(get().folders, { sourceFolderId, itemId, targetFolderId }));
   },
 
   openSavedItem: async (item) => {
@@ -659,21 +580,21 @@ export const useDataStore = create<DataState>()((set, get) => {
         ? get().collapsedSites
         : [...get().collapsedSites, siteKey]
       : get().collapsedSites.filter((key) => key !== siteKey);
-    await collapseRepository.write(next);
+    await repos.collapse.write(next);
     set({ collapsedSites: next });
   },
 
   updateSettings: async (partial) => {
     const parsed = SettingsSchema.safeParse({ ...get().settings, ...partial });
     if (!parsed.success) throw new Error('invalid-settings');
-    await settingsRepository.write(parsed.data);
+    await repos.settings.write(parsed.data);
     set({ settings: parsed.data });
     scheduleMirror(get());
     broadcastSettingsSynced();
   },
 
   resetSettings: async () => {
-    await settingsRepository.write(DEFAULT_SETTINGS);
+    await repos.settings.write(DEFAULT_SETTINGS);
     set({ settings: DEFAULT_SETTINGS });
     applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
     scheduleMirror(get());
@@ -698,10 +619,10 @@ export const useDataStore = create<DataState>()((set, get) => {
     if (!parsed.success) throw new Error('invalid-tab-haven-export');
     const data = parsed.data;
     await Promise.all([
-      foldersRepository.write(data.fixedFolders),
-      pinsRepository.write(data.persistentPins),
-      collapseRepository.write(data.siteCollapse),
-      settingsRepository.write(data.settings)
+      repos.folders.write(data.fixedFolders),
+      repos.pins.write(data.persistentPins),
+      repos.collapse.write(data.siteCollapse),
+      repos.settings.write(data.settings)
     ]);
     set({
       folders: data.fixedFolders,
