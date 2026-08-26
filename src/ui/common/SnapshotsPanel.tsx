@@ -62,7 +62,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
 
   const handleSaveSpace = async () => {
     try {
-      await saveSpace();
+      await saveSpace(t('snapshots.space'));
       notify(t('snapshots.saved'));
     } catch {
       notify(t('errors.operationFailed'));
@@ -144,7 +144,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
           />
           <textarea
             className="h-40 w-full resize-none rounded border border-gray-200 bg-surface px-2 py-1.5 text-xs text-gray-800  focus:border-accent-500"
-            placeholder="https://example.com - Example"
+            placeholder={t('snapshots.importOneTabPlaceholder')}
             aria-label={t('snapshots.importOneTab')}
             value={importText}
             onChange={(event) => setImportText(event.target.value)}

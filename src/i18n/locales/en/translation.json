@@ -124,7 +124,7 @@
     "pinAction": "Pin",
     "mute": "Mute selected",
     "muteAction": "Mute",
-    "moveToFolder": "Move to folder…",
+    "moveToFolder": "Move to collection…",
     "batchComplete": "Completed {{count}} operations; {{failed}} failed",
     "cancel": "Cancel selection"
   },
@@ -174,7 +174,7 @@
     "off": "Off",
     "appearance": "Appearance",
     "behavior": "Behavior",
-    "capabilities": "Capabilities",
+    "capabilities": "Features",
     "shortcuts": "Keyboard shortcuts",
     "shortcutFocusSearch": "Focus tab search",
     "shortcutOpenPanel": "Open / focus the panel",
@@ -215,7 +215,7 @@
     "showUrl": "Show URL",
     "showUrlHint": "Show the full URL below the tab title",
     "showSplitBadges": "Show split-view badges",
-    "showSplitBadgesHint": "Show \"拆 / 伴\" badges for tabs in browser split view",
+    "showSplitBadgesHint": "Show \"Split / Companion\" badges for tabs in browser split view",
     "autoScrollActive": "Auto-scroll active tab into view",
     "autoScrollActiveHint": "Scroll the current tab into the visible area when switching",
     "closeOnMiddleClick": "Close tab on middle click",
@@ -297,11 +297,11 @@
     "splitGlyph": "S",
     "companion": "Split alongside current tab",
     "companionGlyph": "C",
-    "discarded": "Hibernating (click to reload)"
+    "discarded": "Discarded (click to reload)"
   },
   "toast": {
     "duplicated": "Tab duplicated",
-    "discarded": "Tab hibernated",
+    "discarded": "Tab discarded",
     "discardSkipped": "Tab skipped for safety",
     "discardedMany": "Hibernated {{count}} tabs",
     "discardedManySkipped": "Hibernated {{count}} tabs; {{skipped}} skipped for safety",
@@ -315,16 +315,16 @@
     "pinned": "Tab pinned",
     "unpinned": "Tab unpinned",
     "folderCreated": "Collection created",
-    "folderDeleted": "Collection deleted",
     "folderRenamed": "Collection renamed",
     "movedToFolder": "Moved into collection",
     "syncedToGroup": "Converted to native group",
     "removedFromFolder": "Removed from collection",
-    "folderItemMoved": "Moved to target folder"
+    "folderItemMoved": "Moved to target collection"
   },
   "dialog": {
     "confirm": "OK",
     "cancel": "Cancel",
+    "save": "Save",
     "confirmTitle": "Confirm action"
   },
   "errors": {
@@ -340,11 +340,11 @@
     "step2Body": "Drag frequent pages to the always-on tiles (quick switch) or to Collections (kept long-term) for one-click access.",
     "step3Title": "Jump to any tab with a few keystrokes",
     "step3Body": "Press ⌘K / Ctrl+K to focus search, type a title, URL, or pinyin initials, then ↑↓ to pick and Enter to switch.",
-    "featuresTitle": "You also get these abilities",
+    "featuresTitle": "You also get these features",
     "feature1": "Context menus: right-click a page / link / tab bar to hibernate, pin, or search by site",
     "feature2": "Address bar command: type th plus keywords to jump to tabs and pinned items",
-    "feature3": "Undo history: every close is reversible, so mis-closes are safe",
-    "feature4": "Toolbar badge: live duplicate / tab count",
+    "feature3": "Undo history: every close can be undone, so mis-closes are safe",
+    "feature4": "Toolbar badge: live duplicate count / total tabs",
     "next": "Next",
     "prev": "Back",
     "skip": "Skip",
@@ -371,7 +371,7 @@
     "hint": "Open with ⌘P / Ctrl+P"
   },
   "safety": {
-    "shieldTitle": "{{count}} reversible actions this session: every close can be undone"
+    "shieldTitle": "{{count}} undoable actions this session: every close can be undone"
   },
   "snapshots": {
     "title": "Session snapshots",
@@ -392,14 +392,15 @@
     "archive": "Archive",
     "archived": "Archived {{count}} tabs",
     "archiveCurrent": "Archive current window (close & keep)",
-    "space": "Space",
+    "space": "Workspace",
     "importOneTab": "Import from OneTab",
     "importOneTabHint": "Paste the text exported from OneTab; we parse the URLs and save them as one snapshot",
+    "importOneTabPlaceholder": "https://example.com - Page title",
     "imported": "Imported {{count}} tabs",
     "reportTitle": "Weekly report",
     "reportHint": "Local aggregation only — no network or account involved",
     "reportThisWeek": "Last 7 days",
-    "reportSnapshots": "Snapshots / Spaces",
+    "reportSnapshots": "Snapshots / Workspaces",
     "reportArchives": "Archived",
     "reportTabs": "Tabs preserved"
   },
@@ -415,7 +416,7 @@
     "omniboxHow": "Type th + keyword in the address bar to jump straight to a tab or pinned item",
     "paletteTitle": "Command palette (⌘K)",
     "paletteHow": "Search and act directly: hibernate all, save snapshot, open settings",
-    "pinTitle": "Pinned space",
+    "pinTitle": "Fixed space",
     "pinHow": "Drag go-to pages to the always-on tiles or to Collections for one-tap access",
     "snapshotTitle": "Session snapshots",
     "snapshotHow": "Windows are auto-saved on close, or save the current window manually anytime",

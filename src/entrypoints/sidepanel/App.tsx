@@ -667,7 +667,7 @@ export default function App() {
     onSaveSpace: () =>
       void useSnapshotStore
         .getState()
-        .saveSpace()
+        .saveSpace(t('snapshots.space'))
         .then(() => notify(t('snapshots.saved')))
         .catch(() => notify(t('errors.operationFailed'))),
     onArchiveWindow: () =>

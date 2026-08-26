@@ -40,7 +40,7 @@ interface SnapshotState {
   load: () => Promise<void>;
   /** 把当前窗口标签存为命名快照（name 留空则自动命名）。 */
   saveCurrentWindow: (name?: string) => Promise<void>;
-  /** 把当前窗口标签存为轻量「空间」快照（复用快照能力，OQ-3 最小版）。 */
+  /** 把当前窗口标签存为轻量「工作区」快照（复用快照能力，OQ-3 最小版）。 */
   saveSpace: (name?: string) => Promise<void>;
   /** 归档当前窗口：留档并关闭全部标签，返回留档标签数（D7 第三种操作）。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
@@ -82,7 +82,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const tabs = await queryCurrentWindowTabs();
     const snapTabs = toSnapTabs(tabs);
     const win = await browser.windows.getLastFocused().catch(() => undefined);
-    const snapshot = buildSnapshot({ name: name ?? '空间', origin: 'space', windowId: win?.id, tabs: snapTabs });
+    const snapshot = buildSnapshot({ name: name ?? '', origin: 'space', windowId: win?.id, tabs: snapTabs });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
   },

@@ -48,11 +48,11 @@
     "description": "Context menu item: search tabs under the same site"
   },
   "menuAddPageToFolder": {
-    "message": "Add page to folder",
+    "message": "Add page to collection",
     "description": "Context menu parent item: add the current page to a fixed folder"
   },
   "menuAddLinkToFolder": {
-    "message": "Add link to folder",
+    "message": "Add link to collection",
     "description": "Context menu parent item: add the link to a fixed folder"
   },
   "menuDiscardTab": {

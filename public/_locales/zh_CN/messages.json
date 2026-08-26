@@ -48,11 +48,11 @@
     "description": "右键菜单项：搜索同一站点的标签"
   },
   "menuAddPageToFolder": {
-    "message": "将页面加入固定文件夹",
+    "message": "将页面加入收藏夹",
     "description": "右键菜单父项：将当前页面加入某个固定文件夹"
   },
   "menuAddLinkToFolder": {
-    "message": "将链接加入固定文件夹",
+    "message": "将链接加入收藏夹",
     "description": "右键菜单父项：将链接加入某个固定文件夹"
   },
   "menuDiscardTab": {

@@ -124,7 +124,7 @@
     "pinAction": "固定",
     "mute": "批量静音",
     "muteAction": "静音",
-    "moveToFolder": "移入文件夹…",
+    "moveToFolder": "移入收藏夹…",
     "batchComplete": "已完成 {{count}} 个操作，{{failed}} 个失败",
     "cancel": "取消选择"
   },
@@ -151,6 +151,7 @@
     "resetDone": "已恢复默认设置",
     "resetFailed": "恢复默认失败，请重试",
     "searchPlaceholder": "搜索设置…",
+    "loading": "设置加载中…",
     "theme": "主题",
     "themeSystem": "跟随系统",
     "themeLight": "浅色",
@@ -173,7 +174,7 @@
     "off": "关闭",
     "appearance": "外观与布局",
     "behavior": "交互行为",
-    "capabilities": "进阶能力",
+    "capabilities": "进阶功能",
     "shortcuts": "快捷键",
     "shortcutFocusSearch": "聚焦标签搜索",
     "shortcutOpenPanel": "打开 / 聚焦面板",
@@ -315,12 +316,11 @@
     "pinned": "已固定标签",
     "unpinned": "已取消固定",
     "folderCreated": "已新建收藏夹",
-    "folderDeleted": "已删除收藏夹",
     "folderRenamed": "已重命名收藏夹",
     "movedToFolder": "已移入收藏夹",
     "syncedToGroup": "已转为原生标签组",
     "removedFromFolder": "已从收藏夹移除",
-    "folderItemMoved": "已移动到目标文件夹"
+    "folderItemMoved": "已移动到目标收藏夹"
   },
   "dialog": {
     "confirm": "确定",
@@ -341,11 +341,11 @@
     "step2Body": "把高频页面拖到顶部常驻磁贴（随时切换）或「收藏夹」（长期收藏），一点即达。",
     "step3Title": "敲几下键盘直达任意标签",
     "step3Body": "按 ⌘K / Ctrl+K 聚焦搜索，输入标题、网址或拼音首字母，↑↓ 选择、回车切换。",
-    "featuresTitle": "你还能用这些能力",
+    "featuresTitle": "你还能用这些功能",
     "feature1": "右键菜单：在页面 / 链接 / 标签栏右键快速休眠、固定、按站点搜索",
     "feature2": "地址栏命令：输入 th 加关键词，直达标签与固定条目",
     "feature3": "撤销历史：所有关闭操作都可撤销，误关也不怕",
-    "feature4": "工具栏角标：实时显示重复组数 / 标签数",
+    "feature4": "工具栏角标：实时显示重复标签数 / 总标签数",
     "next": "下一步",
     "prev": "上一步",
     "skip": "跳过",
@@ -372,7 +372,7 @@
     "hint": "⌘P / Ctrl+P 打开"
   },
   "safety": {
-    "shieldTitle": "本会话已可逆 {{count}} 次：所有关闭操作都可撤销"
+    "shieldTitle": "本会话已可撤销 {{count}} 次：所有关闭操作都能撤销"
   },
   "snapshots": {
     "title": "会话快照",
@@ -393,14 +393,15 @@
     "archive": "归档",
     "archived": "已归档 {{count}} 个标签",
     "archiveCurrent": "归档当前窗口（关闭并留档）",
-    "space": "空间",
+    "space": "工作区",
     "importOneTab": "从 OneTab 导入",
     "importOneTabHint": "把 OneTab 导出的文本粘贴到这里，我们会解析其中的网址并保存为一个快照",
+    "importOneTabPlaceholder": "https://example.com - 网页标题",
     "imported": "已导入 {{count}} 个标签",
     "reportTitle": "本周周报",
     "reportHint": "本地聚合，不涉及任何网络或账号",
     "reportThisWeek": "近 7 天",
-    "reportSnapshots": "快照 / 空间",
+    "reportSnapshots": "快照 / 工作区",
     "reportArchives": "归档留档",
     "reportTabs": "累计留档标签"
   },
