@@ -3,7 +3,11 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
 import { mapTab } from '@/platform/tabs';
 import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
-import { foldersRepository, pinsRepository, settingsRepository } from '@/platform/storage/repositories';
+import {
+  foldersRepository,
+  pinsRepository,
+  settingsRepository
+} from '@/platform/storage/repositories';
 import { initHeadlessI18n } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 import {
@@ -13,7 +17,14 @@ import {
   SkipAutoSaveOnceMessageSchema,
   SearchFocusMessageSchema
 } from '@/platform/messages';
-import { cachedSettings, syncCachedSettings, queueAction, openSidePanel, hostnameOf, notifyUser } from './background/shared';
+import {
+  cachedSettings,
+  syncCachedSettings,
+  queueAction,
+  openSidePanel,
+  hostnameOf,
+  notifyUser
+} from './background/shared';
 import {
   MENU_IDS,
   rebuildContextMenus,
@@ -22,8 +33,13 @@ import {
   discardTabSafely,
   setupMenus
 } from './background/contextMenus';
-import { runAutoDiscard, discardInactiveTabs, syncAutoDiscardAlarm } from './background/autoDiscard';
+import {
+  runAutoDiscard,
+  discardInactiveTabs,
+  syncAutoDiscardAlarm
+} from './background/autoDiscard';
 import { refreshBadgeSoon } from './background/badge';
+import { setupNoCache } from './background/noCache';
 import { queryOmnibox, handleOmniboxEnter } from './background/omnibox';
 import {
   scheduleWindowRefresh,
@@ -74,6 +90,8 @@ export default defineBackground(() => {
   void syncCachedSettings();
   // 关窗自动保存：恢复窗口标签缓存并为当前窗口建索引。
   void initWindowTabsCache();
+  // 开发者禁缓存：DNR 规则对齐 + 命中站点警示条（设置变更经 watch 实时同步）。
+  setupNoCache();
   // 注：uniqueUrlTabs 开关联动由下方 settingsRepository.watch 统一处理（含启动读），
   // 不再重复监听 storage.onChanged。
 
@@ -88,7 +106,11 @@ export default defineBackground(() => {
       { url: Boolean(changeInfo.url), status: Boolean(changeInfo.status) },
       mapTab(tab)
     );
-    if (changeInfo.url !== undefined || changeInfo.discarded !== undefined || changeInfo.pinned !== undefined) {
+    if (
+      changeInfo.url !== undefined ||
+      changeInfo.discarded !== undefined ||
+      changeInfo.pinned !== undefined
+    ) {
       refreshBadgeSoon();
     }
     if (typeof tab.windowId === 'number') scheduleWindowRefresh(tab.windowId);
@@ -234,7 +256,9 @@ export default defineBackground(() => {
           if (pin) {
             void (async () => {
               const pins = await pinsRepository.read();
-              await pinsRepository.write(dedupePins([...pins.filter((p) => p.identity !== pin.identity), pin]));
+              await pinsRepository.write(
+                dedupePins([...pins.filter((p) => p.identity !== pin.identity), pin])
+              );
               if (!targetTab.pinned && targetTab.id !== undefined) {
                 await browser.tabs.update(targetTab.id, { pinned: true }).catch(() => {});
               }

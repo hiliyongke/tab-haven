@@ -7,13 +7,16 @@ export function StatusBadges({
   tab,
   duplicateCount,
   isSplitCompanion,
-  showSplitBadges = true
+  showSplitBadges = true,
+  noCache = false
 }: {
   tab: TabRecord;
   duplicateCount: number;
   isSplitCompanion: boolean;
   /** 是否显示分屏「拆 / 伴」标记。 */
   showSplitBadges?: boolean;
+  /** 是否命中「开发者禁缓存」规则。 */
+  noCache?: boolean;
 }) {
   const { t } = useTranslation();
   const badges: React.ReactNode[] = [];
@@ -82,6 +85,18 @@ export function StatusBadges({
         className="h-3 w-3 text-gray-500"
         title={t('status.discarded')}
       />
+    );
+  }
+
+  if (noCache) {
+    badges.push(
+      <span
+        key="noCache"
+        className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700"
+        title={t('status.noCacheTitle')}
+      >
+        {t('status.noCacheGlyph')}
+      </span>
     );
   }
 

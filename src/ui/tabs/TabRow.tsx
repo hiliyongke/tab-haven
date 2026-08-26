@@ -37,6 +37,7 @@ export function TabRow({
   isHighlighted,
   isSearchActive,
   rowActionsVisible = true,
+  noCache = false,
   containerKey
 }: {
   tab: TabRecord;
@@ -75,6 +76,8 @@ export function TabRow({
   isSearchActive?: boolean;
   /** 是否显示行尾快捷操作。 */
   rowActionsVisible?: boolean;
+  /** 是否命中「开发者禁缓存」规则（侧边栏角标提示用）。 */
+  noCache?: boolean;
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
   containerKey: string;
 }) {
@@ -157,7 +160,13 @@ export function TabRow({
           <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
         </button>
       )}
-      <button type="button" className="row-action" title={t('tabs.closeTab')} aria-label={t('tabs.closeTab')} onClick={() => onClose(tab)}>
+      <button
+        type="button"
+        className="row-action"
+        title={t('tabs.closeTab')}
+        aria-label={t('tabs.closeTab')}
+        onClick={() => onClose(tab)}
+      >
         <Icon d={Icons.close} className="h-3.5 w-3.5" />
       </button>
     </RowActions>
@@ -214,6 +223,7 @@ export function TabRow({
             duplicateCount={duplicateCount}
             isSplitCompanion={isSplitCompanion}
             showSplitBadges={showSplitBadges}
+            noCache={noCache}
           />
         }
         actions={tabActions}
@@ -223,7 +233,9 @@ export function TabRow({
           activatorRef: sortable.setActivatorNodeRef,
           buttonAttributes: sortable.attributes,
           buttonListeners: sortableKeyDown
-            ? { onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void }
+            ? {
+                onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void
+              }
             : undefined,
           style: {
             transform: sortable.transform

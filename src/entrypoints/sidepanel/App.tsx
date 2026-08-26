@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
+import { matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import { deriveSections } from '@/core/site/Sections';
@@ -16,17 +17,9 @@ import {
   SearchFocusMessageSchema,
   SettingsSyncedMessageSchema
 } from '@/platform/messages';
-import {
-  activateTabAcrossWindows,
-  detectLanguage,
-  reloadTabs
-} from '@/platform/tabs';
+import { activateTabAcrossWindows, detectLanguage, reloadTabs } from '@/platform/tabs';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
-import {
-  syncAutoGroups,
-  disbandAutoGroups,
-  regroupTempArea
-} from '@/platform/group/AutoGroupSync';
+import { syncAutoGroups, disbandAutoGroups, regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -53,6 +46,9 @@ import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
 
 export default function App() {
   const { t, i18n } = useTranslation();
+
+  /** 禁缓存规则未启用时返回的空 Set 单例，避免无谓重建与下游引用抖动。 */
+  const EMPTY_NO_CACHE_SET: ReadonlySet<number> = useMemo(() => new Set(), []);
   const tabs = useTabStore((state) => state.tabs);
   const groups = useTabStore((state) => state.groups);
   const activateTab = useTabStore((state) => state.activateTab);
@@ -109,11 +105,21 @@ export default function App() {
   // 搜索用标签集：开启全窗口搜索且输入中时并入其他窗口标签（其余场景恒等于当前窗口）
   const effectiveTabs = useMemo(
     () =>
-      isFiltering && settings.searchAllWindows
-        ? [...tabs, ...otherTabs]
-        : (tabs as TabRecord[]),
+      isFiltering && settings.searchAllWindows ? [...tabs, ...otherTabs] : (tabs as TabRecord[]),
     [tabs, otherTabs, isFiltering, settings.searchAllWindows]
   );
+  // 命中「开发者禁缓存」规则的标签 id 集合（侧边栏 TabRow 角标用；空规则时返回空集，省去下游 has() 判空）
+  const noCacheTabIds = useMemo(() => {
+    const patterns = settings.noCacheEnabled ? settings.noCachePatterns : [];
+    if (patterns.length === 0) return EMPTY_NO_CACHE_SET;
+    const matched = new Set<number>();
+    for (const tab of effectiveTabs) {
+      const url = tab.url;
+      if (!url) continue;
+      if (patterns.some((pattern) => matchesNoCachePattern(url, pattern))) matched.add(tab.id);
+    }
+    return matched;
+  }, [settings.noCacheEnabled, settings.noCachePatterns, effectiveTabs, EMPTY_NO_CACHE_SET]);
 
   // 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）
   const engine = useMemo(
@@ -186,9 +192,7 @@ export default function App() {
     const requestId = ++locateRequestRef.current;
     if (query.trim()) setQuery('');
     const locateTarget = () => {
-      const target = document.querySelector<HTMLElement>(
-        `[data-tabhaven-tab-id="${activeTabId}"]`
-      );
+      const target = document.querySelector<HTMLElement>(`[data-tabhaven-tab-id="${activeTabId}"]`);
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
@@ -533,8 +537,12 @@ export default function App() {
   // 一键休眠全部非激活、未固定的标签（释放内存）。
   const handleDiscardInactive = () => {
     void (async () => {
-      const allInactive = useTabStore.getState().tabs.filter((tab) => !tab.active && !tab.discarded);
-      const targets = allInactive.filter((tab) => !boundTabIds.includes(tab.id) && canSafelyDiscardTab(tab));
+      const allInactive = useTabStore
+        .getState()
+        .tabs.filter((tab) => !tab.active && !tab.discarded);
+      const targets = allInactive.filter(
+        (tab) => !boundTabIds.includes(tab.id) && canSafelyDiscardTab(tab)
+      );
       const results = await Promise.all(targets.map((tab) => discardTab(tab.id)));
       const discardedCount = results.filter(Boolean).length;
       const skippedCount = allInactive.length - discardedCount;
@@ -565,9 +573,12 @@ export default function App() {
   const handleSaveGroupAsFolder = useCallback(
     (groupId: number) => {
       const name =
-        useTabStore.getState().groups.find((g) => g.id === groupId)?.title || t('tabs.unnamedGroup');
+        useTabStore.getState().groups.find((g) => g.id === groupId)?.title ||
+        t('tabs.unnamedGroup');
       const groupTabs = useTabStore.getState().tabs.filter((tab) => tab.groupId === groupId);
-      void createFolderFromNativeGroup(name, groupTabs).then(() => notify(t('toast.savedAsFolder')));
+      void createFolderFromNativeGroup(name, groupTabs).then(() =>
+        notify(t('toast.savedAsFolder'))
+      );
     },
     [createFolderFromNativeGroup, notify, t]
   );
@@ -681,160 +692,163 @@ export default function App() {
   return (
     <main className="app flex h-full flex-col">
       <DndRoot onDragEnd={onDragEnd}>
-      <SettingsSync />
-      {/* 一次性「能力发现」Tip（P0 可发现性）：仅首次展示，把藏得深的能力推到用户面前。 */}
-      {!settings.tipSeen && (
-        <div className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2">
-          <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
-          <div className="min-w-0 flex-1">
-            <p className="text-2xs font-semibold text-accent-700">{t('tips.discoverTitle')}</p>
-            <p className="mt-0.5 text-2xs leading-relaxed text-accent-700/90">{t('tips.discoverBody')}</p>
+        <SettingsSync />
+        {/* 一次性「能力发现」Tip（P0 可发现性）：仅首次展示，把藏得深的能力推到用户面前。 */}
+        {!settings.tipSeen && (
+          <div className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2">
+            <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-2xs font-semibold text-accent-700">{t('tips.discoverTitle')}</p>
+              <p className="mt-0.5 text-2xs leading-relaxed text-accent-700/90">
+                {t('tips.discoverBody')}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+              onClick={() => void updateSettings({ tipSeen: true })}
+            >
+              {t('tips.gotIt')}
+            </button>
           </div>
-          <button
-            type="button"
-            className="shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
-            onClick={() => void updateSettings({ tipSeen: true })}
-          >
-            {t('tips.gotIt')}
-          </button>
-        </div>
-      )}
-      <SearchBar
-        query={query}
-        onChange={setQuery}
-        inputRef={searchInputRef}
-        onKeyDown={handleSearchKeyDown}
-      />
-      {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status；视觉用户有列表过滤反馈，读屏用户此前无感知） */}
-      <output className="sr-only" aria-live="polite">
-        {isFiltering ? t('search.hits', { count: filteredTabs.length }) : ''}
-      </output>
-      {settings.showPinnedStrip && <PinnedStrip />}
-      {/* 浏览器原生固定标签区 — 同样受 showPinnedStrip 控制，与顶部固定空间条联动隐藏，避免
+        )}
+        <SearchBar
+          query={query}
+          onChange={setQuery}
+          inputRef={searchInputRef}
+          onKeyDown={handleSearchKeyDown}
+        />
+        {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status；视觉用户有列表过滤反馈，读屏用户此前无感知） */}
+        <output className="sr-only" aria-live="polite">
+          {isFiltering ? t('search.hits', { count: filteredTabs.length }) : ''}
+        </output>
+        {settings.showPinnedStrip && <PinnedStrip />}
+        {/* 浏览器原生固定标签区 — 同样受 showPinnedStrip 控制，与顶部固定空间条联动隐藏，避免
           用户关闭开关后磁贴区仍残留造成"开关没作用"的困惑。pinnedSection 本身为空（用户没原生
           固定标签）时仍按需不渲染。 */}
-      {settings.showPinnedStrip && pinnedSection && (
-        <CategoryModule
-          title={pinnedSection.title}
-          count={pinnedSection.tabs.length}
-          className={'shrink-0 is-pinned size-' + settings.pinnedStripSize}
+        {settings.showPinnedStrip && pinnedSection && (
+          <CategoryModule
+            title={pinnedSection.title}
+            count={pinnedSection.tabs.length}
+            className={'shrink-0 is-pinned size-' + settings.pinnedStripSize}
+          >
+            <div className="section-body">
+              <SortableContext
+                items={pinnedSection.tabs.map((tab) => tab.id)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="pinned-grid">
+                  {pinnedSection.tabs.map((tab) => (
+                    <SortablePinnedTile
+                      key={tab.id}
+                      id={tab.id}
+                      tabId={tab.id}
+                      title={tab.title || ''}
+                      favIconUrl={tab.favIconUrl}
+                      url={tab.url}
+                      isActive={tab.active}
+                      isDiscarded={tab.discarded}
+                      isAudible={tab.audible}
+                      onOpen={() => activateTab(tab.id)}
+                      onMiddleClick={() => handleCloseTab(tab)}
+                      onUnpin={() => togglePinned(tab)}
+                      onDuplicate={() => handleDuplicateTab(tab)}
+                      unpinTitle={t('tabs.unpin')}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </div>
+          </CategoryModule>
+        )}
+        <div className="px-1 py-0.5">
+          <FixedArea />
+        </div>
+        <StatusToast />
+        <div
+          className="flex-1 overflow-y-auto px-1 py-0.5"
+          onWheel={markUserScroll}
+          onTouchMove={markUserScroll}
         >
-          <div className="section-body">
-            <SortableContext
-              items={pinnedSection.tabs.map((tab) => tab.id)}
-              strategy={rectSortingStrategy}
-            >
-              <div className="pinned-grid">
-                {pinnedSection.tabs.map((tab) => (
-                  <SortablePinnedTile
-                    key={tab.id}
-                    id={tab.id}
-                    tabId={tab.id}
-                    title={tab.title || ''}
-                    favIconUrl={tab.favIconUrl}
-                    url={tab.url}
-                    isActive={tab.active}
-                    isDiscarded={tab.discarded}
-                    isAudible={tab.audible}
-                    onOpen={() => activateTab(tab.id)}
-                    onMiddleClick={() => handleCloseTab(tab)}
-                    onUnpin={() => togglePinned(tab)}
-                    onDuplicate={() => handleDuplicateTab(tab)}
-                    unpinTitle={t('tabs.unpin')}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </div>
-        </CategoryModule>
-      )}
-      <div className="px-1 py-0.5">
-        <FixedArea />
-      </div>
-      <StatusToast />
-      <div
-        className="flex-1 overflow-y-auto px-1 py-0.5"
-        onWheel={markUserScroll}
-        onTouchMove={markUserScroll}
-      >
-        {!dataReady ? (
-          // 加载骨架：区分「同步中」与「真的没有标签」
-          <LoadingSkeleton />
-        ) : tabs.length === 0 ? (
-          <EmptyTabs />
-        ) : isFiltering && filteredTabs.length === 0 ? (
-          <NoSearchResults onClear={() => setQuery('')} />
-        ) : (
-          <SectionList
-            sections={restSections}
-            collapsedGroups={collapsedGroupIds}
-            collapsedSites={collapsedSites}
-            duplicateCounts={duplicateCounts}
-            activeTabId={activeTabId}
-            splitPartners={partners}
-            reorderEnabled={settings.tabOrderSync}
-            showUrl={settings.showUrl}
-            autoScrollActive={
-              settings.autoScrollActive && Date.now() - lastUserScrollRef.current > 800
-            }
-            closeOnMiddleClick={settings.closeOnMiddleClick}
-            density={settings.density}
-            rowActionsVisible={settings.rowActionsVisible}
-            showSplitBadges={settings.showSplitBadges}
-            highlightedIds={highlightedIds}
-            searchActiveTabId={selectedSearchTabId}
-            callbacks={sectionCallbacks}
+          {!dataReady ? (
+            // 加载骨架：区分「同步中」与「真的没有标签」
+            <LoadingSkeleton />
+          ) : tabs.length === 0 ? (
+            <EmptyTabs />
+          ) : isFiltering && filteredTabs.length === 0 ? (
+            <NoSearchResults onClear={() => setQuery('')} />
+          ) : (
+            <SectionList
+              sections={restSections}
+              collapsedGroups={collapsedGroupIds}
+              collapsedSites={collapsedSites}
+              duplicateCounts={duplicateCounts}
+              activeTabId={activeTabId}
+              splitPartners={partners}
+              reorderEnabled={settings.tabOrderSync}
+              showUrl={settings.showUrl}
+              autoScrollActive={
+                settings.autoScrollActive && Date.now() - lastUserScrollRef.current > 800
+              }
+              closeOnMiddleClick={settings.closeOnMiddleClick}
+              density={settings.density}
+              rowActionsVisible={settings.rowActionsVisible}
+              showSplitBadges={settings.showSplitBadges}
+              highlightedIds={highlightedIds}
+              searchActiveTabId={selectedSearchTabId}
+              noCacheTabIds={noCacheTabIds}
+              callbacks={sectionCallbacks}
+            />
+          )}
+        </div>
+
+        <div className="add-tab-bar">
+          <button type="button" className="add-tab-btn" onClick={() => void createNewTab()}>
+            <Icon d={Icons.plus} className="h-4 w-4" />
+            <span>{t('tabs.newTab')}</span>
+          </button>
+        </div>
+
+        <FooterToolbar
+          tabCount={tabs.length}
+          collapsibleCount={collapsibleSections.length}
+          allCollapsed={allSectionsCollapsed}
+          quickRegrouping={quickRegrouping}
+          activeTabId={activeTabId}
+          discardedCount={discardedCount}
+          onToggleAllSections={handleToggleAllSections}
+          onDiscardInactive={handleDiscardInactive}
+          onWakeAll={handleWakeAll}
+          onQuickRegroup={handleQuickRegroup}
+          onLocateActive={handleLocateActive}
+          onOpenHistory={() => setShowHistory(true)}
+          onOpenSettings={() => void browser.runtime.openOptionsPage()}
+          onOpenSnapshots={() => setShowSnapshots(true)}
+          undoBatchCount={undoBatchCount}
+          snapshotCount={snapshotCount}
+          onOpenPalette={() => setShowPalette(true)}
+        />
+        {showHistory && (
+          <UndoHistoryPanel
+            hasSnapshots={snapshotCount > 0}
+            onOpenSnapshots={() => {
+              setShowHistory(false);
+              setShowSnapshots(true);
+            }}
+            onClose={() => setShowHistory(false)}
           />
         )}
-      </div>
-
-      <div className="add-tab-bar">
-        <button
-          type="button"
-          className="add-tab-btn"
-          onClick={() => void createNewTab()}
-        >
-          <Icon d={Icons.plus} className="h-4 w-4" />
-          <span>{t('tabs.newTab')}</span>
-        </button>
-      </div>
-
-      <FooterToolbar
-        tabCount={tabs.length}
-        collapsibleCount={collapsibleSections.length}
-        allCollapsed={allSectionsCollapsed}
-        quickRegrouping={quickRegrouping}
-        activeTabId={activeTabId}
-        discardedCount={discardedCount}
-        onToggleAllSections={handleToggleAllSections}
-        onDiscardInactive={handleDiscardInactive}
-        onWakeAll={handleWakeAll}
-        onQuickRegroup={handleQuickRegroup}
-        onLocateActive={handleLocateActive}
-        onOpenHistory={() => setShowHistory(true)}
-        onOpenSettings={() => void browser.runtime.openOptionsPage()}
-        onOpenSnapshots={() => setShowSnapshots(true)}
-        undoBatchCount={undoBatchCount}
-        snapshotCount={snapshotCount}
-        onOpenPalette={() => setShowPalette(true)}
-      />
-      {showHistory && (
-        <UndoHistoryPanel
-          hasSnapshots={snapshotCount > 0}
-          onOpenSnapshots={() => {
-            setShowHistory(false);
-            setShowSnapshots(true);
-          }}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
-      {showSnapshots && <SnapshotsPanel onClose={() => setShowSnapshots(false)} />}
-      {!settings.onboarded && dataReady && (
-        <OnboardingTour onDone={() => void updateSettings({ onboarded: true })} />
-      )}
-      {showPalette && (
-        <CommandPalette tabs={tabs} actions={paletteActions} onClose={() => setShowPalette(false)} />
-      )}
+        {showSnapshots && <SnapshotsPanel onClose={() => setShowSnapshots(false)} />}
+        {!settings.onboarded && dataReady && (
+          <OnboardingTour onDone={() => void updateSettings({ onboarded: true })} />
+        )}
+        {showPalette && (
+          <CommandPalette
+            tabs={tabs}
+            actions={paletteActions}
+            onClose={() => setShowPalette(false)}
+          />
+        )}
       </DndRoot>
     </main>
   );

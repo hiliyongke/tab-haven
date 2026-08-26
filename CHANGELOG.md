@@ -26,6 +26,11 @@
 - 一键唤醒全部休眠标签；一键重置当前窗口全部标签缩放为 100%
 - 搜索可选扩展到所有窗口（默认仅当前窗口，尊重产品原则）
 
+**开发者工具**
+- 指定站点/URL 前缀禁用前端缓存：双通道改写——请求头注入 `Cache-Control: no-cache`（DevTools「Disable cache」同款机制，绕过浏览器已有缓存强制发请求）+ 响应头强制 `no-store` 并移除 ETag/Last-Modified（新响应不落盘、协商缓存一并失效）；规则支持纯域名（含子域）、域名+路径前缀、完整 URL 前缀三种形态（≤50 条）
+- 命中站点页面顶部显示黄黑警示条（可关闭提示），SPA 站内导航实时挂载/移除，明确告知「该站点已被禁用缓存」
+- 权限按需授予：功能默认关闭，开启时才经浏览器弹窗申请全站 host 权限（`optional_host_permissions`），拒绝则保持关闭；权限被收回时自动停用规则并引导重新授权
+
 **平台与配置**
 - 快捷键体系补全：打开面板（`Ctrl+Shift+O`）、定位激活（`Ctrl+Shift+L`）、休眠非激活（`Ctrl+Shift+U`），设置页新增快捷键帮助面板（含跳转浏览器自定义）
 - 设置页重构：首屏精简 +「高级设置」折叠区 + 分区计数徽章 + 设置搜索 + 「恢复默认」一键重置（新增 9 项可设置行为）
@@ -37,6 +42,7 @@
 
 ### 隐私说明
 - 新增权限：`contextMenus` / `omnibox` / `sessions` / `bookmarks` / `notifications`（用途见 PRIVACY.md，均不触网）
+- 新增权限（开发者禁缓存，默认关闭）：`declarativeNetRequest` / `scripting` + 全站 host 权限（optional，开启功能时按需申请；只改写浏览器内既有响应的头并注入警示条，不发起任何网络请求）
 
 ### 质量
 - 修正三处过期/错误的规格测试：punycode 基准值（以 Node.js `node:url.domainToUnicode` 权威实现复核）、`fixedItemKey` 身份语义（完整 URL 参与身份，归一化匹配属 FR-D8.2/V1.2 范围）、AutoGroupSync 解散测试（对齐 `tabs.ungroup` 标准做法并补「失败保留重试」断言）
@@ -44,7 +50,7 @@
 - 后台文案接入 i18n（headless 轨道）：自动休眠通知、快照默认名（含 OneTab 导入名）随用户语言；`buildSnapshot` 回退名改由调用方传入，消除后台硬编码英文/中文
 - 复用豁免令牌持久化到 `chrome.storage.session`（镜像 + SW 重启恢复合并 + 恢复完成前暂存发放），消除「豁免发放与消费之间 SW 回收导致恢复标签被误合并」的边缘时序
 - UI 测试盲区补齐（AUDIT 遗留）：TabRow / SearchBar / SettingsPage 渲染规格测试；性能规格入回归门禁（150/500 标签搜索 <100ms、索引构建 <1s、VirtualRowList 虚拟化结构保证）
-- 测试全量 221 例通过（上版本基线 179 例）
+- 测试全量 250 例通过（上版本基线 179 例；本轮新增禁缓存规则编译/命中/归一化 29 例）
 
 ---
 

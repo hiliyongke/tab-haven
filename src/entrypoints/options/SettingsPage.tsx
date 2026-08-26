@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { useDataStore } from '@/stores/dataStore';
 import type { Settings } from '@/core/schema/models';
+import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { Button } from '@/ui/common/Button';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
@@ -144,6 +145,171 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
+/** 禁缓存站点编辑器：大文本框即列表（每行一条 pattern），所见即所得。
+ *  编辑/删行直接改文本；失焦或点「保存」时按行归一化、去重写回设置，
+ *  无效行被忽略并计数提示；外部变更（重置/导入）经 useEffect 回流同步。 */
+function NoCachePatternEditor({
+  value,
+  onChange
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(() => value.join('\n'));
+  const [invalidCount, setInvalidCount] = useState(0);
+  /** 最近一次与设置对齐的文本（防「保存 → settings 回流 → 重置光标」循环）。 */
+  const lastSyncedRef = useRef(value.join('\n'));
+  const full = value.length >= NO_CACHE_PATTERNS_LIMIT;
+
+  // 外部变更（重置设置 / 导入备份）同步进文本框；内容一致时跳过。
+  useEffect(() => {
+    const joined = value.join('\n');
+    if (joined !== lastSyncedRef.current) {
+      lastSyncedRef.current = joined;
+      setText(joined);
+    }
+  }, [value]);
+
+  const commit = () => {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    const next: string[] = [];
+    let invalid = 0;
+    for (const line of lines) {
+      const normalized = normalizeNoCachePattern(line);
+      if (!normalized) {
+        invalid++;
+        continue;
+      }
+      if (seen.has(normalized) || next.length >= NO_CACHE_PATTERNS_LIMIT) continue;
+      seen.add(normalized);
+      next.push(normalized);
+    }
+    setInvalidCount(invalid);
+    const joined = next.join('\n');
+    if (joined !== lastSyncedRef.current) {
+      lastSyncedRef.current = joined;
+      onChange(next);
+    }
+    // 文本框规整为归一化后的权威列表（无效行移除、空行压缩）。
+    if (text !== joined) setText(joined);
+  };
+
+  return (
+    <div className="flex w-96 flex-col items-end gap-1">
+      <textarea
+        rows={5}
+        spellCheck={false}
+        className="w-full resize-y rounded border border-gray-200 bg-surface px-2 py-1 font-mono text-xs leading-5 text-gray-800  focus:border-accent-500"
+        placeholder={t('settings.noCachePatternPlaceholder')}
+        aria-label={t('settings.noCachePatterns')}
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+          if (invalidCount > 0) setInvalidCount(0);
+        }}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          // ⌘/Ctrl+Enter 快捷保存（Enter 保持默认换行：列表编辑语义优先）
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            commit();
+          }
+        }}
+      />
+      <div className="flex w-full items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-2xs text-gray-500">
+          {invalidCount > 0
+            ? t('settings.noCachePatternInvalidLines', { count: invalidCount })
+            : t('settings.noCachePatternHelp')}
+        </span>
+        <Button variant="secondary" size="sm" onClick={commit}>
+          {t('settings.noCachePatternSave')}
+        </Button>
+      </div>
+      {full && <span className="text-2xs text-gray-500">{t('settings.noCachePatternFull')}</span>}
+    </div>
+  );
+}
+
+/** 禁缓存总开关：开启前请求 optional 全站 host 权限（拒绝则不开启）；权限被回收时引导重新授权。 */
+function NoCacheToggle({
+  settings,
+  update
+}: {
+  settings: Settings;
+  update: (key: keyof Settings, value: unknown) => void;
+}) {
+  const { t } = useTranslation();
+  const [denied, setDenied] = useState(false);
+  const [permissionLost, setPermissionLost] = useState(false);
+
+  useEffect(() => {
+    if (!settings.noCacheEnabled) {
+      setPermissionLost(false);
+      return;
+    }
+    let cancelled = false;
+    void browser.permissions
+      .contains({ origins: ['<all_urls>'] })
+      .then((has) => {
+        if (!cancelled) setPermissionLost(!has);
+      })
+      .catch(() => {
+        if (!cancelled) setPermissionLost(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.noCacheEnabled]);
+
+  const requestSiteAccess = () =>
+    browser.permissions.request({ origins: ['<all_urls>'] }).catch(() => false);
+
+  const handleToggle = async (enabled: boolean) => {
+    if (enabled) {
+      // permissions.request 必须在用户手势内首发调用（Toggle onChange 满足）。
+      const granted = await requestSiteAccess();
+      if (!granted) {
+        setDenied(true);
+        return;
+      }
+      setDenied(false);
+    }
+    update('noCacheEnabled', enabled);
+  };
+
+  const regrant = async () => {
+    const granted = await requestSiteAccess();
+    if (granted) {
+      setPermissionLost(false);
+      setDenied(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Toggle
+        checked={settings.noCacheEnabled}
+        onChange={(enabled) => void handleToggle(enabled)}
+        ariaLabel={t('settings.noCache')}
+      />
+      {denied && !settings.noCacheEnabled && (
+        <span className="text-2xs text-red-600">{t('settings.noCachePermissionDenied')}</span>
+      )}
+      {permissionLost && settings.noCacheEnabled && (
+        <span className="flex items-center gap-1.5 text-2xs text-amber-600">
+          {t('settings.noCachePermissionLost')}
+          <Button variant="secondary" size="sm" onClick={() => void regrant()}>
+            {t('settings.noCachePermissionRegrant')}
+          </Button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Settings 中类型为 boolean 的键（Toggle 行专用）。 */
 type BooleanSettingKey =
   | 'tabOrderSync'
@@ -180,6 +346,8 @@ type SettingSpec =
       hintKey?: string;
       /** 关闭开关时的确认文案 key；用户取消则不更新。 */
       confirmOffKey?: string;
+      /** 条件渲染：返回 false 时整行不显示（如依赖开关的子设置）。 */
+      visible?: (settings: Settings) => boolean;
     }
   | {
       kind: 'select';
@@ -202,7 +370,15 @@ type SettingSpec =
     };
 
 /** 按 spec 渲染单个设置行（行容器/控件/翻译统一在此收敛）。 */
-function SettingRow({ spec, settings, update }: { spec: SettingSpec; settings: Settings; update: (key: keyof Settings, value: unknown) => void }) {
+function SettingRow({
+  spec,
+  settings,
+  update
+}: {
+  spec: SettingSpec;
+  settings: Settings;
+  update: (key: keyof Settings, value: unknown) => void;
+}) {
   const { t } = useTranslation();
   const label = t(spec.labelKey);
   const hint = spec.kind !== 'custom' && spec.hintKey ? t(spec.hintKey) : undefined;
@@ -284,7 +460,13 @@ const PRESET_PROFILES: PresetProfile[] = [
     id: 'researcher',
     nameKey: 'presets.researcher',
     descKey: 'presets.researcherDesc',
-    patch: { groupMode: 'site', aggregationThreshold: 2, sortMode: 'recency', pinyinSearch: true, searchAllWindows: false }
+    patch: {
+      groupMode: 'site',
+      aggregationThreshold: 2,
+      sortMode: 'recency',
+      pinyinSearch: true,
+      searchAllWindows: false
+    }
   },
   {
     id: 'saver',
@@ -296,7 +478,12 @@ const PRESET_PROFILES: PresetProfile[] = [
     id: 'efficiency',
     nameKey: 'presets.efficiency',
     descKey: 'presets.efficiencyDesc',
-    patch: { rowActionsVisible: true, closeOnMiddleClick: true, pinyinSearch: true, searchAllWindows: false }
+    patch: {
+      rowActionsVisible: true,
+      closeOnMiddleClick: true,
+      pinyinSearch: true,
+      searchAllWindows: false
+    }
   }
 ];
 
@@ -471,7 +658,11 @@ export function SettingsPage() {
   };
 
   if (!ready) {
-    return <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-gray-500">{t('settings.loading')}</div>;
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-gray-500">
+        {t('settings.loading')}
+      </div>
+    );
   }
 
   /** 分组配置：声明式描述设置行，渲染由 SettingRow 统一完成。 */
@@ -494,7 +685,11 @@ export function SettingsPage() {
           labelKey: 'settings.colorTheme',
           hintKey: 'settings.colorThemeHint',
           render: ({ settings, update, t }) => (
-            <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t('settings.colorTheme')}>
+            <div
+              className="flex items-center gap-1.5"
+              role="radiogroup"
+              aria-label={t('settings.colorTheme')}
+            >
               {COLOR_THEME_SWATCHES.map((swatch) => (
                 <input
                   key={swatch.id}
@@ -540,7 +735,12 @@ export function SettingsPage() {
             { value: 'cozy', label: t('settings.densityCozy') }
           ]
         },
-        { kind: 'toggle', key: 'showUrl', labelKey: 'settings.showUrl', hintKey: 'settings.showUrlHint' },
+        {
+          kind: 'toggle',
+          key: 'showUrl',
+          labelKey: 'settings.showUrl',
+          hintKey: 'settings.showUrlHint'
+        },
         {
           kind: 'toggle',
           key: 'showSplitBadges',
@@ -662,7 +862,10 @@ export function SettingsPage() {
               value={settings.autoDiscardMinutes}
               aria-label={t('settings.autoDiscardMinutes')}
               onChange={(e) =>
-                update('autoDiscardMinutes', Math.min(240, Math.max(5, Number(e.target.value) || 30)))
+                update(
+                  'autoDiscardMinutes',
+                  Math.min(240, Math.max(5, Number(e.target.value) || 30))
+                )
               }
               className="w-20 rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
             />
@@ -745,6 +948,24 @@ export function SettingsPage() {
           hintKey: 'settings.omniboxHint'
         },
         {
+          kind: 'custom',
+          labelKey: 'settings.noCache',
+          hintKey: 'settings.noCacheHint',
+          render: ({ settings, update }) => <NoCacheToggle settings={settings} update={update} />
+        },
+        {
+          kind: 'custom',
+          labelKey: 'settings.noCachePatterns',
+          hintKey: 'settings.noCachePatternsHint',
+          visible: (s) => s.noCacheEnabled,
+          render: ({ settings, update }) => (
+            <NoCachePatternEditor
+              value={settings.noCachePatterns}
+              onChange={(next) => update('noCachePatterns', next)}
+            />
+          )
+        },
+        {
           kind: 'select',
           key: 'undoStackLimit',
           labelKey: 'settings.undoStackLimit',
@@ -808,7 +1029,7 @@ export function SettingsPage() {
             { value: '30', label: '30' },
             { value: '50', label: '50' }
           ]
-        },
+        }
       ]
     }
   ];
@@ -884,12 +1105,14 @@ export function SettingsPage() {
 
       <Section title={t('settings.shortcuts')}>
         {/* 浏览器命令快捷键按平台渲染修饰键：mac 显示 ⌃⇧ 符号，Windows/Linux 显示 Ctrl+Shift 文案 */}
-        {([
-          ['F', t('settings.shortcutFocusSearch')],
-          ['O', t('settings.shortcutOpenPanel')],
-          ['L', t('settings.shortcutLocateActive')],
-          ['U', t('settings.shortcutDiscardInactive')]
-        ] as const).map(([key, hint]) => (
+        {(
+          [
+            ['F', t('settings.shortcutFocusSearch')],
+            ['O', t('settings.shortcutOpenPanel')],
+            ['L', t('settings.shortcutLocateActive')],
+            ['U', t('settings.shortcutDiscardInactive')]
+          ] as const
+        ).map(([key, hint]) => (
           <Row key={key} label={isMac ? `⌃⇧${key}` : `Ctrl+Shift+${key}`} hint={hint}>
             <span className="text-2xs text-gray-500">{t('settings.shortcutBrowser')}</span>
           </Row>
@@ -933,9 +1156,7 @@ export function SettingsPage() {
           </Button>
         </Row>
         {transferStatus && (
-          <output className="px-4 py-2 text-xs text-gray-600">
-            {transferStatus}
-          </output>
+          <output className="px-4 py-2 text-xs text-gray-600">{transferStatus}</output>
         )}
       </Section>
 

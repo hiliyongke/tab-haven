@@ -32,8 +32,13 @@ export default defineConfig({
       'omnibox',
       'sessions',
       'bookmarks',
-      'notifications'
+      'notifications',
+      // 开发者禁缓存能力：DNR 改响应头 + 动态注入提示条。
+      // host 权限刻意走 optional（按需请求）：不开该功能则安装时不出现全站权限警告。
+      'declarativeNetRequest',
+      'scripting'
     ],
+    optional_host_permissions: ['<all_urls>'],
     commands: {
       'focus-search': {
         suggested_key: { default: 'Ctrl+Shift+F' },

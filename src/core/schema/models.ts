@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NO_CACHE_PATTERNS_LIMIT } from '@/platform/nocache/noCacheRules';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
@@ -118,9 +119,14 @@ export const SettingsSchema = z.object({
   /** 工具栏角标模式：auto 有重复显重复数/否则显标签数 / count 恒显标签数 / dups 恒显重复组数 / off 关闭。 */
   badgeMode: z.enum(['auto', 'count', 'dups', 'off']).default('auto'),
   /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
-  contextMenusEnabled: z.boolean().default(true),
-  /** 地址栏命令（th <关键词>）总开关。 */
+  contextMenusEnabled: z.boolean().default(true) /** 地址栏命令（th <关键词>）总开关。 */,
   omniboxEnabled: z.boolean().default(true),
+  /** 开发者：指定站点禁用前端缓存（DNR 响应头强制 no-store；需网站访问权限）。 */
+  noCacheEnabled: z.boolean().default(false),
+  /** 禁缓存站点列表：纯域名（含子域）/ 域名+路径前缀 / 完整 URL 前缀，三种形态。 */
+  noCachePatterns: z.array(z.string().min(1).max(200)).max(NO_CACHE_PATTERNS_LIMIT).default([]),
+  /** 命中禁缓存站点时在页面顶部显示醒目警示条。 */
+  noCacheBannerEnabled: z.boolean().default(true),
   /** 首启引导是否已看过（仅首次展示交互式引导）。 */
   onboarded: z.boolean().default(false),
   /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
@@ -164,6 +170,9 @@ export const DEFAULT_SETTINGS: Settings = {
   badgeMode: 'auto',
   contextMenusEnabled: true,
   omniboxEnabled: true,
+  noCacheEnabled: false,
+  noCachePatterns: [],
+  noCacheBannerEnabled: true,
   onboarded: false,
   tipSeen: false
 };

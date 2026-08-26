@@ -29,6 +29,8 @@ ALLOWED_PERMISSIONS = {
     "sessions",  # 撤销历史面板恢复浏览器最近关闭
     "bookmarks",  # 用户主动的固定文件夹 ↔ 书签互转
     "notifications",  # 自动休眠完成的本机通知
+    "declarativeNetRequest",  # 开发者禁缓存：按用户站点规则改写响应头（默认关闭，配套 host 权限走 optional）
+    "scripting",  # 开发者禁缓存：向命中站点注入醒目警示条
 }
 
 # 禁止出现的网络通道调用

@@ -148,6 +148,7 @@ function RowList({
   depths,
   highlightedIds,
   searchActiveTabId,
+  noCacheTabIds,
   callbacks,
   containerKey
 }: {
@@ -168,6 +169,8 @@ function RowList({
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
+  /** 命中「开发者禁缓存」规则的标签 id 集合。 */
+  noCacheTabIds?: ReadonlySet<number>;
   callbacks: SectionCallbacks;
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
   containerKey: string;
@@ -207,6 +210,7 @@ function RowList({
             indent={depths?.get(tab.id)}
             isHighlighted={highlightedIds?.has(tab.id)}
             isSearchActive={tab.id === searchActiveTabId}
+            noCache={noCacheTabIds?.has(tab.id)}
             onActivate={callbacks.onActivate}
             onToggleMute={callbacks.onToggleMute}
             onTogglePin={callbacks.onTogglePin}
@@ -242,6 +246,7 @@ function RowList({
             indent={depths?.get(tab.id)}
             isHighlighted={highlightedIds?.has(tab.id)}
             isSearchActive={tab.id === searchActiveTabId}
+            noCache={noCacheTabIds?.has(tab.id)}
             onActivate={callbacks.onActivate}
             onToggleMute={callbacks.onToggleMute}
             onTogglePin={callbacks.onTogglePin}
@@ -276,6 +281,8 @@ interface SectionCardProps {
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
+  /** 命中「开发者禁缓存」规则的标签 id 集合。 */
+  noCacheTabIds?: ReadonlySet<number>;
   callbacks: SectionCallbacks;
 }
 
@@ -294,6 +301,7 @@ type RowListPassthrough = Pick<
   | 'showSplitBadges'
   | 'highlightedIds'
   | 'searchActiveTabId'
+  | 'noCacheTabIds'
   | 'callbacks'
 >;
 
@@ -303,7 +311,11 @@ function SectionRows({
   depths,
   containerKey,
   ...rest
-}: { tabs: readonly TabRecord[]; depths?: ReadonlyMap<number, number>; containerKey: string } & RowListPassthrough) {
+}: {
+  tabs: readonly TabRecord[];
+  depths?: ReadonlyMap<number, number>;
+  containerKey: string;
+} & RowListPassthrough) {
   return <RowList tabs={tabs} depths={depths} containerKey={containerKey} {...rest} />;
 }
 
@@ -325,9 +337,7 @@ const isSortableDisabled = (section: TemporarySection): boolean =>
 function useSectionAccent(section: TemporarySection): string | undefined {
   const mono = useDataStore((state) => state.settings.groupAccentStyle === 'mono');
   const firstFavicon =
-    section.kind === 'site'
-      ? section.tabs.find((tab) => tab.favIconUrl)?.favIconUrl
-      : undefined;
+    section.kind === 'site' ? section.tabs.find((tab) => tab.favIconUrl)?.favIconUrl : undefined;
   const siteDomain = section.kind === 'site' ? section.siteKey : undefined;
   const siteAccent = useDomainAccent(firstFavicon, siteDomain);
   if (section.kind === 'native') return groupAccentVar(section.color);
@@ -380,7 +390,9 @@ function PlayingIndicator({
 function UngroupedSectionCard({
   section,
   ...rowProps
-}: Omit<SectionCardProps, 'section'> & { section: Extract<TemporarySection, { kind: 'ungrouped' }> }) {
+}: Omit<SectionCardProps, 'section'> & {
+  section: Extract<TemporarySection, { kind: 'ungrouped' }>;
+}) {
   const accent = useSectionAccent(section);
   return (
     <GroupCard
@@ -392,7 +404,12 @@ function UngroupedSectionCard({
       accent={accent}
     >
       <div className="section-body">
-        <SectionRows tabs={section.tabs} depths={section.depths} containerKey={section.key} {...rowProps} />
+        <SectionRows
+          tabs={section.tabs}
+          depths={section.depths}
+          containerKey={section.key}
+          {...rowProps}
+        />
       </div>
     </GroupCard>
   );
@@ -445,36 +462,37 @@ function CollapsibleSectionCard({
     ) : undefined;
 
   // 原生组头部操作：存为固定文件夹 + 编辑（拖拽事件由 dnd-kit 在 head 接管，无需独立手柄按钮）。
-  const headerAction = section.kind === 'native' ? (
-    <>
-      {rowProps.callbacks.onSaveGroupAsFolder && (
+  const headerAction =
+    section.kind === 'native' ? (
+      <>
+        {rowProps.callbacks.onSaveGroupAsFolder && (
+          <button
+            type="button"
+            className="row-action"
+            title={t('fixed.saveGroupAsFolder')}
+            aria-label={t('fixed.saveGroupAsFolder')}
+            onClick={(event) => {
+              event.stopPropagation();
+              rowProps.callbacks.onSaveGroupAsFolder?.(section.groupId);
+            }}
+          >
+            <Icon d={Icons.saveToFolder} className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           className="row-action"
-          title={t('fixed.saveGroupAsFolder')}
-          aria-label={t('fixed.saveGroupAsFolder')}
+          title={t('groups.edit')}
+          aria-label={t('groups.edit')}
           onClick={(event) => {
             event.stopPropagation();
-            rowProps.callbacks.onSaveGroupAsFolder?.(section.groupId);
+            setEditOpen(true);
           }}
         >
-          <Icon d={Icons.saveToFolder} className="h-3.5 w-3.5" />
+          <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
         </button>
-      )}
-      <button
-        type="button"
-        className="row-action"
-        title={t('groups.edit')}
-        aria-label={t('groups.edit')}
-        onClick={(event) => {
-          event.stopPropagation();
-          setEditOpen(true);
-        }}
-      >
-        <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
-      </button>
-    </>
-  ) : undefined;
+      </>
+    ) : undefined;
 
   const onToggle = () => {
     setPlayingOnly(false);
@@ -578,6 +596,7 @@ function SectionListImpl({
   showSplitBadges,
   highlightedIds,
   searchActiveTabId,
+  noCacheTabIds,
   callbacks
 }: {
   sections: readonly TemporarySection[];
@@ -598,6 +617,8 @@ function SectionListImpl({
   highlightedIds?: ReadonlySet<number>;
   /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
+  /** 命中「开发者禁缓存」规则的标签 id 集合。 */
+  noCacheTabIds?: ReadonlySet<number>;
   callbacks: SectionCallbacks;
 }) {
   const { t } = useTranslation();
@@ -623,13 +644,9 @@ function SectionListImpl({
   }, [callbacks, collapsedGroups, collapsedSitesSet, sections]);
 
   // 分组头排序（dnd-kit）：只对原生组参与排序，排序逻辑由全局 DndContext 的 onDragEnd 处理。
-  const sortableSectionKeys = sections
-    .filter((s) => s.kind === 'native')
-    .map((s) => s.key);
+  const sortableSectionKeys = sections.filter((s) => s.kind === 'native').map((s) => s.key);
 
-  const nativeSiteSections = sections.filter(
-    (s) => s.kind === 'native' || s.kind === 'site'
-  );
+  const nativeSiteSections = sections.filter((s) => s.kind === 'native' || s.kind === 'site');
   const ungroupedSection = sections.find((s) => s.kind === 'ungrouped');
 
   const renderSectionCard = (section: TemporarySection) => (
@@ -650,6 +667,7 @@ function SectionListImpl({
       showSplitBadges={showSplitBadges}
       highlightedIds={highlightedIds}
       searchActiveTabId={searchActiveTabId}
+      noCacheTabIds={noCacheTabIds}
       callbacks={callbacks}
     />
   );
@@ -683,7 +701,10 @@ function SectionListImpl({
 }
 
 /** 供父组件计算拆分伙伴集合：与当前激活标签同 splitViewId 的其它标签。 */
-export function splitPartnerIds(tabs: readonly TabRecord[], activeTabId: number | undefined): Set<number> {
+export function splitPartnerIds(
+  tabs: readonly TabRecord[],
+  activeTabId: number | undefined
+): Set<number> {
   const active = tabs.find((tab) => tab.id === activeTabId);
   const activeSplit = active?.splitViewId;
   if (activeSplit === undefined) return new Set();
