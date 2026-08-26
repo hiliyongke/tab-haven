@@ -49,7 +49,7 @@ function GroupEditDialog({
   return (
     <DialogShell title={t('groups.edit')} onClose={onClose}>
       <input
-        className="mb-2 w-full rounded border border-gray-300 bg-surface px-2 py-1.5 text-sm text-gray-800 outline-none focus:border-accent-500"
+        className="mb-2 w-full rounded border border-gray-200 bg-surface px-2 py-1.5 text-sm text-gray-800  focus:border-accent-500"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -67,7 +67,7 @@ function GroupEditDialog({
             key={c}
             type="button"
             className={
-              'h-4 w-4 rounded-full border border-gray-300' +
+              'h-4 w-4 rounded-full border border-gray-200' +
               (color === c ? ' ring-2 ring-offset-1 ring-gray-400' : '')
             }
             style={{ backgroundColor: groupAccentVar(c) }}

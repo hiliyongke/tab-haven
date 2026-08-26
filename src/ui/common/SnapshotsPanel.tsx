@@ -136,14 +136,14 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
           <p className="text-2xs text-gray-500">{t('snapshots.importOneTabHint')}</p>
           <input
             type="text"
-            className="rounded border border-gray-300 bg-surface px-2 py-1 text-xs text-gray-800 outline-none focus:border-accent-500"
+            className="rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
             placeholder={t('snapshots.namePlaceholder')}
             aria-label={t('snapshots.namePlaceholder')}
             value={importName}
             onChange={(event) => setImportName(event.target.value)}
           />
           <textarea
-            className="h-40 w-full resize-none rounded border border-gray-300 bg-surface px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-accent-500"
+            className="h-40 w-full resize-none rounded border border-gray-200 bg-surface px-2 py-1.5 text-xs text-gray-800  focus:border-accent-500"
             placeholder="https://example.com - Example"
             aria-label={t('snapshots.importOneTab')}
             value={importText}
@@ -218,10 +218,10 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-surface px-2 py-1.5">
-              <Icon d={Icons.snapshot} className="h-4 w-4 shrink-0 text-gray-400" />
+              <Icon d={Icons.snapshot} className="h-4 w-4 shrink-0 text-gray-500" />
               <input
                 type="text"
-                className="min-w-0 flex-1 bg-transparent text-sm text-gray-800 outline-none"
+                className="min-w-0 flex-1 bg-transparent text-sm text-gray-800 "
                 placeholder={t('snapshots.namePlaceholder')}
                 aria-label={t('snapshots.namePlaceholder')}
                 value={name}
@@ -265,7 +265,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                       {editingId === snap.id ? (
                         <input
                           type="text"
-                          className="w-full rounded border border-gray-300 bg-surface px-1.5 py-0.5 text-xs text-gray-800 outline-none focus:border-accent-500"
+                          className="w-full rounded border border-gray-200 bg-surface px-1.5 py-0.5 text-xs text-gray-800  focus:border-accent-500"
                           value={editingName}
                           aria-label={t('snapshots.rename')}
                           onChange={(event) => setEditingName(event.target.value)}
@@ -326,7 +326,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          <div className="flex gap-2 border-t border-gray-100 pt-2">
+          <div className="flex gap-2 border-t border-gray-200 pt-2">
             <button
               type="button"
               className="flex-1 rounded px-2 py-1 text-2xs text-gray-500 hover:bg-gray-100"

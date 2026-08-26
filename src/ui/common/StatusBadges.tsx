@@ -79,7 +79,7 @@ export function StatusBadges({
       <Icon
         key="frozen"
         d={Icons.snowflake}
-        className="h-3 w-3 text-gray-400"
+        className="h-3 w-3 text-gray-500"
         title={t('status.discarded')}
       />
     );

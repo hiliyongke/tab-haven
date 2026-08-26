@@ -111,12 +111,12 @@ export function CommandPalette({
         aria-modal="true"
         aria-label={t('palette.title')}
       >
-        <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-          <Icon d={Icons.search} className="h-4 w-4 text-gray-400" />
+        <div className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
+          <Icon d={Icons.search} className="h-4 w-4 text-gray-500" />
           <input
             ref={inputRef}
             type="text"
-            className="w-full bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400"
+            className="w-full bg-transparent text-sm text-gray-800 placeholder:text-gray-500"
             placeholder={t('palette.placeholder')}
             aria-label={t('palette.placeholder')}
             aria-activedescendant={commands[index] ? `palette-item-${commands[index].id}` : undefined}

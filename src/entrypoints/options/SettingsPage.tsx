@@ -104,7 +104,7 @@ function WhitelistEditor({
                 aria-label={t('settings.whitelistRemove')}
                 title={t('settings.whitelistRemove')}
                 onClick={() => onChange(value.filter((v) => v !== entry))}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-500 hover:text-gray-600"
               >
                 <Icon d={Icons.close} className="h-3 w-3" />
               </button>
@@ -115,7 +115,7 @@ function WhitelistEditor({
       <div className="flex gap-1">
         <input
           type="text"
-          className="w-32 rounded border border-gray-300 bg-surface px-2 py-1 text-xs text-gray-800 outline-none focus:border-accent-500"
+          className="w-32 rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
           placeholder={t('settings.whitelistPlaceholder')}
           aria-label={t('settings.whitelistPlaceholder')}
           value={input}
@@ -503,7 +503,7 @@ export function SettingsPage() {
                   checked={settings.colorTheme === swatch.id}
                   title={t(swatch.labelKey)}
                   aria-label={t(swatch.labelKey)}
-                  className="h-5 w-5 cursor-pointer appearance-none rounded-full border border-gray-300 transition-base checked:ring-2 checked:ring-gray-400 checked:ring-offset-1 hover:scale-110"
+                  className="h-5 w-5 cursor-pointer appearance-none rounded-full border border-gray-200 transition-base checked:ring-2 checked:ring-gray-500 checked:ring-offset-1 hover:scale-110"
                   style={{ backgroundColor: swatch.hex }}
                   onChange={() => update('colorTheme', swatch.id)}
                 />
@@ -522,7 +522,7 @@ export function SettingsPage() {
           labelKey: 'settings.sidePanelPosition',
           hintKey: 'settings.sidePanelPositionHint',
           render: () => (
-            <span className="rounded border border-gray-300 bg-surface px-2 py-1 text-xs text-gray-600">
+            <span className="rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-600">
               {sidePanelSide === 'left'
                 ? t('settings.sidePanelPositionLeft')
                 : sidePanelSide === 'right'
@@ -664,7 +664,7 @@ export function SettingsPage() {
               onChange={(e) =>
                 update('autoDiscardMinutes', Math.min(240, Math.max(5, Number(e.target.value) || 30)))
               }
-              className="w-20 rounded border border-gray-300 bg-surface px-2 py-1 text-xs text-gray-800 outline-none focus:border-accent-500"
+              className="w-20 rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
             />
           )
         },
@@ -847,7 +847,7 @@ export function SettingsPage() {
           value={settingsSearch}
           onChange={(event) => setSettingsSearch(event.target.value)}
           placeholder={t('settings.searchPlaceholder')}
-          className="w-full rounded-lg border border-gray-300 bg-surface px-3 py-2 text-sm text-gray-800 shadow-sm outline-none focus:border-accent-500"
+          className="w-full rounded-lg border border-gray-200 bg-surface px-3 py-2 text-sm text-gray-800 shadow-sm  focus:border-accent-500"
           aria-label={t('settings.searchPlaceholder')}
         />
       </div>

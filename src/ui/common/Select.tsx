@@ -16,7 +16,7 @@ export function Select<T extends string>({
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
       aria-label={ariaLabel}
-      className="rounded border border-gray-300 bg-surface px-2 py-1 text-xs text-gray-800 outline-none focus:border-accent-500"
+      className="rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800 focus:border-accent-500"
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>

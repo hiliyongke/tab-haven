@@ -31,7 +31,7 @@ export function StatusToast() {
       )}
       <button
         type="button"
-        className="rounded p-0.5 text-gray-400 transition-base hover:text-gray-600"
+        className="rounded p-0.5 text-gray-500 transition-base hover:text-gray-700"
         aria-label={t('undo.dismiss')}
         onClick={clearToast}
       >

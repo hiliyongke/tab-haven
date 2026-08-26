@@ -3,10 +3,9 @@
 /*
  * z-index 规范（z-stack，禁止随意新增层级）
  * --------------------------------------------------------------
- * 20  .section-card.is-pinned         置顶固定区（吸顶）
- * 28  .pinned-strip                   顶部永久固定图标区（sticky）
  * 30  .search-bar / .dialog 遮罩 / .pinned-tile.is-dragging / 预览浮层
- * 40  .status-toast / .is-sorting 排序中浮动 / DragOverlay
+ * 35  .status-toast（位于弹窗遮罩之下、常规内容之上）
+ * 40  .is-sorting 排序中浮动 / DragOverlay / CommandPalette 遮罩
  * --------------------------------------------------------------
  */
 
@@ -595,14 +594,14 @@ body {
    两位数自动呈小胶囊（min-width + 横向 padding），不挤成正圆大球。 */
 .count-badge {
   display: inline-grid;
-  min-width: 11px;
-  height: 11px;
+  min-width: 13px;
+  height: 13px;
   place-items: center;
-  padding: 0 2.5px;
+  padding: 0 3px;
   border-radius: 999px;
   background: var(--count-badge-bg);
   color: var(--c-on-accent);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
@@ -630,7 +629,7 @@ body {
   flex: none;
   width: 16px;
   height: 16px;
-  color: var(--c-gray-400);
+  color: var(--c-gray-500);
 }
 
 .search-bar-input {
@@ -646,7 +645,7 @@ body {
 }
 
 .search-bar-input::placeholder {
-  color: var(--c-gray-400);
+  color: var(--c-gray-500);
 }
 
 /* 隐藏原生 search 清除按钮（使用自定义 ×） */
@@ -678,7 +677,7 @@ body {
   right: 8px;
   bottom: 48px;
   left: 8px;
-  z-index: 40;
+  z-index: 35;
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface) 94%, var(--c-brand-50));
@@ -712,15 +711,12 @@ body {
 .fixed-item-pending {
   width: 14px;
   height: 14px;
-  border: 1px dashed var(--c-gray-400);
+  border: 1px dashed var(--c-gray-500);
   border-radius: 50%;
 }
 
 /* ---------- 顶部永久固定图标区 ---------- */
 .pinned-strip {
-  position: sticky;
-  z-index: 28;
-  top: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -978,8 +974,8 @@ body {
 }
 /* 宽松密度：增加行内边距，信息更舒展 */
 .row-item.density-cozy {
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 .row-item:hover .drag-grip,
 .row-item:focus-within .drag-grip,
@@ -1032,6 +1028,21 @@ body {
 .row-item.is-sorting .row-actions {
   opacity: 0;
   pointer-events: none;
+}
+
+/* 无悬停设备（触屏）：常显悬停态操作，否则无法呼出；同时隐藏行尾徽标避免重叠 */
+@media (hover: none) {
+  .pinned-tile .pinned-unpin,
+  .pinned-tile .pinned-duplicate {
+    opacity: 1;
+  }
+  .row-item .row-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .row-item .row-badges {
+    display: none;
+  }
 }
 
 /* 固定条目作为投放目标（拖标签/分组加入文件夹）时的落点高亮 */
@@ -1190,10 +1201,7 @@ body {
 }
 
 .section-card.is-pinned {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  /* 零背景，仅保留底部 border 与 position: sticky（吸顶时跟随滚动不脱离搜索栏） */
+  /* 固定（原生钉住）分类的视觉标识：零背景，常驻于滚动区之外始终可见 */
 }
 /* 分组强调色：count 胶囊随组色轻染（accent 圆点用内联样式在 SectionHead 渲染） */
 .section-card.is-accented {
