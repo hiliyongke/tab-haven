@@ -35,18 +35,23 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
 }
 
 /** 回车处理：按建议类型打开。 */
-async function handleOmniboxEnter(text: string): Promise<void> {
+async function handleOmniboxEnter(text: string, disposition?: string): Promise<void> {
   const raw = text.trim();
+  const foreground = disposition === 'newForegroundTab';
   if (raw.startsWith('folder:')) {
     const id = raw.slice('folder:'.length);
     const folders = await foldersRepository.read();
     const folder = folders.find((f) => f.id === id);
-    if (folder) await createTabsWithUrls(folder.items.map((i) => i.url));
+    if (folder) {
+      // url 可选：过滤掉尚未转正的待定条目，避免把 undefined 传给创建逻辑。
+      const urls = folder.items.map((i) => i.url).filter((u): u is string => Boolean(u));
+      await createTabsWithUrls(urls, undefined, foreground);
+    }
     return;
   }
   if (raw.startsWith('pin:')) {
     const url = raw.slice('pin:'.length);
-    await createTabsWithUrls([url]);
+    if (url) await createTabsWithUrls([url], undefined, foreground);
     return;
   }
   if (raw.startsWith('search:')) {

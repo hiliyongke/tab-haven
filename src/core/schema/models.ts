@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 export const FixedFolderItemSchema = z.object({
   id: z.string(),
-  url: z.string(),
+  url: z.string().optional(),
   title: z.string(),
   favIconUrl: z.string().optional(),
   /** 挂起条目：组内新建后等待真实导航的标签 id。 */

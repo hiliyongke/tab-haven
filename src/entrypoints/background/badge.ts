@@ -11,6 +11,11 @@ let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 /** 刷新角标：按 badgeMode 计算当前窗口重复标签数（默认关 -> 不显示）。 */
 async function refreshBadge(): Promise<void> {
   if (!browser.action) return;
+  // 关模式：直接清空角标并跳过全量 tabs.query（badgeMode 默认 off，避免每次标签事件都查全量标签）。
+  if (cachedSettings.badgeMode === 'off') {
+    await browser.action.setBadgeText({ text: '' }).catch(() => {});
+    return;
+  }
   try {
     const tabs = await browser.tabs.query({ windowType: 'normal' });
     const total = tabs.length;
@@ -26,27 +31,23 @@ async function refreshBadge(): Promise<void> {
     }
     const discarded = tabs.filter((tab) => tab.discarded).length;
     const mode = cachedSettings.badgeMode;
-    if (mode === 'off') {
-      await browser.action.setBadgeText({ text: '' });
+    const dupCount = dupGroups.size;
+    let text = '';
+    let color = '#6366f1';
+    if (mode === 'dups') {
+      text = dupCount > 0 ? String(Math.min(dupCount, 999)) : '';
+      color = '#dc2626';
+    } else if (mode === 'count') {
+      text = total > 0 ? String(Math.min(total, 999)) : '';
+    } else if (dupCount > 0) {
+      // auto：有重复时优先展示重复组数（警示），否则展示标签总数
+      text = String(Math.min(dupCount, 999));
+      color = '#dc2626';
     } else {
-      const dupCount = dupGroups.size;
-      let text = '';
-      let color = '#6366f1';
-      if (mode === 'dups') {
-        text = dupCount > 0 ? String(Math.min(dupCount, 999)) : '';
-        color = '#dc2626';
-      } else if (mode === 'count') {
-        text = total > 0 ? String(Math.min(total, 999)) : '';
-      } else if (dupCount > 0) {
-        // auto：有重复时优先展示重复组数（警示），否则展示标签总数
-        text = String(Math.min(dupCount, 999));
-        color = '#dc2626';
-      } else {
-        text = total > 0 ? String(Math.min(total, 999)) : '';
-      }
-      await browser.action.setBadgeText({ text });
-      await browser.action.setBadgeBackgroundColor({ color });
+      text = total > 0 ? String(Math.min(total, 999)) : '';
     }
+    await browser.action.setBadgeText({ text });
+    await browser.action.setBadgeBackgroundColor({ color });
     await browser.action.setTitle({
       title: `${total} tabs · ${dupGroups.size} dup groups · ${discarded} discarded`
     });

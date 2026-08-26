@@ -9,7 +9,8 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
  */
 
 /** 以 web 归一化 key 去重（tags 差异忽略），与全应用 URL 唯一化口径一致。 */
-export function fixedItemKey(url: string): string {
+export function fixedItemKey(url: string | undefined): string {
+  if (!url) return '';
   return webComparisonKey(url, undefined) ?? url;
 }
 

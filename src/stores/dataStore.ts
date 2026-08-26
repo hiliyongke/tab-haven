@@ -93,7 +93,7 @@ interface DataState {
   /** 固定条目跨文件夹移动（URL 全局唯一约束下）。 */
   moveFolderItem: (sourceFolderId: string, itemId: string, targetFolderId: string) => Promise<void>;
   /** 打开固定条目（挂起/绑定/精确匹配/新建 四级）。 */
-  openSavedItem: (item: { id: string; url: string; pendingTabId?: number }) => Promise<void>;
+  openSavedItem: (item: { id: string; url?: string; pendingTabId?: number }) => Promise<void>;
   /** 从原生组保存为固定文件夹（去重 + 建立绑定）。 */
   createFolderFromNativeGroup: (name: string, groupTabs: readonly TabRecord[]) => Promise<void>;
   /** 将固定文件夹恢复为原生标签组，并移除已转换的固定文件夹。 */
@@ -641,7 +641,7 @@ export const useDataStore = create<DataState>()((set, get) => {
     const seen = new Set<string>();
     for (const folder of folders) {
       for (const item of folder.items) {
-        seen.add(webComparisonKey(item.url, undefined) ?? item.url);
+        seen.add(webComparisonKey(item.url ?? '', undefined) ?? item.url ?? '');
       }
     }
     const uniqueLeaves = (
@@ -708,7 +708,11 @@ export const useDataStore = create<DataState>()((set, get) => {
       if (!bindingResult.changed) return {};
       return { itemTabBindings: bindingResult.bindings };
     });
-    set({ boundTabIds: Object.values(result.itemTabBindings) });
+    const nextBoundTabIds = Object.values(result.itemTabBindings);
+    // 仅当绑定集合实际变化时才更新 store，避免每次标签事件（如仅标题更新）都触发全量重渲染。
+    if (structuralSignature(nextBoundTabIds) !== structuralSignature(get().boundTabIds)) {
+      set({ boundTabIds: nextBoundTabIds });
+    }
   }
   };
 });

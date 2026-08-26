@@ -196,7 +196,9 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
       notify(t('fixed.allOpen'));
       return;
     }
-    void createTabsWithUrls(missing.map((item) => item.url))
+    void createTabsWithUrls(
+      missing.map((item) => item.url).filter((u): u is string => Boolean(u))
+    )
       .then((created) => notify(t('fixed.openedAll', { count: created })))
       .catch(() => notify(t('errors.operationFailed')));
   };

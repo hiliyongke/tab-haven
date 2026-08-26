@@ -249,16 +249,21 @@ export default defineBackground(() => {
   });
 
   // omnibox：th <关键词>（omniboxEnabled 开关）
+  // 实时建议加 120ms 防抖，避免每个字符都触发读存储 + 全量扫描。
+  let omniboxSuggestTimer: ReturnType<typeof setTimeout> | undefined;
   browser.omnibox?.onInputChanged.addListener((text, suggest) => {
     if (!cachedSettings.omniboxEnabled) {
       suggest([]);
       return;
     }
-    void queryOmnibox(text).then((results) => suggest(results));
+    if (omniboxSuggestTimer) clearTimeout(omniboxSuggestTimer);
+    omniboxSuggestTimer = setTimeout(() => {
+      void queryOmnibox(text).then((results) => suggest(results));
+    }, 120);
   });
-  browser.omnibox?.onInputEntered.addListener((content) => {
+  browser.omnibox?.onInputEntered.addListener((content, disposition) => {
     if (!cachedSettings.omniboxEnabled) return;
-    void handleOmniboxEnter(content);
+    void handleOmniboxEnter(content, disposition);
   });
   browser.omnibox?.onInputStarted.addListener(() => {
     if (!cachedSettings.omniboxEnabled) return;

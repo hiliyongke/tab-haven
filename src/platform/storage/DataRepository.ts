@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
 
 /**
  * 数据仓库：单 key 的读写 + 校验 + 变更订阅（chrome.storage.local 通道）。
@@ -39,6 +39,21 @@ export class DataRepository<T> {
       if (raw === undefined) return this.defaultValue;
       const parsed = this.schema.safeParse(raw);
       if (parsed.success) return parsed.data;
+
+      // 数组类数据：逐元素尝试恢复，丢弃坏元素而非整块丢弃（如文件夹列表中单个坏条目不应连累全部）。
+      if (this.schema instanceof z.ZodArray && Array.isArray(raw)) {
+        const arrSchema = this.schema as unknown as z.ZodArray<z.ZodTypeAny>;
+        const recovered = raw.flatMap((item) => {
+          const r = arrSchema.element.safeParse(item);
+          return r.success ? [r.data] : [];
+        });
+        const reparsed = this.schema.safeParse(recovered);
+        if (reparsed.success) {
+          // 把恢复后的干净数据回写，避免下次仍走失败分支。
+          void this.write(reparsed.data as T);
+          return reparsed.data as T;
+        }
+      }
 
       // 坏数据隔离：不扩散、可诊断
       await this.isolateCorrupted(raw);

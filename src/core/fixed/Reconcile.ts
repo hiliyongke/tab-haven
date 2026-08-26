@@ -34,7 +34,8 @@ export function reconcilePendingItems(
             // 转正：写入真实网址信息
             current = {
               ...current,
-              url: key,
+              // 优先保留标签真实完整 URL（含 query/fragment）；key 为归一化结果，仅在无真实 URL 时降级使用。
+              url: tab.url || key,
               title: tab.title || key,
               favIconUrl: tab.favIconUrl,
               pendingTabId: undefined

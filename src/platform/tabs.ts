@@ -85,7 +85,11 @@ export async function queryCurrentWindowGroups(): Promise<TabGroupRecord[]> {
 
 /** 切换标签。 */
 export async function activateTab(tabId: number): Promise<void> {
-  await browser.tabs.update(tabId, { active: true });
+  try {
+    await browser.tabs.update(tabId, { active: true });
+  } catch {
+    // 标签可能已关闭；激活失败静默忽略（best-effort UI 操作）。
+  }
 }
 
 /** 关闭标签并返回实际成功的标签 id，供撤销和批量反馈使用。 */
@@ -104,17 +108,29 @@ export async function closeTabs(tabIds: readonly number[]): Promise<number[]> {
 
 /** 切换静音。 */
 export async function toggleMute(tabId: number, currentlyMuted: boolean): Promise<void> {
-  await browser.tabs.update(tabId, { muted: !currentlyMuted });
+  try {
+    await browser.tabs.update(tabId, { muted: !currentlyMuted });
+  } catch {
+    // 标签可能已关闭
+  }
 }
 
 /** 切换固定状态。 */
 export async function togglePinned(tabId: number, currentlyPinned: boolean): Promise<void> {
-  await browser.tabs.update(tabId, { pinned: !currentlyPinned });
+  try {
+    await browser.tabs.update(tabId, { pinned: !currentlyPinned });
+  } catch {
+    // 标签可能已关闭
+  }
 }
 
 /** 折叠/展开原生组。 */
 export async function setGroupCollapsed(groupId: number, collapsed: boolean): Promise<void> {
-  await browser.tabGroups.update(groupId, { collapsed });
+  try {
+    await browser.tabGroups.update(groupId, { collapsed });
+  } catch {
+    // 标签组可能已解散
+  }
 }
 
 /**
@@ -207,12 +223,20 @@ export async function updateGroupMeta(groupId: number, title: string, color?: st
 
 /** 重命名原生组（P1⑤）。 */
 export async function renameGroup(groupId: number, title: string): Promise<void> {
-  await browser.tabGroups.update(groupId, { title });
+  try {
+    await browser.tabGroups.update(groupId, { title });
+  } catch {
+    // 标签组可能已解散
+  }
 }
 
 /** 改变原生组颜色（P1⑤）。 */
 export async function recolorGroup(groupId: number, color: string): Promise<void> {
-  await tabGroups.update(groupId, { color });
+  try {
+    await tabGroups.update(groupId, { color });
+  } catch {
+    // 标签组可能已解散
+  }
 }
 
 /**
@@ -227,7 +251,11 @@ export async function removeGroup(groupId: number): Promise<void> {
 
 /** 移动原生组到指定索引（组排序，P1⑤）。 */
 export async function moveGroup(groupId: number, index: number): Promise<void> {
-  await browser.tabGroups.move(groupId, { index });
+  try {
+    await browser.tabGroups.move(groupId, { index });
+  } catch {
+    // 标签组可能已解散
+  }
 }
 
 /** 检测标签页面语言，返回 BCP-47 代码（P3⑩）。不支持时返回 "und"。 */
@@ -276,7 +304,8 @@ export async function queryAllWindowTabs(): Promise<TabRecord[]> {
  */
 export async function createTabsWithUrls(
   urls: readonly string[],
-  windowId?: number
+  windowId?: number,
+  active = false
 ): Promise<number> {
   let target = windowId;
   if (target === undefined) {
@@ -289,7 +318,7 @@ export async function createTabsWithUrls(
       if (target !== undefined) await grantReuseAllowance(target, url);
       await browser.tabs.create({
         url,
-        active: false,
+        active,
         ...(target !== undefined ? { windowId: target } : {})
       });
       created += 1;
