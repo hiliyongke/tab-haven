@@ -3,7 +3,7 @@ import { useUndoStore } from '@/stores/undoStore';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
 
-/** 状态提示条：消息 + 可选撤销按钮（FR-D8.1 的撤销入口）。 */
+/** 状态提示条：消息 + 可选撤销按钮。 */
 export function StatusToast() {
   const { t } = useTranslation();
   const toast = useUndoStore((state) => state.toast);

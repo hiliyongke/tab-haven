@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUndoStore } from '@/stores/undoStore';
 import { DialogShell } from '@/ui/dialog/Dialog';
-import { getRecentlyClosed, restoreRecentClosed, type RecentClosedEntry } from '@/platform/sessions';
+import {
+  getRecentlyClosed,
+  restoreRecentClosed,
+  type RecentClosedEntry
+} from '@/platform/sessions';
 import { formatTime } from '@/ui/common/format';
 
 /**
- * 撤销历史面板（FR-D8.1 后半 + E11 会话桥接）：
+ * 撤销历史面板：
  *  - 本产品撤销栈：列出全部批次，点击任意批次一键恢复（回溯任意一步）；
  *  - 浏览器最近关闭：chrome.sessions 记录的原生关闭标签/窗口，一键恢复。
  */
@@ -73,7 +77,9 @@ export function UndoHistoryPanel({
             <p>{t('snapshots.crashGuidance')}</p>
             <button
               type="button"
-              className="mt-1 font-medium underline underline-offset-2 hover:text-accent-800"
+              /* accent 梯度只定义到 700：accent-800 是越界令牌，类名不生成任何 CSS，
+                 悬停效果静默失效（历史坑）。改回 700，悬停加深改用亮度更低的表层色。 */
+              className="mt-1 rounded font-medium underline underline-offset-2 transition-base hover:bg-accent-100 hover:text-accent-700"
               onClick={onOpenSnapshots}
             >
               {t('snapshots.openSnapshots')}

@@ -3,10 +3,6 @@ import { createTabsWithUrls } from '@/platform/tabs';
 import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
 import { hostnameOf } from './shared';
 
-// ---------------------------------------------------------------------------
-// omnibox 地址栏命令
-// ---------------------------------------------------------------------------
-
 interface OmniSuggestion {
   content: string;
   description: string;

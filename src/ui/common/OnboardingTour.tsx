@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/common/Button';
 import { useModalA11y } from '@/ui/dialog/Dialog';
@@ -6,7 +7,7 @@ import { useModalA11y } from '@/ui/dialog/Dialog';
 const TOTAL = 3;
 
 /**
- * 首启交互式引导（P0 激活）：仅首次展示（settings.onboarded=false）。
+ * 首启交互式引导：仅首次展示（settings.onboarded=false）。
  * 三步讲清核心价值（列表已就绪 / 固定空间 / 键盘直达）+ 功能发现清单，
  * 完成后调用 onDone 写回 onboarded 标记，不再出现。
  */
@@ -15,23 +16,41 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(1);
   const last = step === TOTAL;
   const panelRef = useRef<HTMLDialogElement>(null);
-  // 与弹窗族统一：焦点陷阱 + Esc 跳过（=onDone）+ 关闭后焦点恢复；
+  const titleId = useId();
+  // 与弹窗族统一：焦点陷阱 + 关闭后焦点恢复；
   // 不加遮罩点击关闭，避免误点直接写回 onboarded 标记。
   useModalA11y(panelRef, onDone);
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4" role="presentation">
+  // 原生 <dialog> 默认 hidden，必须显式 showModal() 才会显示并进入真正的模态。
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    if (!panel.open) panel.showModal();
+    return () => {
+      if (panel.open) panel.close();
+    };
+  }, []);
+
+  // Portal 到 body：与 DialogShell 同层（z-stack 50 档），脱离 .app 的
+  // container-type 层叠上下文。
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      role="presentation"
+    >
       <dialog
-        open
         ref={panelRef}
         className="relative m-0 w-full max-w-sm rounded-xl border border-gray-200 bg-surface p-5 shadow-lg"
-        aria-modal="true"
-        aria-label={t('onboarding.title')}
+        aria-labelledby={titleId}
+        onCancel={(event) => {
+          event.preventDefault();
+          onDone();
+        }}
       >
         <p className="text-2xs font-medium tracking-wide text-accent-600">
           {t('onboarding.stepLabel', { current: step, total: TOTAL })}
         </p>
-        <h2 className="mt-1 text-base font-semibold text-gray-800">
+        <h2 id={titleId} className="mt-1 text-base font-semibold text-gray-800">
           {t(`onboarding.step${step}Title`)}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">
@@ -76,6 +95,8 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
           </div>
         </div>
 
+        {/* 进度点：视觉装饰（当前步骤已由上方 stepLabel 文案播报，
+            此处 aria-hidden 可避免读屏重复念「第 n 步，共 3 步」） */}
         <div className="mt-4 flex justify-center gap-1">
           {Array.from({ length: TOTAL }, (_, i) => (
             <span
@@ -89,6 +110,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
           ))}
         </div>
       </dialog>
-    </div>
+    </div>,
+    document.body
   );
 }

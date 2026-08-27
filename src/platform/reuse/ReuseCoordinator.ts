@@ -24,9 +24,7 @@ interface PendingTask {
 }
 
 type ReuseOutcome =
-  | { action: 'reuse'; targetId: number }
-  | { action: 'keep' }
-  | { action: 'release' };
+  { action: 'reuse'; targetId: number } | { action: 'keep' } | { action: 'release' };
 
 interface ReuseCoordinatorDependencies {
   /** 扫描窗口内全部标签（查询服务注入，便于测试）。 */

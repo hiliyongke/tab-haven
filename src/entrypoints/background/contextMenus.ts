@@ -7,10 +7,6 @@ import { mapTab } from '@/platform/tabs';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
 import { notifyUser } from './shared';
 
-// ---------------------------------------------------------------------------
-// contextMenus 右键体系
-// ---------------------------------------------------------------------------
-
 export const MENU_IDS = {
   pageDiscard: 'th:page:discard',
   pagePin: 'th:page:pin',
@@ -52,7 +48,6 @@ function enqueueMenuWrite(task: () => Promise<void>): void {
   );
 }
 
-/** 清空右键菜单（串行）。 */
 export function clearContextMenus(): void {
   const menus = browser.contextMenus;
   if (!menus) return;
@@ -66,11 +61,27 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
   enqueueMenuWrite(async () => {
     await menus.removeAll();
     // 页面右键
-    await menus.create({ id: MENU_IDS.pageDiscard, title: menuText('menuDiscardPage'), contexts: ['page'] });
-    await menus.create({ id: MENU_IDS.pagePin, title: menuText('menuPinPage'), contexts: ['page'] });
-    await menus.create({ id: MENU_IDS.pageSearchSite, title: menuText('menuSearchSite'), contexts: ['page'] });
+    await menus.create({
+      id: MENU_IDS.pageDiscard,
+      title: menuText('menuDiscardPage'),
+      contexts: ['page']
+    });
+    await menus.create({
+      id: MENU_IDS.pagePin,
+      title: menuText('menuPinPage'),
+      contexts: ['page']
+    });
+    await menus.create({
+      id: MENU_IDS.pageSearchSite,
+      title: menuText('menuSearchSite'),
+      contexts: ['page']
+    });
     if (folders.length > 0) {
-      await menus.create({ id: MENU_IDS.pageFolderParent, title: menuText('menuAddPageToFolder'), contexts: ['page'] });
+      await menus.create({
+        id: MENU_IDS.pageFolderParent,
+        title: menuText('menuAddPageToFolder'),
+        contexts: ['page']
+      });
       for (const folder of folders) {
         await menus.create({
           id: `th:page:add-folder:${folder.id}`,
@@ -82,7 +93,11 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
     }
     // 链接右键
     if (folders.length > 0) {
-      await menus.create({ id: MENU_IDS.linkFolderParent, title: menuText('menuAddLinkToFolder'), contexts: ['link'] });
+      await menus.create({
+        id: MENU_IDS.linkFolderParent,
+        title: menuText('menuAddLinkToFolder'),
+        contexts: ['link']
+      });
       for (const folder of folders) {
         await menus.create({
           id: `th:link:add-folder:${folder.id}`,
@@ -93,12 +108,32 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
       }
     }
     // 标签栏右键
-    await menus.create({ id: MENU_IDS.tabDiscard, title: menuText('menuDiscardTab'), contexts: ['tab'] });
-    await menus.create({ id: MENU_IDS.tabSearchSite, title: menuText('menuSearchSite'), contexts: ['tab'] });
+    await menus.create({
+      id: MENU_IDS.tabDiscard,
+      title: menuText('menuDiscardTab'),
+      contexts: ['tab']
+    });
+    await menus.create({
+      id: MENU_IDS.tabSearchSite,
+      title: menuText('menuSearchSite'),
+      contexts: ['tab']
+    });
     // 工具栏图标右键
-    await menus.create({ id: MENU_IDS.actionOpenPanel, title: menuText('menuOpenPanel'), contexts: ['action'] });
-    await menus.create({ id: MENU_IDS.actionDiscardInactive, title: menuText('menuDiscardInactive'), contexts: ['action'] });
-    await menus.create({ id: MENU_IDS.actionSettings, title: menuText('menuOpenSettings'), contexts: ['action'] });
+    await menus.create({
+      id: MENU_IDS.actionOpenPanel,
+      title: menuText('menuOpenPanel'),
+      contexts: ['action']
+    });
+    await menus.create({
+      id: MENU_IDS.actionDiscardInactive,
+      title: menuText('menuDiscardInactive'),
+      contexts: ['action']
+    });
+    await menus.create({
+      id: MENU_IDS.actionSettings,
+      title: menuText('menuOpenSettings'),
+      contexts: ['action']
+    });
   });
 }
 
@@ -117,28 +152,38 @@ export async function addEntryToFolder(
   if (exists) return false;
   const item = createFolderItem({ url: key, title: entry.title, favIconUrl: entry.favIconUrl });
   const next = folders.map((folder) =>
-    folder.id === folderId ? { ...folder, collapsed: false, items: [...folder.items, item] } : folder
+    folder.id === folderId
+      ? { ...folder, collapsed: false, items: [...folder.items, item] }
+      : folder
   );
   await foldersRepository.write(next);
   return true;
 }
 
 /** 休眠单个标签（带安全判定与结果通知）。 */
-export async function discardTabSafely(rawTab: Parameters<typeof mapTab>[0] | undefined): Promise<boolean> {
+export async function discardTabSafely(
+  rawTab: Parameters<typeof mapTab>[0] | undefined
+): Promise<boolean> {
   if (!rawTab || rawTab.id === undefined) return false;
   const tab = mapTab(rawTab);
   if (!canSafelyDiscardTab(tab)) {
     notifyUser('TabHaven', 'This tab cannot be discarded right now.');
     return false;
   }
-  const ok = await browser.tabs.discard(tab.id).then(() => true).catch(() => false);
+  const ok = await browser.tabs
+    .discard(tab.id)
+    .then(() => true)
+    .catch(() => false);
   if (ok) notifyUser('TabHaven', 'Tab discarded.');
   return ok;
 }
 
 /** 注册/刷新右键菜单（按设置开关与当前文件夹列表）。 */
 export async function setupMenus(): Promise<void> {
-  const [folders, settings] = await Promise.all([foldersRepository.read(), settingsRepository.read()]);
+  const [folders, settings] = await Promise.all([
+    foldersRepository.read(),
+    settingsRepository.read()
+  ]);
   if (!settings.contextMenusEnabled) {
     clearContextMenus();
     return;

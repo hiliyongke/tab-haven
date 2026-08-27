@@ -87,7 +87,9 @@ export function domainToUnicode(hostname: string): string {
   try {
     return hostname
       .split('.')
-      .map((label) => (label.toLowerCase().startsWith('xn--') ? decodeLabel(label.slice(4)) : label))
+      .map((label) =>
+        label.toLowerCase().startsWith('xn--') ? decodeLabel(label.slice(4)) : label
+      )
       .join('.');
   } catch {
     return hostname;

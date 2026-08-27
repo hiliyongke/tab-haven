@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
 import { removeGroup, updateGroupMeta } from '@/platform/tabs';
 import { autoGroupsRepository } from '@/platform/storage/repositories';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 自动分组执行器：把 plan 落成浏览器原生 tabGroups。
@@ -24,7 +25,8 @@ export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<n
         await updateGroupMeta(groupId, plan.title, plan.color);
         createdIds.push(groupId);
       }
-    } catch {
+    } catch (error) {
+      logDegraded('auto-group', 'syncAutoGroups 单组创建失败', error);
       // 单组失败不影响其他组；标签保持未分组，下轮快照重新尝试
     }
   }
@@ -47,7 +49,8 @@ export async function regroupTempArea(
   if (ungroupTabIds.length > 0) {
     try {
       await browser.tabs.ungroup([...ungroupTabIds] as [number, ...number[]]);
-    } catch {
+    } catch (error) {
+      logDegraded('auto-group', 'regroupTempArea 打散现有组失败', error);
       // 部分标签可能已不在组内，静默忽略
     }
   }
@@ -60,7 +63,8 @@ export async function regroupTempArea(
         await updateGroupMeta(groupId, plan.title, plan.color);
         count += 1;
       }
-    } catch {
+    } catch (error) {
+      logDegraded('auto-group', 'regroupTempArea 单组创建失败', error);
       // 单组失败静默跳过，标签保持未分组
     }
   }
@@ -78,13 +82,14 @@ export async function disbandAutoGroups(): Promise<number> {
   let count = 0;
   const failed: number[] = [];
   for (const groupId of ids) {
-    try {
-      await removeGroup(groupId);
-      count += 1;
-    } catch {
-      // 解散失败：保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组。
-      // 已不存在的组（用户手动解散）在 removeGroup 内查询为空、正常返回，不会落入此分支。
+    // removeGroup 以返回值区分「已解散 / 已不存在 / 真实失败」，不再依赖抛异常：
+    const outcome = await removeGroup(groupId);
+    if (outcome === 'failed') {
+      // 真实失败：保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组。
       failed.push(groupId);
+    } else {
+      // 'removed' 与 'missing' 均表示目标已达成，清理记录（missing 不再重试）。
+      count += 1;
     }
   }
   await autoGroupsRepository.write(failed);

@@ -6,6 +6,7 @@ import {
   SearchDomainMessageSchema
 } from '@/platform/messages';
 import { settingsRepository } from '@/platform/storage/repositories';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * SW 侧共享状态与工具（被各 background 子模块复用）。
@@ -17,7 +18,8 @@ export let cachedSettings: Settings = DEFAULT_SETTINGS;
 export const syncCachedSettings = async (): Promise<void> => {
   try {
     cachedSettings = await settingsRepository.read();
-  } catch {
+  } catch (error) {
+    logDegraded('background', '共享上下文读取失败', error);
     // 读取失败保持默认值，后续 watch 会自动纠正
   }
 };
@@ -27,7 +29,8 @@ export function hostnameOf(url: string | undefined): string {
   if (!url) return '';
   try {
     return new URL(url).hostname;
-  } catch {
+  } catch (error) {
+    logDegraded('background', '共享上下文读取失败', error);
     return '';
   }
 }
@@ -63,8 +66,7 @@ export function notifyUser(title: string, message: string): void {
 
 /** 把待面板执行的动作存入 storage.session（面板未开时挂起），并即时广播。 */
 type PendingAction =
-  | { type: 'search-domain'; query: string; at: number }
-  | { type: 'locate-active'; at: number };
+  { type: 'search-domain'; query: string; at: number } | { type: 'locate-active'; at: number };
 type PendingActionInput = { type: 'search-domain'; query: string } | { type: 'locate-active' };
 
 export async function queueAction(action: PendingActionInput): Promise<void> {
@@ -85,12 +87,17 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
       list.push(stamped);
       await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-5) });
     }
-  } catch {
+  } catch (error) {
+    logDegraded('background', '共享上下文操作失败', error);
     // session 存储不可用时仅即时广播
   }
   const message =
     stamped.type === 'search-domain'
-      ? SearchDomainMessageSchema.parse({ type: 'search-domain', query: stamped.query, at: stamped.at })
+      ? SearchDomainMessageSchema.parse({
+          type: 'search-domain',
+          query: stamped.query,
+          at: stamped.at
+        })
       : LocateActiveMessageSchema.parse({ type: 'locate-active', at: stamped.at });
   browser.runtime.sendMessage(message).catch(() => {});
 }

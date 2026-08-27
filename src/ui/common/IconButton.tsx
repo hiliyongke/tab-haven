@@ -3,7 +3,7 @@ import { Icon } from '@/ui/common/Icon';
 
 /**
  * 统一图标按钮（工具条/弹窗/头部共用）。
- * 收敛此前散落的 `rounded p-1 transition-base hover:bg-gray-100` 系列：
+ * 统一图标按钮样式，业务代码不写原子类：
  * 统一 title/aria-label、disabled、激活态、危险态与计数徽章。
  */
 export function IconButton({
@@ -36,9 +36,12 @@ export function IconButton({
   badge?: number;
   onClick?: () => void;
 }) {
+  // 尺寸兜底：min-h/min-w 保证命中区不小于 24px（WCAG 2.5.8）。
+  // 单靠 p-1 + h-4 图标刚好 24px，一旦调用方传入更小的 iconClass（如 h-3.5）就会掉到 22px。
+  // 禁用态透明度与 Button 统一为 50（原 35 过淡，几乎看不出是个控件）。
   const className =
-    'relative rounded transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-35' +
-    (box === 'md' ? ' p-1.5' : ' p-1') +
+    'relative grid place-items-center rounded transition-base hover:bg-gray-100 disabled:cursor-default disabled:opacity-50 ' +
+    (box === 'md' ? 'min-h-7 min-w-7 p-1.5' : 'min-h-6 min-w-6 p-1') +
     (tone === 'accent' ? ' text-gray-600 hover:text-accent-600' : '') +
     (isOn ? ' bg-accent-50 text-accent-600 hover:bg-accent-100' : '') +
     (danger ? ' hover:bg-red-50 hover:text-red-600' : '');

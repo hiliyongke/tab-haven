@@ -8,7 +8,6 @@
  * 本模块是整个产品 URL 判定的唯一事实来源（复用引擎、聚合、清理共用）。
  */
 
-/** 业务类别。 */
 export type UrlCategory = 'web' | 'blank-start' | 'internal';
 
 export interface UrlInspection {
@@ -59,7 +58,11 @@ export function inspectUrl(
   }
 
   if (isBlankStartUrl(committed)) {
-    return { category: 'blank-start', comparisonKey: pending || committed, committedUrl: committed };
+    return {
+      category: 'blank-start',
+      comparisonKey: pending || committed,
+      committedUrl: committed
+    };
   }
 
   if (isWebUrl(committed)) {

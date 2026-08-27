@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
- * 常驻顶部搜索框（替代原弹窗式 SearchOverlay）：
+ * 常驻顶部搜索框，输入即过滤：
  * 输入即实时过滤下方标签列表，无需点击弹窗。
  * ⌘K / Ctrl+K 由上层聚焦此输入框；Esc 清空。
  */

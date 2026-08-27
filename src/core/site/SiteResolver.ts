@@ -40,7 +40,10 @@ export class SiteResolver {
       const url = new URL(rawUrl);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
 
-      const hostname = url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
+      const hostname = url.hostname
+        .toLowerCase()
+        .replace(/^www\./, '')
+        .replace(/\.$/, '');
       if (!hostname) return null;
 
       const classification = classifyHost(hostname);

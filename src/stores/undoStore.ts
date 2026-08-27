@@ -9,10 +9,8 @@ import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 
 /**
- * 撤销 store（FR-D8.1）：批次入栈（含持久化）、撤销执行、状态提示。
- *
- * 编排入口 closeWithUndo：记录五元组 → 关闭 → 状态提示（可撤销）。
- * undoRepository 单例与 storage key 统一由 repositories.ts 管理。
+ * 撤销 store：批次入栈（含持久化）、撤销执行、状态提示。
+ * 编排入口 closeWithUndo：记录五元组 → 关闭 → 状态提示。
  */
 
 /** toast 上的自定义动作（如「唤醒全部休眠标签」）。 */
@@ -69,7 +67,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     set({ toast: null });
 
     const count = await restoreTabRecords(batch.entries, windowId);
-    set({ toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined } });
+    set({
+      toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined }
+    });
     scheduleToastClear();
   };
 
@@ -91,7 +91,13 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       const closing = requested.filter((tab) => !tab.pinned);
       if (closing.length === 0) {
         if (requested.length > 0) {
-          set({ toast: { message: i18n.t('undo.closedSkipped', { count: requested.length }), canUndo: false, batchId: undefined } });
+          set({
+            toast: {
+              message: i18n.t('undo.closedSkipped', { count: requested.length }),
+              canUndo: false,
+              batchId: undefined
+            }
+          });
           scheduleToastClear();
         }
         return;
@@ -102,7 +108,13 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       const closedIdSet = new Set(closedIds);
       const closed = closing.filter((tab) => closedIdSet.has(tab.id));
       if (closed.length === 0) {
-        set({ toast: { message: i18n.t('undo.closedSkipped', { count: requested.length }), canUndo: false, batchId: undefined } });
+        set({
+          toast: {
+            message: i18n.t('undo.closedSkipped', { count: requested.length }),
+            canUndo: false,
+            batchId: undefined
+          }
+        });
         scheduleToastClear();
         return;
       }

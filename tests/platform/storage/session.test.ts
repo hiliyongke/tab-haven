@@ -44,13 +44,47 @@ describe('session 串行化', () => {
     ]);
 
     const last = results[results.length - 1]!;
-    expect(last.itemTabBindings.same).toBe(2);
+    expect(last.data.itemTabBindings.same).toBe(2);
   });
 
   it('mutateSession 返回最终合并结果', async () => {
     const result = await mutateSession((s) => ({
       itemTabBindings: { ...s.itemTabBindings, x: 9 }
     }));
-    expect(result.itemTabBindings.x).toBe(9);
+    expect(result.data.itemTabBindings.x).toBe(9);
+  });
+
+  it('返回 persisted 标志：正常存储为 true', async () => {
+    const result = await mutateSession(() => ({ manualStandaloneTabIds: [1] }));
+    expect(result.persisted).toBe(true);
+    expect(result.data.manualStandaloneTabIds).toEqual([1]);
+  });
+
+  it('返回 persisted=false：写入失败时调用方可感知（不再静默丢数据）', async () => {
+    // 模拟存储不可用（配额超限 / 被策略禁用）。保存原方法并在用后恢复，
+    // 否则污染会泄漏到后续用例（fakeBrowser 在 afterEach 才 reset）。
+    const originalSet = fakeBrowser.storage.session.set;
+    fakeBrowser.storage.session.set = (() => Promise.reject(new Error('quota'))) as never;
+    try {
+      const result = await mutateSession(() => ({ manualStandaloneTabIds: [7] }));
+
+      expect(result.persisted).toBe(false);
+      // 内存态仍返回合并结果，UI 不崩；但标志位让调用方能提示用户。
+      expect(result.data.manualStandaloneTabIds).toEqual([7]);
+    } finally {
+      fakeBrowser.storage.session.set = originalSet;
+    }
+  });
+
+  it('updateSession 透出持久化结果', async () => {
+    expect(await updateSession({ manualStandaloneTabIds: [3] })).toBe(true);
+
+    const originalSet = fakeBrowser.storage.session.set;
+    fakeBrowser.storage.session.set = (() => Promise.reject(new Error('quota'))) as never;
+    try {
+      expect(await updateSession({ manualStandaloneTabIds: [4] })).toBe(false);
+    } finally {
+      fakeBrowser.storage.session.set = originalSet;
+    }
   });
 });

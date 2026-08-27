@@ -5,12 +5,10 @@ import type { TabRecord } from '@/core/tab-types';
 const OVERSCAN = 6;
 
 /**
- * 零依赖的定高虚拟列表：只渲染可视区 + 上下缓冲的少量行，
- * 用 translateY 把窗口定位到正确偏移。用于 200+ 标签的长分组，
- * 避免一次性挂载上千个 DOM 节点导致侧边栏卡顿。
+ * 零依赖的定高虚拟列表：只渲染可视区 + 上下缓冲的少量行，用于长分组避免挂载上千个 DOM 节点。
+ * itemSize 必须等于实际行高，否则偏大产生空隙、偏小内容溢出重叠。
  *
- * - 列表较短（totalHeight ≤ maxHeight）时退化为普通渲染，行为与未虚拟化一致；
- * - 仅在父级不需要拖拽重排时使用（重排场景由调用方回退到全量 SortableContext）。
+ * 仅在父级不需要拖拽重排时使用；重排场景由调用方回退到全量 SortableContext。
  */
 export function VirtualRowList({
   tabs,

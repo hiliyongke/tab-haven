@@ -5,16 +5,14 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 /**
  * 复用决策：给定新标签与窗口标签快照，决定是否复用既有标签。
  *
- * 行为规格（PRD 附录 C-6 / 同 URL 唯一化）：新标签与窗口内既有标签共享同一
+ * 复用策略：新标签与窗口内既有标签共享同一
  * 比较键（网址）时，激活既有标签并关闭新标签。保留者偏好统一走
  * core/dup/DedupeByUrl 的 rankForKeep（最近访问 > 激活 > 固定 > 位置靠前 > id 大）：
  *  1. 优先复用"既有"标签（非本次新建的）；
  *  2. 无既有标签时，本次同时新建的同址标签中排序靠前者胜出。
  */
 
-type ReuseDecision =
-  | { kind: 'reuse'; targetId: number }
-  | { kind: 'standalone' };
+type ReuseDecision = { kind: 'reuse'; targetId: number } | { kind: 'standalone' };
 
 export class ReusePolicy {
   /**

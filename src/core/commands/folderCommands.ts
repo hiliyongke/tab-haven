@@ -4,21 +4,18 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 固定空间「文件夹」相关纯计算（与平台/会话无关）。
- * 原实现散落在 dataStore 的动作闭包中，难以脱离 chrome.storage 单测；
- * 抽出后行为完全等价，仅产出「下一版 folders + 必要中间量」，副作用（落盘/绑定）仍留在 store。
+ * 只产出下一版 folders + 必要中间量，落盘与绑定等副作用留在 store 层。
  */
 
 /**
- * 固定条目的身份键：web 页取完整比较键（查询串/锚点参与身份），
- * 与基线「同一 URL 全局唯一」的精确匹配口径一致；非 web 页降级原样、空 URL 为空串。
- * 注：归一化匹配（忽略跟踪参数等）属 FR-D8.2（V1.2）范围，当前不做。
+ * 固定条目的身份键：web 页取完整比较键（查询串与锚点参与身份），
+ * 非 web 页降级为原样 URL，空 URL 为空串。
  */
 export function fixedItemKey(url: string | undefined): string {
   if (!url) return '';
   return webComparisonKey(url, undefined) ?? url;
 }
 
-/** 重命名文件夹（纯）。 */
 export function computeRenameFolder(
   folders: FixedFolder[],
   folderId: string,
@@ -27,29 +24,31 @@ export function computeRenameFolder(
   return folders.map((folder) => (folder.id === folderId ? { ...folder, name } : folder));
 }
 
-/** 删除文件夹（纯；绑定释放由调用方另经 session 处理）。 */
+/** 删除文件夹。绑定释放由调用方另经 session 处理。 */
 export function computeRemoveFolder(folders: FixedFolder[], folderId: string): FixedFolder[] {
   return folders.filter((folder) => folder.id !== folderId);
 }
 
-/** 切换文件夹折叠态（纯）。 */
-export function computeToggleFolderCollapsed(folders: FixedFolder[], folderId: string): FixedFolder[] {
+export function computeToggleFolderCollapsed(
+  folders: FixedFolder[],
+  folderId: string
+): FixedFolder[] {
   return folders.map((folder) =>
     folder.id === folderId ? { ...folder, collapsed: !folder.collapsed } : folder
   );
 }
 
-/** 文件夹内条目重排（纯，委托 FolderOps）。 */
 export function computeReorderFolderItems(
   folders: FixedFolder[],
   op: { folderId: string; sourceId: string; targetId: string; placeAfter: boolean }
 ): FixedFolder[] {
   return folders.map((folder) =>
-    folder.id === op.folderId ? reorderFolderItems(folder, op.sourceId, op.targetId, op.placeAfter) : folder
+    folder.id === op.folderId
+      ? reorderFolderItems(folder, op.sourceId, op.targetId, op.placeAfter)
+      : folder
   );
 }
 
-/** 文件夹排序（纯，委托 FolderOps）。 */
 export function computeMoveFolder(
   folders: FixedFolder[],
   op: { sourceId: string; targetId: string; placeAfter: boolean }
@@ -171,5 +170,14 @@ export function computeAddTabsToFolder(
       : folder
   );
 
-  return { next, newItems, movedItems, duplicateItemIds, selectedExisting, comparisonKeys, moved, targetDuplicates };
+  return {
+    next,
+    newItems,
+    movedItems,
+    duplicateItemIds,
+    selectedExisting,
+    comparisonKeys,
+    moved,
+    targetDuplicates
+  };
 }

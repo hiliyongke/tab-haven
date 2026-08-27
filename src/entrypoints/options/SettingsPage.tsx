@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
@@ -10,12 +10,12 @@ import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { Select } from '@/ui/common/Select';
+import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
 
 type SidePanelSide = 'left' | 'right' | 'unknown';
 type SidePanelLayoutApi = { getLayout?: () => Promise<{ side: 'left' | 'right' }> };
 
-/** 分区标题计数徽章。 */
 function SectionCount({ count }: { count?: number }) {
   if (count === undefined) return null;
   return (
@@ -42,7 +42,7 @@ function Section({
 }) {
   if (!collapsible) {
     return (
-      <section className="mb-8">
+      <section className="mb-6 sm:mb-8">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-600">
           <span>{title}</span>
           <SectionCount count={count} />
@@ -54,7 +54,7 @@ function Section({
     );
   }
   return (
-    <details className="group mb-8" open={forceOpen}>
+    <details className="group mb-6 sm:mb-8" open={forceOpen}>
       <summary className="mb-3 flex cursor-pointer items-center justify-between text-sm font-semibold tracking-wide text-gray-600 select-none">
         <span className="flex items-center gap-2">
           {title}
@@ -91,9 +91,9 @@ function WhitelistEditor({
     setInput('');
   };
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    <div className="flex w-full flex-col items-end gap-1.5 sm:w-auto">
       {value.length > 0 && (
-        <ul className="flex max-w-[240px] flex-wrap justify-end gap-1">
+        <ul className="flex max-w-full flex-wrap justify-end gap-1 sm:max-w-[240px]">
           {value.map((entry) => (
             <li
               key={entry}
@@ -114,13 +114,13 @@ function WhitelistEditor({
         </ul>
       )}
       <div className="flex gap-1">
-        <input
-          type="text"
-          className="w-32 rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
+        <TextField
+          size="sm"
+          className="w-32"
           placeholder={t('settings.whitelistPlaceholder')}
-          aria-label={t('settings.whitelistPlaceholder')}
+          ariaLabel={t('settings.whitelistPlaceholder')}
           value={input}
-          onChange={(event) => setInput(event.target.value)}
+          onChange={setInput}
           onKeyDown={(event) => {
             if (event.key === 'Enter') add();
           }}
@@ -135,12 +135,13 @@ function WhitelistEditor({
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <div className="text-sm text-gray-800">{label}</div>
         {hint && <div className="mt-0.5 text-2xs text-gray-600">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      {/* 窄屏下控件撑满整行（右对齐改为起始对齐，避免长文本域溢出） */}
+      <div className="w-full shrink-0 sm:w-auto sm:pl-4">{children}</div>
     </div>
   );
 }
@@ -172,7 +173,10 @@ function NoCachePatternEditor({
   }, [value]);
 
   const commit = () => {
-    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
     const seen = new Set<string>();
     const next: string[] = [];
     let invalid = 0;
@@ -197,16 +201,18 @@ function NoCachePatternEditor({
   };
 
   return (
-    <div className="flex w-96 flex-col items-end gap-1">
-      <textarea
+    <div className="flex w-full flex-col items-end gap-1 sm:w-96">
+      <TextField
+        multiline
         rows={5}
-        spellCheck={false}
-        className="w-full resize-y rounded border border-gray-200 bg-surface px-2 py-1 font-mono text-xs leading-5 text-gray-800  focus:border-accent-500"
+        resize
+        className="font-mono leading-5"
         placeholder={t('settings.noCachePatternPlaceholder')}
-        aria-label={t('settings.noCachePatterns')}
+        ariaLabel={t('settings.noCachePatterns')}
+        inputProps={{ spellCheck: false }}
         value={text}
-        onChange={(event) => {
-          setText(event.target.value);
+        onChange={(next) => {
+          setText(next);
           if (invalidCount > 0) setInvalidCount(0);
         }}
         onBlur={commit}
@@ -299,7 +305,7 @@ function NoCacheToggle({
         <span className="text-2xs text-red-600">{t('settings.noCachePermissionDenied')}</span>
       )}
       {permissionLost && settings.noCacheEnabled && (
-        <span className="flex items-center gap-1.5 text-2xs text-amber-600">
+        <span className="flex items-center gap-1.5 text-2xs text-warn-600">
           {t('settings.noCachePermissionLost')}
           <Button variant="secondary" size="sm" onClick={() => void regrant()}>
             {t('settings.noCachePermissionRegrant')}
@@ -447,7 +453,7 @@ const COLOR_THEME_SWATCHES = [
   { id: 'plain', labelKey: 'settings.colorThemePlain', hex: '#80868b' }
 ] as const;
 
-/** 预设画像：一键套用一组相关设置，降低 33 项设置的决策疲劳（P2 高价值）。 */
+/** 预设画像：一键套用一组相关设置，降低 33 项设置的决策疲劳。 */
 type PresetProfile = {
   id: 'researcher' | 'saver' | 'efficiency';
   nameKey: string;
@@ -491,7 +497,7 @@ function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
   const { t } = useTranslation();
   const updateSettings = useDataStore((state) => state.updateSettings);
   return (
-    <section className="mb-8 rounded-lg border border-gray-200 bg-surface p-4">
+    <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
       <h2 className="mb-1 text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
       <p className="mb-3 text-2xs text-gray-600">{t('presets.hint')}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -499,7 +505,7 @@ function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
           <button
             key={preset.id}
             type="button"
-            className="flex flex-col items-start gap-1 rounded-lg border border-gray-200 bg-surface px-3 py-2 text-left transition-base hover:border-accent-400 hover:bg-accent-50"
+            className="flex flex-col items-start gap-1 rounded-lg border border-control bg-surface px-3 py-2 text-left transition-base hover:border-accent-400 hover:bg-accent-50"
             onClick={() => {
               void updateSettings(preset.patch);
               onApplied(t('presets.applied', { name: t(preset.nameKey) }));
@@ -514,7 +520,7 @@ function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
   );
 }
 
-/** 能力发现清单（P0 可发现性）：用图标 + 一句话 +「试用」把藏得深的能力推到用户面前。 */
+/** 能力发现清单：用图标 + 一句话 +「试用」把藏得深的能力推到用户面前。 */
 const CAPABILITIES = [
   { icon: Icons.menu, titleKey: 'cap.contextMenuTitle', howKey: 'cap.contextMenuHow' },
   { icon: Icons.search, titleKey: 'cap.omniboxTitle', howKey: 'cap.omniboxHow' },
@@ -561,112 +567,18 @@ function CapabilitiesGuide() {
   );
 }
 
-export function SettingsPage() {
-  const { t } = useTranslation();
-  const settings = useDataStore((state) => state.settings);
-  const ready = useDataStore((state) => state.ready);
-  const updateSettings = useDataStore((state) => state.updateSettings);
-  const resetSettings = useDataStore((state) => state.resetSettings);
-  const exportData = useDataStore((state) => state.exportData);
-  const importData = useDataStore((state) => state.importData);
-  const importBookmarksFromBar = useDataStore((state) => state.importBookmarksFromBar);
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const [transferStatus, setTransferStatus] = useState<string | null>(null);
-  const [sidePanelSide, setSidePanelSide] = useState<SidePanelSide>('unknown');
-  /** 已解析待导入的备份数据（非 null 时显示导入确认弹窗）。 */
-  const [pendingImport, setPendingImport] = useState<unknown>(null);
-  /** 设置项搜索：匹配分区内 label/hint 文案。 */
-  const [settingsSearch, setSettingsSearch] = useState('');
-  /** 恢复默认设置的确认弹窗。 */
-  const [confirmingReset, setConfirmingReset] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const sidePanel = browser.sidePanel as SidePanelLayoutApi | undefined;
-    if (!sidePanel?.getLayout) return;
-    void sidePanel
-      .getLayout()
-      .then(({ side }) => {
-        if (!cancelled) setSidePanelSide(side);
-      })
-      .catch(() => {
-        if (!cancelled) setSidePanelSide('unknown');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const update = (key: keyof Settings, value: unknown) =>
-    updateSettings({ [key]: value } as Partial<Settings>);
-
-  const handleExport = () => {
-    const payload = JSON.stringify(exportData(), null, 2);
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `tabhaven-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setTransferStatus(t('settings.exportSuccess'));
-  };
-
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      // 先解析，确认弹窗由自制 ConfirmDialog 承接（与全站弹窗体系一致）。
-      setPendingImport(JSON.parse(await file.text()) as unknown);
-    } catch {
-      setTransferStatus(t('settings.importFailed'));
-    }
-  };
-
-  const runImport = () => {
-    if (pendingImport === null) return;
-    void importData(pendingImport)
-      .then(() => setTransferStatus(t('settings.importSuccess')))
-      .catch(() => setTransferStatus(t('settings.importFailed')));
-    setPendingImport(null);
-  };
-
-  const handleImportBookmarks = () => {
-    void importBookmarksFromBar()
-      .then((result) =>
-        setTransferStatus(
-          t('settings.importBookmarksDone', {
-            folders: result.foldersCreated,
-            items: result.itemsImported
-          })
-        )
-      )
-      .catch(() => setTransferStatus(t('settings.importFailed')));
-  };
-
-  /** 打开浏览器「扩展快捷键」设置页。 */
-  const openShortcutSettings = () => {
-    void browser.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {});
-  };
-
-  /** 恢复全部设置为默认值（带确认弹窗）。 */
-  const handleResetSettings = () => {
-    void resetSettings()
-      .then(() => setTransferStatus(t('settings.resetDone')))
-      .catch(() => setTransferStatus(t('settings.resetFailed')));
-    setConfirmingReset(false);
-  };
-
-  if (!ready) {
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-gray-500">
-        {t('settings.loading')}
-      </div>
-    );
-  }
-
-  /** 分组配置：声明式描述设置行，渲染由 SettingRow 统一完成。 */
-  const sections: { titleKey: string; collapsible?: boolean; specs: SettingSpec[] }[] = [
+/**
+ * 构建设置分组配置（声明式描述设置行，渲染由 SettingRow 统一完成）。
+ *
+ * 放在模块顶层而非常量/组件内：配置约 370 行，含大量 t() 调用与 render 闭包。
+ * 配置体量大且含大量 t() 调用，故按依赖参数化后由组件 memo 调用。
+ * 现在按依赖参数化（t 与 sidePanelSide 是运行时值），由组件调用一次即可。
+ */
+function buildSections(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  sidePanelSide: string
+): { titleKey: string; collapsible?: boolean; specs: SettingSpec[] }[] {
+  return [
     {
       titleKey: 'settings.appearance',
       specs: [
@@ -698,7 +610,10 @@ export function SettingsPage() {
                   checked={settings.colorTheme === swatch.id}
                   title={t(swatch.labelKey)}
                   aria-label={t(swatch.labelKey)}
-                  className="h-5 w-5 cursor-pointer appearance-none rounded-full border border-gray-200 transition-base checked:ring-2 checked:ring-gray-500 checked:ring-offset-1 hover:scale-110"
+                  /* 样式走 .theme-swatch：视觉 20px / 命中 24px，
+                     选中态为「白色内环 + 品牌外环」双层（旧版 gray-500 外环
+                     落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */
+                  className="theme-swatch appearance-none"
                   style={{ backgroundColor: swatch.hex }}
                   onChange={() => update('colorTheme', swatch.id)}
                 />
@@ -776,9 +691,11 @@ export function SettingsPage() {
         {
           kind: 'custom',
           labelKey: 'settings.language',
-          render: ({ update, t }) => (
+          // settings 来自 SettingRow 注入的 render 参数（配置已外提为模块级函数，
+          // 不能再捕获组件作用域的 settings 变量）。
+          render: ({ settings: currentSettings, update, t }) => (
             <Select
-              value={settings.language ?? 'zh-CN'}
+              value={currentSettings.language ?? 'zh-CN'}
               onChange={(v) => update('language', v)}
               options={[
                 { value: 'zh-CN', label: '简体中文' },
@@ -855,19 +772,17 @@ export function SettingsPage() {
           labelKey: 'settings.autoDiscardMinutes',
           visible: (s) => s.autoDiscardEnabled,
           render: ({ settings, update, t }) => (
-            <input
+            <TextField
               type="number"
+              size="sm"
+              className="w-20"
               min={5}
               max={240}
-              value={settings.autoDiscardMinutes}
-              aria-label={t('settings.autoDiscardMinutes')}
-              onChange={(e) =>
-                update(
-                  'autoDiscardMinutes',
-                  Math.min(240, Math.max(5, Number(e.target.value) || 30))
-                )
+              value={String(settings.autoDiscardMinutes)}
+              ariaLabel={t('settings.autoDiscardMinutes')}
+              onChange={(next) =>
+                update('autoDiscardMinutes', Math.min(240, Math.max(5, Number(next) || 30)))
               }
-              className="w-20 rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
             />
           )
         },
@@ -1033,10 +948,126 @@ export function SettingsPage() {
       ]
     }
   ];
+}
+
+/**
+ * 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl+Shift。
+ * 模块顶层常量：navigator.platform 每次渲染求值且该 API 已废弃，
+ * 结果在会话内不会变化，无理由反复读取。
+ */
+const IS_MAC = /mac/i.test(globalThis.navigator?.platform ?? '');
+
+export function SettingsPage() {
+  const { t } = useTranslation();
+  const settings = useDataStore((state) => state.settings);
+  const ready = useDataStore((state) => state.ready);
+  const updateSettings = useDataStore((state) => state.updateSettings);
+  const resetSettings = useDataStore((state) => state.resetSettings);
+  const exportData = useDataStore((state) => state.exportData);
+  const importData = useDataStore((state) => state.importData);
+  const importBookmarksFromBar = useDataStore((state) => state.importBookmarksFromBar);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [transferStatus, setTransferStatus] = useState<string | null>(null);
+  const [sidePanelSide, setSidePanelSide] = useState<SidePanelSide>('unknown');
+  /** 已解析待导入的备份数据（非 null 时显示导入确认弹窗）。 */
+  const [pendingImport, setPendingImport] = useState<unknown>(null);
+  /** 设置项搜索：匹配分区内 label/hint 文案。 */
+  const [settingsSearch, setSettingsSearch] = useState('');
+  /** 恢复默认设置的确认弹窗。 */
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sidePanel = browser.sidePanel as SidePanelLayoutApi | undefined;
+    if (!sidePanel?.getLayout) return;
+    void sidePanel
+      .getLayout()
+      .then(({ side }) => {
+        if (!cancelled) setSidePanelSide(side);
+      })
+      .catch(() => {
+        if (!cancelled) setSidePanelSide('unknown');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const update = (key: keyof Settings, value: unknown) =>
+    updateSettings({ [key]: value } as Partial<Settings>);
+
+  const handleExport = () => {
+    const payload = JSON.stringify(exportData(), null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tabhaven-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setTransferStatus(t('settings.exportSuccess'));
+  };
+
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      // 先解析，确认弹窗由自制 ConfirmDialog 承接（与全站弹窗体系一致）。
+      setPendingImport(JSON.parse(await file.text()) as unknown);
+    } catch {
+      setTransferStatus(t('settings.importFailed'));
+    }
+  };
+
+  const runImport = () => {
+    if (pendingImport === null) return;
+    void importData(pendingImport)
+      .then(() => setTransferStatus(t('settings.importSuccess')))
+      .catch(() => setTransferStatus(t('settings.importFailed')));
+    setPendingImport(null);
+  };
+
+  const handleImportBookmarks = () => {
+    void importBookmarksFromBar()
+      .then((result) =>
+        setTransferStatus(
+          t('settings.importBookmarksDone', {
+            folders: result.foldersCreated,
+            items: result.itemsImported
+          })
+        )
+      )
+      .catch(() => setTransferStatus(t('settings.importFailed')));
+  };
+
+  /** 打开浏览器「扩展快捷键」设置页。 */
+  const openShortcutSettings = () => {
+    void browser.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {});
+  };
+
+  /** 恢复全部设置为默认值（带确认弹窗）。 */
+  const handleResetSettings = () => {
+    void resetSettings()
+      .then(() => setTransferStatus(t('settings.resetDone')))
+      .catch(() => setTransferStatus(t('settings.resetFailed')));
+    setConfirmingReset(false);
+  };
+
+  // 分组配置见模块顶层的 buildSections。此处再 memo 一层：配置约 370 行且含大量
+  // t() 调用，若每次渲染重建，每敲一个搜索字符都会全量重算翻译与 render 闭包。
+  // 必须在下面的 early return 之前调用（Hooks 规则：调用顺序须每次渲染一致）。
+  const sections = useMemo(() => buildSections(t, sidePanelSide), [t, sidePanelSide]);
+
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-gray-500">
+        {t('settings.loading')}
+      </div>
+    );
+  }
 
   const isSearching = settingsSearch.trim().length > 0;
-  // 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl+Shift
-  const isMac = navigator.platform.toUpperCase().includes('MAC');
+
   const matchesSearch = (spec: SettingSpec): boolean => {
     if (!isSearching) return true;
     const q = settingsSearch.trim().toLowerCase();
@@ -1046,8 +1077,8 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
-      <header className="mb-6 flex items-start justify-between gap-3">
+    <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
+      <header className="mb-4 flex items-start justify-between gap-3 sm:mb-6">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-gray-200 bg-surface shadow-sm">
             <Icon d={Icons.settings} className="h-4.5 w-4.5 text-accent-600" />
@@ -1063,13 +1094,14 @@ export function SettingsPage() {
       </header>
 
       <div className="mb-6">
-        <input
+        <TextField
           type="search"
+          size="lg"
+          className="rounded-lg shadow-sm"
           value={settingsSearch}
-          onChange={(event) => setSettingsSearch(event.target.value)}
+          onChange={setSettingsSearch}
           placeholder={t('settings.searchPlaceholder')}
-          className="w-full rounded-lg border border-gray-200 bg-surface px-3 py-2 text-sm text-gray-800 shadow-sm  focus:border-accent-500"
-          aria-label={t('settings.searchPlaceholder')}
+          ariaLabel={t('settings.searchPlaceholder')}
         />
       </div>
 
@@ -1113,7 +1145,7 @@ export function SettingsPage() {
             ['U', t('settings.shortcutDiscardInactive')]
           ] as const
         ).map(([key, hint]) => (
-          <Row key={key} label={isMac ? `⌃⇧${key}` : `Ctrl+Shift+${key}`} hint={hint}>
+          <Row key={key} label={IS_MAC ? `⌃⇧${key}` : `Ctrl+Shift+${key}`} hint={hint}>
             <span className="text-2xs text-gray-500">{t('settings.shortcutBrowser')}</span>
           </Row>
         ))}

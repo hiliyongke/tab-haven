@@ -84,10 +84,7 @@ export class DataRepository<T> {
 
   /** 订阅本 key 的变更（其他页面/背景写入时同步）。 */
   watch(onChange: (value: T) => void): () => void {
-    const listener = (
-      changes: Record<string, { newValue?: unknown }>,
-      areaName: string
-    ) => {
+    const listener = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
       if (areaName !== 'local') return;
       const change = changes[this.key];
       if (!change) return;

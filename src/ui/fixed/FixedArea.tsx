@@ -39,9 +39,10 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
   const tabs = useTabStore((state) => state.tabs);
 
   const isOpen = item.pendingTabId !== undefined || tabs.some((tab) => tab.url === item.url);
-  const runtimeTab = item.pendingTabId !== undefined
-    ? tabs.find((tab) => tab.id === item.pendingTabId)
-    : tabs.find((tab) => tab.url === item.url);
+  const runtimeTab =
+    item.pendingTabId !== undefined
+      ? tabs.find((tab) => tab.id === item.pendingTabId)
+      : tabs.find((tab) => tab.url === item.url);
   const isActive = runtimeTab?.active ?? false;
 
   // 固定条目始终可排序（无论是否打开），不再用 isOpen 禁用。
@@ -98,17 +99,20 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
                 <Icon d={runtimeTab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
               </button>
             )}
-            {runtimeTab && !runtimeTab.discarded && !runtimeTab.active && canSafelyDiscardTab(runtimeTab) && (
-              <button
-                type="button"
-                className="row-action"
-                title={t('tabs.discard')}
-                aria-label={t('tabs.discard')}
-                onClick={() => void discardTab(runtimeTab.id)}
-              >
-                <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
-              </button>
-            )}
+            {runtimeTab &&
+              !runtimeTab.discarded &&
+              !runtimeTab.active &&
+              canSafelyDiscardTab(runtimeTab) && (
+                <button
+                  type="button"
+                  className="row-action"
+                  title={t('tabs.discard')}
+                  aria-label={t('tabs.discard')}
+                  onClick={() => void discardTab(runtimeTab.id)}
+                >
+                  <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
+                </button>
+              )}
             <button
               type="button"
               className="row-action text-red-500"
@@ -116,9 +120,10 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
               aria-label={t('fixed.itemClose')}
               onClick={() => {
                 const allTabs = useTabStore.getState().tabs;
-                const targetTab = item.pendingTabId !== undefined
-                  ? allTabs.find((tab) => tab.id === item.pendingTabId)
-                  : allTabs.find((tab) => tab.url === item.url);
+                const targetTab =
+                  item.pendingTabId !== undefined
+                    ? allTabs.find((tab) => tab.id === item.pendingTabId)
+                    : allTabs.find((tab) => tab.url === item.url);
                 if (targetTab) {
                   void useUndoStore.getState().closeWithUndo(allTabs, [targetTab.id]);
                 }
@@ -136,7 +141,9 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
           activatorRef: sortable.setActivatorNodeRef,
           buttonAttributes: sortable.attributes,
           buttonListeners: sortableKeyDown
-            ? { onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void }
+            ? {
+                onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void
+              }
             : undefined,
           style: {
             transform: sortable.transform
@@ -160,9 +167,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   const onRestoreFolderAsGroup = useDataStore((state) => state.syncFolderToNativeGroup);
   const notify = useUndoStore((state) => state.notify);
   const tabs = useTabStore((state) => state.tabs);
-  const [dialog, setDialog] = useState<
-    { type: 'edit' } | { type: 'convert' } | null
-  >(null);
+  const [dialog, setDialog] = useState<{ type: 'edit' } | { type: 'convert' } | null>(null);
 
   useEffect(() => {
     const handleLocate = (event: Event) => {
@@ -189,22 +194,24 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   // 头部操作：与原生组同款布局 [打开全部 / 存为书签 / 转原生组 / 编辑]，删除整合到 FolderEditDialog。
   const handleOpenAll = () => {
     const missing = folder.items.filter(
-      (item) => item.url && item.pendingTabId === undefined &&
+      (item) =>
+        item.url &&
+        item.pendingTabId === undefined &&
         !tabs.some((tab) => tab.url === item.url && !tab.incognito)
     );
     if (missing.length === 0) {
       notify(t('fixed.allOpen'));
       return;
     }
-    void createTabsWithUrls(
-      missing.map((item) => item.url).filter((u): u is string => Boolean(u))
-    )
+    void createTabsWithUrls(missing.map((item) => item.url).filter((u): u is string => Boolean(u)))
       .then((created) => notify(t('fixed.openedAll', { count: created })))
       .catch(() => notify(t('errors.operationFailed')));
   };
   const handleExportBookmarks = () => {
     void saveFolderToBookmarks(folder)
-      .then((count) => notify(count > 0 ? t('fixed.bookmarked', { count }) : t('fixed.bookmarkEmpty')))
+      .then((count) =>
+        notify(count > 0 ? t('fixed.bookmarked', { count }) : t('fixed.bookmarkEmpty'))
+      )
       .catch(() => notify(t('errors.operationFailed')));
   };
   const headerAction = (
@@ -283,7 +290,9 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
       icon={
         <Icon
           d={Icons.chevron}
-          className={'icon h-3.5 w-3.5 transition-transform' + (folder.collapsed ? '' : ' rotate-90')}
+          className={
+            'icon h-3.5 w-3.5 transition-transform' + (folder.collapsed ? '' : ' rotate-90')
+          }
         />
       }
       onToggle={() => void toggleFolderCollapsed(folder.id)}
@@ -353,7 +362,8 @@ export function FixedArea() {
   useEffect(() => {
     const handleCreateRequest = (event: Event) => {
       const detail = (event as CustomEvent<CreateFolderRequest>).detail;
-      if (!detail || !detail.name || !Array.isArray(detail.tabIds) || detail.tabIds.length === 0) return;
+      if (!detail || !detail.name || !Array.isArray(detail.tabIds) || detail.tabIds.length === 0)
+        return;
       setDropRequest(detail);
     };
     window.addEventListener(CREATE_FOLDER_REQUEST_EVENT, handleCreateRequest);

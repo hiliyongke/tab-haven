@@ -20,10 +20,8 @@ import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { useDataStore } from '@/stores/dataStore';
 
 /**
- * 标签镜像 store（docs/ARCHITECTURE.md 5.5）。
- *
- * 唯一标签真相源在浏览器；TabSyncService 把事件流统一为快照广播，
- * store 只做"快照 → 订阅者"的镜像中转（单次 set，React selector 订阅）。
+ * 标签镜像 store：真相源在浏览器，TabSyncService 把事件流统一为快照广播，
+ * store 只做「快照 → 订阅者」的镜像中转。
  */
 
 interface TabState {

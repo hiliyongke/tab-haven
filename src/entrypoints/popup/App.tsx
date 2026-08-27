@@ -79,9 +79,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    document
-      .getElementById(`popup-hit-${selectedIndex}`)
-      ?.scrollIntoView({ block: 'nearest' });
+    document.getElementById(`popup-hit-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, hits.length]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {

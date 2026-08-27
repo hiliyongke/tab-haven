@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/common/Button';
 import { TextField } from '@/ui/common/TextField';
 
 /**
- * 自制弹窗族（FR-D10.3）：替代浏览器原生 prompt/confirm。
+ * 自制弹窗族：替代浏览器原生 prompt/confirm。
  * 行为契约：打开聚焦首项、Tab 焦点陷阱、Esc 取消、关闭后焦点恢复、aria-modal。
  */
 
@@ -47,12 +48,18 @@ export function useModalA11y(
       if (event.key !== 'Tab' || !shellRef.current) return;
       const focusableElements = Array.from(
         shellRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-      ).filter((el) => !el.hasAttribute('disabled'));
+      ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
       if (focusableElements.length === 0) return;
       const first = focusableElements[0]!;
       const last = focusableElements[focusableElements.length - 1]!;
       const active = document.activeElement;
-      if (event.shiftKey && (active === first || active === shellRef.current)) {
+      const index = active ? focusableElements.indexOf(active as HTMLElement) : -1;
+      // 焦点已逃出弹窗（如点击了遮罩外的 body，或动态插入的节点替换了原元素）：
+      // 拉回首个可聚焦项，而不是放任焦点泄漏到背景内容。
+      if (index === -1) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && active === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && active === last) {
@@ -79,26 +86,33 @@ export function DialogShell({
   widthClassName = 'dialog-sm'
 }: DialogShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useModalA11y(shellRef, onClose);
 
-  return (
+  // Portal 到 body：侧边栏根节点 .app 带 container-type: inline-size，
+  // 会成为 fixed 后代的包含块并创建层叠上下文。挂到 body 后遮罩始终相对视口，
+  // 且不再受 .app 内部 z-index 影响（层级由 z-stack 的 50 档统一保证）。
+  return createPortal(
     <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/30"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
         ref={shellRef}
-        className={`${widthClassName} rounded-xl border border-gray-200 bg-surface p-4 shadow-xl`}
+        className={`${widthClassName} max-h-[85vh] overflow-y-auto rounded-xl border border-gray-200 bg-surface p-4 shadow-xl`}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
       >
-        <h2 className="mb-3 text-sm font-semibold">{title}</h2>
+        <h2 id={titleId} className="mb-3 text-sm font-semibold">
+          {title}
+        </h2>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -130,6 +144,8 @@ export function PromptDialog({
         inputRef={inputRef}
         defaultValue={initialValue}
         placeholder={placeholder}
+        /* 视觉 label 由弹窗标题承担，读屏需要程序化关联（placeholder 不算标签） */
+        ariaLabel={title}
         className="w-full"
         onKeyDown={(event) => {
           if (event.key === 'Enter') submit();

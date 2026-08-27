@@ -1,6 +1,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * tabs 平台适配层：chrome API 映射与查询。
@@ -25,6 +26,9 @@ interface TabGroupMutableProps {
 const tabGroups = browser.tabGroups as unknown as {
   create: (options: object) => Promise<{ id: number }>;
   update: (groupId: number, updateProperties: TabGroupMutableProps) => Promise<unknown>;
+  /** 用于判定组是否仍存在（区分「已解散」与「解散失败」），见 removeGroup。 */
+  get: (groupId: number) => Promise<unknown>;
+  move: (groupId: number, options: { index: number }) => Promise<unknown>;
 };
 
 /** chrome.tabs.Tab → TabRecord 领域映射。 */
@@ -83,11 +87,11 @@ export async function queryCurrentWindowGroups(): Promise<TabGroupRecord[]> {
   return groups.map(mapTabGroup);
 }
 
-/** 切换标签。 */
 export async function activateTab(tabId: number): Promise<void> {
   try {
     await browser.tabs.update(tabId, { active: true });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '激活标签失败', error);
     // 标签可能已关闭；激活失败静默忽略（best-effort UI 操作）。
   }
 }
@@ -99,36 +103,37 @@ export async function closeTabs(tabIds: readonly number[]): Promise<number[]> {
     try {
       await browser.tabs.remove(tabId);
       closedIds.push(tabId);
-    } catch {
+    } catch (error) {
+      logDegraded('tabs', 'removeTabs 部分标签删除失败', error);
       // 系统标签或已关闭标签无法移除，继续处理其余标签
     }
   }
   return closedIds;
 }
 
-/** 切换静音。 */
 export async function toggleMute(tabId: number, currentlyMuted: boolean): Promise<void> {
   try {
     await browser.tabs.update(tabId, { muted: !currentlyMuted });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '切换静音失败', error);
     // 标签可能已关闭
   }
 }
 
-/** 切换固定状态。 */
 export async function togglePinned(tabId: number, currentlyPinned: boolean): Promise<void> {
   try {
     await browser.tabs.update(tabId, { pinned: !currentlyPinned });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '切换固定失败', error);
     // 标签可能已关闭
   }
 }
 
-/** 折叠/展开原生组。 */
 export async function setGroupCollapsed(groupId: number, collapsed: boolean): Promise<void> {
   try {
     await browser.tabGroups.update(groupId, { collapsed });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '切换固定失败', error);
     // 标签组可能已解散
   }
 }
@@ -151,17 +156,30 @@ export async function createNewTab(
   return mapTab(tab);
 }
 
-/** 更新标签 URL（固定条目打开等场景）。 */
-export async function updateTabUrl(tabId: number, url: string): Promise<void> {
-  await browser.tabs.update(tabId, { url });
+/** 更新标签 URL（固定条目打开等场景）。返回是否成功（标签已关闭时为 false）。 */
+export async function updateTabUrl(tabId: number, url: string): Promise<boolean> {
+  try {
+    await browser.tabs.update(tabId, { url });
+    return true;
+  } catch (error) {
+    logDegraded('tabs', `更新标签 ${tabId} 的 URL 失败`, error);
+    return false;
+  }
 }
 
 /**
  * 将标签移动到窗口内的指定扁平索引（拖拽重排写回原生顺序用）。
  * index 为目标窗口内位置（0 起、连续）；跨固定/未固定边界由 Chrome 处理。
+ * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态，不视为错误）。
  */
-export async function moveTab(tabId: number, index: number): Promise<void> {
-  await browser.tabs.move(tabId, { index });
+export async function moveTab(tabId: number, index: number): Promise<boolean> {
+  try {
+    await browser.tabs.move(tabId, { index });
+    return true;
+  } catch (error) {
+    logDegraded('tabs', `移动标签 ${tabId} 到索引 ${index} 失败`, error);
+    return false;
+  }
 }
 
 /**
@@ -176,9 +194,7 @@ export function computeReorderIndex(params: {
   placeAfter: boolean;
 }): number {
   const { tabs, sourceId, targetId, placeAfter } = params;
-  const ordered = [...tabs]
-    .filter((tab) => tab.id !== sourceId)
-    .sort((a, b) => a.index - b.index);
+  const ordered = [...tabs].filter((tab) => tab.id !== sourceId).sort((a, b) => a.index - b.index);
   const targetPos = ordered.findIndex((tab) => tab.id === targetId);
   if (targetPos === -1) return -1;
   const source = tabs.find((tab) => tab.id === sourceId);
@@ -192,7 +208,8 @@ export async function discardTab(tabId: number): Promise<boolean> {
   try {
     await browser.tabs.discard(tabId);
     return true;
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '休眠标签失败', error);
     // 活跃标签、已丢弃标签或系统页面无法丢弃
     return false;
   }
@@ -202,7 +219,8 @@ export async function discardTab(tabId: number): Promise<boolean> {
 export async function duplicateTab(tabId: number): Promise<void> {
   try {
     await browser.tabs.duplicate(tabId);
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '复制标签失败', error);
     // 某些特殊页面无法复制，静默忽略
   }
 }
@@ -213,56 +231,108 @@ export async function duplicateTab(tabId: number): Promise<void> {
  */
 export async function groupTabs(tabIds: readonly number[]): Promise<number | undefined> {
   if (tabIds.length === 0) return undefined;
-  return browser.tabs.group({ tabIds: [...tabIds] as [number, ...number[]] });
+  try {
+    return await browser.tabs.group({ tabIds: [...tabIds] as [number, ...number[]] });
+  } catch (error) {
+    logDegraded('tabs', '创建原生标签组失败', error);
+    return undefined;
+  }
 }
 
-/** 设置原生组的标题与颜色。 */
-export async function updateGroupMeta(groupId: number, title: string, color?: string): Promise<void> {
-  await tabGroups.update(groupId, color ? { title, color } : { title });
+/** 设置原生组的标题与颜色。组可能已解散，失败不影响主流程。 */
+export async function updateGroupMeta(
+  groupId: number,
+  title: string,
+  color?: string
+): Promise<void> {
+  try {
+    await tabGroups.update(groupId, color ? { title, color } : { title });
+  } catch (error) {
+    // 组在查询与写入之间被解散是常见竞态，降级记录即可。
+    logDegraded('tabs', `更新分组 ${groupId} 的标题/颜色失败`, error);
+  }
 }
 
-/** 重命名原生组（P1⑤）。 */
+/** 重命名原生组。 */
 export async function renameGroup(groupId: number, title: string): Promise<void> {
   try {
     await browser.tabGroups.update(groupId, { title });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '重命名分组失败', error);
     // 标签组可能已解散
   }
 }
 
-/** 改变原生组颜色（P1⑤）。 */
+/** 改变原生组颜色。 */
 export async function recolorGroup(groupId: number, color: string): Promise<void> {
   try {
     await tabGroups.update(groupId, { color });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '修改分组颜色失败', error);
     // 标签组可能已解散
+  }
+}
+
+/** 原生组是否仍存在（用于区分「已解散」与「解散失败」）。 */
+async function groupExists(groupId: number): Promise<boolean> {
+  try {
+    await browser.tabGroups.get(groupId);
+    return true;
+  } catch {
+    return false;
   }
 }
 
 /**
  * 解散原生组：把组内全部标签移出分组（标签保留不关闭，空组由浏览器自动回收）。
  * chrome.tabGroups 无 remove API，ungroup 是唯一标准做法。
+ *
+ * 返回解散结果，让调用方能区分三种情形：
+ * 导致 AutoGroupSync 把「查询失败」误判为「解散失败」并无限重试）：
+ *  - 'removed'：组存在且已解散（含组内无成员的自然空组）；
+ *  - 'missing'：组已不存在（用户手动解散）——调用方应清理记录，不应重试；
+ *  - 'failed'：真实失败（查询或 ungroup 报错）——可重试。
  */
-export async function removeGroup(groupId: number): Promise<void> {
-  const members = await browser.tabs.query({ groupId });
-  const tabIds = members.map((tab) => tab.id).filter((id): id is number => id !== undefined);
-  if (tabIds.length > 0) await browser.tabs.ungroup(tabIds as [number, ...number[]]);
+export async function removeGroup(groupId: number): Promise<'removed' | 'missing' | 'failed'> {
+  let members: ChromeTab[];
+  try {
+    members = await browser.tabs.query({ groupId });
+  } catch (error) {
+    logDegraded('tabs', `查询分组 ${groupId} 成员失败`, error);
+    return 'failed';
+  }
+
+  try {
+    if (await groupExists(groupId)) {
+      const tabIds = members.map((tab) => tab.id).filter((id): id is number => id !== undefined);
+      if (tabIds.length > 0) await browser.tabs.ungroup(tabIds as [number, ...number[]]);
+      return 'removed';
+    }
+  } catch (error) {
+    logDegraded('tabs', `解散分组 ${groupId} 失败`, error);
+    return 'failed';
+  }
+
+  // 组已不存在：视为目标已达成，调用方应清理记录而非重试。
+  return 'missing';
 }
 
 /** 移动原生组到指定索引（组排序，P1⑤）。 */
 export async function moveGroup(groupId: number, index: number): Promise<void> {
   try {
     await browser.tabGroups.move(groupId, { index });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '移动分组失败', error);
     // 标签组可能已解散
   }
 }
 
-/** 检测标签页面语言，返回 BCP-47 代码（P3⑩）。不支持时返回 "und"。 */
+/** 检测标签页面语言，返回 BCP-47 代码。不支持时返回 "und"。 */
 export async function detectLanguage(tabId: number): Promise<string> {
   try {
     return await browser.tabs.detectLanguage(tabId);
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '检测标签语言失败', error);
     return 'und';
   }
 }
@@ -274,7 +344,8 @@ export async function reloadTabs(tabIds: readonly number[]): Promise<number[]> {
     try {
       await browser.tabs.reload(tabId);
       reloaded.push(tabId);
-    } catch {
+    } catch (error) {
+      logDegraded('tabs', '重载标签失败', error);
       // 已关闭或无法重载的标签跳过
     }
   }
@@ -282,10 +353,14 @@ export async function reloadTabs(tabIds: readonly number[]): Promise<number[]> {
 }
 
 /** 激活任意窗口中的标签：必要时先聚焦其所在窗口（跨窗口搜索切换用）。 */
-export async function activateTabAcrossWindows(tab: { id: number; windowId: number }): Promise<void> {
+export async function activateTabAcrossWindows(tab: {
+  id: number;
+  windowId: number;
+}): Promise<void> {
   try {
     await browser.windows.update(tab.windowId, { focused: true });
-  } catch {
+  } catch (error) {
+    logDegraded('tabs', '跨窗口激活：聚焦窗口失败', error);
     // 窗口可能已关闭，忽略
   }
   await activateTab(tab.id);
@@ -322,7 +397,8 @@ export async function createTabsWithUrls(
         ...(target !== undefined ? { windowId: target } : {})
       });
       created += 1;
-    } catch {
+    } catch (error) {
+      logDegraded('tabs', '批量新建标签：单条创建失败', error);
       // 无效 URL 跳过，其余继续
     }
   }

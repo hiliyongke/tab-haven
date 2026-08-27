@@ -4,7 +4,7 @@ import { NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
 
 /**
- * 自动原生分组（FR-D3.1 扩展）：把展示层聚合结果落成浏览器原生 tabGroups。
+ * 自动原生分组：把展示层聚合结果落成浏览器原生 tabGroups。
  *
  * 纯决策层，不触碰 browser.*：
  *  - 只处理 kind === 'site' 的 section（网站聚合 / 语言分组）；
@@ -43,7 +43,8 @@ export function groupColorForLabel(label: string): string {
   for (let i = 0; i < label.length; i++) {
     hash = (hash * 31 + label.charCodeAt(i)) | 0;
   }
-  const idx = ((Math.abs(hash) % GROUP_COLOR_NAMES.length) + GROUP_COLOR_NAMES.length) %
+  const idx =
+    ((Math.abs(hash) % GROUP_COLOR_NAMES.length) + GROUP_COLOR_NAMES.length) %
     GROUP_COLOR_NAMES.length;
   return GROUP_COLOR_NAMES[idx]!;
 }
@@ -74,7 +75,6 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
   return plans;
 }
 
-/** 快速整理（完全重新初始化）的决策结果。 */
 export interface RegroupPlan {
   /** 需要移出现有原生组的标签（打散临时区旧分组；opener 模式仅打散不建组）。 */
   ungroupTabIds: number[];
@@ -105,9 +105,7 @@ export function planRegroup({
   const excluded = excludedTabIds ?? new Set<number>();
   const tempTabs = tabs.filter((tab) => !tab.pinned && !excluded.has(tab.id));
 
-  const ungroupTabIds = tempTabs
-    .filter((tab) => tab.groupId !== NO_GROUP)
-    .map((tab) => tab.id);
+  const ungroupTabIds = tempTabs.filter((tab) => tab.groupId !== NO_GROUP).map((tab) => tab.id);
 
   // 忽略当前分组状态重新聚合：把临时区标签全部视为「未分组」再派生。
   const normalized = tempTabs.map((tab) => ({ ...tab, groupId: NO_GROUP }));

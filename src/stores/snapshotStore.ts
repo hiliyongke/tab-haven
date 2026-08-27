@@ -15,12 +15,8 @@ import {
 import { queryCurrentWindowGroups } from '@/platform/tabs';
 
 /**
- * 快照 store（D5.1/D5.2）：命名快照的读取、保存、恢复、删除、重命名。
- * 扩展（D7 / 空间轻量化 / 竞品导入）：归档中心、空间快照、OneTab 导入，共用同一恢复管线。
- *
- * 与 undoStore 同构：数据经 snapshotsRepository（chrome.storage.local + zod）落盘，
- * store 仅持有内存态供 UI 渲染。关窗自动保存由 background SW 直接写入仓库，
- * 此处 load() 在面板启动时拉取最新列表。
+ * 快照 store：命名快照的读取、保存、恢复、删除、重命名，以及归档与 OneTab 导入。
+ * 数据经 snapshotsRepository 落盘，store 仅持有内存态供 UI 渲染。
  */
 
 interface SnapshotState {
@@ -33,9 +29,9 @@ interface SnapshotState {
   saveCurrentWindow: (name?: string) => Promise<void>;
   /** 把当前窗口标签存为轻量「工作区」快照（复用快照能力，OQ-3 最小版）。 */
   saveSpace: (name?: string) => Promise<void>;
-  /** 归档当前窗口：留档并关闭全部标签，返回留档标签数（D7 第三种操作）。 */
+  /** 归档当前窗口：留档并关闭全部标签，返回留档标签数。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
-  /** 从 OneTab 导出文本导入为快照，返回导入标签数（D9.3 竞品迁移）。 */
+  /** 从 OneTab 导出文本导入为快照，返回导入标签数。 */
   importOneTab: (text: string, name?: string) => Promise<number>;
   /** 删除指定快照。 */
   deleteSnapshot: (id: string) => Promise<void>;
@@ -61,7 +57,10 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   saveCurrentWindow: async (name) => {
-    const [tabs, groups] = await Promise.all([queryCurrentWindowTabs(), queryCurrentWindowGroups()]);
+    const [tabs, groups] = await Promise.all([
+      queryCurrentWindowTabs(),
+      queryCurrentWindowGroups()
+    ]);
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     const snapshot = buildSnapshot({
@@ -76,7 +75,10 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   saveSpace: async (name) => {
-    const [tabs, groups] = await Promise.all([queryCurrentWindowTabs(), queryCurrentWindowGroups()]);
+    const [tabs, groups] = await Promise.all([
+      queryCurrentWindowTabs(),
+      queryCurrentWindowGroups()
+    ]);
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     const snapshot = buildSnapshot({
@@ -91,7 +93,10 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   archiveCurrentWindow: async (name) => {
-    const [tabs, groups] = await Promise.all([queryCurrentWindowTabs(), queryCurrentWindowGroups()]);
+    const [tabs, groups] = await Promise.all([
+      queryCurrentWindowTabs(),
+      queryCurrentWindowGroups()
+    ]);
     const windowId = tabs[0]?.windowId;
     const snapTabs = collectSnapshotTabs(tabs, groups);
     if (snapTabs.length > 0) {
@@ -107,9 +112,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     }
     // 只关闭已留档的可恢复标签：chrome:// 等内部页无法入档，保留在原窗口（不静默丢失）。
     const closableIds = tabs
-      .filter(
-        (tab) => typeof tab.id === 'number' && tab.url && /^https?:\/\//i.test(tab.url)
-      )
+      .filter((tab) => typeof tab.id === 'number' && tab.url && /^https?:\/\//i.test(tab.url))
       .map((tab) => tab.id!);
     // 若关闭后窗口将随之关闭（全部标签都已留档），提前请求跳过本次关窗自动保存，
     // 避免 background 再写一条同内容的 auto 快照。

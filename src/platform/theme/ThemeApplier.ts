@@ -14,7 +14,14 @@ export type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono' | 'pl
 const THEME_MIRROR_KEY = 'tabhaven:theme';
 const HUE_MIRROR_KEY = 'tabhaven:theme-hue';
 
-export const COLOR_THEMES: readonly ColorTheme[] = ['forest', 'ocean', 'violet', 'sunset', 'mono', 'plain'];
+export const COLOR_THEMES: readonly ColorTheme[] = [
+  'forest',
+  'ocean',
+  'violet',
+  'sunset',
+  'mono',
+  'plain'
+];
 
 function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
   if (preference !== 'system') return preference;

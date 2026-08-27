@@ -6,13 +6,12 @@ import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 /**
  * 标签恢复引擎：把撤销记录（或未来的快照记录）重建为真实标签。
  *
- * 行为规格（FR-D8.1 / PRD 附录 C-6）：
+ * 行为规格：
  *  - 按原位置顺序逐个恢复（加法语义：不关闭任何现有标签）；
  *  - 每个恢复 URL 先申请复用豁免（防止被自动复用合并）；
  *  - 恢复固定状态、静音状态；
  *  - 原分组存在则回原组；已删除则按组名重建。
  *
- * 注：同一恢复管线后续供会话快照（V1.1）复用。
  */
 
 export async function restoreTabRecords(

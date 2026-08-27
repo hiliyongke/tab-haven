@@ -7,10 +7,7 @@ import { autoDiscardRepository, settingsRepository } from '@/platform/storage/re
 import { AutoDiscardedMessageSchema } from '@/platform/messages';
 import { t } from '@/i18n/headless';
 import { cachedSettings, hostnameOf, isWhitelisted, notifyUser } from './shared';
-
-// ---------------------------------------------------------------------------
-// 自动休眠：白名单 + 台账 + 通知（可撤销）
-// ---------------------------------------------------------------------------
+import { logDegraded } from '@/platform/diagnostics';
 
 async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
@@ -37,7 +34,8 @@ async function pruneAutoDiscardBatch(): Promise<void> {
     const live = new Map(tabs.map((tab) => [tab.id, tab.discarded]));
     const anyStillDiscarded = batch.tabIds.some((id) => live.get(id) === true);
     if (!anyStillDiscarded) await autoDiscardRepository.write(null);
-  } catch {
+  } catch (error) {
+    logDegraded('auto-discard', '自动休眠扫描失败', error);
     // 读取失败保持现状
   }
 }
@@ -47,7 +45,10 @@ const runAutoDiscard = async (): Promise<void> => {
   try {
     const settings = await settingsRepository.read();
     if (!settings.autoDiscardEnabled) return;
-    const [tabs, session] = await Promise.all([browser.tabs.query({ windowType: 'normal' }), readSession()]);
+    const [tabs, session] = await Promise.all([
+      browser.tabs.query({ windowType: 'normal' }),
+      readSession()
+    ]);
     const boundTabIds = new Set(Object.values(session.itemTabBindings));
     const whitelist = settings.discardWhitelist;
     const cutoff = Date.now() - settings.autoDiscardMinutes * 60_000;
@@ -65,12 +66,16 @@ const runAutoDiscard = async (): Promise<void> => {
       }
       const host = hostnameOf(tab.url);
       if (host && isWhitelisted(host, whitelist)) continue;
-      const ok = await browser.tabs.discard(tab.id).then(() => true).catch(() => false);
+      const ok = await browser.tabs
+        .discard(tab.id)
+        .then(() => true)
+        .catch(() => false);
       if (ok) discardedIds.push(tab.id);
     }
     if (discardedIds.length > 0) await recordAutoDiscardBatch(discardedIds);
     await pruneAutoDiscardBatch();
-  } catch {
+  } catch (error) {
+    logDegraded('auto-discard', '自动休眠执行失败', error);
     // 忽略：下次闹钟自动重试
   }
 };
@@ -84,14 +89,18 @@ async function syncAutoDiscardAlarm(settings: Settings): Promise<void> {
     } else {
       await browser.alarms.clear('tabhaven-auto-discard');
     }
-  } catch {
+  } catch (error) {
+    logDegraded('auto-discard', '自动休眠唤醒失败', error);
     // alarms 不可用时忽略
   }
 }
 
 /** 休眠当前窗口全部非激活、可安全丢弃的标签（含台账与通知）。 */
 async function discardInactiveTabs(): Promise<void> {
-  const [tabs, session] = await Promise.all([browser.tabs.query({ currentWindow: true }), readSession()]);
+  const [tabs, session] = await Promise.all([
+    browser.tabs.query({ currentWindow: true }),
+    readSession()
+  ]);
   // 与 runAutoDiscard / 面板 UI 同一安全集：固定空间绑定的标签永不休眠。
   const boundTabIds = new Set(Object.values(session.itemTabBindings));
   const targets: number[] = [];
@@ -101,7 +110,10 @@ async function discardInactiveTabs(): Promise<void> {
   }
   const discardedIds: number[] = [];
   for (const tabId of targets) {
-    const ok = await browser.tabs.discard(tabId).then(() => true).catch(() => false);
+    const ok = await browser.tabs
+      .discard(tabId)
+      .then(() => true)
+      .catch(() => false);
     if (ok) discardedIds.push(tabId);
   }
   if (discardedIds.length === 0) return;

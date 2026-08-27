@@ -6,7 +6,7 @@ import { domainToUnicode } from '@/core/url/punycode';
 /**
  * 站点聚合：把一组标签按归组键聚合为"站点组 + 独立标签"。
  *
- * 行为规格（PRD 附录 C-4 / FR-D3.1）：
+ * 同站点聚合规则：
  *  - 同注册域标签达到阈值（默认 2）成组，未达阈值归独立；
  *  - 排除集（用户手动移出的标签）永不参与聚合；
  *  - 子域自动展开：同一注册域下不同子域数 ≥ {@link AUTO_EXPAND_THRESHOLD} 时，
@@ -88,7 +88,10 @@ export function aggregateBySite(
     }
     const bucket =
       regBuckets.get(key.value) ??
-      ({ registrableDomain: key.value, subdomainToTabs: new Map<string, TabRecord[]>() } as RegBucket);
+      ({
+        registrableDomain: key.value,
+        subdomainToTabs: new Map<string, TabRecord[]>()
+      } as RegBucket);
     const sub = key.subdomain;
     const list = bucket.subdomainToTabs.get(sub) ?? [];
     list.push(tab);
@@ -117,9 +120,7 @@ export function aggregateBySite(
           singles.push(...subTabs);
           continue;
         }
-        const value = sub
-          ? `${sub}.${bucket.registrableDomain}`
-          : bucket.registrableDomain;
+        const value = sub ? `${sub}.${bucket.registrableDomain}` : bucket.registrableDomain;
         groups.push({
           key: {
             value,

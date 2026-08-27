@@ -50,10 +50,7 @@ export function SectionHead({
       {/* 拖拽手柄浮现时前导（色条+icon）淡出让位——与行内 favicon 交换同款零占位模式 */}
       <span className="head-leading" aria-hidden="true">
         {accent && (
-          <span
-            className="h-3.5 w-0.5 shrink-0 rounded-full"
-            style={{ backgroundColor: accent }}
-          />
+          <span className="h-3.5 w-0.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
         )}
         {icon}
       </span>
@@ -61,10 +58,7 @@ export function SectionHead({
     </>
   );
   return (
-    <div
-      className="section-head"
-      {...dragHandleProps}
-    >
+    <div className="section-head" {...dragHandleProps}>
       {dragKeyboard && (
         <button
           type="button"

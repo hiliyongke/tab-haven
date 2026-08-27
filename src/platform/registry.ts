@@ -24,12 +24,8 @@ import type {
  * 平台依赖组合根（composition root）。
  *
  * 所有持久化仓库在此集中实例化，对外只暴露 `getRepositories()` 访问器，
- * 不直接导出可变单例。这样 stores 通过访问器取用依赖，测试时可用
- * `setRepositoriesForTest()` 注入内存假实现，无需真实 chrome.storage。
- *
- * 这是 docs/ARCHITECTURE.md「stores → platform → core」分层之上缺失的
- * 依赖注入接缝（DI seam）：此前各仓库在 repositories.ts 以模块级 `new`
- * 硬编码，导致 stores 无法脱离浏览器 API 单测。
+ * 不直接导出可变单例。测试时用 `setRepositoriesForTest()` 注入内存假实现，
+ * 使 stores 可脱离浏览器 API 单测。
  */
 
 export interface Repositories {
@@ -46,13 +42,33 @@ export interface Repositories {
 
 function createRepositories(): Repositories {
   return {
-    folders: new DataRepository<FixedFolder[]>('tabhaven.fixed-folders.v1', FixedFolderSchema.array(), []),
-    pins: new DataRepository<PersistentPin[]>('tabhaven.persistent-pins.v1', PersistentPinSchema.array(), []),
-    collapse: new DataRepository<SiteCollapseState>('tabhaven.site-collapse.v1', SiteCollapseSchema, []),
-    settings: new DataRepository<Settings>('tabhaven.settings.v1', SettingsSchema, DEFAULT_SETTINGS),
+    folders: new DataRepository<FixedFolder[]>(
+      'tabhaven.fixed-folders.v1',
+      FixedFolderSchema.array(),
+      []
+    ),
+    pins: new DataRepository<PersistentPin[]>(
+      'tabhaven.persistent-pins.v1',
+      PersistentPinSchema.array(),
+      []
+    ),
+    collapse: new DataRepository<SiteCollapseState>(
+      'tabhaven.site-collapse.v1',
+      SiteCollapseSchema,
+      []
+    ),
+    settings: new DataRepository<Settings>(
+      'tabhaven.settings.v1',
+      SettingsSchema,
+      DEFAULT_SETTINGS
+    ),
     undo: new DataRepository<UndoBatch[]>('tabhaven.undo-stack.v1', UndoBatchSchema.array(), []),
     autoGroups: new DataRepository<number[]>('tabhaven.auto-groups.v1', z.array(z.number()), []),
-    autoDiscard: new DataRepository<AutoDiscardBatch | null>('tabhaven.auto-discard-batch.v1', AutoDiscardBatchSchema.nullable(), null),
+    autoDiscard: new DataRepository<AutoDiscardBatch | null>(
+      'tabhaven.auto-discard-batch.v1',
+      AutoDiscardBatchSchema.nullable(),
+      null
+    ),
     // 首次启动标志：false 表示新设备（可从浏览器同步通道镜像恢复）。
     seeded: new DataRepository<boolean>('tabhaven.sync-seeded.v1', z.boolean(), false),
     // 会话快照列表（命名快照 + 关窗自动保存），本地优先、零账号。
@@ -72,7 +88,6 @@ export function setRepositoriesForTest(next: Repositories): void {
   current = next;
 }
 
-/** 复位为默认实现（测试 teardown 用）。 */
 export function resetRepositories(): void {
   current = createRepositories();
 }

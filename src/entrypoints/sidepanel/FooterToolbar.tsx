@@ -64,11 +64,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
       </span>
       <nav className="flex items-center gap-1" aria-label={t('footer.utilityLabel')}>
         {/* 组 1 · 视图与组织：命令面板 / 折叠全部 / 快速整理 / 定位 */}
-        <IconButton
-          icon={Icons.shortcuts}
-          title={t('palette.open')}
-          onClick={onOpenPalette}
-        />
+        <IconButton icon={Icons.shortcuts} title={t('palette.open')} onClick={onOpenPalette} />
         <IconButton
           icon={allCollapsed ? Icons.expandAll : Icons.collapseAll}
           title={t(allCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
@@ -95,11 +91,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
           onClick={onDiscardInactive}
         />
         {discardedCount > 0 && (
-          <IconButton
-            icon={Icons.wakeAll}
-            title={t('discard.wakeAll')}
-            onClick={onWakeAll}
-          />
+          <IconButton icon={Icons.wakeAll} title={t('discard.wakeAll')} onClick={onWakeAll} />
         )}
         <GroupDivider />
         {/* 组 3 · 记录与恢复：快照空间 / 撤销历史（均带计数徽章） */}

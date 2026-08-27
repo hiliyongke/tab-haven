@@ -2,7 +2,7 @@ import { browser, type Browser } from 'wxt/browser';
 import type { FixedFolder } from '@/core/schema/models';
 
 /**
- * 书签集成（E13）：
+ * 书签集成：
  *  - 固定文件夹 → 书签文件夹（一键导出）；
  *  - 书签栏顶层结构 → 固定文件夹（读取端，合并逻辑在 dataStore 执行）。
  * 书签是浏览器第一方数据通道，不触网、不离开设备。

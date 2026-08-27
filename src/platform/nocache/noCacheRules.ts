@@ -1,22 +1,14 @@
 /**
- * 开发者能力：指定站点 / URL 前缀禁用前端缓存（FR：no-cache 站点规则）。
+ * 指定站点 / URL 前缀禁用前端缓存。纯逻辑层，无浏览器 API 依赖。
  *
- * 纯逻辑层（无浏览器 API 依赖，可单测）：
- *  - `normalizeNoCachePattern`：用户输入 → 规范 pattern（三类形态）；
- *  - `matchesNoCachePattern`：URL 是否命中 pattern（侧边栏角标与规则生效共用同一口径）；
- *  - `buildNoCacheDnrRules`：patterns → declarativeNetRequest 动态规则。
+ * 禁缓存需同时改请求头与响应头：只改响应头时，已缓存资源不产生网络请求，规则不会触发。
+ * 请求头 no-cache 让缓存层在查找阶段即放行；响应头 no-store + 移除
+ * ETag/Last-Modified 使协商标识失效，下次请求直接完整拉取。
  *
- * 禁缓存双通道（关键：二者缺一不可）：
- *  - 请求头 `Cache-Control: no-cache`——与 DevTools「Disable cache」同款实现：
- *    缓存层在发请求前看到 no-cache 即绕过本地缓存（含未过期条目），强制重新验证；
- *    若只改响应头，已在缓存中的资源不产生网络请求，规则无从触发（表现为「不生效」）；
- *  - 响应头强制 no-store + 移除 ETag/Last-Modified——新响应不落盘、协商标识失效，
- *    下次请求连 304 验证条目都不存在，直接完整拉取。
- *
- * pattern 三类形态（与 DNR 匹配语义保持一致）：
- *  1. 完整前缀 `https://example.com/app` → urlFilter 原样（scheme 精确 + 前缀匹配）；
- *  2. 纯域名 `example.com` → regexFilter（裸域 + 任意深度子域，http/https 均命中）；
- *  3. 域名+路径 `example.com/app` → urlFilter `||example.com/app`（裸 host + 路径前缀，http/https 均命中）。
+ * pattern 三类形态，与 DNR 匹配语义保持一致：
+ *  1. 完整前缀 `https://example.com/app` → urlFilter 原样；
+ *  2. 纯域名 `example.com` → regexFilter，匹配裸域与任意深度子域；
+ *  3. 域名+路径 `example.com/app` → urlFilter `||example.com/app`。
  */
 
 /** DNR 规则的最小结构描述（避免耦合具体类型包，由 background 侧适配）。 */
@@ -75,9 +67,14 @@ const RESOURCE_TYPES = [
 const HOST_PATTERN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
 /** 路径部分允许的 URL 字符（排除空白、引号、反引号与 DNR 通配锚字符）。 */
 const PATH_PATTERN = /^[A-Za-z0-9\-._~!$&'()*+,;=:@/%]+$/;
+/**
+ * 形态 1 的 host 之后部分（路径 + 可选的查询串/片段）。
+ * 在 PATH_PATTERN 基础上放行 `?` `#` 及其后内容——它们是 URL 前缀匹配的合法组成，
+ * 且危险字符（DNR 通配/锚定语法）仍不在允许集内。
+ */
+const REST_PATTERN = /^[A-Za-z0-9\-._~!$&'()+,;=:@/%]*(?:[?#][A-Za-z0-9\-._~!$&'()*+,;=:@/%]*)?$/;
 /** 用户输入中禁止出现的 DNR 模式语法字符（防止无意间写成通配/锚定规则）。 */
 const FORBIDDEN_CHARS = /[\s|`"'^*]/;
-/** pattern 最大长度。 */
 const PATTERN_MAX_LENGTH = 200;
 
 /** regex 元字符转义（域名场景下实际只需处理 `.`，通用转义以保安全）。 */
@@ -134,6 +131,10 @@ export function normalizeNoCachePattern(input: string): string | null {
       const url = new URL(trimmed);
       // scheme + host(含端口) 小写化（域名大小写不敏感），路径/查询保留用户原样。
       const rest = trimmed.slice(trimmed.indexOf('://') + 3).replace(/^[^/?#]*/, '');
+      // rest 是未解析的用户原样字符串，再用 REST_PATTERN 白名单兜一层：
+      // 放行 `?`/`#` 及其内容（前缀匹配的合法组成），
+      // 拦下 `*`/`^`/`|`/空白等 DNR 通配与锚定语法。
+      if (rest !== '' && !REST_PATTERN.test(rest)) return null;
       const normalized = `${url.protocol}//${url.host.toLowerCase()}${rest}`;
       return normalized.length <= PATTERN_MAX_LENGTH ? normalized : null;
     } catch {

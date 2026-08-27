@@ -4,7 +4,7 @@ import zhCN from './locales/zh-CN/translation.json';
 import en from './locales/en/translation.json';
 
 /**
- * UI 文案轨道（FR-D10.2，双轨之一）。
+ * UI 文案轨道。
  * 语言决策链：settings.language（用户覆盖，运行时切换）→ 浏览器 UI 语言 → zh-CN 兜底。
  * manifest/商店文案轨道使用浏览器原生 _locales 机制。
  */

@@ -27,6 +27,10 @@ function stubTabGroups(): {
     remove: (groupId: number) => Promise<void>;
     create: (options: object) => Promise<{ id: number }>;
   };
+  // removeGroup 用 tabGroups.get 判定组是否仍存在（区分「已解散」与「解散失败」）。
+  // fake-browser 的原生 get 对这里的虚拟组 id 会抛错（被视为组不存在），
+  // 因此注入恒成功的 get，让「组存在」成为默认前提。
+  tabGroups.get = (async () => ({})) as unknown as typeof tabGroups.get;
   tabGroups.remove = removeMock as unknown as typeof tabGroups.remove;
   tabGroups.update = updateMock as unknown as typeof tabGroups.update;
   return { removeMock, updateMock };

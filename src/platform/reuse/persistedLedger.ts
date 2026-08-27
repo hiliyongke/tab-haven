@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { AllowanceLedger, type AllowanceSnapshot } from '@/platform/reuse/AllowanceLedger';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 持久化豁免账本（MV3 SW 回收防护，R-A 修复）：
@@ -51,7 +52,8 @@ export function createPersistedAllowanceLedger(): PersistedAllowanceLedger {
       if (snapshot && typeof snapshot === 'object') {
         ledger.restore(snapshot as AllowanceSnapshot);
       }
-    } catch {
+    } catch (error) {
+      logDegraded('reuse', '复用账本持久化读取失败', error);
       // 读取失败：以空账本启动（与原内存行为一致）
     } finally {
       restored = true;

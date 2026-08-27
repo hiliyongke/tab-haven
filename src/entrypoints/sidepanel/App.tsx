@@ -44,11 +44,16 @@ import { EmptyTabs, LoadingSkeleton, NoSearchResults } from '@/entrypoints/sidep
 import { useTabDragHandlers } from '@/entrypoints/sidepanel/useTabDragHandlers';
 import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
 
-export default function App() {
-  const { t, i18n } = useTranslation();
+/**
+ * 禁缓存规则未启用时返回的空 Set 单例。
+ * 必须是模块级常量：useMemo 的空依赖不保证引用稳定，而本值是下游 noCacheTabIds
+ * 的依赖项，引用变动会引发整条派生链重算。
+ */
+const EMPTY_NO_CACHE_SET: ReadonlySet<number> = new Set();
 
-  /** 禁缓存规则未启用时返回的空 Set 单例，避免无谓重建与下游引用抖动。 */
-  const EMPTY_NO_CACHE_SET: ReadonlySet<number> = useMemo(() => new Set(), []);
+export default function App() {
+  const { t } = useTranslation();
+
   const tabs = useTabStore((state) => state.tabs);
   const groups = useTabStore((state) => state.groups);
   const activateTab = useTabStore((state) => state.activateTab);
@@ -89,15 +94,26 @@ export default function App() {
   const [showSnapshots, setShowSnapshots] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const locateRequestRef = useRef(0);
-  /** 最近一次用户主动滚动时间戳：滚动中激活标签变化不触发自动跟随滚动（防"抢滚"）。 */
-  const lastUserScrollRef = useRef(0);
+  /**
+   * 用户主动滚动后的一段静默期（防"抢滚"）：静默中不自动跟随激活标签滚动。
+   *
+   * 必须用 state 而非 ref：ref 变化不触发重渲染，而本值需要在滚动结束后
+   * 被重新求值并下传给 SectionList——用 ref 会导致「滚动后 800ms 内禁用跟随」
+   * 只能靠其他 state 碰巧变化才生效，语义失效。
+   */
+  const [userScrollActive, setUserScrollActive] = useState(false);
+  const userScrollTimerRef = useRef(0);
   const markUserScroll = useCallback(() => {
-    lastUserScrollRef.current = Date.now();
+    setUserScrollActive(true);
+    window.clearTimeout(userScrollTimerRef.current);
+    userScrollTimerRef.current = window.setTimeout(() => setUserScrollActive(false), 800);
   }, []);
+  // 卸载时清理定时器，避免对已卸载组件 setState。
+  useEffect(() => () => window.clearTimeout(userScrollTimerRef.current), []);
   /** 已处理的挂起动作时间戳（即时消息 + session onChanged 双通道去重）。 */
   const handledActionsRef = useRef<Set<number>>(new Set());
-  const currentWindowId = useTabStore((state) => state.currentWindowId);
-
+  // 不订阅 currentWindowId：唯一的消费方 smartActivate 改为 store.getState() 实时读取，
+  // 少一个订阅即少一类「窗口切换导致全树重渲染」。
   // 全窗口搜索数据源（设置开启且输入非空时，异步补充其他窗口标签；默认仅当前窗口）
   const otherTabs = useAllWindowTabs(settings.searchAllWindows, query);
 
@@ -119,7 +135,8 @@ export default function App() {
       if (patterns.some((pattern) => matchesNoCachePattern(url, pattern))) matched.add(tab.id);
     }
     return matched;
-  }, [settings.noCacheEnabled, settings.noCachePatterns, effectiveTabs, EMPTY_NO_CACHE_SET]);
+    // EMPTY_NO_CACHE_SET 是模块级常量，非响应式值，不进依赖数组。
+  }, [settings.noCacheEnabled, settings.noCachePatterns, effectiveTabs]);
 
   // 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）
   const engine = useMemo(
@@ -146,16 +163,23 @@ export default function App() {
   }, [query, searchHits, effectiveTabs]);
   const selectedSearchTabId = searchHits[searchIndex]?.tabId;
 
-  /** 智能激活：目标标签在其他窗口时先聚焦窗口再激活（全窗口搜索用）。 */
+  /**
+   * 智能激活：目标标签在其他窗口时先聚焦窗口再激活（全窗口搜索用）。
+   *
+   * 刻意不依赖 effectiveTabs / currentWindowId：二者在搜索输入时每次都变，
+   * 会让 smartActivate → sectionCallbacks → SectionList 的 memo 链整条失效。
+   * 改为读取 store 实时值，与同文件其他 handler 的 getState() 写法一致。
+   */
   const smartActivate = useCallback(
     (tabId: number) => {
-      const tab = effectiveTabs.find((candidate) => candidate.id === tabId);
-      if (tab && tab.windowId !== currentWindowId) {
+      const { tabs: liveTabs, currentWindowId: liveWindowId } = useTabStore.getState();
+      const tab = (liveTabs as TabRecord[]).find((candidate) => candidate.id === tabId);
+      if (tab && tab.windowId !== liveWindowId) {
         return activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
       }
       return activateTab(tabId);
     },
-    [effectiveTabs, currentWindowId, activateTab]
+    [activateTab]
   );
 
   useEffect(() => {
@@ -412,6 +436,8 @@ export default function App() {
       translate: t
     });
     const plans = planAutoGroups(sections);
+    // syncAutoGroups 幂等（只为尚无 groupId 的标签建组），因此 t 变化带来的
+    // 重跑是安全的：语言切换后分区标题随之重算，不会重复建组。
     if (plans.length > 0) void syncAutoGroups(plans);
   }, [
     tabs,
@@ -420,19 +446,20 @@ export default function App() {
     settings.autoGroupNative,
     settings.groupMode,
     settings.sortMode,
-    settings.aggregationThreshold
+    settings.aggregationThreshold,
+    t
   ]);
 
-  // 关闭自动分组时：解散此前由本功能创建的组（标签回到未分组，记录清空）。
+  // 关闭自动分组时：解散本功能创建的组（标签回到未分组，记录清空）。
   useEffect(() => {
     if (settings.autoGroupNative) return;
     void disbandAutoGroups();
   }, [settings.autoGroupNative]);
 
   const allSections = useMemo(() => {
-    // deriveSections 现接收 translate（来自 useTranslation 的 t）；切换语言时
-    // t 重新生成、组件重渲染，分区标题随之重算。i18n.language 仍作为 memo 键触发重算。
-    void i18n.language;
+    // deriveSections 接收 translate（来自 useTranslation 的 t）：切换语言时 t 重新生成，
+    // 分区标题随之重算。t 本身即为 memo 键（i18n.language 变化 → t 引用变化），
+    // 无需再额外读 i18n.language —— 两者等价，保留一份避免双重触发。
     return deriveSections({
       tabs: filteredTabs,
       groups,
@@ -449,7 +476,7 @@ export default function App() {
     settings.sortMode,
     settings.groupMode,
     settings.aggregationThreshold,
-    i18n.language
+    t
   ]);
 
   /** 浏览器原生固定标签单独提取，渲染在搜索栏正下方 */
@@ -693,7 +720,7 @@ export default function App() {
     <main className="app flex h-full flex-col">
       <DndRoot onDragEnd={onDragEnd}>
         <SettingsSync />
-        {/* 一次性「能力发现」Tip（P0 可发现性）：仅首次展示，把藏得深的能力推到用户面前。 */}
+        {/* 一次性「能力发现」Tip：仅首次展示，把藏得深的能力推到用户面前。 */}
         {!settings.tipSeen && (
           <div className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2">
             <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
@@ -787,9 +814,7 @@ export default function App() {
               splitPartners={partners}
               reorderEnabled={settings.tabOrderSync}
               showUrl={settings.showUrl}
-              autoScrollActive={
-                settings.autoScrollActive && Date.now() - lastUserScrollRef.current > 800
-              }
+              autoScrollActive={settings.autoScrollActive && !userScrollActive}
               closeOnMiddleClick={settings.closeOnMiddleClick}
               density={settings.density}
               rowActionsVisible={settings.rowActionsVisible}

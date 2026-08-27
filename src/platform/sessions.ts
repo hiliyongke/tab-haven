@@ -1,9 +1,9 @@
 import { browser } from 'wxt/browser';
 
 /**
- * 浏览器最近关闭桥接（E11）：
+ * 浏览器最近关闭桥接：
  * chrome.sessions 读取/恢复浏览器原生记录的最近关闭标签与窗口，
- * 并入撤销历史面板；为崩溃恢复打底（FR-D5.3）。
+ * 并入撤销历史面板；为崩溃恢复打底。
  */
 
 export interface RecentClosedEntry {

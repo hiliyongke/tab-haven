@@ -3,9 +3,13 @@
 /*
  * z-index 规范（z-stack，禁止随意新增层级）
  * --------------------------------------------------------------
- * 30  .search-bar / .dialog 遮罩 / .pinned-tile.is-dragging / 预览浮层
- * 35  .status-toast（位于弹窗遮罩之下、常规内容之上）
- * 40  .is-sorting 排序中浮动 / DragOverlay / CommandPalette 遮罩
+ * 30  .search-bar / .pinned-tile.is-dragging / 预览浮层
+ * 35  .status-toast（位于常规内容之上、所有模态遮罩之下）
+ * 40  .is-sorting 排序中浮动 / DragOverlay
+ * 50  模态遮罩层：Dialog / CommandPalette / OnboardingTour
+ *     —— 三者同层，任意时刻仅其一挂载。必须高于 status-toast：
+ *        二者同处 .app 层叠上下文（由 container-type: inline-size 创建），
+ *        若遮罩低于 35，撤销提示会盖在「导入确认框」之上，语义自相矛盾。
  * --------------------------------------------------------------
  */
 
@@ -22,8 +26,10 @@
  */
 
 @theme {
-  /* 字号刻度：text-xs(12px) 向下一步即为最小字号，供密集侧栏小字使用 */
-  --text-2xs: 0.625rem;  /* 10px */
+  /* 字号刻度：text-xs(12px) 向下一步即为最小字号，供密集侧栏小字使用。
+     10px 仅用于图标内文与徽角等极窄容器，正文说明一律 ≥ 11px。 */
+  --text-2xs: 0.625rem; /* 10px */
+  --text-3xs: 0.6875rem; /* 11px */
 
   --color-gray-50: var(--c-gray-50);
   --color-gray-100: var(--c-gray-100);
@@ -64,6 +70,10 @@
 
   /* 强调色表面上的前景文字（深色模式强调色提亮后白字对比度不足，自动换深色字） */
   --color-on-accent: var(--c-on-accent);
+
+  /* 控件边框专用（与装饰性分隔线解耦）：分隔线可极淡，控件边界必须 ≥3:1。
+     表单控件一律用 border-control，禁止再用 border-gray-200。 */
+  --color-control: var(--border-control);
 }
 
 /* ---------- 浅色（默认） ---------- */
@@ -76,7 +86,8 @@
   --c-gray-200: #dde0dd;
   --c-gray-300: #c4c9c4;
   --c-gray-400: #98a099;
-  --c-gray-500: #6f786f;
+  /* 弱文本：对画布 #f5f4f0 达 4.60:1（WCAG AA）；再浅一档即不达标，勿下调 */
+  --c-gray-500: #687168;
   --c-gray-600: #566056;
   --c-gray-700: #414a42;
   --c-gray-800: #2f362f;
@@ -94,6 +105,7 @@
 
   /* 危险色（砖红，偏低饱和） */
   --c-red-50: #fbecea;
+  --c-red-200: #f0cdc6;
   --c-red-500: #c0584a;
   --c-red-600: #a8432f;
 
@@ -102,7 +114,8 @@
   --c-warn-100: #f6e8bf;
   --c-warn-200: #f0d98f;
   --c-warn-600: #b5891f;
-  --c-warn-700: #8a6d1f;
+  /* 同时对 --c-warn-50 (5.06:1) 与 --c-warn-100 (4.60:1) 达标 */
+  --c-warn-700: #7f641c;
   --c-warn-800: #6f5616;
 
   /* 语义表面（供少量自定义组件直接引用） */
@@ -111,7 +124,13 @@
   /* 页面画布：暖调米灰（暖底 + 绿强调的成熟配色结构，与白色表面层次清晰） */
   --canvas: #f5f4f0;
   --border-subtle: #dde0dd;
-  --ring: rgba(52, 117, 84, 0.32);
+  /* 控件边框：对 --canvas 达 3.21–3.26:1、对 --surface 达 3.57:1
+     （WCAG 1.4.11 非文本对比）。控件既可能落在 surface 也可能落在 canvas 上，
+     因此按更严格的 canvas 取值。装饰性分隔线继续用 --border-subtle。 */
+  --border-control: #868887;
+  /* 焦点环：直接取品牌 500 实色 —— 此前用 rgba(品牌, 0.32) 合成后仅 1.55:1，
+     键盘焦点在浅色下几乎不可见。实色对画布达 5.00:1。 */
+  --ring: var(--c-brand-500);
   --drop-line: #347554;
   --shadow-tint: 38 55 47;
   --count-badge-bg: var(--c-brand-500);
@@ -143,6 +162,7 @@
   --c-brand-700: #a7d5b8;
 
   --c-red-50: #36231f;
+  --c-red-200: #4d2f28;
   --c-red-500: #e0907f;
   --c-red-600: #ef9b8c;
 
@@ -161,11 +181,14 @@
   --surface-muted: rgba(40, 46, 43, 0.72);
   --canvas: #1d2220;
   --border-subtle: #36413b;
-  --ring: rgba(121, 196, 152, 0.4);
+  /* 控件边框：深色下需提亮而非压暗（对 --surface 达 3.2:1） */
+  --border-control: #747b77;
   --drop-line: #70bd8d;
   --shadow-tint: 0 0 0;
   /* 深色下强调色整体提亮（亮绿/亮红），前景改用深色文字保证 WCAG 对比度 */
   --c-on-accent: #1d2220;
+  /* --ring 继承 :root 的 var(--c-brand-500)：深色梯度已在上方整体替换，
+     变量在使用时求值，自动取到提亮后的品牌色（对画布 7.81:1）。 */
 }
 
 /* ---------- 主题色预设（data-hue） ----------
@@ -188,7 +211,6 @@
   --c-gray-50: #eef3f8;
   --c-gray-100: #e2eaf1;
   --canvas: #f1f5f9;
-  --ring: rgba(58, 110, 168, 0.32);
   --drop-line: #3a6ea8;
 }
 :root[data-theme='dark'][data-hue='ocean'] {
@@ -214,7 +236,7 @@
   --surface-muted: rgba(39, 45, 52, 0.72);
   --canvas: #1c2126;
   --border-subtle: #353d46;
-  --ring: rgba(133, 180, 220, 0.4);
+  --border-control: #747a80;
   --drop-line: #85b4dc;
   --c-on-accent: #1c2126;
 }
@@ -232,7 +254,6 @@
   --c-gray-50: #f3f1f8;
   --c-gray-100: #e9e5f2;
   --canvas: #f4f2f8;
-  --ring: rgba(111, 75, 166, 0.32);
   --drop-line: #6f4ba6;
 }
 :root[data-theme='dark'][data-hue='violet'] {
@@ -258,7 +279,7 @@
   --surface-muted: rgba(44, 40, 51, 0.72);
   --canvas: #211e26;
   --border-subtle: #3a3542;
-  --ring: rgba(169, 143, 214, 0.4);
+  --border-control: #79757e;
   --drop-line: #a98fd6;
   --c-on-accent: #211e26;
 }
@@ -273,10 +294,11 @@
   --c-brand-500: #b85f22;
   --c-brand-600: #9c4f1b;
   --c-brand-700: #7f4117;
+  /* sunset 的 500 档偏亮，白字徽章仅 4.47:1；改用 600 档（5.92:1） */
+  --count-badge-bg: var(--c-brand-600);
   --c-gray-50: #f7f2ea;
   --c-gray-100: #f1e7d8;
   --canvas: #f8f3ec;
-  --ring: rgba(184, 95, 34, 0.32);
   --drop-line: #b85f22;
 }
 :root[data-theme='dark'][data-hue='sunset'] {
@@ -302,7 +324,7 @@
   --surface-muted: rgba(48, 42, 38, 0.72);
   --canvas: #241f1c;
   --border-subtle: #403832;
-  --ring: rgba(220, 171, 122, 0.4);
+  --border-control: #7c7773;
   --drop-line: #dcab7a;
   --c-on-accent: #241f1c;
 }
@@ -320,7 +342,6 @@
   --c-gray-50: #f2f2f2;
   --c-gray-100: #e8e8e8;
   --canvas: #f4f4f4;
-  --ring: rgba(74, 82, 74, 0.32);
   --drop-line: #4a524a;
 }
 :root[data-theme='dark'][data-hue='mono'] {
@@ -346,7 +367,7 @@
   --surface-muted: rgba(41, 42, 44, 0.72);
   --canvas: #1e1f20;
   --border-subtle: #37393c;
-  --ring: rgba(176, 184, 192, 0.4);
+  --border-control: #767779;
   --drop-line: #b0b8c0;
   --c-on-accent: #1e1f20;
 }
@@ -375,7 +396,7 @@
   --surface: Canvas;
   --surface-muted: color-mix(in srgb, Canvas 72%, transparent);
   --border-subtle: #dadce0;
-  --ring: rgba(95, 99, 104, 0.35);
+  --border-control: #868887;
   --drop-line: #5f6368;
   --count-badge-bg: var(--c-brand-500);
   --c-on-accent: #ffffff;
@@ -404,7 +425,7 @@
   --surface: Canvas;
   --surface-muted: color-mix(in srgb, Canvas 72%, transparent);
   --border-subtle: #3c4043;
-  --ring: rgba(189, 193, 198, 0.4);
+  --border-control: #6e6f70;
   --drop-line: #bdc1c6;
   --count-badge-bg: var(--c-brand-700);
   --c-on-accent: #202124;
@@ -425,8 +446,9 @@ body,
 body {
   background: var(--canvas);
   color: var(--c-gray-800);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-variant-numeric: tabular-nums;
@@ -481,17 +503,144 @@ body {
     opacity var(--dur-fast) var(--ease-out);
 }
 
-/* 全局焦点可见环：键盘可达性兜底（不破坏既有各组件反馈） */
-:where(button, a, input, [tabindex], [role='button']):focus-visible {
+/* ---------- 开关（role=switch） ----------
+ * 尺寸全部由局部变量派生：改尺寸只需动 --sw-w/--sw-h，不再出现 left-[18px] 这类魔数。
+ * 关闭态用「浅填充 + 达标描边」而非纯灰填充 —— 轨道是控件边界，须满足 1.4.11 的 3:1，
+ * 而 --c-gray-300 对画布仅约 1.5:1，等于没有边界。 */
+.switch {
+  --sw-w: 36px;
+  --sw-h: 20px;
+  --sw-pad: 2px;
+  --sw-knob: calc(var(--sw-h) - var(--sw-pad) * 2);
+
+  position: relative;
+  flex: none;
+  width: var(--sw-w);
+  height: var(--sw-h);
+  border: 0;
+  border-radius: 999px;
+  background: var(--c-gray-100);
+  box-shadow: inset 0 0 0 1px var(--border-control);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.switch--sm {
+  --sw-w: 32px;
+  --sw-h: 18px;
+}
+/* 透明命中扩区：视觉高度 20px、命中 24px（WCAG 2.5.8 最小目标尺寸） */
+.switch::after {
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  content: '';
+}
+.switch[aria-checked='true'] {
+  background: var(--c-brand-500);
+  box-shadow: inset 0 0 0 1px var(--c-brand-500);
+}
+.switch-knob {
+  position: absolute;
+  top: var(--sw-pad);
+  left: var(--sw-pad);
+  width: var(--sw-knob);
+  height: var(--sw-knob);
+  border-radius: 999px;
+  background: var(--c-gray-500);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.switch[aria-checked='true'] .switch-knob {
+  background: var(--surface);
+  /* 位移由尺寸令牌算出，不再写死像素 */
+  transform: translateX(calc(var(--sw-w) - var(--sw-knob) - var(--sw-pad) * 2));
+}
+
+/* 分组取色器（无文字纯色块）：边框是唯一边界线索，须用 --border-control；
+   视觉 16px、命中 24px；选中态用品牌外环（与 .theme-swatch 同一语言）。 */
+.swatch {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  box-shadow: inset 0 0 0 1px var(--surface);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.swatch::after {
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  content: '';
+}
+.swatch:hover {
+  transform: scale(1.15);
+}
+.swatch[aria-checked='true'] {
+  box-shadow:
+    inset 0 0 0 1px var(--surface),
+    0 0 0 2px var(--c-brand-600);
+}
+
+/* 主题色板单选项：视觉 20px、命中 24px。
+   选中态用「白色内环 + 品牌外环」双层，避免外环与色块同色不可辨
+   （实测 gray-500 外环落在 sunset 色块上仅 1.02:1，等于没有选中反馈）。 */
+.theme-swatch {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  box-shadow: inset 0 0 0 2px var(--surface);
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.theme-swatch::after {
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  content: '';
+}
+.theme-swatch:hover {
+  transform: scale(1.1);
+}
+.theme-swatch[aria-checked='true'] {
+  box-shadow:
+    inset 0 0 0 2px var(--surface),
+    0 0 0 2px var(--c-brand-600);
+}
+
+/* 全局焦点可见环：键盘可达性兜底（不破坏既有各组件反馈）。
+   要点：
+   - --ring 必须是实色（历史坑：曾写 rgba(品牌, .32)，合成到画布后仅 1.55:1，
+     浅色模式下键盘用户几乎看不见焦点在哪 —— 对以键盘流为卖点的产品是致命伤）；
+   - box-shadow 补一圈画布色内描边，保证环落在深色/彩色控件上时依然可辨；
+   - 选择器须覆盖 select / textarea / summary：它们同样是键盘可达控件，
+     漏掉会让「高级设置」抽屉的 <summary> 拿到焦点却毫无视觉提示。 */
+:where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
   border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--canvas);
 }
 
 /* 轻微按下反馈（带快入慢出曲线） */
 :where(button, [role='button']):active {
   transform: scale(0.96);
   transition: transform 80ms var(--ease-out);
+}
+/* 开关类控件不做按压缩放：滑块位移叠加整体缩放会产生抖动观感，
+   且其自身已有 transition-base 的轨道变色反馈，语义已足够。 */
+:where([role='switch'], input[type='radio'], input[type='checkbox']):active {
+  transform: none;
 }
 
 /* 展开/折叠分组头部不做按压缩放：缩放回弹与列表重排叠加会产生抖动观感 */
@@ -546,7 +695,8 @@ body {
   background: transparent;
   color: var(--c-gray-500);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out),
+  transition:
+    background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
 }
 /* 透明命中扩区：视觉 20px、命中 24px（WCAG 2.5.8 下限），不占布局空间 */
@@ -597,7 +747,7 @@ body {
   min-width: 13px;
   height: 13px;
   place-items: center;
-  padding: 0 3px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--count-badge-bg);
   color: var(--c-on-accent);
@@ -656,13 +806,15 @@ body {
 
 .search-bar-clear {
   display: grid;
-  width: 22px;
-  height: 22px;
+  /* 24px = WCAG 2.5.8 最小目标尺寸（原 22px 低于下限） */
+  width: 24px;
+  height: 24px;
   flex: none;
   place-items: center;
   border-radius: 999px;
   color: var(--c-gray-500);
-  transition: background-color var(--dur-fast) var(--ease-out),
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
 }
 
@@ -685,8 +837,12 @@ body {
 }
 
 /* ---------- 弹窗宽度刻度（两档收敛，替代散落的任意宽度值） ---------- */
-.dialog-sm { width: min(360px, 88vw); }
-.dialog-md { width: min(440px, 92vw); }
+.dialog-sm {
+  width: min(360px, 88vw);
+}
+.dialog-md {
+  width: min(440px, 92vw);
+}
 
 /* ---------- 分类模块外壳：固定空间 / 站点分组 统一视觉壳（扁平分隔，零背景） ---------- */
 /* 左 0 + 内部 .section-head padding-left 8px：内容起始与 .pinned-strip / .section-card 统一到距侧边栏 8px */
@@ -745,7 +901,8 @@ body {
      底色/边框取 favicon 主色或域名强调色（--tile-accent，与站点组圆点同源），未取到色回退中性灰 */
   border: 1px solid color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 22%, transparent);
   background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 16%, transparent);
-  transition: transform var(--dur-fast) var(--ease-out),
+  transition:
+    transform var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out);
@@ -777,7 +934,8 @@ body {
   border-color: color-mix(in srgb, var(--tile-accent, var(--c-brand-500)) 65%, var(--canvas));
   background: color-mix(in srgb, var(--tile-accent, var(--c-brand-500)) 18%, transparent);
   /* 底部 2px 强调条（同色调）+ 微阴影，更清晰的激活指示 */
-  box-shadow: inset 0 -2px 0 var(--tile-accent, var(--c-brand-500)),
+  box-shadow:
+    inset 0 -2px 0 var(--tile-accent, var(--c-brand-500)),
     0 1px 3px rgb(var(--shadow-tint) / 8%);
 }
 
@@ -894,7 +1052,7 @@ body {
   flex-wrap: wrap;
   gap: 4px;
   /* padding-left 8px 与 module-shell 内 section-head 对齐，让磁贴起始在距侧边栏 8px */
-  padding: 1px 3px 3px 8px;
+  padding: 0 4px 4px 8px;
 }
 .pinned-tile .pinned-unpin {
   position: absolute;
@@ -909,7 +1067,8 @@ body {
   background: var(--surface);
   color: var(--c-gray-500);
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-out),
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
 }
@@ -935,7 +1094,8 @@ body {
   background: var(--surface);
   color: var(--c-gray-500);
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-out),
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
 }
@@ -1102,8 +1262,13 @@ body {
   animation: locate-tab-pulse 1.1s var(--ease-out);
 }
 @keyframes locate-tab-pulse {
-  0%, 100% { background: transparent; }
-  35% { background: color-mix(in srgb, var(--c-brand-500) 22%, var(--surface)); }
+  0%,
+  100% {
+    background: transparent;
+  }
+  35% {
+    background: color-mix(in srgb, var(--c-brand-500) 22%, var(--surface));
+  }
 }
 
 .row-item.is-search-active {
@@ -1165,8 +1330,15 @@ body {
   animation: media-playing-pulse 1.2s ease-in-out infinite;
 }
 @keyframes media-playing-pulse {
-  0%, 100% { opacity: 0.35; transform: scale(0.75); }
-  50% { opacity: 1; transform: scale(1); }
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* ---------- 搜索骨架屏 ---------- */
@@ -1182,8 +1354,12 @@ body {
   animation: skeleton-shimmer 1.2s ease-in-out infinite;
 }
 @keyframes skeleton-shimmer {
-  0%   { background-position: 100% 0; }
-  100% { background-position: 0 0; }
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
 }
 
 /* ---------- 分组：扁平分隔（极致压缩信息密度） ---------- */
@@ -1221,7 +1397,7 @@ body {
 .section-head .head-leading {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: none;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
@@ -1233,7 +1409,7 @@ body {
 .section-head .toggle {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
   flex: 1;
 }
@@ -1290,7 +1466,10 @@ body {
   font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
-  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 .section-media-indicator:hover,
 .section-media-indicator:focus-visible {
@@ -1319,7 +1498,8 @@ body {
   padding: 0 4px;
   border-radius: 999px;
   background: var(--c-gray-100);
-  color: var(--c-gray-500);
+  /* gray-500 在 gray-100 底上仅 3.92:1，不达 AA；gray-600 达 6.8:1 */
+  color: var(--c-gray-600);
   font-size: 10px;
   font-weight: 600;
 }
@@ -1390,10 +1570,30 @@ body {
   }
 }
 
+/* 更窄档（≤300px，Chrome 侧边栏拖到最窄）：再退一级，
+   只保留标题、计数与核心动作；「新建标签页」收为纯图标，
+   媒体播放指示整块隐藏（其信息已由行内徽章承载，不丢状态）。 */
+@container (max-width: 300px) {
+  .add-tab-btn span {
+    display: none;
+  }
+  .add-tab-btn {
+    padding: 4px;
+  }
+  .section-media-indicator {
+    display: none;
+  }
+  .section-body {
+    padding: 0 4px 2px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton,
   .media-playing-badge::after,
-  .section-media-dot { animation: none; }
+  .section-media-dot {
+    animation: none;
+  }
   .row-item .drag-grip,
   .row-actions,
   .row-badges,
@@ -1401,5 +1601,7 @@ body {
   .section-drag-handle,
   .add-tab-btn,
   .pinned-grid .pinned-unpin,
-  .search-bar-clear { transition: none; }
+  .search-bar-clear {
+    transition: none;
+  }
 }

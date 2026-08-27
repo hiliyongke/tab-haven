@@ -238,7 +238,7 @@ export const SnapshotSchema = z.object({
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
-/** 导出文件格式（FR-D9.1）。 */
+/** 导出文件格式。 */
 export const ExportFileSchema = z.object({
   format: z.literal('tabhaven.export'),
   formatVersion: z.literal(1),

@@ -12,7 +12,7 @@ const BUTTON_TONES: Record<ButtonVariant, string> = {
 
 /**
  * 统一按钮（弹窗/表单/工具条共用）。
- * 收敛此前散落的按钮对（secondary/primary/danger）与危险幽灵按钮。
+ * 统一按钮变体，业务代码不写原子类。
  */
 export function Button({
   variant = 'primary',
@@ -39,8 +39,10 @@ export function Button({
     <button
       type={type}
       className={
-        'rounded text-sm transition-base disabled:cursor-default disabled:opacity-50 ' +
-        (size === 'sm' ? 'px-2 py-0.5' : 'px-3 py-1') +
+        'inline-flex items-center justify-center rounded text-sm transition-base disabled:cursor-default disabled:opacity-50 ' +
+        /* 高度下限：sm 24px / md 32px。原 sm 用 py-0.5 实测约 22px，
+           低于 WCAG 2.5.8 的 24px 最小目标尺寸。 */
+        (size === 'sm' ? 'min-h-6 px-2 py-1' : 'min-h-8 px-3 py-1') +
         ' ' +
         BUTTON_TONES[variant] +
         (className ? ' ' + className : '')

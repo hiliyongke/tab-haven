@@ -37,9 +37,7 @@ export function CategoryModule({
       ref={setNodeRef}
       aria-label={ariaLabel}
       className={
-        'section-card' +
-        (className ? ' ' + className : '') +
-        (isOver ? ' is-drop-target' : '')
+        'section-card' + (className ? ' ' + className : '') + (isOver ? ' is-drop-target' : '')
       }
     >
       <SectionHead title={title} count={count} action={action} />

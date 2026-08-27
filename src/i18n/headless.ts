@@ -4,7 +4,7 @@ import en from './locales/en/translation.json';
 import { settingsRepository } from '@/platform/storage/repositories';
 
 /**
- * 无 UI 环境的文案轨道（FR-D10.2）：供 background SW 等非 React 上下文使用。
+ * 无 UI 环境的文案轨道：供 background SW 等非 React 上下文使用。
  *
  * 与 `src/i18n/index.ts`（UI 轨道）共用同一份资源文件，语言决策链一致：
  * settings.language（用户覆盖，实时跟随）→ 浏览器 UI 语言 → zh-CN 兜底。

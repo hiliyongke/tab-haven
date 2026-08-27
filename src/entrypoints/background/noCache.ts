@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { type Settings } from '@/core/schema/models';
 import { buildNoCacheDnrRules, type NoCacheDnrRule } from '@/platform/nocache/noCacheRules';
 import { settingsRepository } from '@/platform/storage/repositories';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 开发者禁缓存能力（SW 侧编排）：
@@ -24,7 +25,8 @@ const ALL_URLS_PERMISSION = { origins: ['<all_urls>'] };
 async function hasSiteAccessPermission(): Promise<boolean> {
   try {
     return await browser.permissions.contains(ALL_URLS_PERMISSION);
-  } catch {
+  } catch (error) {
+    logDegraded('no-cache', '禁缓存权限检测失败', error);
     return false;
   }
 }

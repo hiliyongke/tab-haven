@@ -60,7 +60,7 @@ export class DuplicateIndex {
 /**
  * 保留策略：从重复组中选出保留者（keeper）与可清理者。
  *
- * 行为规格（PRD 附录 C-8）：保留当前激活 > 已固定 > 位置靠前；
+ * 保留当前激活 > 已固定 > 位置靠前；
  * 固定标签一律豁免清理。
  *
  * 分工说明：本策略服务于「重复清理」面板（DuplicateIndex 消费方）；
@@ -84,7 +84,9 @@ export class KeeperPolicy {
       group.tabs.find((tab) => tab.pinned) ??
       group.tabs.reduce((front, tab) => (tab.index < front.index ? tab : front));
 
-    const removable = group.tabs.filter((tab) => tab !== keeper && !(this.pinnedExempt && tab.pinned));
+    const removable = group.tabs.filter(
+      (tab) => tab !== keeper && !(this.pinnedExempt && tab.pinned)
+    );
     return { keeper, removable };
   }
 }

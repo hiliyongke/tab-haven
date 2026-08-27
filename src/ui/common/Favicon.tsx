@@ -25,7 +25,7 @@ export function Favicon({
   if (!src || broken) {
     return (
       <span
-        className="flex shrink-0 select-none items-center justify-center rounded bg-gray-200 text-[10px] font-semibold text-gray-500"
+        className="flex shrink-0 select-none items-center justify-center rounded bg-gray-200 text-2xs font-semibold text-gray-600"
         style={style}
         aria-hidden="true"
       >
@@ -35,12 +35,6 @@ export function Favicon({
   }
 
   return (
-    <img
-      src={src}
-      alt=""
-      className="shrink-0"
-      style={style}
-      onError={() => setBroken(true)}
-    />
+    <img src={src} alt="" className="shrink-0" style={style} onError={() => setBroken(true)} />
   );
 }

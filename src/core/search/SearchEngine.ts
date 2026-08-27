@@ -4,7 +4,7 @@ import { pinyin } from 'pinyin-pro';
 /**
  * 搜索内核：标题 + URL + 中文拼音首字母的模糊匹配。
  *
- * 设计（FR-D2.1）：
+ * 设计：
  *  - 索引构建时预计算 prepare（标题/URL/拼音三目标），查询零准备；
  *  - 拼音支持：中文标题的首字母串（如 "gh" 命中 "GitHub" 前的中文标题）；
  *  - 结果排序：命中分数降序，激活标签优先；
@@ -97,8 +97,7 @@ export class SearchEngine {
     for (const target of this.targets) {
       const titleResult = single(query, target.title);
       const urlResult = single(query, target.url);
-      const pinyinResult =
-        target.pinyinFirst !== null ? single(query, target.pinyinFirst) : null;
+      const pinyinResult = target.pinyinFirst !== null ? single(query, target.pinyinFirst) : null;
 
       const candidates: Array<{ score: number; title?: Result; url?: Result }> = [];
       if (titleResult) candidates.push({ score: titleResult.score, title: titleResult });

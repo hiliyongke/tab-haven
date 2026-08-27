@@ -23,7 +23,10 @@ function newSnapshotId(): string {
  */
 const tabGroups = browser.tabGroups as unknown as {
   query: (queryInfo: { windowId?: number }) => Promise<{ id: number; title?: string }[]>;
-  update: (groupId: number, updateProperties: { title?: string; color?: string }) => Promise<unknown>;
+  update: (
+    groupId: number,
+    updateProperties: { title?: string; color?: string }
+  ) => Promise<unknown>;
 };
 
 /** 由窗口标签构建一条快照的输入。 */
@@ -66,7 +69,7 @@ export function trimSnapshots(list: readonly Snapshot[], settings: Settings): Sn
 }
 
 /**
- * 解析 OneTab 导出文本为快照条目（D9.3 竞品迁移）。
+ * 解析 OneTab 导出文本为快照条目。
  * 兼容格式：每行一个条目，可为裸 URL、或 "URL - Title"、"[URL] Title"。
  * 仅抽取可恢复的 URL；非法行跳过。返回轻量 SnapshotTab 数组。
  */
@@ -158,7 +161,7 @@ function missingTabsOf(snapshot: Snapshot, existingKeys: ReadonlySet<string>): S
 }
 
 /**
- * 恢复快照（FR-D5.1 完整语义）到当前（或指定）窗口，返回实际新建的标签数。
+ * 恢复快照到当前（或指定）窗口，返回实际新建的标签数。
  *
  * 恢复是纯加法：
  *  - 仅新建缺失标签 —— 与窗口内已打开 URL（web 比较键口径）相同的条目跳过，

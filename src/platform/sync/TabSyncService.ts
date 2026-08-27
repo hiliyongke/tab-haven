@@ -70,7 +70,10 @@ export class TabSyncService {
       void run();
     };
 
-    const events: Array<{ addListener: (cb: () => void) => void; removeListener: (cb: () => void) => void }> = [
+    const events: Array<{
+      addListener: (cb: () => void) => void;
+      removeListener: (cb: () => void) => void;
+    }> = [
       browser.tabs.onCreated,
       browser.tabs.onRemoved,
       browser.tabs.onUpdated,

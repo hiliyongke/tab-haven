@@ -26,7 +26,9 @@ export function FolderEditDialog({
   if (confirmDelete) {
     return (
       <DialogShell title={t('fixed.delete')} onClose={() => setConfirmDelete(false)}>
-        <p className="mb-3 text-sm text-gray-600">{t('fixed.deleteConfirm', { name: initialName })}</p>
+        <p className="mb-3 text-sm text-gray-600">
+          {t('fixed.deleteConfirm', { name: initialName })}
+        </p>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
             {t('dialog.cancel')}

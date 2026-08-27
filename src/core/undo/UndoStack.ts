@@ -3,10 +3,8 @@ import type { TabRecord } from '@/core/tab-types';
 import { NO_GROUP } from '@/core/tab-types';
 
 /**
- * 撤销栈（操作记录制，非状态快照制——FR-D8.1）。
- *
- * 记录"补偿操作"所需的最小信息（URL/位置/固定/静音/分组归属），
- * 撤销 = 用记录重建标签；栈深上限（可由设置调整）、FIFO 淘汰、可持久化。
+ * 撤销栈：操作记录制而非状态快照制。
+ * 只记录重建标签所需的最小信息，撤销 = 用记录重建，因此可跨会话持久化。
  */
 
 export const DEFAULT_UNDO_STACK_LIMIT = 10;
@@ -26,13 +24,13 @@ export function toUndoTabRecord(
   };
 }
 
-/** 入栈（保持顺序），超限 FIFO 淘汰；limit 来自设置（默认 10）。 */
+/** 入栈，超限按 FIFO 淘汰。 */
 export function pushBatch(
   batches: UndoBatch[],
   batch: UndoBatch,
   limit = DEFAULT_UNDO_STACK_LIMIT
 ): UndoBatch[] {
-  // 防御：limit ≤ 0 时 slice(-0) 等于 slice(0) 会保留全量，失去淘汰。
+  // slice(-0) 等价于 slice(0)（保留全量），limit 须钳到 ≥1 才能维持淘汰语义。
   const cap = Math.max(1, Math.floor(limit));
   return [...batches, batch].slice(-cap);
 }
@@ -43,10 +41,7 @@ export function popBatch(batches: UndoBatch[]): [UndoBatch | undefined, UndoBatc
   return [latest, batches.slice(0, -1)];
 }
 
-export function createUndoBatch(
-  kind: string,
-  entries: UndoBatch['entries']
-): UndoBatch {
+export function createUndoBatch(kind: string, entries: UndoBatch['entries']): UndoBatch {
   return {
     id: crypto.randomUUID(),
     kind,

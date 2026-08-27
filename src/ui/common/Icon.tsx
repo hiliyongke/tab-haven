@@ -29,11 +29,11 @@ import {
   VolumeX,
   Wand2,
   X,
-  type LucideIcon,
+  type LucideIcon
 } from 'lucide-react';
 
 /**
- * 图标映射：用 lucide-react 的线性图标替换原先手绘 SVG 路径，
+ * 图标映射：统一使用 lucide-react 线性图标，
  * 造型统一、可访问性更好。新增图标只需在此追加并 import 对应组件。
  *
  * `Icons` 的值是 LucideIcon 组件本身，沿用旧调用点
@@ -84,14 +84,14 @@ export const Icons = {
   /** 右键菜单（功能可发现性）。 */
   menu: Menu,
   /** 能力发现 Tip（友好高亮）。 */
-  sparkles: Sparkles,
+  sparkles: Sparkles
 } as const;
 
 /** 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。 */
 export function Icon({
   d,
   className,
-  title,
+  title
 }: {
   d: LucideIcon;
   className?: string;

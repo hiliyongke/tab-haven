@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { memo, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
@@ -10,11 +10,11 @@ import { DragType } from '@/ui/dnd/types';
 
 /**
  * 标签行：拖拽 / 预览 / Alt+↑↓ 重排等容器逻辑；视觉壳复用通用 RowItem。
- * 拖拽全部由全局 dnd-kit 管理（listeners 接入 RowItem 内部 div）：
- *  - 列表内排序：useSortable（整行拖动，受 tabOrderSync 设置控制，由 App 层决定是否生效）；
- *  - 跨容器投放（拖到固定空间/文件夹/永久固定区）：DragOverlay + 全局 onDragEnd 分派。
+ * 拖拽由全局 dnd-kit 管理：列表内排序走 useSortable，跨容器投放由全局 onDragEnd 分派。
+ *
+ * memo 化的前提：App 层已把回调收敛进 sectionCallbacks 的 useMemo，且 tab 引用由 store 保证稳定。
  */
-export function TabRow({
+export const TabRow = memo(function TabRow({
   tab,
   duplicateCount,
   isActive,
@@ -50,9 +50,7 @@ export function TabRow({
   onToggleMute: (tab: TabRecord) => void;
   onTogglePin: (tab: TabRecord) => void;
   onClose: (tab: TabRecord) => void;
-  /** 复制标签。 */
   onDuplicate?: (tab: TabRecord) => void;
-  /** 冻结（休眠）标签。 */
   onDiscard?: (tab: TabRecord) => void;
   /** 是否启用排序（Alt+↑↓ 键盘重排）。 */
   reorderEnabled?: boolean;
@@ -248,4 +246,4 @@ export function TabRow({
       />
     </li>
   );
-}
+});

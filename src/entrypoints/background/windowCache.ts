@@ -5,10 +5,7 @@ import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { t } from '@/i18n/headless';
-
-// ---------------------------------------------------------------------------
-// 窗口标签缓存（关窗自动保存的本地缓存）
-// ---------------------------------------------------------------------------
+import { logDegraded } from '@/platform/diagnostics';
 
 const WINDOW_TABS_KEY = 'tabhaven.window-tabs.v1';
 type WindowTabsCache = Record<string, SnapshotTab[]>;
@@ -28,7 +25,7 @@ function flushWindowTabs(): void {
 
 /**
  * 窗口标签 + 原生组 → 轻量快照条目（仅 http(s) 页面可恢复，其余跳过）。
- * 记录静音状态与所在组标题/颜色，恢复时可完整还原现场（FR-D5.1）。
+ * 记录静音状态与所在组标题/颜色，恢复时可完整还原现场。
  */
 function collectTabs(
   rawTabs: readonly Parameters<typeof mapTab>[0][],
@@ -65,7 +62,8 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
     memWindowTabs[String(windowId)] = list;
     if (windowTabsFlushTimer) return;
     windowTabsFlushTimer = setTimeout(flushWindowTabs, 800);
-  } catch {
+  } catch (error) {
+    logDegraded('window-cache', '窗口缓存读取失败', error);
     // 窗口可能已关闭，忽略
   }
 }
@@ -96,7 +94,8 @@ async function initWindowTabsCache(): Promise<void> {
     for (const win of wins) {
       if (typeof win.id === 'number') await refreshWindowTabs(win.id);
     }
-  } catch {
+  } catch (error) {
+    logDegraded('window-cache', '窗口缓存写入失败', error);
     // 忽略：不影响其它功能
   }
 }
@@ -113,7 +112,8 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
         const cache = rec[WINDOW_TABS_KEY] as WindowTabsCache | undefined;
         if (cache) tabs = cache[idKey];
       }
-    } catch {
+    } catch (error) {
+      logDegraded('window-cache', '窗口缓存清理失败', error);
       // 忽略
     }
   }
@@ -128,7 +128,8 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
         await sessionArea.set({ [WINDOW_TABS_KEY]: cache }).catch(() => {});
       }
     }
-  } catch {
+  } catch (error) {
+    logDegraded('window-cache', '窗口缓存操作失败', error);
     // 忽略
   }
   // 归档流程（archiveCurrentWindow）已自行留档并请求跳过本次自动保存。
@@ -144,7 +145,9 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
     tabs
   });
   // 写盘失败（quota 超限等）只告警：自动保存是兜底链路，不应让异常逃逸为未捕获 rejection。
-  await persistSnapshot(snapshot).catch((error) => console.warn('[snapshots] auto-save failed', error));
+  await persistSnapshot(snapshot).catch((error) =>
+    console.warn('[snapshots] auto-save failed', error)
+  );
 }
 
 export { scheduleWindowRefresh, initWindowTabsCache, handleWindowRemoved, refreshWindowTabs };

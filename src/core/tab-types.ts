@@ -50,7 +50,14 @@ export interface TabGroupRecord {
 export function canSafelyDiscardTab(
   tab: Pick<
     TabRecord,
-    'active' | 'pinned' | 'discarded' | 'audible' | 'attention' | 'status' | 'autoDiscardable' | 'lastAccessed'
+    | 'active'
+    | 'pinned'
+    | 'discarded'
+    | 'audible'
+    | 'attention'
+    | 'status'
+    | 'autoDiscardable'
+    | 'lastAccessed'
   >
 ): boolean {
   return (

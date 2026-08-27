@@ -106,11 +106,7 @@ export function reconcileBindings(
       if (next[item.id]) continue;
       if (!item.url) continue;
       const match = tabs.find(
-        (tab) =>
-          tab.url === item.url &&
-          !tab.pinned &&
-          !boundTabIds.has(tab.id) &&
-          !tab.incognito
+        (tab) => tab.url === item.url && !tab.pinned && !boundTabIds.has(tab.id) && !tab.incognito
       );
       if (match) {
         next[item.id] = match.id;

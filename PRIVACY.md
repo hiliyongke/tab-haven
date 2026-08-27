@@ -78,7 +78,7 @@ TabHaven 自身没有服务器、不自建同步通道。为方便换机迁移�
 
 ## 6. 隐私回归检查
 
-每次发布前，仓库内的隐私回归脚本（`scripts/privacy_check.py`）会校验三项：
+每次发布前，仓库内的隐私回归脚本（`pnpm check:privacy`，入口 `scripts/privacy-check.mjs`，需先 `pnpm build`）会校验三项：
 
 1. **权限 diff 为零变更**或已在本说明中记录；
 2. **网络请求 diff 为零**（源码中不存在任何出站网络调用）；

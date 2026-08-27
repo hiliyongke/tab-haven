@@ -108,7 +108,8 @@ function buildOpenerTree(tabs: readonly TabRecord[]): {
   };
   for (const tab of tabs) {
     const opener = tab.openerTabId;
-    const parent = opener !== undefined && opener !== tab.id && byId.has(opener) ? opener : undefined;
+    const parent =
+      opener !== undefined && opener !== tab.id && byId.has(opener) ? opener : undefined;
     pushChild(parent, tab);
   }
 
@@ -174,9 +175,7 @@ export function deriveSections({
     .map((group) => ({
       group,
       groupTabs: tabs
-        .filter(
-          (tab) => !tab.pinned && tab.groupId === group.id && !excluded.has(tab.id)
-        )
+        .filter((tab) => !tab.pinned && tab.groupId === group.id && !excluded.has(tab.id))
         .sort(sortCmp)
     }))
     .filter(({ groupTabs }) => groupTabs.length > 0)

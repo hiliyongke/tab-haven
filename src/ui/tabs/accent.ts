@@ -52,9 +52,7 @@ function extractFaviconColor(dataUrl: string): Promise<string | null> {
           count++;
         }
         if (!count) return resolve(null);
-        resolve(
-          `rgb(${Math.round(r / count)} ${Math.round(g / count)} ${Math.round(b / count)})`
-        );
+        resolve(`rgb(${Math.round(r / count)} ${Math.round(g / count)} ${Math.round(b / count)})`);
       } catch {
         resolve(null);
       }
@@ -68,10 +66,7 @@ function extractFaviconColor(dataUrl: string): Promise<string | null> {
  * 站点组强调色：优先用 favicon 主色（仅 data: URL 可安全读取像素，远程
  * favicon 受 CORS 污染 canvas 无法取色），否则回退到域名哈希色。
  */
-export function useDomainAccent(
-  favIconUrl?: string,
-  domain?: string
-): string | undefined {
+export function useDomainAccent(favIconUrl?: string, domain?: string): string | undefined {
   const fallback = domain ? domainAccent(domain) : undefined;
   const [color, setColor] = useState<string | undefined>(fallback);
   useEffect(() => {

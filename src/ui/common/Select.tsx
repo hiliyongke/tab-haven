@@ -16,7 +16,9 @@ export function Select<T extends string>({
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
       aria-label={ariaLabel}
-      className="rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800 focus:border-accent-500"
+      /* border-control 而非 border-gray-200：下拉框是控件边界，须满足 1.4.11 的 3:1。
+         同时补齐 min-h-6（24px，WCAG 2.5.8 最小目标尺寸）。 */
+      className="min-h-6 rounded border border-control bg-surface px-2 py-1 text-xs text-gray-800 transition-base focus:border-accent-500"
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>

@@ -1,10 +1,7 @@
 import { browser } from 'wxt/browser';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { cachedSettings } from './shared';
-
-// ---------------------------------------------------------------------------
-// 角标（badge）
-// ---------------------------------------------------------------------------
+import { logDegraded } from '@/platform/diagnostics';
 
 let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -51,7 +48,8 @@ async function refreshBadge(): Promise<void> {
     await browser.action.setTitle({
       title: `${total} tabs · ${dupGroups.size} dup groups · ${discarded} discarded`
     });
-  } catch {
+  } catch (error) {
+    logDegraded('badge', '工具栏角标更新失败', error);
     // badge 不可用时静默（不阻塞其他功能）
   }
 }

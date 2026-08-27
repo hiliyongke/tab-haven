@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
@@ -7,6 +7,7 @@ import { DialogShell } from '@/ui/dialog/Dialog';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { TextField } from '@/ui/common/TextField';
 import { TabRow } from '@/ui/tabs/TabRow';
 import { VirtualRowList } from '@/ui/tabs/VirtualRowList';
 import { DragType } from '@/ui/dnd/types';
@@ -48,32 +49,36 @@ function GroupEditDialog({
 
   return (
     <DialogShell title={t('groups.edit')} onClose={onClose}>
-      <input
-        className="mb-2 w-full rounded border border-gray-200 bg-surface px-2 py-1.5 text-sm text-gray-800  focus:border-accent-500"
+      <TextField
+        className="mb-2"
+        ariaLabel={t('groups.namePlaceholder')}
+        placeholder={t('groups.namePlaceholder')}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={setDraft}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             onRename(draft.trim() || title);
             onClose();
           }
         }}
-        aria-label={t('groups.namePlaceholder')}
-        placeholder={t('groups.namePlaceholder')}
       />
-      <div className="mb-2 flex flex-wrap gap-1">
+      {/* 分组取色器：无文字、纯色块，边框是唯一的边界线索 —— 必须用 --border-control
+          （原 border-gray-200 仅 1.33:1，等于看不出这是个可点控件）。
+          用原生 radio（与设置页主题色板同一套写法）：色块无子内容，
+          radio 完全够用，且自带 radiogroup 的键盘漫游与选中语义。
+          视觉 16px / 命中 24px（::after 扩区，见 .swatch 样式）。 */}
+      <div className="mb-2 flex flex-wrap gap-1" role="radiogroup" aria-label={t('groups.edit')}>
         {GROUP_COLORS.map((c) => (
-          <button
+          <input
             key={c}
-            type="button"
-            className={
-              'h-4 w-4 rounded-full border border-gray-200' +
-              (color === c ? ' ring-2 ring-offset-1 ring-gray-400' : '')
-            }
+            type="radio"
+            name="groupColor"
+            checked={color === c}
+            className="swatch appearance-none"
             style={{ backgroundColor: groupAccentVar(c) }}
             title={c}
             aria-label={c}
-            onClick={() => onRecolor(c)}
+            onChange={() => onRecolor(c)}
           />
         ))}
       </div>
@@ -111,11 +116,9 @@ interface SectionCallbacks {
   onToggleMute: (tab: TabRecord) => void;
   onTogglePin: (tab: TabRecord) => void;
   onCloseTab: (tab: TabRecord) => void;
-  /** 复制标签。 */
   onDuplicate?: (tab: TabRecord) => void;
-  /** 冻结（休眠）标签。 */
   onDiscard?: (tab: TabRecord) => void;
-  /** 将原生标签组存为固定文件夹（原生组→文件夹桥接）。 */
+  /** 原生组 → 固定文件夹桥接。 */
   onSaveGroupAsFolder?: (groupId: number) => void;
   onToggleGroupCollapsed: (groupId: number, collapsed: boolean) => void;
   onToggleSiteCollapsed: (siteKey: string, collapsed: boolean) => void;
@@ -123,13 +126,10 @@ interface SectionCallbacks {
   onReorder?: (sourceId: number, targetId: number, placeAfter: boolean) => void;
   /** 键盘重排（Alt+↑/↓）：把标签向相邻位置移动。 */
   onMoveTab?: (tabId: number, direction: -1 | 1) => void;
-  /** 重命名原生组。 */
   onGroupRename: (groupId: number, title: string) => void;
-  /** 改变原生组颜色。 */
   onGroupRecolor: (groupId: number, color: string) => void;
-  /** 移动原生组到指定索引（组排序）。 */
   onGroupMove: (groupId: number, index: number) => void;
-  /** 高亮当前选中的标签（与浏览器多选同步）。 */
+  /** 与浏览器多选选区同步。 */
   onHighlightSelected?: () => void;
 }
 
@@ -163,13 +163,9 @@ function RowList({
   density?: 'compact' | 'cozy';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
-  /** 来源树模式下按标签 id 提供的缩进层级。 */
   depths?: ReadonlyMap<number, number>;
-  /** 当前浏览器高亮选区的标签 id 集合。 */
   highlightedIds?: ReadonlySet<number>;
-  /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
-  /** 命中「开发者禁缓存」规则的标签 id 集合。 */
   noCacheTabIds?: ReadonlySet<number>;
   callbacks: SectionCallbacks;
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
@@ -277,11 +273,8 @@ interface SectionCardProps {
   density?: 'compact' | 'cozy';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
-  /** 当前浏览器高亮选区的标签 id 集合。 */
   highlightedIds?: ReadonlySet<number>;
-  /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
-  /** 命中「开发者禁缓存」规则的标签 id 集合。 */
   noCacheTabIds?: ReadonlySet<number>;
   callbacks: SectionCallbacks;
 }
@@ -387,7 +380,7 @@ function PlayingIndicator({
 }
 
 /** 未分组：普通标签整行列表。 */
-function UngroupedSectionCard({
+const UngroupedSectionCard = memo(function UngroupedSectionCard({
   section,
   ...rowProps
 }: Omit<SectionCardProps, 'section'> & {
@@ -413,10 +406,10 @@ function UngroupedSectionCard({
       </div>
     </GroupCard>
   );
-}
+});
 
 /** 可折叠分组卡（原生组 / 站点组）：折叠、播放提示、子域分块、原生组编辑弹窗。 */
-function CollapsibleSectionCard({
+const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
   section,
   collapsedGroups,
   collapsedSites,
@@ -563,20 +556,22 @@ function CollapsibleSectionCard({
       {isCollapsed ? null : renderBody()}
     </GroupCard>
   );
-}
+});
 
 /**
  * 单个分组卡片：按类型分发到未分组 / 可折叠（原生组 + 站点组）子组件。
- * 强调色推导（原生组 Chrome 组色、站点组域名哈希色 / favicon 主色）由 useSectionAccent 统一处理。
- * 注意：浏览器置顶（pinned）由 App 层 CategoryModule 单独渲染，不会进入本列表。
+ * 强调色推导由 useSectionAccent 统一处理。
+ * 浏览器置顶（pinned）由 App 层 CategoryModule 单独渲染，不会进入本列表。
+ *
+ * 连同两个子卡一起 memo：只有分组卡稳定，叶子 TabRow / RowItem 的 memo 浅比较才有收益。
  */
-function SectionCard(props: SectionCardProps) {
+const SectionCard = memo(function SectionCard(props: SectionCardProps) {
   const { section } = props;
   if (section.kind === 'pinned') return null;
   if (section.kind === 'ungrouped') return <UngroupedSectionCard {...props} section={section} />;
   // 走到这里 section 已收窄为 native | site
   return <CollapsibleSectionCard {...props} section={section} />;
-}
+});
 
 export const SectionList = memo(SectionListImpl);
 
@@ -604,7 +599,6 @@ function SectionListImpl({
   collapsedSites: ReadonlySet<string> | readonly string[];
   duplicateCounts: ReadonlyMap<string, number>;
   activeTabId: number | undefined;
-  /** 与当前激活标签同屏的伙伴 id 集合。 */
   splitPartners: ReadonlySet<number>;
   reorderEnabled: boolean;
   showUrl?: boolean;
@@ -613,11 +607,8 @@ function SectionListImpl({
   density?: 'compact' | 'cozy';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
-  /** 当前浏览器高亮选区的标签 id 集合。 */
   highlightedIds?: ReadonlySet<number>;
-  /** 当前键盘选中的搜索结果标签 id。 */
   searchActiveTabId?: number;
-  /** 命中「开发者禁缓存」规则的标签 id 集合。 */
   noCacheTabIds?: ReadonlySet<number>;
   callbacks: SectionCallbacks;
 }) {
@@ -627,21 +618,33 @@ function SectionListImpl({
     [collapsedSites]
   );
 
+  // 定位事件处理器读取的是「触发那一刻」的最新值，但这些值（sections 等）
+  // 每次过滤都会变。若直接进依赖数组，每次搜索输入都会解绑/重绑 window 监听。
+  // 改用 ref 持有最新值 + 空依赖，只挂载一次（与 Dialog 的 useModalA11y 同构）。
+  const locateContextRef = useRef({ sections, collapsedGroups, collapsedSitesSet, callbacks });
+  locateContextRef.current = { sections, collapsedGroups, collapsedSitesSet, callbacks };
+
   useEffect(() => {
     const handleLocateSection = (event: Event) => {
       const tabId = (event as CustomEvent<number>).detail;
       if (!Number.isInteger(tabId)) return;
-      const section = sections.find((candidate) => candidate.tabs.some((tab) => tab.id === tabId));
+      const {
+        sections: secs,
+        collapsedGroups: groups,
+        collapsedSitesSet: sites,
+        callbacks: cb
+      } = locateContextRef.current;
+      const section = secs.find((candidate) => candidate.tabs.some((tab) => tab.id === tabId));
       if (!section) return;
-      if (section.kind === 'native' && collapsedGroups.has(section.groupId)) {
-        callbacks.onToggleGroupCollapsed(section.groupId, false);
-      } else if (section.kind === 'site' && collapsedSitesSet.has(section.siteKey)) {
-        callbacks.onToggleSiteCollapsed(section.siteKey, false);
+      if (section.kind === 'native' && groups.has(section.groupId)) {
+        cb.onToggleGroupCollapsed(section.groupId, false);
+      } else if (section.kind === 'site' && sites.has(section.siteKey)) {
+        cb.onToggleSiteCollapsed(section.siteKey, false);
       }
     };
     window.addEventListener(LOCATE_SECTION_EVENT, handleLocateSection);
     return () => window.removeEventListener(LOCATE_SECTION_EVENT, handleLocateSection);
-  }, [callbacks, collapsedGroups, collapsedSitesSet, sections]);
+  }, []);
 
   // 分组头排序（dnd-kit）：只对原生组参与排序，排序逻辑由全局 DndContext 的 onDragEnd 处理。
   const sortableSectionKeys = sections.filter((s) => s.kind === 'native').map((s) => s.key);

@@ -1,8 +1,9 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
- * 跨设备同步镜像（FR-D9.4 务实版）：
+ * 跨设备同步镜像：
  * 借力浏览器账号同步通道（chrome.storage.sync），产品不经手任何数据。
  *
  * 模型：local 为主、sync 为镜像。
@@ -10,7 +11,7 @@ import { z } from 'zod';
  *  - 新设备首次安装（无 seeded 标志）时从镜像拉取恢复；
  *  - 超出 sync 配额时静默降级（仅丢失镜像，本地数据不受影响）。
  *
- * 同步范围（OQ-4 从窄到宽的第一档）：设置 + 固定集合。归档/快照等大数据不镜像。
+ * 同步范围：设置 + 固定集合。归档/快照等大数据不镜像。
  */
 
 const CHUNK_PREFIX = 'tabhaven.sync.v1.';
@@ -82,8 +83,10 @@ class SyncMirror {
         }
       }
       await area.set(record);
-    } catch {
-      // 超出同步配额或同步不可用：静默降级，仅丢失镜像，不影响本地数据
+    } catch (error) {
+      // 超出同步配额或同步不可用：降级（仅丢失镜像，本地数据不受影响）。
+      // 但必须可观测——否则「跨设备同步悄悄失效」对用户完全不可见。
+      logDegraded('sync-mirror', '镜像写入失败，跨设备同步已降级（本地数据不受影响）', error);
     }
   }
 
@@ -111,7 +114,10 @@ class SyncMirror {
         pins: parsed.data.pins,
         settings: parsed.data.settings
       };
-    } catch {
+    } catch (error) {
+      // 镜像损坏 / 过期返回 null 是正常分支（上面已处理）；走到这里是解析异常，
+      // 需要留痕以便区分「从未同步过」与「镜像坏了」。
+      logDegraded('sync-mirror', '镜像读取失败，跳过本次恢复', error);
       return null;
     }
   }

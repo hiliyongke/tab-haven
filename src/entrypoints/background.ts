@@ -50,7 +50,7 @@ import {
 } from './background/windowCache';
 
 export default defineBackground(() => {
-  // 后台文案轨道（FR-D10.2）：通知/自动快照默认名等 SW 侧文案按用户语言解析。
+  // 后台文案轨道：通知/自动快照默认名等 SW 侧文案按用户语言解析。
   // 异步初始化不阻塞消息注册；完成前的 t() 调用回退浏览器语言判定。
   void initHeadlessI18n();
 
@@ -166,7 +166,7 @@ export default defineBackground(() => {
     sendResponse({ ok: true });
   });
 
-  // 浏览器级快捷键命令分发（FR-D2.2）
+  // 浏览器级快捷键命令分发
   browser.commands?.onCommand.addListener(async (command) => {
     if (command === 'focus-search') {
       await openSidePanel();

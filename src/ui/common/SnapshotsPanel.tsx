@@ -4,10 +4,11 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { DialogShell } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { TextField } from '@/ui/common/TextField';
 import { formatTime } from '@/ui/common/format';
 
 /**
- * 会话快照面板（D5.1/D5.2 + D7 归档中心 + 空间轻量化 + 竞品导入 + 本地周报）。
+ * 会话快照面板：命名快照、归档中心与 OneTab 导入。
  * 把当前窗口存为命名快照/空间，归档关闭并留档，从 OneTab 导入，查看本地周报；
  * 恢复走 platform/restoreSnapshot，提示走 undoStore。
  */
@@ -134,20 +135,20 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
       {view === 'import' ? (
         <div className="flex flex-col gap-2">
           <p className="text-2xs text-gray-500">{t('snapshots.importOneTabHint')}</p>
-          <input
-            type="text"
-            className="rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-800  focus:border-accent-500"
+          <TextField
+            size="sm"
             placeholder={t('snapshots.namePlaceholder')}
-            aria-label={t('snapshots.namePlaceholder')}
+            ariaLabel={t('snapshots.namePlaceholder')}
             value={importName}
-            onChange={(event) => setImportName(event.target.value)}
+            onChange={setImportName}
           />
-          <textarea
-            className="h-40 w-full resize-none rounded border border-gray-200 bg-surface px-2 py-1.5 text-xs text-gray-800  focus:border-accent-500"
+          <TextField
+            multiline
+            className="h-40"
             placeholder={t('snapshots.importOneTabPlaceholder')}
-            aria-label={t('snapshots.importOneTab')}
+            ariaLabel={t('snapshots.importOneTab')}
             value={importText}
-            onChange={(event) => setImportText(event.target.value)}
+            onChange={setImportText}
           />
           <div className="flex justify-end gap-2">
             <button
@@ -209,7 +210,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
               </button>
               <button
                 type="button"
-                className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-surface px-3 py-2 text-sm font-medium text-gray-600 transition-base hover:bg-gray-50"
+                className="flex items-center justify-center gap-2 rounded-lg border border-control bg-surface px-3 py-2 text-sm font-medium text-gray-600 transition-base hover:bg-gray-50"
                 onClick={() => void handleSaveSpace()}
               >
                 <Icon d={Icons.folder} className="h-4 w-4" />
@@ -263,12 +264,11 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                   <li key={snap.id} className="flex items-center gap-2 px-2.5 py-2">
                     <div className="min-w-0 flex-1">
                       {editingId === snap.id ? (
-                        <input
-                          type="text"
-                          className="w-full rounded border border-gray-200 bg-surface px-1.5 py-0.5 text-xs text-gray-800  focus:border-accent-500"
+                        <TextField
+                          size="sm"
                           value={editingName}
-                          aria-label={t('snapshots.rename')}
-                          onChange={(event) => setEditingName(event.target.value)}
+                          ariaLabel={t('snapshots.rename')}
+                          onChange={setEditingName}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter') void commitRename();
                             if (event.key === 'Escape') {
@@ -285,7 +285,10 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                       )}
                       <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
                         <span
-                          className={'rounded px-1 py-px text-[10px] leading-none ' + originBadge(snap.origin).className}
+                          className={
+                            'rounded px-1 py-px text-2xs leading-none ' +
+                            originBadge(snap.origin).className
+                          }
                         >
                           {originBadge(snap.origin).label}
                         </span>

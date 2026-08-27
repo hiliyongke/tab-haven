@@ -31,7 +31,6 @@ export function createFolderItem(input: {
   };
 }
 
-/** 新建文件夹。 */
 export function createFolder(name: string): FixedFolder {
   return {
     id: crypto.randomUUID(),
@@ -78,19 +77,30 @@ export function reorderFolderItems(
   targetId: string,
   placeAfter: boolean
 ): FixedFolder {
-  const items = moveElement({ items: folder.items, sourceId, targetId, placeAfter, idOf: (item) => item.id });
+  const items = moveElement({
+    items: folder.items,
+    sourceId,
+    targetId,
+    placeAfter,
+    idOf: (item) => item.id
+  });
   if (items === folder.items) return folder;
   return { ...folder, items };
 }
 
-/** 文件夹数组重排（文件夹排序）。 */
 export function reorderFolders(
   folders: FixedFolder[],
   sourceId: string,
   targetId: string,
   placeAfter: boolean
 ): FixedFolder[] {
-  return moveElement({ items: folders, sourceId, targetId, placeAfter, idOf: (folder) => folder.id });
+  return moveElement({
+    items: folders,
+    sourceId,
+    targetId,
+    placeAfter,
+    idOf: (folder) => folder.id
+  });
 }
 
 /** 永久固定标签排序：把 source 移到 target 前/后。 */
@@ -102,7 +112,7 @@ export function reorderPins(
   return moveElement({ items: pins, sourceId, targetId, placeAfter, idOf: (pin) => pin.id });
 }
 
-/** pin 身份去重（保留首个，过滤后续同身份）。 */
+/** pin 身份去重：同身份保留首个，过滤后续。 */
 export function dedupePins(pins: PersistentPin[]): PersistentPin[] {
   const seen = new Set<string>();
   const result: PersistentPin[] = [];
@@ -122,5 +132,11 @@ export function pinFromTab(input: {
 }): PersistentPin | null {
   const identity = pinIdentity(input.url);
   if (!identity) return null;
-  return { id: crypto.randomUUID(), identity, url: input.url, title: input.title, favIconUrl: input.favIconUrl };
+  return {
+    id: crypto.randomUUID(),
+    identity,
+    url: input.url,
+    title: input.title,
+    favIconUrl: input.favIconUrl
+  };
 }

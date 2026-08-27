@@ -56,11 +56,7 @@ interface FolderItemDragData {
 }
 
 export type DragData =
-  | TabDragData
-  | SectionDragData
-  | PinDragData
-  | FolderDragData
-  | FolderItemDragData;
+  TabDragData | SectionDragData | PinDragData | FolderDragData | FolderItemDragData;
 
 /** 固定空间整体投放目标（拖到空白处创建新文件夹）。 */
 export const FIXED_AREA_DROPPABLE = 'fixed-area';
