@@ -543,6 +543,21 @@ export default function App() {
     },
     [closeWithUndo]
   );
+  /**
+   * 固定/取消固定带 toast 反馈。
+   *
+   * 此前这两处操作完全静默：标签会移动到固定区，但当 `showPinnedStrip` 关闭、
+   * 或固定区折叠/滚出视野时，用户在扩展内看不到任何变化（只能从浏览器原生标签栏察觉），
+   * 会怀疑「点了没生效」。文案 toast.pinned / toast.unpinned 早已就位，此前未接线。
+   */
+  const handleTogglePin = useCallback(
+    (tab: TabRecord) => {
+      void togglePinned(tab).then(() =>
+        notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned'))
+      );
+    },
+    [togglePinned, notify, t]
+  );
   const handleDuplicateTab = useCallback(
     (tab: TabRecord) => {
       void duplicateTab(tab.id).then(() => notify(t('toast.duplicated')));
@@ -650,7 +665,7 @@ export default function App() {
     () => ({
       onActivate: (tabId: number) => void smartActivate(tabId),
       onToggleMute: (tab: TabRecord) => void toggleMute(tab),
-      onTogglePin: (tab: TabRecord) => void togglePinned(tab),
+      onTogglePin: handleTogglePin,
       onCloseTab: handleCloseTab,
       onDuplicate: handleDuplicateTab,
       onDiscard: handleDiscardTab,
@@ -669,7 +684,7 @@ export default function App() {
     [
       smartActivate,
       toggleMute,
-      togglePinned,
+      handleTogglePin,
       setGroupCollapsed,
       toggleSiteCollapsed,
       handleCloseTab,
@@ -720,25 +735,6 @@ export default function App() {
     <main className="app flex h-full flex-col">
       <DndRoot onDragEnd={onDragEnd}>
         <SettingsSync />
-        {/* 一次性「能力发现」Tip：仅首次展示，把藏得深的能力推到用户面前。 */}
-        {!settings.tipSeen && (
-          <div className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2">
-            <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
-            <div className="min-w-0 flex-1">
-              <p className="text-2xs font-semibold text-accent-700">{t('tips.discoverTitle')}</p>
-              <p className="mt-0.5 text-2xs leading-relaxed text-accent-700/90">
-                {t('tips.discoverBody')}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
-              onClick={() => void updateSettings({ tipSeen: true })}
-            >
-              {t('tips.gotIt')}
-            </button>
-          </div>
-        )}
         <SearchBar
           query={query}
           onChange={setQuery}
@@ -749,6 +745,26 @@ export default function App() {
         <output className="sr-only" aria-live="polite">
           {isFiltering ? t('search.hits', { count: filteredTabs.length }) : ''}
         </output>
+        {/* 一次性「能力发现」Tip：仅首次展示。刻意排在搜索框之后——搜索是本面板最高频入口，
+            教学性内容不得把它挤出首屏顶部。 */}
+        {!settings.tipSeen && (
+          <div className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2">
+            <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-3xs font-semibold text-accent-700">{t('tips.discoverTitle')}</p>
+              <p className="mt-0.5 text-3xs leading-relaxed text-accent-700/90">
+                {t('tips.discoverBody')}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="shrink-0 rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+              onClick={() => void updateSettings({ tipSeen: true })}
+            >
+              {t('tips.gotIt')}
+            </button>
+          </div>
+        )}
         {settings.showPinnedStrip && <PinnedStrip />}
         {/* 浏览器原生固定标签区 — 同样受 showPinnedStrip 控制，与顶部固定空间条联动隐藏，避免
           用户关闭开关后磁贴区仍残留造成"开关没作用"的困惑。pinnedSection 本身为空（用户没原生
@@ -865,7 +881,8 @@ export default function App() {
         )}
         {showSnapshots && <SnapshotsPanel onClose={() => setShowSnapshots(false)} />}
         {!settings.onboarded && dataReady && (
-          <OnboardingTour onDone={() => void updateSettings({ onboarded: true })} />
+          // 引导已完整讲过功能清单，同步关掉内联 Tip Banner，避免用户"关完一层还有一层"。
+          <OnboardingTour onDone={() => void updateSettings({ onboarded: true, tipSeen: true })} />
         )}
         {showPalette && (
           <CommandPalette

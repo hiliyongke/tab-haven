@@ -15,24 +15,26 @@ export function FixedConceptsMap({ className }: { className?: string }) {
   ];
   return (
     <div className={className}>
-      <p className="px-1 pb-1.5 text-2xs font-medium text-gray-500">{t('fixedMap.title')}</p>
+      <p className="px-1 pb-1.5 text-3xs font-medium text-gray-500">{t('fixedMap.title')}</p>
       <ul className="flex flex-col gap-1.5">
         {items.map((item) => (
+          // 刻意不加边框、背景压到 gray-50：这组条目纯展示、无任何点击行为，
+          // 带 border 的卡片外观会让用户误以为可点（点了没反应），属于错误的可交互暗示。
           <li
             key={item.name}
-            className="flex items-start gap-2 rounded-lg border border-gray-200 bg-surface px-2.5 py-2"
+            className="flex items-start gap-2 rounded-lg bg-gray-50 px-2.5 py-2"
           >
             <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md bg-accent-50 text-accent-600">
               <Icon d={item.icon} className="h-3 w-3" />
             </span>
             <div className="min-w-0">
-              <p className="text-2xs font-semibold text-gray-700">{item.name}</p>
-              <p className="mt-0.5 text-2xs leading-snug text-gray-600">{item.how}</p>
+              <p className="text-3xs font-semibold text-gray-700">{item.name}</p>
+              <p className="mt-0.5 text-3xs leading-snug text-gray-600">{item.how}</p>
             </div>
           </li>
         ))}
       </ul>
-      <p className="px-1 pt-1.5 text-2xs leading-snug text-gray-600">{t('fixedMap.note')}</p>
+      <p className="px-1 pt-1.5 text-3xs leading-snug text-gray-600">{t('fixedMap.note')}</p>
     </div>
   );
 }

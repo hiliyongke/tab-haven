@@ -40,14 +40,17 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
     >
       <dialog
         ref={panelRef}
-        className="relative m-0 w-full max-w-sm rounded-xl border border-gray-200 bg-surface p-5 shadow-lg"
+        className="relative m-0 w-full max-w-[calc(100%-16px)] rounded-xl border border-gray-200 bg-surface p-5 shadow-lg sm:max-w-sm"
         aria-labelledby={titleId}
         onCancel={(event) => {
+          // 阻止原生「直接关闭」是为了走统一的 onDone 出口（写回 onboarded 标记）；
+          // 但仍需显式 close()，否则 ESC 只是标记已读而弹窗依旧停在前台。
           event.preventDefault();
+          panelRef.current?.close();
           onDone();
         }}
       >
-        <p className="text-2xs font-medium tracking-wide text-accent-600">
+        <p className="text-3xs font-medium tracking-wide text-accent-600">
           {t('onboarding.stepLabel', { current: step, total: TOTAL })}
         </p>
         <h2 id={titleId} className="mt-1 text-base font-semibold text-gray-800">
@@ -60,7 +63,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
         {last && (
           <div className="mt-4 rounded-lg bg-accent-50 p-3">
             <p className="text-xs font-medium text-accent-700">{t('onboarding.featuresTitle')}</p>
-            <ul className="mt-1 space-y-1 text-2xs text-gray-600">
+            <ul className="mt-1 space-y-1 text-3xs text-gray-600">
               <li>• {t('onboarding.feature1')}</li>
               <li>• {t('onboarding.feature2')}</li>
               <li>• {t('onboarding.feature3')}</li>
@@ -72,7 +75,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
         <div className="mt-5 flex items-center justify-between">
           <button
             type="button"
-            className="text-2xs text-gray-500 transition-base hover:text-gray-600"
+            className="text-3xs text-gray-500 transition-base hover:text-gray-600"
             onClick={onDone}
           >
             {t('onboarding.skip')}
@@ -95,17 +98,20 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
           </div>
         </div>
 
-        {/* 进度点：视觉装饰（当前步骤已由上方 stepLabel 文案播报，
-            此处 aria-hidden 可避免读屏重复念「第 n 步，共 3 步」） */}
+        {/* 进度点：可点击跳步（向导常见交互）。改用 button 并补 aria-label，
+            读屏用户可获得「转到第 n 步」而非被 aria-hidden 整块吞掉。 */}
         <div className="mt-4 flex justify-center gap-1">
           {Array.from({ length: TOTAL }, (_, i) => (
-            <span
+            <button
               key={i}
+              type="button"
+              onClick={() => setStep(i + 1)}
+              aria-label={t('onboarding.goToStep', { step: i + 1 })}
+              aria-current={i + 1 === step ? 'step' : undefined}
               className={
                 'h-1.5 rounded-full transition-base ' +
-                (i + 1 === step ? 'w-4 bg-accent-500' : 'w-1.5 bg-gray-200')
+                (i + 1 === step ? 'w-4 bg-accent-500' : 'w-1.5 bg-gray-200 hover:bg-gray-300')
               }
-              aria-hidden="true"
             />
           ))}
         </div>

@@ -831,7 +831,7 @@ body {
   left: 8px;
   z-index: 35;
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 94%, var(--c-brand-50));
   box-shadow: 0 4px 14px rgb(var(--shadow-tint) / 14%);
 }
@@ -895,7 +895,7 @@ body {
   width: 36px;
   height: 36px;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: grab;
   /* 默认透明边框占位，避免 hover 时布局抖动；
      底色/边框取 favicon 主色或域名强调色（--tile-accent，与站点组圆点同源），未取到色回退中性灰 */
@@ -1013,7 +1013,7 @@ body {
 .pinned-strip.size-lg .pinned-tile,
 .is-pinned.size-lg .pinned-tile {
   width: 44px;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 .pinned-strip.size-lg .pinned-main,
 .is-pinned.size-lg .pinned-main {

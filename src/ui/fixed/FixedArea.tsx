@@ -167,7 +167,11 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
   const onRestoreFolderAsGroup = useDataStore((state) => state.syncFolderToNativeGroup);
   const notify = useUndoStore((state) => state.notify);
   const tabs = useTabStore((state) => state.tabs);
-  const [dialog, setDialog] = useState<{ type: 'edit' } | { type: 'convert' } | null>(null);
+  /** 弹窗状态：edit 改名 / convert 转原生组 / delete 删除确认。
+   *  删除必须有确认 —— 收藏夹是用户长期积累的资产，直删不可撤销。 */
+  const [dialog, setDialog] = useState<
+    { type: 'edit' } | { type: 'convert' } | { type: 'delete' } | null
+  >(null);
 
   useEffect(() => {
     const handleLocate = (event: Event) => {
@@ -271,8 +275,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
         aria-label={t('fixed.deleteFolder')}
         onClick={(event) => {
           event.stopPropagation();
-          void deleteFolder(folder.id);
-          notify(t('toast.folderRemoved'));
+          setDialog({ type: 'delete' });
         }}
       >
         <Icon d={Icons.trash} className="h-3.5 w-3.5" />
@@ -315,10 +318,11 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
         <FolderEditDialog
           initialName={folder.name}
           onRename={(name) => {
-            void renameFolder(folder.id, name);
+            void renameFolder(folder.id, name).then(() => notify(t('toast.folderRenamed')));
           }}
           onDelete={() => {
             void deleteFolder(folder.id);
+            notify(t('toast.folderRemoved'));
           }}
           onClose={() => setDialog(null)}
         />
@@ -339,6 +343,20 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
           onCancel={() => setDialog(null)}
         />
       )}
+      {dialog?.type === 'delete' && (
+        <ConfirmDialog
+          title={t('fixed.delete')}
+          message={t('fixed.deleteConfirm', { name: folder.name })}
+          danger
+          confirmLabel={t('fixed.confirmDelete')}
+          onConfirm={() => {
+            setDialog(null);
+            void deleteFolder(folder.id);
+            notify(t('toast.folderRemoved'));
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
     </GroupCard>
   );
 }
@@ -350,6 +368,8 @@ export function FixedArea() {
   const folders = useDataStore((state) => state.folders);
   const createFolder = useDataStore((state) => state.createFolder);
   const addTabsToFolder = useDataStore((state) => state.addTabsToFolder);
+  const updateSettings = useDataStore((state) => state.updateSettings);
+  const settings = useDataStore((state) => state.settings);
   const notify = useUndoStore((state) => state.notify);
   const tabs = useTabStore((state) => state.tabs);
   const [creating, setCreating] = useState(false);
@@ -378,6 +398,9 @@ export function FixedArea() {
     void (async () => {
       const folder = await createFolder(name);
       await addTabsToFolder(targetTabs, folder.id);
+      // 新建的文件夹可能落在固定空间的滚动区之外（固定区上限 34vh），
+      // 不给反馈的话用户会以为「拖过去没反应」。
+      notify(t('toast.folderCreated'));
     })().catch(() => notify(t('errors.operationFailed')));
   };
 
@@ -409,7 +432,19 @@ export function FixedArea() {
         {folders.length === 0 && (
           <>
             <p className="fixed-area-empty">{t('fixed.emptyHint')}</p>
-            <FixedConceptsMap className="mt-1" />
+            {!settings.conceptsSeen && (
+              <div className="relative mt-1">
+                <FixedConceptsMap />
+                <button
+                  type="button"
+                  className="absolute right-1 top-0.5 shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium text-gray-400 transition-base hover:bg-gray-100 hover:text-gray-600"
+                  onClick={() => void updateSettings({ conceptsSeen: true })}
+                  title={t('fixed.dismissConcepts')}
+                >
+                  {t('fixed.dismissConcepts')}
+                </button>
+              </div>
+            )}
           </>
         )}
         {folders.map((folder) => (
@@ -420,6 +455,7 @@ export function FixedArea() {
             title={t('fixed.newFolderPrompt')}
             onConfirm={(name) => {
               void createFolder(name);
+              notify(t('toast.folderCreated'));
               setCreating(false);
             }}
             onCancel={() => setCreating(false)}

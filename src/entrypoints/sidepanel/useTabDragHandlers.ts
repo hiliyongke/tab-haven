@@ -4,7 +4,7 @@ import { browser } from 'wxt/browser';
 import type { DragEndEvent } from '@dnd-kit/core';
 import type { TemporarySection } from '@/core/site/Sections';
 import { computeReorderIndex, moveTab } from '@/platform/tabs';
-import { useDataStore } from '@/stores/dataStore';
+import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import {
@@ -73,6 +73,25 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
     );
   }, []);
 
+  /**
+   * 拖入收藏夹的落位反馈。
+   *
+   * 纯「移动」场景（无新增、无跳过）用简洁文案「已移入收藏夹」；
+   * 其余场景才用逐项计数的 fixed.dropResult —— 否则最常见的「拖 1 个标签进收藏夹」
+   * 会弹出「新增 0 个，移动 1 个，跳过 0 个」这种把内部计数泄漏给用户的别扭文案。
+   */
+  const notifyDropResult = useCallback(
+    (result: AddTabsToFolderResult) => {
+      const { notify } = useUndoStore.getState();
+      if (result.skipped === 0 && result.added === 0 && result.moved > 0) {
+        notify(t('toast.movedToFolder'));
+        return;
+      }
+      notify(t('fixed.dropResult', { ...result }));
+    },
+    [t]
+  );
+
   /** 分组头排序：按目标组首/末 tab 的真实索引换算 Chrome tabGroups.move 目标。 */
   const handleSectionReorder = useCallback(
     (activeData: SectionDragData, overData: SectionDragData) => {
@@ -137,7 +156,7 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
           if (target) {
             void dataStore
               .addTabsToFolder([target], overData.folderId)
-              .then((result) => notify(t('fixed.dropResult', { ...result })))
+              .then(notifyDropResult)
               .catch(() => notify(t('errors.operationFailed')));
           }
           return;
@@ -171,7 +190,7 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
           if (targetTabs.length > 0) {
             void dataStore
               .addTabsToFolder(targetTabs, overData.folderId)
-              .then((result) => notify(t('fixed.dropResult', { ...result })))
+              .then(notifyDropResult)
               .catch(() => notify(t('errors.operationFailed')));
           }
           return;
@@ -234,7 +253,7 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
         }
       }
     },
-    [handleReorder, handleSectionReorder, isPlaceAfter, requestCreateFolder, t]
+    [handleReorder, handleSectionReorder, isPlaceAfter, notifyDropResult, requestCreateFolder, t]
   );
 
   return { onDragEnd, handleReorder, handleMoveTab };

@@ -63,7 +63,7 @@ export const SettingsSchema = z.object({
   /** 顶部固定磁贴尺寸：sm 紧凑 / md 标准 / lg 大磁贴。 */
   pinnedStripSize: z.enum(['sm', 'md', 'lg']).default('md'),
   /** 列表密度：compact 紧凑 / cozy 宽松。 */
-  density: z.enum(['compact', 'cozy']).default('compact'),
+  density: z.enum(['compact', 'cozy']).default('cozy'),
   /** 标签行标题下方显示完整网址。 */
   showUrl: z.boolean().default(false),
   /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
@@ -130,7 +130,9 @@ export const SettingsSchema = z.object({
   /** 首启引导是否已看过（仅首次展示交互式引导）。 */
   onboarded: z.boolean().default(false),
   /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
-  tipSeen: z.boolean().default(false)
+  tipSeen: z.boolean().default(false),
+  /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
+  conceptsSeen: z.boolean().default(false)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -142,7 +144,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tabOrderSync: true,
   showPinnedStrip: true,
   pinnedStripSize: 'md',
-  density: 'compact',
+  density: 'cozy',
   showUrl: false,
   showSplitBadges: true,
   groupAccentStyle: 'auto',
@@ -174,7 +176,8 @@ export const DEFAULT_SETTINGS: Settings = {
   noCachePatterns: [],
   noCacheBannerEnabled: true,
   onboarded: false,
-  tipSeen: false
+  tipSeen: false,
+  conceptsSeen: false
 };
 
 /** 撤销栈条目（Phase 5 使用，先行定义以固定数据形态）。 */

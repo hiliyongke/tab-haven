@@ -58,7 +58,8 @@ import {
  * 持久化经 DataRepository（chrome.storage.local + zod + 坏数据隔离）。
  */
 
-interface AddTabsToFolderResult {
+/** 拖标签/分组进入收藏夹的落位结果计数。对外导出供 UI 层组织反馈文案。 */
+export interface AddTabsToFolderResult {
   added: number;
   moved: number;
   skipped: number;

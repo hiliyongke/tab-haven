@@ -68,6 +68,22 @@ export default function App() {
 
   const hits = useMemo(() => engine.search(query, 20), [engine, query]);
 
+  /**
+   * 命中项 → 标签记录的查找表。
+   *
+   * 数据源必须与 SearchEngine 的输入（effectiveTabs）严格一致：
+   * 此前渲染时用 `tabs`（仅当前窗口）查找，开启「全窗口搜索」后，其他窗口的
+   * 命中查不到就被 `return null` 静默丢弃 —— 搜索结果凭空少一截。
+   * 用 Map 而非逐行 find，避免 20 条命中产生 O(n²) 查找。
+   */
+  const tabById = useMemo(
+    () => new Map(effectiveTabs.map((tab) => [tab.id, tab])),
+    [effectiveTabs]
+  );
+  /** 可渲染的命中：与 hits 恒等（数据源已对齐），保留过滤作为防御，
+   *  避免将来任一处数据源改动时再次出现「播报数 ≠ 渲染行数」。 */
+  const renderableHits = useMemo(() => hits.filter((hit) => tabById.has(hit.tabId)), [hits, tabById]);
+
   /** 智能激活：目标标签在其他窗口时先聚焦窗口再激活。 */
   const smartActivate = (tabId: number) => {
     const tab = effectiveTabs.find((candidate) => candidate.id === tabId);
@@ -80,17 +96,19 @@ export default function App() {
 
   useEffect(() => {
     document.getElementById(`popup-hit-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIndex, hits.length]);
+  }, [selectedIndex, renderableHits.length]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
-      if (hits.length === 0) return;
+      if (renderableHits.length === 0) return;
       const delta = event.key === 'ArrowDown' ? 1 : -1;
-      setSelectedIndex((current) => (current + delta + hits.length) % hits.length);
+      setSelectedIndex(
+        (current) => (current + delta + renderableHits.length) % renderableHits.length
+      );
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      const hit = hits[selectedIndex];
+      const hit = renderableHits[selectedIndex];
       if (hit) void smartActivate(hit.tabId);
       window.close();
     } else if (event.key === 'Escape') {
@@ -110,9 +128,10 @@ export default function App() {
         ariaLabel={t('search.placeholder')}
         inputProps={{
           role: 'combobox',
-          'aria-expanded': hits.length > 0,
+          'aria-expanded': renderableHits.length > 0,
           'aria-controls': 'popup-hits',
-          'aria-activedescendant': hits.length > 0 ? `popup-hit-${selectedIndex}` : undefined
+          'aria-activedescendant':
+            renderableHits.length > 0 ? `popup-hit-${selectedIndex}` : undefined
         }}
         value={query}
         onChange={(value) => {
@@ -121,19 +140,21 @@ export default function App() {
         }}
         onKeyDown={handleKeyDown}
       />
-      {/* 命中数对读屏播报（<output> 原生隐含 role=status） */}
+      {/* 命中数对读屏播报（<output> 原生隐含 role=status）。
+          播报 renderableHits 而非 hits：必须与下方实际渲染的行数一致，
+          否则读屏用户听到的数量与实际可选项不符。 */}
       <output className="sr-only" aria-live="polite">
-        {query.trim() ? t('search.hits', { count: hits.length }) : ''}
+        {query.trim() ? t('search.hits', { count: renderableHits.length }) : ''}
       </output>
       <div id="popup-hits" className="mt-1 max-h-[360px] overflow-y-auto">
-        {hits.length === 0 ? (
+        {renderableHits.length === 0 ? (
           <EmptyState
             icon={<Icon d={Icons.search} className="h-4.5 w-4.5" />}
             title={query ? t('search.noResults') : t('search.typeHint')}
           />
         ) : (
-          hits.map((hit, index) => {
-            const tab = tabs.find((candidate) => candidate.id === hit.tabId);
+          renderableHits.map((hit, index) => {
+            const tab = tabById.get(hit.tabId);
             if (!tab) return null;
             return (
               <button

@@ -31,7 +31,7 @@ export const TabRow = memo(function TabRow({
   showUrl,
   autoScrollActive = true,
   closeOnMiddleClick = true,
-  density = 'compact',
+  density = 'cozy',
   showSplitBadges = true,
   indent,
   isHighlighted,

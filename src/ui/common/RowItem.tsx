@@ -87,7 +87,7 @@ export const RowItem = memo(
       isHighlighted,
       isSearchActive,
       isDropTarget,
-      density = 'compact',
+      density = 'cozy',
       indent,
       onClick,
       onAuxClick,

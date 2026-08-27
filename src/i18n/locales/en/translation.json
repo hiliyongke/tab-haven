@@ -74,6 +74,7 @@
     "removePin": "Remove pin",
     "reorderItem": "Drag to reorder",
     "emptyHint": "Click + to create a collection, or drop a tab/group here directly",
+    "dismissConcepts": "Dismiss",
     "conceptsHint": "Collections keep pages long-term; always-on tiles are for pages you switch to often",
     "dropResult": "Added {{added}}, moved {{moved}}, skipped {{skipped}} duplicate or unsupported tabs",
     "openAll": "Open all items in collection",
@@ -351,7 +352,7 @@
     "step1Title": "Your tabs are already here",
     "step1Body": "Tabs in the current window are listed in the sidebar automatically — no setup needed to view and organize them.",
     "step2Title": "Pin the pages you use often",
-    "step2Body": "Drag frequent pages to the always-on tiles (quick switch) or to Collections (kept long-term) for one-click access.",
+    "step2Body": "Drag frequent pages to the always-on tiles for quick switching, or into Collections inside Fixed space for long-term keeping — one click to open.",
     "step3Title": "Jump to any tab with a few keystrokes",
     "step3Body": "Press ⌘K / Ctrl+K to focus search, type a title, URL, or pinyin initials, then ↑↓ to pick and Enter to switch.",
     "featuresTitle": "You also get these features",
@@ -362,7 +363,8 @@
     "next": "Next",
     "prev": "Back",
     "skip": "Skip",
-    "finish": "Get started"
+    "finish": "Get started",
+    "goToStep": "Go to step {{step}}"
   },
   "presets": {
     "title": "Quick presets",
@@ -436,7 +438,7 @@
     "paletteTitle": "Command palette (⌘K)",
     "paletteHow": "Search and act directly: hibernate all, save snapshot, open settings",
     "pinTitle": "Fixed space",
-    "pinHow": "Drag go-to pages to the always-on tiles or to Collections for one-tap access",
+    "pinHow": "Drag go-to pages to the always-on tiles, or into Collections inside Fixed space — one tap to open",
     "snapshotTitle": "Session snapshots",
     "snapshotHow": "Windows are auto-saved on close, or save the current window manually anytime",
     "undoTitle": "Undo safety net",

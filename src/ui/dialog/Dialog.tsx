@@ -166,12 +166,16 @@ export function ConfirmDialog({
   title,
   message,
   danger = false,
+  confirmLabel,
   onConfirm,
   onCancel
 }: {
   title: string;
   message: string;
   danger?: boolean;
+  /** 确认按钮文案；缺省用通用「确定」。危险操作建议传入动作本身（如「确认删除」），
+      让用户点下的那一刻知道自己要做什么，而不是一个中性的「确定」。 */
+  confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -184,7 +188,7 @@ export function ConfirmDialog({
           {t('dialog.cancel')}
         </Button>
         <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
-          {t('dialog.confirm')}
+          {confirmLabel ?? t('dialog.confirm')}
         </Button>
       </div>
     </DialogShell>
