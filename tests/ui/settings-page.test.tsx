@@ -42,12 +42,19 @@ describe('SettingsPage（渲染冒烟）', () => {
     render(<SettingsPage />);
 
     expect(screen.getByRole('heading', { name: i18n.t('settings.title') })).toBeInTheDocument();
-    // 首屏分区（外观/行为/进阶功能）均出现
+    // 首屏分区（外观/行为/休眠内存/分组搜索/高级恢复）均出现；
+    // 「高级与恢复」为折叠分区（details/summary），summary 文本始终在 DOM 中。
     await waitFor(() => {
       expect(screen.getByText(i18n.t('settings.appearance'))).toBeInTheDocument();
     });
     expect(screen.getByText(i18n.t('settings.behavior'))).toBeInTheDocument();
-    expect(screen.getByText(i18n.t('settings.capabilities'))).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('settings.memory'))).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('settings.groupSearch'))).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('settings.advanced'))).toBeInTheDocument();
+    // 低频「高级与恢复」分区默认折叠（details 无 open 属性；搜索时才由 forceOpen 展开）
+    const advancedDetails = screen.getByText(i18n.t('settings.advanced')).closest('details');
+    expect(advancedDetails).not.toBeNull();
+    expect(advancedDetails).not.toHaveAttribute('open');
   });
 
   it('设置搜索框可用：输入关键词过滤设置项', async () => {

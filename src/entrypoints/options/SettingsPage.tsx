@@ -759,7 +759,9 @@ function buildSections(
       ]
     },
     {
-      titleKey: 'settings.capabilities',
+      // P0-3：原 21 项「进阶功能」平铺区按语义三分（休眠与内存 / 分组与搜索 / 高级与恢复），
+      // 低频的「高级与恢复」默认折叠（collapsible），搜索时由 forceOpen 自动展开。
+      titleKey: 'settings.memory',
       specs: [
         {
           kind: 'toggle',
@@ -799,6 +801,17 @@ function buildSections(
         },
         {
           kind: 'toggle',
+          key: 'discardNotifyEnabled',
+          labelKey: 'settings.discardNotify',
+          hintKey: 'settings.discardNotifyHint'
+        }
+      ]
+    },
+    {
+      titleKey: 'settings.groupSearch',
+      specs: [
+        {
+          kind: 'toggle',
           key: 'searchAllWindows',
           labelKey: 'settings.searchAllWindows',
           hintKey: 'settings.searchAllWindowsHint'
@@ -828,15 +841,15 @@ function buildSections(
         },
         {
           kind: 'toggle',
-          key: 'discardNotifyEnabled',
-          labelKey: 'settings.discardNotify',
-          hintKey: 'settings.discardNotifyHint'
+          key: 'pinyinSearch',
+          labelKey: 'settings.pinyinSearch',
+          hintKey: 'settings.pinyinSearchHint'
         },
         {
           kind: 'toggle',
-          key: 'reuseNotifyEnabled',
-          labelKey: 'settings.reuseNotify',
-          hintKey: 'settings.reuseNotifyHint'
+          key: 'rowActionsVisible',
+          labelKey: 'settings.rowActionsVisible',
+          hintKey: 'settings.rowActionsVisibleHint'
         },
         {
           kind: 'select',
@@ -849,6 +862,18 @@ function buildSections(
             { value: 'dups', label: t('settings.badgeDups') },
             { value: 'off', label: t('settings.badgeOff') }
           ]
+        }
+      ]
+    },
+    {
+      titleKey: 'settings.advanced',
+      collapsible: true,
+      specs: [
+        {
+          kind: 'toggle',
+          key: 'reuseNotifyEnabled',
+          labelKey: 'settings.reuseNotify',
+          hintKey: 'settings.reuseNotifyHint'
         },
         {
           kind: 'toggle',
@@ -905,18 +930,6 @@ function buildSections(
             { value: '7', label: '7s' },
             { value: '10', label: '10s' }
           ]
-        },
-        {
-          kind: 'toggle',
-          key: 'rowActionsVisible',
-          labelKey: 'settings.rowActionsVisible',
-          hintKey: 'settings.rowActionsVisibleHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'pinyinSearch',
-          labelKey: 'settings.pinyinSearch',
-          hintKey: 'settings.pinyinSearchHint'
         },
         {
           kind: 'toggle',
