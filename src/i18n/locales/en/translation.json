@@ -1,7 +1,4 @@
 {
-  "app": {
-    "name": "TabHaven"
-  },
   "empty": {
     "title": "No tabs in this window yet",
     "hint": "New tabs appear here automatically; drag your go-to pages to the top always-on tiles for one-tap access.",
@@ -14,10 +11,6 @@
     "untitled": "Untitled",
     "unnamedGroup": "Unnamed group",
     "ungrouped": "Ungrouped",
-    "back": "Back",
-    "forward": "Forward",
-    "highlight": "Highlight selected tabs",
-    "attention": "Needs attention",
     "pinned": "Pinned",
     "mute": "Mute",
     "unmute": "Unmute",
@@ -28,14 +21,12 @@
     "closeTab": "Close tab",
     "dragToMove": "Drag to reorder (hold here to drag into the fixed space)",
     "locateActive": "Locate current tab",
-    "newTabPlaceholder": "New tab",
     "switchTo": "Switch to: {{title}}"
   },
   "footer": {
     "utilityLabel": "Sidebar tools",
     "collapseAll": "Collapse all groups",
     "expandAll": "Expand all groups",
-    "search": "Search tabs",
     "quickRegroup": "Quickly regroup tabs",
     "quickRegroupHint": "Re-initialize temporary-area grouping: disband existing groups and regroup all non-pinned tabs by the current mode; the fixed area stays untouched",
     "quickRegroupNone": "No tabs need regrouping",
@@ -59,8 +50,6 @@
     "areaTitle": "Fixed space",
     "newFolder": "New collection",
     "newFolderPrompt": "New collection",
-    "rename": "Rename collection",
-    "renamePrompt": "Rename collection",
     "edit": "Edit collection",
     "folderNamePlaceholder": "Collection name",
     "delete": "Delete collection",
@@ -68,14 +57,11 @@
     "deleteConfirm": "Delete collection \"{{name}}\"? Open tabs will not be closed.",
     "confirmDelete": "Confirm delete",
     "itemClose": "Close tab and remove from collection",
-    "pendingHint": "Waiting for a URL; the page will be saved here once opened",
     "dragToPin": "Drop here to pin",
-    "reorderPins": "Drag to reorder fixed tabs",
     "removePin": "Remove pin",
     "reorderItem": "Drag to reorder",
     "emptyHint": "Click + to create a collection, or drop a tab/group here directly",
     "dismissConcepts": "Dismiss",
-    "conceptsHint": "Collections keep pages long-term; always-on tiles are for pages you switch to often",
     "dropResult": "Added {{added}}, moved {{moved}}, skipped {{skipped}} duplicate or unsupported tabs",
     "openAll": "Open all items in collection",
     "allOpen": "All collection items are already open",
@@ -98,13 +84,11 @@
   "groups": {
     "label": "Site groups",
     "edit": "Edit group",
-    "drag": "Drag to reorder",
     "namePlaceholder": "Group name"
   },
   "search": {
     "title": "Search tabs",
     "placeholder": "Search tabs in this window (title / URL / pinyin)",
-    "close": "Close search",
     "clear": "Clear search",
     "noResults": "No matching tabs",
     "typeHint": "Type a title, URL, or pinyin initials",
@@ -114,20 +98,6 @@
     "pinned": "Pinned tabs",
     "openerTree": "Opener tree",
     "unknownLanguage": "Unknown language"
-  },
-  "selection": {
-    "enterMode": "Enter selection mode",
-    "exitMode": "Exit selection mode",
-    "count": "{{count}} tabs selected",
-    "close": "Close selected",
-    "closeAction": "Close",
-    "pin": "Pin selected",
-    "pinAction": "Pin",
-    "mute": "Mute selected",
-    "muteAction": "Mute",
-    "moveToFolder": "Move to collection…",
-    "batchComplete": "Completed {{count}} operations; {{failed}} failed",
-    "cancel": "Cancel selection"
   },
   "undo": {
     "action": "Undo",
@@ -171,8 +141,6 @@
     "thresholdOne": "1 (group any tab)",
     "tabOrderSync": "Two-way tab order sync",
     "tabOrderSyncHint": "When on, drag tabs in the sidebar to reorder and sync to the browser's native tab order (native changes sync back too)",
-    "on": "On",
-    "off": "Off",
     "appearance": "Appearance",
     "behavior": "Behavior",
     "memory": "Memory & sleep",
@@ -334,7 +302,6 @@
     "folderCreated": "Collection created",
     "folderRenamed": "Collection renamed",
     "movedToFolder": "Moved into collection",
-    "syncedToGroup": "Converted to native group",
     "removedFromFolder": "Removed from collection",
     "folderItemMoved": "Moved to target collection"
   },
@@ -349,7 +316,6 @@
     "operationFailed": "Operation failed. Please try again."
   },
   "onboarding": {
-    "title": "Welcome to TabHaven",
     "stepLabel": "Step {{current}} of {{total}}",
     "step1Title": "Your tabs are already here",
     "step1Body": "Tabs in the current window are listed in the sidebar automatically — no setup needed to view and organize them.",
@@ -385,8 +351,7 @@
     "placeholder": "Type a command or search tabs…",
     "sectionCommands": "Commands",
     "sectionTabs": "Switch to tab",
-    "empty": "No matching command or tab",
-    "hint": "Open with ⌘P / Ctrl+P"
+    "empty": "No matching command or tab"
   },
   "safety": {
     "shieldTitle": "{{count}} undoable actions this session: every close can be undone"
@@ -422,7 +387,6 @@
     "oneTabImportName": "OneTab import",
     "reportTitle": "Weekly report",
     "reportHint": "Local aggregation only — no network or account involved",
-    "reportThisWeek": "Last 7 days",
     "reportSnapshots": "Snapshots / Workspaces",
     "reportArchives": "Archived",
     "reportTabs": "Tabs preserved"

@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "check:ui": "vitest run tests/ui/design-tokens.test.ts",
     "check:privacy": "node scripts/privacy-check.mjs",
-    "check": "npm run typecheck && npm run lint && npm run test",
+    "check:i18n": "node scripts/i18n-dead-keys.mjs",
+    "check": "npm run typecheck && npm run lint && npm run check:i18n && npm run test",
     "zip": "wxt zip"
   },
   "packageManager": "pnpm@11.1.3",

@@ -101,9 +101,15 @@ export function FooterToolbar(props: FooterToolbarProps) {
           badge={snapshotCount > 0 ? snapshotCount : undefined}
           onClick={onOpenSnapshots}
         />
+        {/* 撤销栈非空时把安全网文案接入 title（强化「一切可反悔」信任感），
+            为空时退回普通「撤销历史」说明。 */}
         <IconButton
           icon={Icons.history}
-          title={t('undo.historyTitle')}
+          title={
+            undoBatchCount > 0
+              ? t('safety.shieldTitle', { count: undoBatchCount })
+              : t('undo.historyTitle')
+          }
           badge={undoBatchCount > 0 ? undoBatchCount : undefined}
           onClick={onOpenHistory}
         />
