@@ -522,7 +522,7 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
           <div className="flex flex-col gap-1">
             {subGroups.map((sub) => (
               <div key={sub.subdomain || 'root'}>
-                <div className="px-1.5 py-0 text-2xs leading-tight text-gray-600">{sub.label}</div>
+                <div className="px-1.5 py-0 text-3xs leading-tight text-gray-600">{sub.label}</div>
                 <SectionRows tabs={sub.tabs} containerKey={section.key} {...rowProps} />
               </div>
             ))}

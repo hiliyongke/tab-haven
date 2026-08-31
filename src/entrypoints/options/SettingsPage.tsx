@@ -512,7 +512,7 @@ function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
             }}
           >
             <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
-            <span className="text-2xs leading-snug text-gray-600">{t(preset.descKey)}</span>
+            <span className="text-3xs leading-snug text-gray-600">{t(preset.descKey)}</span>
           </button>
         ))}
       </div>
@@ -542,7 +542,7 @@ function CapabilitiesGuide() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm text-gray-800">{t(cap.titleKey)}</p>
-              <p className="mt-0.5 text-2xs leading-snug text-gray-600">{t(cap.howKey)}</p>
+              <p className="mt-0.5 text-3xs leading-snug text-gray-600">{t(cap.howKey)}</p>
             </div>
             <Button
               variant="secondary"

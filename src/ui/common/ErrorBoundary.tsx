@@ -44,10 +44,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-xs font-medium text-gray-600">出了点意外</p>
-        <p className="max-w-52 text-2xs leading-relaxed text-gray-600">
+        <p className="max-w-52 text-3xs leading-relaxed text-gray-600">
           界面遇到了无法自行恢复的错误。你的数据仍保存在本地，可以重试或重载页面。
         </p>
-        <pre className="max-h-24 w-full overflow-auto rounded bg-gray-100 p-2 text-left text-2xs leading-snug text-gray-500">
+        <pre className="max-h-24 w-full overflow-auto rounded bg-gray-100 p-2 text-left text-3xs leading-snug text-gray-500">
           {error.message}
         </pre>
         <div className="flex items-center gap-1.5">

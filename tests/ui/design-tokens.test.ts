@@ -302,4 +302,23 @@ describe('字号令牌', () => {
     }
     expect(failures).toEqual([]);
   });
+
+  it('text-2xs 不得与多行 leading-* 同现（正文说明须 ≥11px 即 text-3xs）', () => {
+    const failures: string[] = [];
+    for (const file of tsxFiles) {
+      const src = readFileSync(file, 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (line.trim().startsWith('*') || line.trim().startsWith('//')) return;
+        // 豁免：TabRow 的 URL 副标题（tab-url）——单行截断的扫视型元数据，
+        // 经产品决策保持 10px；其行高与虚拟列表 itemSize 公式隐式耦合（B6）。
+        if (line.includes('tab-url')) return;
+        if (/text-2xs/.test(line) && /leading-(relaxed|snug|tight|loose|normal)/.test(line)) {
+          failures.push(
+            `${relative(ROOT, file)}:${i + 1} text-2xs 搭配多行行高 leading-*，正文说明应改用 text-3xs`
+          );
+        }
+      });
+    }
+    expect(failures).toEqual([]);
+  });
 });
