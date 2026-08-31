@@ -115,7 +115,7 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
               )}
             <button
               type="button"
-              className="row-action text-red-500"
+              className="row-action is-danger"
               title={t('fixed.itemClose')}
               aria-label={t('fixed.itemClose')}
               onClick={() => {
@@ -270,7 +270,7 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
       </button>
       <button
         type="button"
-        className="row-action text-red-500"
+        className="row-action is-danger"
         title={t('fixed.deleteFolder')}
         aria-label={t('fixed.deleteFolder')}
         onClick={(event) => {

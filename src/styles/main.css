@@ -730,11 +730,14 @@ body {
   color: var(--c-brand-600);
 }
 
-/* 危险操作（关闭/删除）：悬停转砖红 */
+/* 危险操作（关闭/删除）：悬停/键盘聚焦转砖红。
+   刻意只改 hover / focus-visible，静默态保持中性灰 ——
+   密集列表里每行常驻一个红图标会造成持续的焦虑感，
+   危险预警只需在「即将点下去」的那一刻出现。
+   统一入口为 .is-danger：此前固定空间另用一个 Tailwind 红色文本类
+   配兜底选择器实现，同一语义两套实现必然漂移，已收敛到本规则。 */
 .row-action.is-danger:hover,
-.row-action.is-danger:focus-visible,
-.row-action:hover.text-red-500,
-.row-action:focus-visible.text-red-500 {
+.row-action.is-danger:focus-visible {
   background: var(--c-red-50);
   color: var(--c-red-600);
 }
@@ -864,6 +867,22 @@ body {
 }
 /* 固定空间头部/文件夹/条目的视觉壳复用分组模块的 .section-card / .section-head /
    .row-item 系列（见「分组」区块），以下仅保留固定空间特有的少量样式。 */
+
+/* 固定空间空态提示（"点击 + 新建收藏夹，或直接把标签/分组拖到这里"）。
+   历史坑：此类此前在 TSX 中被引用但 CSS 里从未定义 —— <p> 继承 body 的
+   16px 正文色，在正文 12px 的密集侧边栏里比所有内容都大，而这恰是新用户
+   首屏必现的内容（固定空间为空时）。
+   字号取 --text-3xs(11px) 而非 2xs(10px)：本文是需要阅读的正文说明，
+   遵守本文件顶部自订的「正文说明一律 ≥ 11px」。
+   padding-left 8px 与 .section-head 对齐，与上方分区标题同一起始线。 */
+.fixed-area-empty {
+  margin: 2px 0 0;
+  padding: 0 8px;
+  color: var(--c-gray-500);
+  font-size: var(--text-3xs);
+  line-height: 1.5;
+}
+
 .fixed-item-pending {
   width: 14px;
   height: 14px;
@@ -1515,6 +1534,15 @@ body {
 .section-body {
   /* 左右 8px 与 .section-head 对齐，让色条与标签行 favicon 左边缘对齐 */
   padding: 0 8px 2px;
+}
+
+/* 虚拟列表滚动容器（VirtualRowList）。
+   历史坑：此类此前在 TSX 中被引用但 CSS 里从未定义。
+   overscroll-behavior: contain 是关键 —— 虚拟列表是嵌套滚动的最内层
+   （固定区 / 主列表 / 虚拟列表最多三层），不隔离滚动链会导致内层滚到
+   边界后继续带动外层列表滚动，长列表里落点会"跳走"。 */
+.virtual-row-scroll {
+  overscroll-behavior: contain;
 }
 
 /* ---------- 底部固定的「新建标签页」操作条（紧凑，融入页面底色） ---------- */

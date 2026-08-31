@@ -160,7 +160,7 @@ export const TabRow = memo(function TabRow({
       )}
       <button
         type="button"
-        className="row-action"
+        className="row-action is-danger"
         title={t('tabs.closeTab')}
         aria-label={t('tabs.closeTab')}
         onClick={() => onClose(tab)}
