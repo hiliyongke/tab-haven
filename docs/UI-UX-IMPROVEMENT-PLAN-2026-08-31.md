@@ -344,130 +344,138 @@ main.css:29-32（自订规范）
 
 ---
 
-### B3 · 设置页分区折叠
+### B3 · 设置页分区折叠 ✅ 已完成（2026-08-31）
+
+**决策点 #4 已确认**：三分法（休眠与内存 4 / 分组与搜索 7 / 高级与恢复 10）。
+**决策点 #5 已确认**：删除 `.icon` 孤儿类。
 
 **改动**
 
-1. `buildSections` 把 21 项的 `settings.capabilities` 按语义拆为 2–3 个分区
-2. 低频分区标 `collapsible: true`
-3. 若需新分区标题，同步补 zh-CN / en 两份 i18n
+1. `buildSections` 将 21 项 `settings.capabilities` 拆为三个语义分区：
+   **休眠与内存**（autoDiscard / autoDiscardMinutes / discardWhitelist / discardNotify）、
+   **分组与搜索**（searchAllWindows / groupMode / autoGroupNative / uniqueUrlTabs / pinyinSearch / rowActionsVisible / badgeMode）、
+   **高级与恢复**（contextMenus / omnibox / noCache / noCachePatterns / reuseNotify / undoStackLimit / toastDuration / persistUndo / autoSaveSnapshots / maxAutoSnapshots）
+2. 低频「高级与恢复」标记 `collapsible: true` 默认折叠；搜索时 `forceOpen={isSearching}` 自动展开（既有机制）
+3. i18n：`capabilities` 键替换为 `memory` / `groupSearch` / `advanced`（中英同步）
+4. 删除 `SectionList.tsx` 的 `.icon` 孤儿类（决策点 #5）
 
-**验收清单**
+**验收结果**
 
-- [ ] 设置页首屏可见分区数 ≥4
-- [ ] 低频分区默认折叠，点击 `summary` 正常展开
-- [ ] **搜索时命中项所在折叠区自动展开**（`forceOpen={isSearching}` 已就位，需实测）
-- [ ] `summary` 键盘可聚焦且焦点环可见（`main.css:628` 已覆盖 `summary`）
-- [ ] 折叠区的 `SectionCount` 计数正确
-- [ ] `tests/ui/settings-page.test.tsx` 5 用例仍通过（如断言了分区结构需同步更新）
-
-**回滚**：`git revert`；若测试文件同步改动需一并回滚。
+- [x] 设置页首屏可见分区数 ≥4（外观 / 行为 / 休眠内存 / 分组搜索 + 折叠的高级与恢复）
+- [x] 低频分区默认折叠（`details` 无 `open`），点击 `summary` 展开
+- [x] 搜索时折叠区自动展开（`forceOpen` 既有机制，测试覆盖）
+- [x] `settings-page.test.tsx` 同步更新：三分区断言 + 折叠态校验，5 用例通过
+- [x] tsc / eslint 零错误；277 用例全通过
 
 ---
 
-### B4 · i18n 死键治理 + CI 守卫
+### B4 · i18n 死键治理 + CI 守卫 ✅ 已完成（2026-08-31）
+
+**决策点 #1 已确认**：删键，多选批量操作另立需求。
 
 **改动**
 
-1. 落地扫描脚本（如 `scripts/i18n-dead-keys.mjs`），**动态拼接键加白名单**
-   （已知：`onboarding.step*Title` / `onboarding.step*Body`）
-2. `safety.shieldTitle` 接到 `FooterToolbar.tsx` 撤销历史按钮的 `title`（`undoBatchCount > 0` 时）
-3. `selection.*` 12 键：**决策点——实现多选 or 删键**（建议本批先删，多选另立需求）
-4. 其余死键逐条判定
-5. `package.json` 加 `check:i18n`，并入 `check`
+1. 新增 `scripts/i18n-dead-keys.mjs`：中英键集合一致性 + 源码引用扫描。
+   匹配规则为「引号定界」——纯 includes 会把 `settings.on` 误判为被
+   `settings.onboarded` 引用（假阴性），后缀断言排除更长键前缀与标识符子串。
+   动态拼接键（`onboarding.step*`）走白名单豁免。
+2. 删除 32 个死键（zh-CN / en 同步）：`selection.*` 12、`app.name`、
+   `onboarding.title`、`settings.on/off`、`fixed.rename/renamePrompt/pendingHint/
+   reorderPins/conceptsHint`、`footer.search`、`groups.drag`、`search.close`、
+   `palette.hint`、`snapshots.reportThisWeek`、`tabs.back/forward/highlight/
+   attention/newTabPlaceholder`、`toast.syncedToGroup`
+3. `safety.shieldTitle` 接入撤销历史按钮 `title`（栈非空时显示「本会话已可撤销 N 次…」）
+4. `package.json` 新增 `check:i18n` 并入 `check` 聚合命令
+5. `palette.sectionCommands` / `sectionTabs` 以计划内白名单保留至 B7（已消费并移除白名单）
 
-**验收清单**
+**验收结果**
 
-- [ ] 脚本可独立运行，输出死键清单
-- [ ] 白名单机制生效，`onboarding.step*` 不再误报
-- [ ] 撤销栈非空时，悬停历史按钮显示「本会话已可撤销 N 次…」
-- [ ] `selection.*` 决策已执行（删除或实现），无中间态
-- [ ] `pnpm check:i18n` 通过；故意加一个死键应导致失败
-- [ ] zh-CN 与 en 两份键集合完全一致
-
-> ⚠️ **决策点（需确认）**：`selection.*` 是删键还是实现多选批量操作？
-> 12 键已完成中英翻译，说明曾规划过。删键成本低但丢失设计意图；实现是独立需求量级。
-
-**回滚**：脚本为新增文件；i18n 删键操作**建议单独 commit**，便于精确回滚。
-
----
-
-### B5 · 字号规范收敛
-
-**改动**（仅限以下 7 处，**不做全量替换**）
-
-| 文件:行 | 现状 | 目标 |
-|---|---|---|
-| `ErrorBoundary.tsx:47` | `text-2xs leading-relaxed` | `text-3xs` |
-| `ErrorBoundary.tsx:50` | `text-2xs leading-snug` | `text-3xs` |
-| `SettingsPage.tsx:515` | `text-2xs leading-snug` | `text-3xs` |
-| `SettingsPage.tsx:545` | `text-2xs leading-snug` | `text-3xs` |
-| `SectionList.tsx:525` | `text-2xs leading-tight` | `text-3xs` |
-| `EmptyState.tsx:26` | `text-2xs` | `text-3xs` |
-| `TabRow.tsx:206`（URL 副标题） | `text-2xs leading-tight` | **暂不改，移交 B6 统一处理** |
-
-**验收清单**
-
-- [ ] 6 处正文说明字号变为 11px
-- [ ] **徽标 / 计数 / 角标类保持 10px 未被误改**（`StatusBadges` 6 处、`Favicon` 1 处、`count-pill` 等）
-- [ ] 侧边栏窄至 300px 时无换行溢出 / 布局跳动
-- [ ] popup 空态提示同步生效
-- [ ] `pnpm check:ui` 通过
-- [ ] 建议新增守卫：`text-2xs` 不得与 `leading-` 同现（拦正文误用）
-
-**回滚**：`git revert`。改动分散在 5 文件，务必单独成 commit。
+- [x] 脚本可独立运行（398 → 366 键，死键 35 → 0，含修复 settings.on 假阴性）
+- [x] 白名单机制生效，`onboarding.step*` 不误报
+- [x] 撤销栈非空时悬停历史按钮显示安全网文案
+- [x] `selection.*` 已删除，无中间态
+- [x] `pnpm check:i18n` 通过；治理前运行即失败（死键 34 个 → exit 1），守卫有效性已验证
+- [x] zh-CN 与 en 键集合完全一致（规则 1 强制）
 
 ---
 
-### B6 · 虚拟化生效（高风险，需最充分验证）
+### B5 · 字号规范收敛 ✅ 已完成（2026-08-31）
 
-**前置**：B5 完成，`TabRow` URL 副标题的最终字号已确定。
-
-**改动**（推荐方案 A）
-
-1. `SectionList.tsx` 调整策略：`tabs.length > 200` 时**强制虚拟化并禁用该分区列表内排序**
-2. `itemSize` 由硬编码估算改为**实测行高**（`ResizeObserver` 测首行，或与 CSS 变量单一事实来源对齐）
-3. 超阈值分区头部提示「大列表已优化，排序暂停」（需新增 i18n 键）
-4. `.virtual-row-scroll` 已在 B1 补齐 `overscroll-behavior`
-
-**验收清单**
-
-- [ ] 默认设置（`tabOrderSync: true`）下，250 标签分区 `li` 节点数 < 40
-- [ ] 虚拟化生效时**行高无空隙、无重叠**（`compact` / `cozy` × `showUrl` 开关 4 种组合全测）
-- [ ] 滚动流畅，无白屏（`OVERSCAN=6` 是否足够需实测）
-- [ ] 虚拟化分区内：激活标签自动滚入可视区仍生效
-- [ ] 虚拟化分区内：`⌘J` 定位激活标签仍能命中（`locateTarget` 依赖 DOM 查询，**虚拟化后目标可能未挂载**，需重点验证）
-- [ ] 未超阈值的分区拖拽排序完全不受影响
-- [ ] 三层嵌套滚动（固定区 / 主列表 / 虚拟列表）滚动链行为正确
-- [ ] `pnpm test` 全通过
-
-> ⚠️ **最大风险点**：`App.tsx:218-243` 的 `handleLocateActive` 通过
-> `document.querySelector('[data-tabhaven-tab-id]')` 查找目标并重试 12 次。
-> 虚拟化后目标标签若在可视区外则**DOM 中不存在**，重试也找不到 →「定位激活标签」功能失效。
-> 必须为虚拟列表补「先滚动到 index，再查 DOM」的路径。**此项不通过则整批回滚。**
-
-**回滚**：本批必须独立 commit。建议先在分支验证 250+ 标签场景再合并。
-
----
-
-### B7 · 引导层收敛 + 可发现性
+**决策点 #3 已确认**：TabRow URL 副标题保持 10px（扫视型元数据；B6 实测行高后改字号零成本，可后续再议）。
 
 **改动**
 
-1. 三层引导（`OnboardingTour` / Tips Banner / `FixedConceptsMap`）收敛为两层：
-   完成 Onboarding 时同步写 `conceptsSeen: true`（与现有 `tipSeen` 同一模式）
-2. popup 底部补键盘提示（复用 `palette.hint` 或死键 `search.close`）
-3. 命令面板补「命令 / 标签」分组（启用 `palette.sectionCommands` / `sectionTabs`）
+1. 6 处正文类 `text-2xs` → `text-3xs`：ErrorBoundary 错误说明 + 堆栈、
+   SettingsPage 预设画像描述 + 能力指南说明、SectionList 子分区标签、
+   EmptyState 空态提示（sidepanel / popup 共用）
+2. 徽标 / 计数 / 角标类（`leading-none`）保持 10px 未动
+3. 新增守卫（`design-tokens.test.ts`）：`text-2xs` 不得与多行 `leading-*`
+   （relaxed/snug/tight/loose/normal）同现；`tab-url` 行豁免并注明原因
 
-**验收清单**
+**验收结果**
 
-- [ ] 全新安装：首启只见 Onboarding，完成后固定空间**不再**出现概念卡
-- [ ] 老用户（已 `onboarded`）行为不受影响
-- [ ] popup 键盘提示可见且文案准确（`↑↓` 导航 / `Enter` 切换 / `Esc` 关闭）
-- [ ] 命令面板分组标题正确，键盘导航跨组连续
-- [ ] `pnpm check:i18n` 通过（本批会消耗若干死键）
+- [x] 6 处正文说明字号变为 11px
+- [x] 徽标 / 计数 / 角标类未被误改（SectionCount / StatusBadges / SnapshotsPanel 均 `leading-none`）
+- [x] 守卫落地：24 → 25 用例通过（新增 1 条字号守卫）
+- [x] `pnpm check:ui` 通过；tsc / eslint 零错误
 
-**回滚**：`git revert`。注意 `conceptsSeen` 是 schema 字段，仅改写入时机不改 schema，回滚安全。
+---
+
+### B6 · 虚拟化生效（高风险，需最充分验证） ✅ 已完成（2026-08-31）
+
+**决策点 #2 已确认**：方案 A（超 200 强制虚拟化 + 停排序）。
+
+**改动**
+
+1. `SectionList.tsx` RowList：`tabs.length > 200` 时无论排序开关一律虚拟化
+   （修复默认 `tabOrderSync: true` 下 `useVirtual` 恒 false 的死路径）；
+   该分区内拖拽 / Alt+↑↓ 排序一并暂停，顶部显示「大列表已优化」说明
+   （`tabs.largeListNotice`，仅强制暂停时显示——用户主动关排序不提示）
+2. `VirtualRowList.tsx`：`itemSize` 由硬编码估算改为**首行实测校准**
+   （估算起步，首行挂载后 `getBoundingClientRect` 实测，漂移 ≥1px 即修正；
+   密度 / 副标题开关变化后自动重测），消除 P2-1 与 CSS padding 的隐式耦合
+3. 新增 `activeTabId` / `autoScrollActive` 接入：激活行未挂载时按 index
+   直接滚动容器（等价 `block:'nearest'`），接替 TabRow 内部的 scrollIntoView
+4. ⌘J 定位关键路径：新增 `LOCATE_SCROLL_EVENT`，App 定位时先让虚拟列表滚到
+   目标 index（直接写 `scrollTop`，瞬时生效），行挂载后 querySelector 才能命中
+5. 新增 `tests/ui/section-list-virtual.test.tsx` 4 项回归测试
+
+**验收结果**
+
+- [x] 默认设置 250 标签分区挂载行 < 40（jsdom 实测断言）
+- [x] 150 标签 + 排序开启：不进入虚拟化，全量挂载、拖拽排序不受影响（断言）
+- [x] 行高实测校准落地（jsdom 无布局返回 0，由 `> 0` 守卫跳过，估算值兜底）
+- [x] 虚拟化分区内激活标签自动滚入可视区（index 直滚路径）
+- [x] `⌘J` 定位：深处目标行经 `LOCATE_SCROLL_EVENT` 滚入窗口后挂载（断言）
+- [x] 未超阈值分区拖拽排序不受影响（150 标签全量挂载断言）
+- [x] 三层嵌套滚动：`.virtual-row-scroll` 的 `overscroll-behavior: contain`（B1）
+- [x] tsc / eslint 零错误；282 用例全通过（新增 4 项）
+
+> ⚠️ 浏览器实测项（jsdom 无法覆盖）：滚动流畅度 / OVERSCAN=6 是否足够 /
+> 4 种密度 × URL 组合的行高实测值。建议构建后在 250+ 标签窗口人工走查一次。
+
+---
+
+### B7 · 引导层收敛 + 可发现性 ✅ 已完成（2026-08-31）
+
+**改动**
+
+1. 三层引导收敛为两层：Onboarding 完成时同步写 `conceptsSeen: true`
+   （新用户完成引导后固定空间不再弹概念卡；设置页「固定概念一览」仍可随时查看）
+2. popup 底部补键盘提示（`popup.keyboardHint`：「↑↓ 选择 · Enter 切换 · Esc 关闭」），
+   footer 改 `justify-between`，弱化呈现不与结果列表抢注意力
+3. 命令面板补「命令 / 切换到标签」分组标题（启用 `palette.sectionCommands` /
+   `sectionTabs`）：键盘漫游顺序保持「命令 → 标签」不变，分组标题
+   `role="presentation"` 对读屏隐藏
+4. i18n 扫描器移除计划内白名单（两键已消费）
+
+**验收结果**
+
+- [x] 全新安装：完成 Onboarding 后固定空间不再出现概念卡（conceptsSeen 同步写入）
+- [x] 老用户（已 `onboarded`）行为不受影响（仅改写入时机，未动 schema）
+- [x] popup 键盘提示可见（中英文案齐备）
+- [x] 命令面板分组标题正确，键盘导航跨组连续（扁平漫游序列未变）
+- [x] `pnpm check:i18n` 通过：368 键零死键（含本批新增 1 键）
 
 ---
 
@@ -495,24 +503,26 @@ main.css:29-32（自订规范）
 
 1. ~~**B1**（30 分钟，修新用户第一屏的视觉错位）~~ ✅ **已完成**
 2. ~~**B2**（30 分钟，补最高频危险操作的预警）~~ ✅ **已完成**
-3. **B3**（1–2 小时，设置页可读性显著改善）← **下一步**
-4. **B4**（半天，含 CI 守卫，防止问题回流）
-5. **B6**（1 天+，目标用户的核心性能问题，但风险最高）
-6. **B5 / B7**（打磨项，可延后）
+3. ~~**B3**（1–2 小时，设置页可读性显著改善）~~ ✅ **已完成**
+4. ~~**B4**（半天，含 CI 守卫，防止问题回流）~~ ✅ **已完成**
+5. ~~**B6**（1 天+，目标用户的核心性能问题，但风险最高）~~ ✅ **已完成**
+6. ~~**B5 / B7**（打磨项，可延后）~~ ✅ **已完成**
 
-**当前进度**：3 个 P0 中已解决 1 个（P0-2），余 P0-1（虚拟化）、P0-3（设置页折叠）。
-B1 + B2 已落地，tsc / eslint 零错误，277 用例全通过。
+**当前进度**：**全部 7 批（B1–B7）已完成**。3 个 P0（虚拟化死路径 / 类名零定义 /
+设置页折叠未启用）与 4 个 P1 全部解决；i18n 死键 35 → 0（398 → 368 键）；
+CI 守卫新增 `check:i18n`（键集合一致 + 死键零容忍）与字号搭配守卫；
+tsc / eslint 零错误，282 用例全通过（基线 277 + 新增 5）。
+
+遗留人工实测项：B6 的浏览器端滚动流畅度与 250+ 标签场景走查（jsdom 无法覆盖）。
 
 ---
 
-## 5. 待确认决策点
+## 5. 待确认决策点 ✅ 全部已确认（2026-08-31）
 
-| # | 决策点 | 选项 |
+| # | 决策点 | 确认结果 |
 |---|---|---|
-| 1 | `selection.*` 12 键 | (a) 删键，多选另立需求 (b) 本轮实现多选批量操作 |
-| 2 | P0-1 虚拟化方案 | (a) 方案 A：超 200 强制虚拟化 + 停排序（推荐） (b) 方案 B：dnd-kit 虚拟化协同（高风险） |
-| 3 | `TabRow` URL 副标题字号 | (a) 保持 10px（不动 `itemSize`） (b) 改 11px 并同步重算 `itemSize` |
-| 4 | `settings.capabilities` 21 项拆分 | 具体拆成哪几个语义分区、哪些默认折叠 |
-| 5 | `.icon` 类（`SectionList.tsx`） | (a) 无意残留，删除 (b) 补 CSS 定义 |
-
-以上 5 项**均不自行假设**，需确认后再进入对应批次。
+| 1 | `selection.*` 12 键 | ✅ **删键**，多选批量操作另立需求（B4 已执行） |
+| 2 | P0-1 虚拟化方案 | ✅ **方案 A**：超 200 强制虚拟化 + 停排序（B6 已执行） |
+| 3 | `TabRow` URL 副标题字号 | ✅ **保持 10px**（B5 已执行；实测行高落地后改字号零成本，可后续再议） |
+| 4 | `settings.capabilities` 21 项拆分 | ✅ **三分法**：休眠与内存(4) / 分组与搜索(7) / 高级与恢复(10，默认折叠)（B3 已执行） |
+| 5 | `.icon` 类（`SectionList.tsx`） | ✅ **删除**（B3 已执行） |
