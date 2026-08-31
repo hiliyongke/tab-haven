@@ -414,5 +414,8 @@
   },
   "bg": {
     "autoDiscarded": "已休眠 {{count}} 个标签（可在面板一键唤醒）"
+  },
+  "popup": {
+    "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭"
   }
 }

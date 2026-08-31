@@ -413,5 +413,8 @@
   },
   "bg": {
     "autoDiscarded": "Discarded {{count}} tabs (wake them all from the panel)"
+  },
+  "popup": {
+    "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close"
   }
 }

@@ -28,15 +28,6 @@ const LOCALES = {
 /** 动态拼接键白名单：OnboardingTour.tsx 用 `onboarding.step${step}Title/Body` 模板串构造。 */
 const DYNAMIC_KEY_PATTERNS = [/^onboarding\.step\d+(Title|Body)$/];
 
-/**
- * 计划内键（临时白名单）：已有明确接线计划、尚未落地的键。
- * 落地后必须从此处移除，防止白名单成为死键的庇护所。
- */
-const PLANNED_KEYS = new Set([
-  'palette.sectionCommands', // B7：命令面板「命令」分组标题
-  'palette.sectionTabs' // B7：命令面板「切换到标签」分组标题
-]);
-
 const SCANNABLE = new Set(['.ts', '.tsx']);
 
 function walk(dir) {
@@ -90,9 +81,7 @@ const isReferenced = (key) =>
 
 const deadKeys = localeKeys['zh-CN'].filter(
   (key) =>
-    !isReferenced(key) &&
-    !PLANNED_KEYS.has(key) &&
-    !DYNAMIC_KEY_PATTERNS.some((pattern) => pattern.test(key))
+    !isReferenced(key) && !DYNAMIC_KEY_PATTERNS.some((pattern) => pattern.test(key))
 );
 if (deadKeys.length > 0) {
   issues.push(`死键（零源码引用）: ${deadKeys.sort().join(', ')}`);
@@ -107,5 +96,5 @@ if (issues.length > 0) {
 
 console.log(
   `i18n 死键检查通过: zh-CN/en 各 ${localeKeys['zh-CN'].length} 键且集合一致，` +
-    `动态键白名单 ${DYNAMIC_KEY_PATTERNS.length} 条，计划内键 ${PLANNED_KEYS.size} 个，死键 0`
+    `动态键白名单 ${DYNAMIC_KEY_PATTERNS.length} 条，死键 0`
 );

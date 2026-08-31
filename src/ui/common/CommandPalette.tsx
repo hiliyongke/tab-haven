@@ -29,6 +29,39 @@ interface CommandItem {
   run: () => void;
 }
 
+/** listbox 内的单个选项（命令 / 标签通用）：图标 + 截断标签 + 选中态。 */
+function PaletteOption({
+  cmd,
+  selected,
+  onSelect,
+  onRun
+}: {
+  cmd: CommandItem;
+  selected: boolean;
+  onSelect: () => void;
+  onRun: () => void;
+}) {
+  return (
+    <div
+      id={`palette-item-${cmd.id}`}
+      role="option"
+      aria-selected={selected}
+      // role=option 是交互角色，宿主必须可聚焦；tabIndex=-1 使其可程序化
+      // 聚焦（DOM 焦点始终留在 combobox 输入框，靠 aria-activedescendant 漫游）。
+      tabIndex={-1}
+      className={
+        'flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm outline-none ' +
+        (selected ? 'bg-accent-50 text-accent-700' : 'text-gray-700 hover:bg-gray-50')
+      }
+      onMouseEnter={onSelect}
+      onClick={onRun}
+    >
+      <Icon d={cmd.icon} className="h-4 w-4 shrink-0 opacity-70" />
+      <span className="truncate">{cmd.label}</span>
+    </div>
+  );
+}
+
 /**
  * 命令面板：⌘P / Ctrl+P 唤起，可搜可执行。
  * 既能跑动作命令（休眠/整理/定位/设置…），也能「切换到标签」，
@@ -66,7 +99,9 @@ export function CommandPalette({
     };
   }, []);
 
-  const commands = useMemo<CommandItem[]>(() => {
+  // 命令与标签分组（P2-5）：键盘漫游顺序保持「命令 → 标签」不变，
+  // 仅在视觉上插入分组标题，让混排的数十项结果可按类别扫读。
+  const { commandItems, tabItems } = useMemo(() => {
     const base: CommandItem[] = [
       {
         id: 'discard',
@@ -136,11 +171,14 @@ export function CommandPalette({
       icon: Icons.search,
       run: () => actions.onSwitchTab(tab.id)
     }));
-    const all = [...base, ...tabCmds];
     const q = query.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((c) => c.label.toLowerCase().includes(q));
+    if (!q) return { commandItems: base, tabItems: tabCmds };
+    const match = (c: CommandItem) => c.label.toLowerCase().includes(q);
+    return { commandItems: base.filter(match), tabItems: tabCmds.filter(match) };
   }, [query, tabs, t, actions]);
+
+  /** 扁平顺序 = 键盘漫游顺序（命令组在前，与分组渲染顺序一致）。 */
+  const commands = useMemo(() => [...commandItems, ...tabItems], [commandItems, tabItems]);
 
   useEffect(() => {
     setIndex(0);
@@ -227,28 +265,42 @@ export function CommandPalette({
           {commands.length === 0 && (
             <div className="px-4 py-3 text-center text-2xs text-gray-500">{t('palette.empty')}</div>
           )}
-          {commands.map((cmd, i) => (
-            <div
+          {commandItems.length > 0 && (
+            /* 分组标题对读屏隐藏（role=presentation）：listbox 语义内只保留 option，
+               分组信息通过命令/标签的 label 本身已可区分。 */
+            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
+              {t('palette.sectionCommands')}
+            </div>
+          )}
+          {commandItems.map((cmd, i) => (
+            <PaletteOption
               key={cmd.id}
-              id={`palette-item-${cmd.id}`}
-              role="option"
-              aria-selected={i === index}
-              // role=option 是交互角色，宿主必须可聚焦；tabIndex=-1 使其可程序化
-              // 聚焦（DOM 焦点始终留在 combobox 输入框，靠 aria-activedescendant 漫游）。
-              tabIndex={-1}
-              className={
-                'flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm outline-none ' +
-                (i === index ? 'bg-accent-50 text-accent-700' : 'text-gray-700 hover:bg-gray-50')
-              }
-              onMouseEnter={() => setIndex(i)}
-              onClick={() => {
+              cmd={cmd}
+              selected={i === index}
+              onSelect={() => setIndex(i)}
+              onRun={() => {
                 cmd.run();
                 onClose();
               }}
-            >
-              <Icon d={cmd.icon} className="h-4 w-4 shrink-0 opacity-70" />
-              <span className="truncate">{cmd.label}</span>
+            />
+          ))}
+          {tabItems.length > 0 && (
+            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
+              {t('palette.sectionTabs')}
             </div>
+          )}
+          {tabItems.map((cmd, groupIndex) => (
+            <PaletteOption
+              key={cmd.id}
+              cmd={cmd}
+              /* 该项在扁平漫游序列中的下标 = 命令组长度 + 组内序号 */
+              selected={commandItems.length + groupIndex === index}
+              onSelect={() => setIndex(commandItems.length + groupIndex)}
+              onRun={() => {
+                cmd.run();
+                onClose();
+              }}
+            />
           ))}
         </div>
       </dialog>

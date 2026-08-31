@@ -191,7 +191,9 @@ export default function App() {
           })
         )}
       </div>
-      <footer className="mt-2 flex justify-end border-t border-gray-200 pt-2">
+      {/* 键盘提示：↑↓/Enter/Esc 全部可用但此前不可发现（P2-4）；弱化呈现，不与结果列表抢注意力 */}
+      <footer className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
+        <span className="text-2xs text-gray-400">{t('popup.keyboardHint')}</span>
         <IconButton
           icon={Icons.settings}
           title={t('settings.title')}

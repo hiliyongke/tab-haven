@@ -886,8 +886,14 @@ export default function App() {
         )}
         {showSnapshots && <SnapshotsPanel onClose={() => setShowSnapshots(false)} />}
         {!settings.onboarded && dataReady && (
-          // 引导已完整讲过功能清单，同步关掉内联 Tip Banner，避免用户"关完一层还有一层"。
-          <OnboardingTour onDone={() => void updateSettings({ onboarded: true, tipSeen: true })} />
+          // 引导已完整讲过功能清单与固定空间概念（磁贴 vs 收藏夹），完成引导即
+          // 同步收起三层引导（Tour / Tip Banner / 固定空间概念卡）中的后两层，
+          // 避免"关完一层还有一层"（概念卡仍可从设置页「固定概念一览」随时查看）。
+          <OnboardingTour
+            onDone={() =>
+              void updateSettings({ onboarded: true, tipSeen: true, conceptsSeen: true })
+            }
+          />
         )}
         {showPalette && (
           <CommandPalette
