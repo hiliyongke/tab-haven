@@ -171,53 +171,72 @@ function RowList({
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
   containerKey: string;
 }) {
+  const { t } = useTranslation();
   // 分屏组竖线角色：同一 splitViewId 的「连续」标签段 → 组首/组中/组尾（单标签段也画线）。
   const splitGroupRoles = useMemo(() => computeSplitGroupRoles(tabs), [tabs]);
 
-  // 大列表且无需拖拽重排时走虚拟滚动（零依赖窗口化）；
-  // 其余保持全量渲染——拖拽重排依赖 SortableContext 挂载全部项，不可虚拟化。
+  // 大列表虚拟滚动（零依赖窗口化）：
+  // - 用户已关闭「标签顺序双向同步」（reorderEnabled=false）→ 超过 60 行即虚拟化；
+  // - 无论排序开关，超过 200 行强制虚拟化并暂停该分区的列表内排序（P0-1：
+  //   默认配置 reorderEnabled 恒为 true，虚拟化永不生效，恰好在最需要它的
+  //   标签囤积场景失效）。SortableContext 要求全部项挂载，与虚拟化天然互斥，
+  //   超阈值分区以「能滚动、不卡」优先于精细拖拽排序。
   const VIRTUAL_THRESHOLD = 60;
-  const useVirtual = !reorderEnabled && tabs.length > VIRTUAL_THRESHOLD;
+  const FORCE_VIRTUAL_THRESHOLD = 200;
+  const useVirtual =
+    (!reorderEnabled && tabs.length > VIRTUAL_THRESHOLD) ||
+    tabs.length > FORCE_VIRTUAL_THRESHOLD;
+  // 因超阈值被强制暂停排序时给出行内说明；用户主动关闭排序开关的虚拟化
+  // 不提示——那是用户自己的选择，无行为突变。
+  const sortPaused = reorderEnabled && tabs.length > FORCE_VIRTUAL_THRESHOLD;
 
   if (useVirtual) {
-    // itemSize 必须等于真实行高（行 wrapper 按 itemSize 定高：偏大产生空隙，偏小溢出重叠）：
+    // itemSize 为估算起步值：VirtualRowList 首行挂载后会实测校准，
+    // 字号 / 密度 / 副标题开关调整不再要求同步改这里的公式。
     // 单行 = text-xs 行高 16px + 垂直 padding（compact 4px / cozy 8px）→ 20 / 24；
-    // showUrl 副标题（text-2xs leading-tight ≈ 12.5px）取整 +13 → 33 / 37。
+    // showUrl 副标题（10px leading-tight ≈ 12.5px）取整 +13 → 33 / 37。
     const itemSize = (density === 'cozy' ? 24 : 20) + (showUrl ? 13 : 0);
     return (
-      <VirtualRowList
-        tabs={tabs}
-        itemSize={itemSize}
-        maxHeight={480}
-        renderRow={(tab) => (
-          <TabRow
-            tab={tab}
-            duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
-            isActive={tab.id === activeTabId}
-            isSplitCompanion={splitPartners.has(tab.id)}
-            splitGroupRole={splitGroupRoles.get(tab.id)}
-            reorderEnabled={reorderEnabled}
-            showUrl={showUrl}
-            rowActionsVisible={rowActionsVisible}
-            autoScrollActive={autoScrollActive}
-            closeOnMiddleClick={closeOnMiddleClick}
-            density={density}
-            showSplitBadges={showSplitBadges}
-            indent={depths?.get(tab.id)}
-            isHighlighted={highlightedIds?.has(tab.id)}
-            isSearchActive={tab.id === searchActiveTabId}
-            noCache={noCacheTabIds?.has(tab.id)}
-            onActivate={callbacks.onActivate}
-            onToggleMute={callbacks.onToggleMute}
-            onTogglePin={callbacks.onTogglePin}
-            onClose={callbacks.onCloseTab}
-            onDuplicate={callbacks.onDuplicate}
-            onDiscard={callbacks.onDiscard}
-            onMoveTab={callbacks.onMoveTab}
-            containerKey={containerKey}
-          />
-        )}
-      />
+      <>
+        {sortPaused && <p className="virtual-notice">{t('tabs.largeListNotice')}</p>}
+        <VirtualRowList
+          tabs={tabs}
+          itemSize={itemSize}
+          maxHeight={480}
+          activeTabId={activeTabId}
+          autoScrollActive={autoScrollActive}
+          renderRow={(tab) => (
+            <TabRow
+              tab={tab}
+              duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
+              isActive={tab.id === activeTabId}
+              isSplitCompanion={splitPartners.has(tab.id)}
+              splitGroupRole={splitGroupRoles.get(tab.id)}
+              /* 虚拟化分区不参与列表内排序（Alt+↑↓ 与拖拽重排一并暂停）；
+                 跨容器拖到固定空间仍可用（由全局 DndContext 承接）。 */
+              reorderEnabled={false}
+              showUrl={showUrl}
+              rowActionsVisible={rowActionsVisible}
+              autoScrollActive={autoScrollActive}
+              closeOnMiddleClick={closeOnMiddleClick}
+              density={density}
+              showSplitBadges={showSplitBadges}
+              indent={depths?.get(tab.id)}
+              isHighlighted={highlightedIds?.has(tab.id)}
+              isSearchActive={tab.id === searchActiveTabId}
+              noCache={noCacheTabIds?.has(tab.id)}
+              onActivate={callbacks.onActivate}
+              onToggleMute={callbacks.onToggleMute}
+              onTogglePin={callbacks.onTogglePin}
+              onClose={callbacks.onCloseTab}
+              onDuplicate={callbacks.onDuplicate}
+              onDiscard={callbacks.onDiscard}
+              onMoveTab={callbacks.onMoveTab}
+              containerKey={containerKey}
+            />
+          )}
+        />
+      </>
     );
   }
 

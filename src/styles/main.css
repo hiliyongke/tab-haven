@@ -1545,6 +1545,15 @@ body {
   overscroll-behavior: contain;
 }
 
+/* 超阈值分区被强制虚拟化、列表内排序暂停时的行内说明（RowList 顶部）。 */
+.virtual-notice {
+  margin: 0;
+  padding: 2px 8px 4px;
+  color: var(--c-gray-500);
+  font-size: var(--text-3xs);
+  line-height: 1.4;
+}
+
 /* ---------- 底部固定的「新建标签页」操作条（紧凑，融入页面底色） ---------- */
 .add-tab-bar {
   flex: none;

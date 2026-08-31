@@ -37,6 +37,7 @@ import { FixedArea, LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { LOCATE_SECTION_EVENT, SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
+import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
@@ -231,11 +232,15 @@ export default function App() {
     if (locateTarget()) return;
     window.dispatchEvent(new CustomEvent<number>(LOCATE_SECTION_EVENT, { detail: activeTabId }));
     window.dispatchEvent(new CustomEvent<number>(LOCATE_TAB_EVENT, { detail: activeTabId }));
+    // 虚拟列表：目标行可能在渲染窗口外（DOM 不存在），先让所属虚拟列表滚到
+    // 目标 index，行挂载后 locateTarget 的 querySelector 才能命中（B6 关键路径）。
+    window.dispatchEvent(new CustomEvent<number>(LOCATE_SCROLL_EVENT, { detail: activeTabId }));
     let attempts = 0;
     const retryLocate = () => {
       if (requestId !== locateRequestRef.current) return;
       window.dispatchEvent(new CustomEvent<number>(LOCATE_SECTION_EVENT, { detail: activeTabId }));
       window.dispatchEvent(new CustomEvent<number>(LOCATE_TAB_EVENT, { detail: activeTabId }));
+      window.dispatchEvent(new CustomEvent<number>(LOCATE_SCROLL_EVENT, { detail: activeTabId }));
       if (locateTarget()) return;
       attempts += 1;
       if (attempts < 12) window.setTimeout(retryLocate, 50);

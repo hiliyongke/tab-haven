@@ -21,6 +21,7 @@
     "closeTab": "Close tab",
     "dragToMove": "Drag to reorder (hold here to drag into the fixed space)",
     "locateActive": "Locate current tab",
+    "largeListNotice": "Large list optimized: smoother scrolling; drag sorting paused in this section",
     "switchTo": "Switch to: {{title}}"
   },
   "footer": {
