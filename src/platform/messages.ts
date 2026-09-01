@@ -22,7 +22,9 @@ export const DuplicateReusedMessageSchema = z.object({
 
 /** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
 export const SearchFocusMessageSchema = z.object({
-  type: z.literal('focus-search')
+  type: z.literal('focus-search'),
+  /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
+  at: z.number().optional()
 });
 
 /** SW → UI：请求按关键词搜索（右键菜单「搜索此域名」触发，面板未开时先开面板）。 */

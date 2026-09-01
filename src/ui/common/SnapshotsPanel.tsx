@@ -49,6 +49,39 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     [snapshots]
   );
 
+  /**
+   * 按生命周期分组展示（概念收敛）：
+   * 命名快照（手动 + 轻量空间）/ 归档 / 关窗自动保存。
+   *
+   * 此前四种 origin 混排在一个列表里，只靠徽标区分——用户无法判断
+   * 「这个对象是持续更新的、已经关闭标签的、还是系统自动兜底的」。
+   * 分组后每组语义唯一，恢复预期才能对齐。
+   */
+  const groups = useMemo(
+    () =>
+      [
+        {
+          key: 'named' as const,
+          title: t('snapshots.groupNamed'),
+          desc: t('snapshots.groupNamedDesc'),
+          items: ordered.filter((snap) => snap.origin === 'manual' || snap.origin === 'space')
+        },
+        {
+          key: 'archive' as const,
+          title: t('snapshots.groupArchive'),
+          desc: t('snapshots.groupArchiveDesc'),
+          items: ordered.filter((snap) => snap.origin === 'archive')
+        },
+        {
+          key: 'auto' as const,
+          title: t('snapshots.groupAuto'),
+          desc: t('snapshots.groupAutoDesc'),
+          items: ordered.filter((snap) => snap.origin === 'auto')
+        }
+      ].filter((group) => group.items.length > 0),
+    [ordered, t]
+  );
+
   const handleSave = async () => {
     try {
       await saveCurrentWindow(name.trim() || undefined);
@@ -255,12 +288,23 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          <div className="max-h-[60vh] overflow-y-auto pr-1">
+          <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto pr-1">
             {ordered.length === 0 ? (
               <p className="py-8 text-center text-xs text-gray-500">{t('snapshots.emptyHint')}</p>
             ) : (
+              groups.map((group) => (
+              <div key={group.key}>
+                <h3 className="mb-1 flex items-baseline gap-1 text-2xs font-medium text-gray-500">
+                  {group.title}
+                  <span className="text-gray-400">
+                    {t('snapshots.groupCount', { count: group.items.length })}
+                  </span>
+                </h3>
+                {group.desc && (
+                  <p className="mb-1 text-3xs leading-snug text-gray-500">{group.desc}</p>
+                )}
               <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-                {ordered.map((snap) => (
+                {group.items.map((snap) => (
                   <li key={snap.id} className="flex items-center gap-2 px-2.5 py-2">
                     <div className="min-w-0 flex-1">
                       {editingId === snap.id ? (
@@ -326,6 +370,8 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                   </li>
                 ))}
               </ul>
+              </div>
+              ))
             )}
           </div>
 

@@ -14,8 +14,7 @@ import {
   AllowDuplicateOnceMessageSchema,
   DuplicateReusedMessageSchema,
   SettingsSyncedMessageSchema,
-  SkipAutoSaveOnceMessageSchema,
-  SearchFocusMessageSchema
+  SkipAutoSaveOnceMessageSchema
 } from '@/platform/messages';
 import {
   cachedSettings,
@@ -38,6 +37,7 @@ import {
   discardInactiveTabs,
   syncAutoDiscardAlarm
 } from './background/autoDiscard';
+import { AUTO_SNAPSHOT_ALARM, runAutoSnapshot, syncAutoSnapshotAlarm } from './background/autoSnapshot';
 import { refreshBadgeSoon } from './background/badge';
 import { setupNoCache } from './background/noCache';
 import { queryOmnibox, handleOmniboxEnter } from './background/omnibox';
@@ -170,8 +170,8 @@ export default defineBackground(() => {
   browser.commands?.onCommand.addListener(async (command) => {
     if (command === 'focus-search') {
       await openSidePanel();
-      const message = SearchFocusMessageSchema.parse({ type: 'focus-search' });
-      browser.runtime.sendMessage(message).catch(() => {});
+      // 走挂起队列而非直接广播：面板刚打开时监听可能尚未注册，直接发消息会丢。
+      await queueAction({ type: 'focus-search' });
       return;
     }
     if (command === 'open-panel') {
@@ -209,6 +209,8 @@ export default defineBackground(() => {
     if (settings.contextMenusEnabled) void setupMenus();
     else clearContextMenus();
     void syncAutoDiscardAlarm(settings);
+    // 自动保存开关/间隔变更即时对齐闹钟（周期变化也需重建，alarms 无法就地改周期）。
+    void syncAutoSnapshotAlarm(settings);
     refreshBadgeSoon();
   });
 
@@ -324,10 +326,15 @@ export default defineBackground(() => {
   // 自动休眠：白名单 + 台账 + 通知（alarms 保活调度，MV3 SW 回收后仍可触发）
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'tabhaven-auto-discard') void runAutoDiscard();
+    // 定时自动快照：兜住「崩溃 / 强制退出 / 长期不关窗」这些关窗保存覆盖不到的场景。
+    if (alarm.name === AUTO_SNAPSHOT_ALARM) void runAutoSnapshot();
   });
-  // 仅在开启自动休眠时创建闹钟（关闭时不清醒 SW 空跑）；SW 启动按当前设置对齐一次。
+  // 仅在开启时创建闹钟（关闭时不让 SW 空跑）；SW 启动按当前设置对齐一次。
   void settingsRepository
     .read()
-    .then((settings) => syncAutoDiscardAlarm(settings))
+    .then(async (settings) => {
+      await syncAutoDiscardAlarm(settings);
+      await syncAutoSnapshotAlarm(settings);
+    })
     .catch(() => {});
 });

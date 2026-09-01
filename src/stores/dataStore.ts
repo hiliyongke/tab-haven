@@ -22,15 +22,16 @@ import {
 import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
 import {
   DEFAULT_SETTINGS,
-  ExportFileSchema,
   FixedFolderSchema,
   PersistentPinSchema,
   SettingsSchema,
+  parseExportFile,
   type ExportFile,
   type FixedFolder,
   type PersistentPin,
   type Settings,
-  type SiteCollapseState
+  type SiteCollapseState,
+  type Snapshot
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
@@ -41,7 +42,7 @@ import { syncMirror } from '@/platform/storage/SyncMirror';
 import { readBookmarkBar } from '@/platform/bookmarks';
 import { SettingsSyncedMessageSchema } from '@/platform/messages';
 import { readSession, mutateSession, type MutateSessionResult } from '@/platform/storage/session';
-import { logDegraded } from '@/platform/diagnostics';
+import { logDegraded, logFailure } from '@/platform/diagnostics';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import {
   activateTab as activateTabPlatform,
@@ -118,9 +119,9 @@ interface DataState {
   resetSettings: () => Promise<void>;
   /** 重新从存储读取设置并应用到 store（跨页面同步兜底）。 */
   refreshSettings: () => Promise<void>;
-  /** 导出固定空间与设置，不包含当前打开标签或撤销栈。 */
+  /** 导出完整备份（固定空间 + 设置 + 全部快照族），不包含当前打开标签或撤销栈。 */
   exportData: () => ExportFile;
-  /** 校验并覆盖导入固定空间与设置，不触碰当前打开标签。 */
+  /** 校验并覆盖导入备份（事务），不触碰当前打开标签；快照由 snapshotStore 接管。 */
   importData: (raw: unknown) => Promise<void>;
   /** 从书签栏导入固定文件夹（同名合并，URL 全局去重）。 */
   importBookmarksFromBar: () => Promise<{ foldersCreated: number; itemsImported: number }>;
@@ -135,21 +136,28 @@ interface DataState {
  * 语义：调用方 await 的 Promise 在“本批最终值已落盘”后 resolve。
  * 注意：DataRepository.write 内部已捕获错误并返回成败标志，此合并器不改变该语义。
  */
-function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<unknown> }) {
-  let inflight: Promise<void> | null = null;
+function createCoalescedWriter<T, R>(repo: { write: (value: T) => Promise<R> }) {
+  let inflight: Promise<R> | null = null;
   let queued: T | undefined;
   let hasQueued = false;
 
-  return (value: T): Promise<void> => {
+  /**
+   * 返回本批次最后一次真实落盘的结果：
+   * 合并掉的中间值不再单独落盘，因此它们的成败对用户不可见也无意义；
+   * 调用方关心的始终是「最终值是否保存成功」，故返回末次 write 的返回值。
+   */
+  return (value: T): Promise<R> => {
     queued = value;
     hasQueued = true;
     if (inflight) return inflight;
     inflight = (async () => {
+      let last!: R;
       while (hasQueued) {
         hasQueued = false;
         const target = queued as T;
-        await repo.write(target);
+        last = await repo.write(target);
       }
+      return last;
     })();
     void inflight.finally(() => {
       inflight = null;
@@ -161,13 +169,30 @@ function createCoalescedWriter<T>(repo: { write: (value: T) => Promise<unknown> 
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
 let initialized = false;
 
+/**
+ * 快照读取桥（避免 dataStore → snapshotStore 直接依赖造成的模块环）。
+ * 由 snapshotStore 在初始化时登记；未登记（如设置页未加载快照）时导出快照为空数组。
+ */
+let snapshotProvider: (() => readonly Snapshot[]) | undefined;
+
+/** 登记快照读取器（snapshotStore 初始化时调用）。 */
+export function registerSnapshotProvider(provider: () => readonly Snapshot[]): void {
+  snapshotProvider = provider;
+}
+
+/** 撤销登记（测试隔离用）。 */
+export function resetSnapshotProvider(): void {
+  snapshotProvider = undefined;
+}
+
 export const useDataStore = create<DataState>()((set, get) => {
   // 依赖访问器：经组合根取用，便于测试注入（见 registry.ts）。
   const repos = getRepositories();
 
   // 写入工具：闭包内定义，用 set/get 访问 store，避免模块级声明顺序依赖（no-use-before-define）。
-  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[]>(repos.folders);
-  const writePinsCoalesced = createCoalescedWriter<PersistentPin[]>(repos.pins);
+  // 写合并保留 DataRepository.write 的 boolean 语义，便于写失败时上报降级。
+  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[], boolean>(repos.folders);
+  const writePinsCoalesced = createCoalescedWriter<PersistentPin[], boolean>(repos.pins);
 
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
   const scheduleMirror = (state: {
@@ -178,10 +203,23 @@ export const useDataStore = create<DataState>()((set, get) => {
     syncMirror.schedule({ folders: state.folders, pins: state.pins, settings: state.settings });
   };
 
+  /**
+   * 持久化失败统一上报：置起 storageDegraded 供 UI 提示，并写入诊断日志。
+   * 禁止在写入失败后继续展示成功——「界面显示成功但重启即丢失」是信任事故。
+   */
+  function reportPersistenceFailure(scope: string, message: string): void {
+    if (!get().storageDegraded) set({ storageDegraded: true });
+    logDegraded(scope, message);
+  }
+
   async function writeFolders(folders: FixedFolder[]): Promise<void> {
     // 先更新内存态（UI 即时响应），storage 落盘合并为最终值。
     set({ folders });
-    await writeFoldersCoalesced(folders);
+    const ok = await writeFoldersCoalesced(folders);
+    // 落盘失败不回滚内存态（重排/新增等高频操作回滚会造成界面跳动），
+    // 但必须置起降级标志，让 UI 明确告知「可能未保存」而不是假装成功。
+    if (ok === false)
+      reportPersistenceFailure('dataStore', '固定文件夹写入失败，重启后可能丢失本次改动');
     scheduleMirror(get());
   }
 
@@ -196,7 +234,9 @@ export const useDataStore = create<DataState>()((set, get) => {
 
   async function writePins(pins: PersistentPin[]): Promise<void> {
     set({ pins });
-    await writePinsCoalesced(pins);
+    const ok = await writePinsCoalesced(pins);
+    if (ok === false)
+      reportPersistenceFailure('dataStore', '固定图标写入失败，重启后可能丢失本次改动');
     scheduleMirror(get());
   }
 
@@ -264,9 +304,19 @@ export const useDataStore = create<DataState>()((set, get) => {
             if (parsedSettings.success) effectiveSettings = parsedSettings.data;
           }
           await repos.seeded.write(true);
-          if (effectiveFolders !== folders) await repos.folders.write(effectiveFolders);
-          if (effectivePins !== pins) await repos.pins.write(effectivePins);
-          if (effectiveSettings !== settings) await repos.settings.write(effectiveSettings);
+          // 镜像恢复写入失败不阻断启动（本地数据仍在），但必须留痕，否则「新设备没恢复出来」无从排查。
+          if (effectiveFolders !== folders) {
+            const ok = await repos.folders.write(effectiveFolders);
+            if (!ok) reportPersistenceFailure('dataStore', '镜像恢复的固定文件夹写入失败');
+          }
+          if (effectivePins !== pins) {
+            const ok = await repos.pins.write(effectivePins);
+            if (!ok) reportPersistenceFailure('dataStore', '镜像恢复的固定图标写入失败');
+          }
+          if (effectiveSettings !== settings) {
+            const ok = await repos.settings.write(effectiveSettings);
+            if (!ok) reportPersistenceFailure('dataStore', '镜像恢复的设置写入失败');
+          }
         }
         set({
           folders: effectiveFolders,
@@ -606,21 +656,31 @@ export const useDataStore = create<DataState>()((set, get) => {
           ? get().collapsedSites
           : [...get().collapsedSites, siteKey]
         : get().collapsedSites.filter((key) => key !== siteKey);
-      await repos.collapse.write(next);
+      const ok = await repos.collapse.write(next);
+      if (!ok) reportPersistenceFailure('dataStore', '站点折叠状态写入失败（仅影响分组展开状态）');
       set({ collapsedSites: next });
     },
 
     updateSettings: async (partial) => {
       const parsed = SettingsSchema.safeParse({ ...get().settings, ...partial });
       if (!parsed.success) throw new Error('invalid-settings');
-      await repos.settings.write(parsed.data);
+      const ok = await repos.settings.write(parsed.data);
+      // 设置是跨会话行为契约：落盘失败时必须报错，不能让界面停留在未保存的新值上。
+      if (!ok) {
+        reportPersistenceFailure('dataStore', '设置写入失败，本次修改未保存');
+        throw new Error('settings-write-failed');
+      }
       set({ settings: parsed.data });
       scheduleMirror(get());
       broadcastSettingsSynced();
     },
 
     resetSettings: async () => {
-      await repos.settings.write(DEFAULT_SETTINGS);
+      const ok = await repos.settings.write(DEFAULT_SETTINGS);
+      if (!ok) {
+        reportPersistenceFailure('dataStore', '恢复默认设置失败，设置未变更');
+        throw new Error('settings-write-failed');
+      }
       set({ settings: DEFAULT_SETTINGS });
       applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
       scheduleMirror(get());
@@ -629,33 +689,107 @@ export const useDataStore = create<DataState>()((set, get) => {
 
     refreshSettings: () => syncSettingsFromStorage(),
 
-    exportData: () =>
-      ExportFileSchema.parse({
-        format: 'tabhaven.export',
-        formatVersion: 1,
-        exportedAt: new Date().toISOString(),
-        fixedFolders: get().folders,
-        persistentPins: get().pins,
-        siteCollapse: get().collapsedSites,
-        settings: get().settings
-      }),
+    /**
+     * 导出为完整备份（formatVersion 2）：固定空间 + 设置 + 全部快照族。
+     *
+     * v1 只导出固定空间与设置，文件名却是 `tabhaven-backup-*.json`——
+     * 用户有充分理由认为它是一次完整备份，但快照/归档不在其中。
+     * 快照经仓库最新值读取：面板打开期间 background 可能写入关窗自动快照。
+     */
+    exportData: () => ({
+      format: 'tabhaven.export' as const,
+      formatVersion: 2 as const,
+      exportedAt: new Date().toISOString(),
+      fixedFolders: get().folders,
+      persistentPins: get().pins,
+      siteCollapse: get().collapsedSites,
+      settings: get().settings,
+      snapshots: [...(snapshotProvider?.() ?? [])]
+    }),
 
+    /**
+     * 导入为事务：四个分区（文件夹 / 固定图标 / 折叠态 / 设置）全部落盘成功后才切换内存态。
+     *
+     * 早期实现用 Promise.all 并发写且只看是否 reject——DataRepository.write 以 boolean
+     * 表达失败，于是「部分分区写成功」也会整体提示导入成功，用户以为已完成备份迁移。
+     * 现改为串行写 + 失败回滚：任一分区写失败即把已写入的分区还原为导入前的值。
+     *
+     * 版本：v2 含快照族；v1（旧备份）视为「未导出快照」，保留用户现有快照而不是清空。
+     */
     importData: async (raw) => {
-      const parsed = ExportFileSchema.safeParse(raw);
+      const parsed = parseExportFile(raw);
       if (!parsed.success) throw new Error('invalid-tab-haven-export');
       const data = parsed.data;
-      await Promise.all([
-        repos.folders.write(data.fixedFolders),
-        repos.pins.write(data.persistentPins),
-        repos.collapse.write(data.siteCollapse),
-        repos.settings.write(data.settings)
-      ]);
+      const snapshotsIncluded = parsed.snapshotsIncluded;
+
+      const before = {
+        folders: get().folders,
+        pins: get().pins,
+        collapse: get().collapsedSites,
+        settings: get().settings,
+        snapshots: [...(snapshotProvider?.() ?? [])]
+      };
+
+      const steps: { name: string; write: () => Promise<boolean>; rollback: () => Promise<boolean> }[] =
+        [
+          {
+            name: 'folders',
+            write: () => repos.folders.write(data.fixedFolders),
+            rollback: () => repos.folders.write(before.folders)
+          },
+          {
+            name: 'pins',
+            write: () => repos.pins.write(data.persistentPins),
+            rollback: () => repos.pins.write(before.pins)
+          },
+          {
+            name: 'siteCollapse',
+            write: () => repos.collapse.write(data.siteCollapse),
+            rollback: () => repos.collapse.write(before.collapse)
+          },
+          {
+            name: 'settings',
+            write: () => repos.settings.write(data.settings),
+            rollback: () => repos.settings.write(before.settings)
+          },
+          // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
+          ...(snapshotsIncluded
+            ? [
+                {
+                  name: 'snapshots',
+                  write: () => repos.snapshots.write(data.snapshots),
+                  rollback: () => repos.snapshots.write(before.snapshots)
+                }
+              ]
+            : [])
+        ];
+
+      const done: (typeof steps)[number][] = [];
+      for (const step of steps) {
+        const ok = await step.write();
+        if (ok) {
+          done.push(step);
+          continue;
+        }
+        // 回滚已写入的分区；回滚本身失败仅告警（尽力而为），但必须在错误信息中如实告知。
+        const rollbackFailures: string[] = [];
+        for (const written of done) {
+          const restored = await written.rollback();
+          if (!restored) rollbackFailures.push(written.name);
+        }
+        const message = `导入失败：分区 ${step.name} 写入未成功，已回滚${rollbackFailures.length > 0 ? `；回滚未完成的分区：${rollbackFailures.join(', ')}` : ''}`;
+        logFailure('dataStore', message);
+        throw new Error(`import-write-failed:${step.name}`);
+      }
+
       set({
         folders: data.fixedFolders,
         pins: data.persistentPins,
         collapsedSites: data.siteCollapse,
         settings: data.settings
       });
+      // 快照属于 snapshotStore 的内存态：本 store 不持有，交由其自行感知仓库变更
+      // （snapshotStore.load 已 watch 仓库，写入后会自动同步列表与角标）。
       applyTheme(data.settings.themePreference, data.settings.colorTheme);
       scheduleMirror(get());
       broadcastSettingsSynced();

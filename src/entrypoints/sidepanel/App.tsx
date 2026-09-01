@@ -270,6 +270,9 @@ export default function App() {
         searchInputRef.current?.focus();
       } else if (action.type === 'locate-active') {
         handleLocateActive();
+      } else if (action.type === 'focus-search') {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
       }
     },
     [handleLocateActive]
@@ -332,8 +335,11 @@ export default function App() {
       }
     };
     const onMessage = (message: unknown) => {
-      if (SearchFocusMessageSchema.safeParse(message).success) {
-        searchInputRef.current?.focus();
+      // 经 handlePendingAction 统一处理：即时消息与 session 挂起双通道按 at 去重，
+      // 避免同一次快捷键触发被消费两次（表现为搜索框内容被全选两次）。
+      const searchFocus = SearchFocusMessageSchema.safeParse(message);
+      if (searchFocus.success) {
+        handlePendingAction(searchFocus.data);
         return;
       }
       if (DuplicateReusedMessageSchema.safeParse(message).success) {
@@ -390,7 +396,13 @@ export default function App() {
           continue;
         }
         const locate = LocateActiveMessageSchema.safeParse(action);
-        if (locate.success) handlePendingAction(locate.data);
+        if (locate.success) {
+          handlePendingAction(locate.data);
+          continue;
+        }
+        // 快捷键聚焦搜索：面板未注册监听时经 session 队列补投递。
+        const focus = SearchFocusMessageSchema.safeParse(action);
+        if (focus.success) handlePendingAction(focus.data);
       }
       void sessionArea?.remove(PENDING_ACTIONS_KEY).catch(() => {});
     };
@@ -857,6 +869,7 @@ export default function App() {
 
         <FooterToolbar
           tabCount={tabs.length}
+          footerLabels={settings.footerLabels}
           collapsibleCount={collapsibleSections.length}
           allCollapsed={allSectionsCollapsed}
           quickRegrouping={quickRegrouping}

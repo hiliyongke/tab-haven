@@ -5,6 +5,9 @@ import type { Snapshot } from '@/core/schema/models';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
 import { SkipAutoSaveOnceMessageSchema } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
+import { logFailure } from '@/platform/diagnostics';
+import { registerSnapshotProvider } from '@/stores/dataStore';
+import { useUndoStore } from '@/stores/undoStore';
 import {
   buildSnapshot,
   collectSnapshotTabs,
@@ -46,6 +49,8 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   ready: false,
 
   load: async () => {
+    // 登记快照读取桥：供 dataStore 导出完整备份（避免 store 间直接依赖成环）。
+    registerSnapshotProvider(() => get().snapshots);
     const snapshots = await snapshotsRepository.read();
     set({ snapshots, ready: true });
     // 关窗自动保存由 background SW 直写仓库：面板打开期间需实时同步列表/角标。
@@ -107,8 +112,15 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
         windowId,
         tabs: snapTabs
       });
-      const next = await persistSnapshot(snapshot);
-      set({ snapshots: next });
+      try {
+        const next = await persistSnapshot(snapshot);
+        set({ snapshots: next });
+      } catch (error) {
+        // 留档失败绝不关闭标签：归档的语义是「留档 + 关闭」，
+        // 只完成后者会变成一次不可撤销的丢标签事故。此处中止，标签保持打开。
+        logFailure('snapshotStore', '归档留档失败，已中止关窗，标签保持打开', error);
+        throw error;
+      }
     }
     // 只关闭已留档的可恢复标签：chrome:// 等内部页无法入档，保留在原窗口（不静默丢失）。
     const closableIds = tabs
@@ -123,7 +135,21 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       });
       await browser.runtime.sendMessage(message).catch(() => {});
     }
-    if (closableIds.length > 0) await browser.tabs.remove(closableIds).catch(() => undefined);
+    if (closableIds.length > 0) {
+      // 先登记撤销再关闭：归档也是一次「关闭动作」，关闭后必须存在可撤销入口，
+      // 否则用户只能去归档列表翻找（关窗即失联，违背可信关闭原则）。
+      const closing = tabs.filter((tab) => typeof tab.id === 'number' && closableIds.includes(tab.id!));
+      const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
+      await useUndoStore
+        .getState()
+        .recordClosedBatch(closing, 'archive', groupNameById)
+        .catch((error) => {
+          // 撤销登记失败不阻断归档（快照已经落盘，数据不会丢），但必须留痕。
+          logFailure('snapshotStore', '归档撤销登记失败，本次归档仅能从快照恢复', error);
+        });
+
+      await browser.tabs.remove(closableIds).catch(() => undefined);
+    }
     return snapTabs.length;
   },
 

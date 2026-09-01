@@ -327,6 +327,7 @@ type BooleanSettingKey =
   | 'autoDiscardEnabled'
   | 'autoGroupNative'
   | 'rowActionsVisible'
+  | 'footerLabels'
   | 'pinyinSearch'
   | 'persistUndo'
   | 'autoSaveSnapshots'
@@ -658,6 +659,12 @@ function buildSections(
         },
         {
           kind: 'toggle',
+          key: 'footerLabels',
+          labelKey: 'settings.footerLabels',
+          hintKey: 'settings.footerLabelsHint'
+        },
+        {
+          kind: 'toggle',
           key: 'showSplitBadges',
           labelKey: 'settings.showSplitBadges',
           hintKey: 'settings.showSplitBadgesHint'
@@ -945,6 +952,22 @@ function buildSections(
         },
         {
           kind: 'select',
+          key: 'autoSnapshotIntervalMin',
+          labelKey: 'settings.autoSnapshotIntervalMin',
+          hintKey: 'settings.autoSnapshotIntervalMinHint',
+          visible: (s) => s.autoSaveSnapshots,
+          parse: (v) => Number(v),
+          options: [
+            { value: '5', label: t('settings.minutesUnit', { count: 5 }) },
+            { value: '15', label: t('settings.minutesUnit', { count: 15 }) },
+            { value: '30', label: t('settings.minutesUnit', { count: 30 }) },
+            { value: '60', label: t('settings.minutesUnit', { count: 60 }) },
+            { value: '180', label: t('settings.minutesUnit', { count: 180 }) },
+            { value: '720', label: t('settings.hoursUnit', { count: 12 }) }
+          ]
+        },
+        {
+          kind: 'select',
           key: 'maxAutoSnapshots',
           labelKey: 'settings.maxAutoSnapshots',
           hintKey: 'settings.maxAutoSnapshotsHint',
@@ -1163,6 +1186,9 @@ export function SettingsPage() {
           </Row>
         ))}
         <Row label="⌘K / Ctrl+K" hint={t('settings.shortcutPanelSearch')}>
+          <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
+        </Row>
+        <Row label="⌘P / Ctrl+P" hint={t('settings.shortcutPalette')}>
           <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
         </Row>
         <Row label="⌘J / Ctrl+J" hint={t('settings.shortcutLocatePanel')}>

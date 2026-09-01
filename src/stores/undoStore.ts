@@ -4,7 +4,8 @@ import type { UndoBatch } from '@/core/schema/models';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
-import { restoreTabRecords } from '@/platform/undo/RestoreEngine';
+import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
+import { logFailure } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 
@@ -39,6 +40,11 @@ interface UndoState {
   undo: () => Promise<void>;
   /** 撤销指定批次（撤销历史面板用）。 */
   undoBatch: (batchId: string) => Promise<void>;
+  /**
+   * 外部关闭路径登记撤销（如窗口归档）。
+   * 归档此前不进撤销栈：标签已关闭却无处可撤，恢复只能靠快照列表，违背「可信关闭」。
+   */
+  recordClosedBatch: (tabs: readonly TabRecord[], kind: string, groupNameById?: ReadonlyMap<number, string | undefined>) => Promise<void>;
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
@@ -56,21 +62,58 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     }, durationSec * 1000);
   };
 
-  /** 撤销执行体（undo / undoBatch 共用）：出栈结果由调用方算好传入。 */
+  /**
+   * 撤销执行体（undo / undoBatch 共用）：出栈结果由调用方算好传入。
+   *
+   * 关键语义：恢复成功才提交。旧实现先出栈再恢复，一旦部分或全部恢复失败，
+   * 该批次的撤销记录已经消失，用户既没拿回标签也失去了重试入口。
+   * 现在：先恢复 → 按结果决定整批移除还是保留失败项（失败项重新入栈，可再次撤销）。
+   */
   const runUndo = async (batch: UndoBatch, remaining: UndoBatch[]): Promise<void> => {
     const windowId = useTabStore.getState().currentWindowId;
     if (windowId === undefined) return;
-    set({ batches: remaining });
-    const settings = await settingsRepository.read();
-    if (settings.persistUndo) await undoRepository.write(remaining);
     clearTimeout(toastTimer);
     set({ toast: null });
 
-    const count = await restoreTabRecords(batch.entries, windowId);
+    const result = await restoreTabRecordsDetailed(batch.entries, windowId);
+    const failedCount = result.failed.length;
+
+    // 失败项保留为一个新批次（放回栈顶，位置最靠前，便于立刻重试）。
+    const nextBatches =
+      failedCount > 0
+        ? [{ ...batch, entries: result.failed }, ...remaining]
+        : remaining;
+
+    set({ batches: nextBatches });
+    const settings = await settingsRepository.read();
+    if (settings.persistUndo) {
+      const ok = await undoRepository.write(nextBatches);
+      if (!ok) logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
+    }
+
     set({
-      toast: { message: i18n.t('undo.restored', { count }), canUndo: false, batchId: undefined }
+      toast: {
+        message:
+          failedCount > 0
+            ? i18n.t('undo.restoredPartial', { count: result.count, failed: failedCount })
+            : i18n.t('undo.restored', { count: result.count }),
+        canUndo: false,
+        batchId: undefined
+      }
     });
     scheduleToastClear();
+  };
+
+  /** 入栈并持久化（closeWithUndo 与 recordClosedBatch 共用）。 */
+  const appendBatch = async (batch: UndoBatch): Promise<void> => {
+    const settings = await settingsRepository.read();
+    const next = pushBatch(get().batches, batch, settings.undoStackLimit);
+    set({ batches: next });
+    // persistUndo 关闭时不写库：load() 已清过历史库，会话内批次仅存活于内存。
+    if (settings.persistUndo) {
+      const ok = await undoRepository.write(next);
+      if (!ok) logFailure('undoStore', '撤销历史写入失败，该批次可能未持久化');
+    }
   };
 
   return {
@@ -103,7 +146,6 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         return;
       }
 
-      const settings = await settingsRepository.read();
       const closedIds = await useTabStore.getState().closeTabs(closing.map((tab) => tab.id));
       const closedIdSet = new Set(closedIds);
       const closed = closing.filter((tab) => closedIdSet.has(tab.id));
@@ -126,10 +168,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         closed.map((tab) => toUndoTabRecord(tab, groupNameById))
       );
 
-      const next = pushBatch(get().batches, batch, settings.undoStackLimit);
-      set({ batches: next });
-      // persistUndo 关闭时不写库：load() 已清过历史库，会话内批次仅存活于内存。
-      if (settings.persistUndo) await undoRepository.write(next);
+      await appendBatch(batch);
 
       const skipped = requested.length - closed.length;
       set({
@@ -158,6 +197,15 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         batch,
         get().batches.filter((entry) => entry.id !== batchId)
       );
+    },
+
+    recordClosedBatch: async (tabs, kind, groupNameById) => {
+      if (tabs.length === 0) return;
+      const batch = createUndoBatch(
+        kind,
+        tabs.map((tab) => toUndoTabRecord(tab, groupNameById ?? new Map()))
+      );
+      await appendBatch(batch);
     },
 
     clearToast: () => {

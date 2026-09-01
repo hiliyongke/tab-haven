@@ -27,6 +27,8 @@ export interface FooterToolbarProps {
   onOpenHistory: () => void;
   onOpenSettings: () => void;
   onOpenSnapshots: () => void;
+  /** 底部工具区文字模式：开启后图标旁显示功能名称。 */
+  footerLabels: boolean;
   onOpenPalette: () => void;
 }
 
@@ -54,7 +56,8 @@ export function FooterToolbar(props: FooterToolbarProps) {
     onOpenHistory,
     onOpenSnapshots,
     onOpenSettings,
-    onOpenPalette
+    onOpenPalette,
+    footerLabels
   } = props;
 
   return (
@@ -62,24 +65,36 @@ export function FooterToolbar(props: FooterToolbarProps) {
       <span className="whitespace-nowrap">
         {t('tabs.currentOpen')} <strong>{tabCount}</strong> {t('tabs.tabCountUnit')}
       </span>
-      <nav className="flex items-center gap-1" aria-label={t('footer.utilityLabel')}>
+      <nav className="flex flex-wrap items-center gap-1" aria-label={t('footer.utilityLabel')}>
         {/* 组 1 · 视图与组织：命令面板 / 折叠全部 / 快速整理 / 定位 */}
-        <IconButton icon={Icons.shortcuts} title={t('palette.open')} onClick={onOpenPalette} />
+        <IconButton
+          icon={Icons.shortcuts}
+          title={t('palette.open')}
+          label={footerLabels ? t('footer.labelPalette') : undefined}
+          onClick={onOpenPalette}
+        />
         <IconButton
           icon={allCollapsed ? Icons.expandAll : Icons.collapseAll}
           title={t(allCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
+          label={
+            footerLabels
+              ? t(allCollapsed ? 'footer.labelExpandAll' : 'footer.labelCollapseAll')
+              : undefined
+          }
           disabled={collapsibleCount === 0}
           onClick={onToggleAllSections}
         />
         <IconButton
           icon={Icons.quickRegroup}
           title={t('footer.quickRegroupHint')}
+          label={footerLabels ? t('footer.labelQuickRegroup') : undefined}
           disabled={quickRegrouping}
           onClick={onQuickRegroup}
         />
         <IconButton
           icon={Icons.locate}
           title={t('tabs.locateActive')}
+          label={footerLabels ? t('footer.labelLocate') : undefined}
           disabled={activeTabId === undefined}
           onClick={onLocateActive}
         />
@@ -88,21 +103,26 @@ export function FooterToolbar(props: FooterToolbarProps) {
         <IconButton
           icon={Icons.snowflake}
           title={t('discard.allInactive')}
+          label={footerLabels ? t('footer.labelDiscard') : undefined}
           onClick={onDiscardInactive}
         />
         {discardedCount > 0 && (
-          <IconButton icon={Icons.wakeAll} title={t('discard.wakeAll')} onClick={onWakeAll} />
+          <IconButton
+            icon={Icons.wakeAll}
+            title={t('discard.wakeAll')}
+            label={footerLabels ? t('footer.labelWake') : undefined}
+            onClick={onWakeAll}
+          />
         )}
         <GroupDivider />
         {/* 组 3 · 记录与恢复：快照空间 / 撤销历史（均带计数徽章） */}
         <IconButton
           icon={Icons.snapshot}
           title={t('snapshots.title')}
+          label={footerLabels ? t('footer.labelSnapshots') : undefined}
           badge={snapshotCount > 0 ? snapshotCount : undefined}
           onClick={onOpenSnapshots}
         />
-        {/* 撤销栈非空时把安全网文案接入 title（强化「一切可反悔」信任感），
-            为空时退回普通「撤销历史」说明。 */}
         <IconButton
           icon={Icons.history}
           title={
@@ -110,6 +130,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
               ? t('safety.shieldTitle', { count: undoBatchCount })
               : t('undo.historyTitle')
           }
+          label={footerLabels ? t('footer.labelHistory') : undefined}
           badge={undoBatchCount > 0 ? undoBatchCount : undefined}
           onClick={onOpenHistory}
         />
@@ -117,6 +138,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
         <IconButton
           icon={Icons.settings}
           title={t('settings.title')}
+          label={footerLabels ? t('footer.labelSettings') : undefined}
           box="md"
           tone="accent"
           onClick={onOpenSettings}

@@ -112,6 +112,46 @@ describe('undoStore', () => {
     );
   });
 
+  it('恢复失败时保留失败条目（成功才提交，不静默丢弃撤销记录）', async () => {
+    const tabA = makeTab({ id: 1, url: 'https://a.com/', index: 0 });
+    const tabB = makeTab({ id: 2, url: 'https://b.com/', index: 1 });
+    await useUndoStore.getState().closeWithUndo([tabA, tabB], [tabA.id, tabB.id]);
+    expect(useUndoStore.getState().batches[0]!.entries).toHaveLength(2);
+
+    // 只让 b.com 恢复失败（a.com 成功），模拟部分失败。
+    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation((async (
+      info: { url?: string }
+    ) => {
+      if (info.url?.includes('b.com')) throw new Error('cannot create');
+      return { id: 99, index: 0, windowId: 1, active: false, pinned: false };
+    }) as never);
+
+    await useUndoStore.getState().undo();
+
+    const batches = useUndoStore.getState().batches;
+    expect(batches).toHaveLength(1);
+    // 成功项已出栈，失败项保留在栈顶，可再次撤销重试
+    expect(batches[0]!.entries).toHaveLength(1);
+    expect(batches[0]!.entries[0]!.url).toBe('https://b.com/');
+    expect(useUndoStore.getState().toast?.message).toContain('1');
+  });
+
+  it('恢复全部失败时整批保留（可重试，不会变成丢标签）', async () => {
+    const tab = makeTab({ id: 1, url: 'https://a.com/', index: 0 });
+    await useUndoStore.getState().closeWithUndo([tab], [tab.id]);
+
+    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation(
+      (async () => {
+        throw new Error('cannot create');
+      }) as never
+    );
+
+    await useUndoStore.getState().undo();
+
+    expect(useUndoStore.getState().batches).toHaveLength(1);
+    expect(useUndoStore.getState().batches[0]!.entries).toHaveLength(1);
+  });
+
   it('undo 无批次时无操作', async () => {
     await expect(useUndoStore.getState().undo()).resolves.toBeUndefined();
     expect(useUndoStore.getState().batches).toHaveLength(0);

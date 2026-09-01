@@ -1,7 +1,7 @@
 # TabHaven 架构文档
 
 > 本文档曾被 CHANGELOG 与多处代码注释引用但缺失，2026-08-22 补写。
-> 详细产品规格见 `docs/PRD.md`；已知问题与技术债务见 `docs/AUDIT.md`。
+> 详细产品规格见 `docs/PRD.md`；产品设计与能力覆盖审计见 `docs/PRODUCT-DESIGN-CAPABILITY-AUDIT-2026-08-31.html`。
 
 ## 1. 技术栈与形态
 

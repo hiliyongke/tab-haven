@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
-import { useDataStore } from '@/stores/dataStore';
+import {
+  useDataStore,
+  registerSnapshotProvider,
+  resetSnapshotProvider
+} from '@/stores/dataStore';
 import { readSession } from '@/platform/storage/session';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -46,12 +50,14 @@ describe('dataStore 固定空间事务', () => {
       collapsedSites: [],
       settings: DEFAULT_SETTINGS,
       boundTabIds: [],
+      storageDegraded: false,
       ready: false
     });
   });
 
   afterEach(() => {
     fakeBrowser.reset();
+    resetSnapshotProvider();
     vi.restoreAllMocks();
   });
 
@@ -121,6 +127,143 @@ describe('dataStore 固定空间事务', () => {
     await expect(useDataStore.getState().importData({ format: 'bad' })).rejects.toThrow(
       'invalid-tab-haven-export'
     );
+  });
+
+  it('importData：部分分区写入失败时整体回滚（不留下半套数据）', async () => {
+    const payload = {
+      format: 'tabhaven.export',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [
+        {
+          id: 'f1',
+          name: '导入的文件夹',
+          collapsed: false,
+          items: [{ id: 'i1', url: 'https://a.com/', title: 'A', createdAt: 1 }]
+        }
+      ],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS
+    };
+
+    // 只让第二个分区（persistentPins）写失败：校验事务是否回滚已写入的 folders。
+    const realSet = fakeBrowser.storage.local.set;
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.local, 'set')
+      .mockImplementation(((items: Record<string, unknown>) => {
+        if ('tabhaven.persistent-pins.v1' in items) return Promise.reject(new Error('quota'));
+        return realSet(items);
+      }) as never);
+
+    await expect(useDataStore.getState().importData(payload)).rejects.toThrow(
+      'import-write-failed:pins'
+    );
+
+    // 内存态未被污染
+    expect(useDataStore.getState().folders).toHaveLength(0);
+    // 已写入的分区已回滚：磁盘上不应残留导入的文件夹
+    const stored = (await fakeBrowser.storage.local.get('tabhaven.fixed-folders.v1')) as Record<
+      string,
+      unknown
+    >;
+    expect(stored['tabhaven.fixed-folders.v1'] ?? []).toEqual([]);
+    setSpy.mockRestore();
+  });
+
+  it('exportData：导出为完整备份 v2（含快照与归档）', async () => {
+    registerSnapshotProvider(() => [
+      {
+        id: 's1',
+        name: '归档',
+        origin: 'archive',
+        createdAt: 1,
+        tabCount: 1,
+        tabs: [{ url: 'https://a.com/', title: 'A', pinned: false, muted: false }]
+      }
+    ]);
+
+    const file = useDataStore.getState().exportData();
+    expect(file.formatVersion).toBe(2);
+    expect(file.snapshots).toHaveLength(1);
+    expect(file.snapshots[0]!.origin).toBe('archive');
+  });
+
+  it('importData：v1 旧备份不清空现有快照', async () => {
+    const existing = [
+      {
+        id: 's1',
+        name: '我的快照',
+        origin: 'manual' as const,
+        createdAt: 1,
+        tabCount: 0,
+        tabs: []
+      }
+    ];
+    await fakeBrowser.storage.local.set({ 'tabhaven.snapshots.v1': existing });
+    registerSnapshotProvider(() => existing);
+
+    const v1 = {
+      format: 'tabhaven.export',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS
+    };
+
+    await useDataStore.getState().importData(v1);
+
+    const stored = (await fakeBrowser.storage.local.get('tabhaven.snapshots.v1')) as Record<
+      string,
+      unknown
+    >;
+    expect(stored['tabhaven.snapshots.v1']).toHaveLength(1);
+  });
+
+  it('importData：v2 备份覆盖快照（完整备份语义）', async () => {
+    await fakeBrowser.storage.local.set({
+      'tabhaven.snapshots.v1': [
+        { id: 'old', name: '旧快照', origin: 'manual', createdAt: 1, tabCount: 0, tabs: [] }
+      ]
+    });
+
+    const v2 = {
+      format: 'tabhaven.export',
+      formatVersion: 2,
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS,
+      snapshots: [
+        { id: 'new', name: '新快照', origin: 'manual', createdAt: 2, tabCount: 0, tabs: [] }
+      ]
+    };
+
+    await useDataStore.getState().importData(v2);
+
+    const stored = (await fakeBrowser.storage.local.get('tabhaven.snapshots.v1')) as Record<
+      string,
+      { id: string }[]
+    >;
+    expect(stored['tabhaven.snapshots.v1']).toHaveLength(1);
+    expect(stored['tabhaven.snapshots.v1']![0]!.id).toBe('new');
+  });
+
+  it('updateSettings：落盘失败时不切换到新值并置起降级标志', async () => {
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.local, 'set')
+      .mockImplementation(() => Promise.reject(new Error('quota')) as never);
+
+    await expect(useDataStore.getState().updateSettings({ density: 'compact' })).rejects.toThrow(
+      'settings-write-failed'
+    );
+
+    expect(useDataStore.getState().settings.density).toBe('cozy');
+    expect(useDataStore.getState().storageDegraded).toBe(true);
+    setSpy.mockRestore();
   });
 
   it('toggleSiteCollapsed：幂等写入', async () => {

@@ -1,10 +1,6 @@
 import { browser } from 'wxt/browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
-import {
-  LocateActiveMessageSchema,
-  PENDING_ACTIONS_KEY,
-  SearchDomainMessageSchema
-} from '@/platform/messages';
+import { PENDING_ACTIONS_KEY } from '@/platform/messages';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { logDegraded } from '@/platform/diagnostics';
 
@@ -64,19 +60,34 @@ export function notifyUser(title: string, message: string): void {
     .catch(() => {});
 }
 
-/** 把待面板执行的动作存入 storage.session（面板未开时挂起），并即时广播。 */
+/**
+ * 把待面板执行的动作存入 storage.session（面板未开时挂起），并即时广播。
+ *
+ * 双通道是刻意为之：打开侧边栏后立刻 `runtime.sendMessage` 存在竞态——
+ * 面板文档可能尚未注册监听，消息无人接收，用户看到「按了快捷键没反应」。
+ * 落一份到 session 队列后，面板挂载时补消费，动作不会丢。
+ */
 type PendingAction =
-  { type: 'search-domain'; query: string; at: number } | { type: 'locate-active'; at: number };
-type PendingActionInput = { type: 'search-domain'; query: string } | { type: 'locate-active' };
+  | { type: 'search-domain'; query: string; at: number }
+  | { type: 'locate-active'; at: number }
+  | { type: 'focus-search'; at: number };
+
+type PendingActionInput =
+  | { type: 'search-domain'; query: string }
+  | { type: 'locate-active' }
+  | { type: 'focus-search' };
+
+interface PendingActionMessage {
+  type: 'search-domain' | 'locate-active' | 'focus-search';
+  query?: string;
+  at: number;
+}
 
 export async function queueAction(action: PendingActionInput): Promise<void> {
   // at 时间戳：面板经「即时消息 + session onChanged」双通道收到同一动作时按 at 去重，
   // 且面板消费后清除 session 列表，不会重放历史动作。
   const at = Date.now();
-  const stamped: PendingAction =
-    action.type === 'search-domain'
-      ? { type: 'search-domain', query: action.query, at }
-      : { type: 'locate-active', at };
+  const stamped: PendingAction = { ...action, at } as PendingAction;
   try {
     const sessionArea = browser.storage?.session;
     if (sessionArea) {
@@ -91,14 +102,8 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
     logDegraded('background', '共享上下文操作失败', error);
     // session 存储不可用时仅即时广播
   }
-  const message =
-    stamped.type === 'search-domain'
-      ? SearchDomainMessageSchema.parse({
-          type: 'search-domain',
-          query: stamped.query,
-          at: stamped.at
-        })
-      : LocateActiveMessageSchema.parse({ type: 'locate-active', at: stamped.at });
+  const message: PendingActionMessage = { type: stamped.type, at: stamped.at };
+  if (stamped.type === 'search-domain') message.query = stamped.query;
   browser.runtime.sendMessage(message).catch(() => {});
 }
 

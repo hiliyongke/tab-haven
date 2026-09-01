@@ -66,6 +66,8 @@ export const SettingsSchema = z.object({
   density: z.enum(['compact', 'cozy']).default('cozy'),
   /** 标签行标题下方显示完整网址。 */
   showUrl: z.boolean().default(false),
+  /** 底部工具区可选文字模式：开启后图标旁显示功能名称（默认仅图标 + 悬停提示）。 */
+  footerLabels: z.boolean().default(false),
   /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
   showSplitBadges: z.boolean().default(true),
   /** 站点组强调色：auto 按域名/favicon 自动配色 / mono 统一中性色。 */
@@ -92,8 +94,14 @@ export const SettingsSchema = z.object({
   autoGroupNative: z.boolean().default(false),
   /** 撤销栈深度（FIFO 淘汰上限）。 */
   undoStackLimit: z.number().int().min(5).max(50).default(10),
-  /** 关窗自动保存：窗口关闭时自动存为快照（画像二生死线兜底）。 */
-  autoSaveSnapshots: z.boolean().default(true),
+  /**
+   * 关窗自动保存：窗口关闭时自动存为快照（画像二生死线兜底）。
+   * 默认关闭（PRD FR-D5.2 / 原则 8：自动化能力不默认接管用户数据）。
+   * 注意：默认值只作用于新装用户，已存设置的用户读的是自己的存储值。
+   */
+  autoSaveSnapshots: z.boolean().default(false),
+  /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
+  autoSnapshotIntervalMin: z.number().int().min(5).max(720).default(30),
   /** 自动快照最大保留数（超出淘汰最旧）。 */
   maxAutoSnapshots: z.number().int().min(1).max(50).default(10),
   /** 命名快照最大保留数（防存储膨胀）。 */
@@ -146,6 +154,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pinnedStripSize: 'md',
   density: 'cozy',
   showUrl: false,
+  footerLabels: false,
   showSplitBadges: true,
   groupAccentStyle: 'auto',
   autoScrollActive: true,
@@ -157,7 +166,8 @@ export const DEFAULT_SETTINGS: Settings = {
   groupMode: 'site',
   autoGroupNative: false,
   undoStackLimit: 10,
-  autoSaveSnapshots: true,
+  autoSaveSnapshots: false,
+  autoSnapshotIntervalMin: 30,
   maxAutoSnapshots: 10,
   snapshotLimit: 30,
   toastDurationSec: 7,
@@ -241,8 +251,17 @@ export const SnapshotSchema = z.object({
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
-/** 导出文件格式。 */
-export const ExportFileSchema = z.object({
+/**
+ * 导出文件格式。
+ *
+ * v1：仅固定空间与设置（快照/归档不导出，与 README「完整备份」文件名不符）。
+ * v2：新增 snapshots（命名快照 + 关窗自动快照 + 归档 + 轻量空间快照），
+ *     导出文件才真正等价于一次完整备份。
+ *
+ * 读取端同时接受 v1/v2（ExportFileV1Schema），v1 的快照分区视为「未导出」而非空，
+ * 避免在覆盖导入时把用户已有的快照清空。
+ */
+export const ExportFileV1Schema = z.object({
   format: z.literal('tabhaven.export'),
   formatVersion: z.literal(1),
   exportedAt: z.string(),
@@ -251,4 +270,34 @@ export const ExportFileSchema = z.object({
   siteCollapse: SiteCollapseSchema,
   settings: SettingsSchema
 });
-export type ExportFile = z.infer<typeof ExportFileSchema>;
+
+export const ExportFileV2Schema = z.object({
+  format: z.literal('tabhaven.export'),
+  formatVersion: z.literal(2),
+  exportedAt: z.string(),
+  fixedFolders: z.array(FixedFolderSchema),
+  persistentPins: z.array(PersistentPinSchema),
+  siteCollapse: SiteCollapseSchema,
+  settings: SettingsSchema,
+  /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 轻量空间。 */
+  snapshots: z.array(SnapshotSchema).default([])
+});
+
+export type ExportFile = z.infer<typeof ExportFileV2Schema>;
+
+/** 导出文件统一读取口径：v1/v2 皆可，未知版本拒绝（不静默降级）。 */
+export function parseExportFile(raw: unknown):
+  | { success: true; data: ExportFile; snapshotsIncluded: boolean }
+  | { success: false } {
+  const v2 = ExportFileV2Schema.safeParse(raw);
+  if (v2.success) return { success: true, data: v2.data, snapshotsIncluded: true };
+  const v1 = ExportFileV1Schema.safeParse(raw);
+  if (v1.success) {
+    return {
+      success: true,
+      data: { ...v1.data, formatVersion: 2, snapshots: [] },
+      snapshotsIncluded: false
+    };
+  }
+  return { success: false };
+}
