@@ -1,5 +1,9 @@
 import { create } from 'zustand';
-import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
+import {
+  mergeSnapshotTabs,
+  type TabGroupRecord,
+  type TabRecord
+} from '@/core/tab-types';
 import {
   activateTab as activateTabPlatform,
   closeTabs as closeTabsPlatform,
@@ -133,16 +137,11 @@ export const useTabStore = create<TabState>()((set, get) => ({
   startTabSync: () =>
     tabSyncService.start((snapshot) => {
       set((state) => {
-        // 语言是面板侧异步探测的增量信息（chrome.tabs.Tab 无此字段），快照广播不含语言：
-        // 按 id 保留既有探测结果（URL 变化说明已导航，语言需重新探测，不保留旧值），
-        // 否则每次广播都会清空语言并触发 App 全量重探测。
-        const prevById = new Map(state.tabs.map((tab) => [tab.id, tab]));
-        const tabs = snapshot.tabs.map((tab) => {
-          const prev = prevById.get(tab.id);
-          if (!prev || prev.language === undefined) return tab;
-          if (prev.url !== tab.url || prev.pendingUrl !== tab.pendingUrl) return tab;
-          return { ...tab, language: prev.language };
-        });
+        // 镜像增量合并（细节见 mergeSnapshotTabs）：语言按 id 保留（URL 变化需重探测）；
+        // lastAccessed 对既有标签冻结——浏览器每次激活都会刷新该时间戳，照单全收
+        // 会让「最近访问」排序随每次切换标签全量重排。冻结后排序只在「新页面打开」
+        // （新 id 首次出现）时一次性纳入，其余操作零重排。
+        const tabs = mergeSnapshotTabs(state.tabs, snapshot.tabs);
         // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
         if (
           state.currentWindowId === snapshot.windowId &&

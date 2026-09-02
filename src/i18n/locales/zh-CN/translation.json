@@ -207,6 +207,7 @@
     "closeOnMiddleClick": "中键点击关闭标签",
     "closeOnMiddleClickHint": "在标签行上按鼠标中键关闭该标签",
     "sortMode": "排序方式",
+    "sortModeHint": "「最近访问」在新页面打开时一次性就位（新页面靠前），切换标签不再重排列表",
     "sortBrowser": "浏览器顺序",
     "sortRecency": "最近访问",
     "pinnedStripSize": "常驻磁贴尺寸",

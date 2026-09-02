@@ -207,6 +207,7 @@
     "closeOnMiddleClick": "Close tab on middle click",
     "closeOnMiddleClickHint": "Click a tab row with the middle mouse button to close it",
     "sortMode": "Sort order",
+    "sortModeHint": "\"Most recent\" settles newly opened pages once (newest on top); switching tabs never reshuffles the list",
     "sortBrowser": "Browser order",
     "sortRecency": "Most recent",
     "pinnedStripSize": "Always-on tile size",

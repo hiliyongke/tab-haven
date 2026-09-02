@@ -74,3 +74,40 @@ export function canSafelyDiscardTab(
 }
 
 export const NO_GROUP = -1;
+
+/**
+ * 快照合并：把浏览器新快照并入面板侧镜像（tabStore 订阅 TabSyncService 时调用）。
+ *
+ * 面板侧在 chrome.tabs.Tab 之外维护两类「镜像增量信息」，快照广播不含它们，
+ * 需按 id 从上一帧保留：
+ *  - language：面板异步探测的结果。仅 URL 未变时保留（已导航则需重新探测）；
+ *  - lastAccessed（排序冻结）：浏览器会在每次激活/导航时刷新该时间戳，
+ *    若照单全收，「最近访问」排序会随每次切换标签全量重排（分区与行不停跳动）。
+ *    这里对既有标签冻结旧值——排序只在「新页面打开」（新 id 首次出现）时
+ *    一次性纳入：新标签以最新时间戳就位，其余标签保持既有相对顺序。
+ *
+ * 背景侧（自动休眠 / 复用合并）不经过此函数：它们直接查询浏览器拿实时
+ * lastAccessed，不受冻结影响。
+ */
+export function mergeSnapshotTabs(
+  prevTabs: readonly TabRecord[],
+  incoming: readonly TabRecord[]
+): TabRecord[] {
+  const prevById = new Map(prevTabs.map((tab) => [tab.id, tab]));
+  return incoming.map((tab) => {
+    const prev = prevById.get(tab.id);
+    if (!prev) return tab;
+    let merged = tab;
+    if (
+      prev.language !== undefined &&
+      prev.url === tab.url &&
+      prev.pendingUrl === tab.pendingUrl
+    ) {
+      merged = { ...merged, language: prev.language };
+    }
+    if (typeof prev.lastAccessed === 'number') {
+      merged = { ...merged, lastAccessed: prev.lastAccessed };
+    }
+    return merged;
+  });
+}

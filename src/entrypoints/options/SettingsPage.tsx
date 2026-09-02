@@ -738,6 +738,7 @@ function buildSections(
           kind: 'select',
           key: 'sortMode',
           labelKey: 'settings.sortMode',
+          hintKey: 'settings.sortModeHint',
           options: [
             { value: 'browser', label: t('settings.sortBrowser') },
             { value: 'recency', label: t('settings.sortRecency') }

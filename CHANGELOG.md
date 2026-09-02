@@ -45,6 +45,7 @@
 - 新增权限（开发者禁缓存，默认关闭）：`declarativeNetRequest` / `scripting` + 全站 host 权限（optional，开启功能时按需申请；只改写浏览器内既有响应的头并注入警示条，不发起任何网络请求）
 
 ### 质量
+- 修正「最近访问」排序随激活标签全量重排的问题：快照合并时对既有标签冻结 `lastAccessed`（core `mergeSnapshotTabs`），排序只在「新页面打开」时一次性纳入新标签（新页面靠前），切换标签 / 页面加载不再引发侧边栏排序与分组跳动；后台自动休眠与复用合并仍读取实时时间戳，不受冻结影响
 - 修正三处过期/错误的规格测试：punycode 基准值（以 Node.js `node:url.domainToUnicode` 权威实现复核）、`fixedItemKey` 身份语义（完整 URL 参与身份，归一化匹配属 FR-D8.2/V1.2 范围）、AutoGroupSync 解散测试（对齐 `tabs.ungroup` 标准做法并补「失败保留重试」断言）
 - 文档一致性修复：移除已归档文档的失效引用（DEVELOPMENT_PLAN / PRODUCT-REVIEW-V1.0 / CHECKLIST-V1.0），README 架构树与 stores 清单对齐实际代码，PRD 附录 A 权限清单与 manifest 对齐
 - 后台文案接入 i18n（headless 轨道）：自动休眠通知、快照默认名（含 OneTab 导入名）随用户语言；`buildSnapshot` 回退名改由调用方传入，消除后台硬编码英文/中文
