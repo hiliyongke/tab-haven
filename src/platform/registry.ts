@@ -43,36 +43,36 @@ export interface Repositories {
 function createRepositories(): Repositories {
   return {
     folders: new DataRepository<FixedFolder[]>(
-      'tabhaven.fixed-folders.v1',
+      'tabs.fixed-folders.v1',
       FixedFolderSchema.array(),
       []
     ),
     pins: new DataRepository<PersistentPin[]>(
-      'tabhaven.persistent-pins.v1',
+      'tabs.persistent-pins.v1',
       PersistentPinSchema.array(),
       []
     ),
     collapse: new DataRepository<SiteCollapseState>(
-      'tabhaven.site-collapse.v1',
+      'tabs.site-collapse.v1',
       SiteCollapseSchema,
       []
     ),
     settings: new DataRepository<Settings>(
-      'tabhaven.settings.v1',
+      'tabs.settings.v1',
       SettingsSchema,
       DEFAULT_SETTINGS
     ),
-    undo: new DataRepository<UndoBatch[]>('tabhaven.undo-stack.v1', UndoBatchSchema.array(), []),
-    autoGroups: new DataRepository<number[]>('tabhaven.auto-groups.v1', z.array(z.number()), []),
+    undo: new DataRepository<UndoBatch[]>('tabs.undo-stack.v1', UndoBatchSchema.array(), []),
+    autoGroups: new DataRepository<number[]>('tabs.auto-groups.v1', z.array(z.number()), []),
     autoDiscard: new DataRepository<AutoDiscardBatch | null>(
-      'tabhaven.auto-discard-batch.v1',
+      'tabs.auto-discard-batch.v1',
       AutoDiscardBatchSchema.nullable(),
       null
     ),
     // 首次启动标志：false 表示新设备（可从浏览器同步通道镜像恢复）。
-    seeded: new DataRepository<boolean>('tabhaven.sync-seeded.v1', z.boolean(), false),
+    seeded: new DataRepository<boolean>('tabs.sync-seeded.v1', z.boolean(), false),
     // 会话快照列表（命名快照 + 关窗自动保存），本地优先、零账号。
-    snapshots: new DataRepository<Snapshot[]>('tabhaven.snapshots.v1', SnapshotSchema.array(), [])
+    snapshots: new DataRepository<Snapshot[]>('tabs.snapshots.v1', SnapshotSchema.array(), [])
   };
 }
 

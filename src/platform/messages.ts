@@ -57,7 +57,7 @@ export const SkipAutoSaveOnceMessageSchema = z.object({
 });
 
 /** SW → UI 待面板执行动作的挂起队列（面板未开时存储于 storage.session）。 */
-export const PENDING_ACTIONS_KEY = 'tabhaven.pending-actions';
+export const PENDING_ACTIONS_KEY = 'tabs.pending-actions';
 
 /** 设置已落盘的通知（storage.onChanged 之外的显式同步兜底通道）。 */
 export const SettingsSyncedMessageSchema = z.object({

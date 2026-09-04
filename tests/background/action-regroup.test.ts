@@ -69,7 +69,7 @@ describe('工具栏一键整理', () => {
     const { groupMock, ungroupMock } = stubGroupApis();
     // 与面板侧 fixedExcludedTabIds 同口径：session 绑定把其中一个标签固定到空间条目
     await fakeBrowser.storage.session.set({
-      'tabhaven.session': {
+      'tabs.session': {
         itemTabBindings: { 'item-1': ids[0]! },
         manualStandaloneTabIds: []
       }

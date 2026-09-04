@@ -20,9 +20,9 @@ import { RowItem } from '@/ui/common/RowItem';
 import { StatusBadges } from '@/ui/common/StatusBadges';
 import { DragType, FIXED_AREA_DROPPABLE } from '@/ui/dnd/types';
 
-export const LOCATE_TAB_EVENT = 'tabhaven:locate-tab';
+export const LOCATE_TAB_EVENT = 'tabs:locate-tab';
 /** App 层请求固定空间弹出「新建文件夹」命名弹窗（拖标签/分组到空白区时触发）。 */
-export const CREATE_FOLDER_REQUEST_EVENT = 'tabhaven:create-folder-request';
+export const CREATE_FOLDER_REQUEST_EVENT = 'tabs:create-folder-request';
 
 interface CreateFolderRequest {
   name: string;
@@ -60,7 +60,7 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
   const { onKeyDown: sortableKeyDown, ...sortablePointerListeners } = sortable.listeners ?? {};
 
   return (
-    <li data-tabhaven-tab-id={runtimeTab?.id}>
+    <li data-tabs-tab-id={runtimeTab?.id}>
       <RowItem
         faviconSrc={item.favIconUrl}
         faviconTitle={item.title}

@@ -58,7 +58,7 @@ describe('snapshotStore 归档事务', () => {
     vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(((
       items: Record<string, unknown>
     ) => {
-      if ('tabhaven.snapshots.v1' in items) return Promise.reject(new Error('quota'));
+      if ('tabs.snapshots.v1' in items) return Promise.reject(new Error('quota'));
       return realSet(items);
     }) as never);
 

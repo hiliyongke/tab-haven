@@ -7,14 +7,14 @@
  * 调用约定：各入口 main.tsx 的首个 import。
  */
 (() => {
-  const MIRROR_KEY = 'tabhaven:theme';
-  const HUE_MIRROR_KEY = 'tabhaven:theme-hue';
+  const MIRROR_KEY = 'tabs:theme';
+  const HUE_MIRROR_KEY = 'tabs:theme-hue';
 
   type ThemePreference = 'system' | 'light' | 'dark';
   type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono' | 'plain';
 
   let preference: ThemePreference = 'system';
-  let hue: ColorTheme = 'forest';
+  let hue: ColorTheme = 'plain';
   try {
     const stored = window.localStorage.getItem(MIRROR_KEY);
     if (stored === 'system' || stored === 'light' || stored === 'dark') {

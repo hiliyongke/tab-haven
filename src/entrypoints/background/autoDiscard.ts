@@ -14,7 +14,7 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   await autoDiscardRepository.write({ tabIds, at: Date.now(), count: tabIds.length });
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
-    notifyUser('TabHaven', t('bg.autoDiscarded', { count: tabIds.length }));
+    notifyUser('Tabs', t('bg.autoDiscarded', { count: tabIds.length }));
   }
   const message = AutoDiscardedMessageSchema.parse({
     type: 'auto-discarded',
@@ -85,9 +85,9 @@ async function syncAutoDiscardAlarm(settings: Settings): Promise<void> {
   try {
     if (settings.autoDiscardEnabled) {
       // periodInMinutes 最小为 1；同名闹钟重复创建即重置，幂等安全。
-      await browser.alarms.create('tabhaven-auto-discard', { periodInMinutes: 1 });
+      await browser.alarms.create('tabs-auto-discard', { periodInMinutes: 1 });
     } else {
-      await browser.alarms.clear('tabhaven-auto-discard');
+      await browser.alarms.clear('tabs-auto-discard');
     }
   } catch (error) {
     logDegraded('auto-discard', '自动休眠唤醒失败', error);

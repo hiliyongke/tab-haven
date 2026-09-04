@@ -61,8 +61,8 @@ describe('AutoGroupSync 生命周期', () => {
     await syncAutoGroups([PLAN_A]);
 
     expect(groupMock).toHaveBeenCalledTimes(3);
-    const stored = await fakeBrowser.storage.local.get('tabhaven.auto-groups.v1');
-    expect(stored['tabhaven.auto-groups.v1']).toEqual([10, 11]);
+    const stored = await fakeBrowser.storage.local.get('tabs.auto-groups.v1');
+    expect(stored['tabs.auto-groups.v1']).toEqual([10, 11]);
   });
 
   it('解散：ungroup 全部成员并清空记录，失败组保留 id 供重试', async () => {
@@ -88,9 +88,9 @@ describe('AutoGroupSync 生命周期', () => {
 
     expect(count).toBe(1); // 只有 11 成功解散（10 的 ungroup 失败）
     expect(ungroupMock).toHaveBeenCalledTimes(2);
-    const stored = await fakeBrowser.storage.local.get('tabhaven.auto-groups.v1');
+    const stored = await fakeBrowser.storage.local.get('tabs.auto-groups.v1');
     // 失败组保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组
-    expect(stored['tabhaven.auto-groups.v1']).toEqual([10]);
+    expect(stored['tabs.auto-groups.v1']).toEqual([10]);
   });
 
   it('无记录时解散是空操作', async () => {
@@ -118,7 +118,7 @@ describe('AutoGroupSync 生命周期', () => {
     expect(groupMock).toHaveBeenCalledWith({ tabIds: [2], groupId: 7 });
     // 不新建组（无 updateGroupMeta）、不写入自动组记录（解散范围不变）
     expect(updateMock).not.toHaveBeenCalled();
-    const stored = await fakeBrowser.storage.local.get('tabhaven.auto-groups.v1');
-    expect(stored['tabhaven.auto-groups.v1']).toBeUndefined();
+    const stored = await fakeBrowser.storage.local.get('tabs.auto-groups.v1');
+    expect(stored['tabs.auto-groups.v1']).toBeUndefined();
   });
 });

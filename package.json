@@ -1,6 +1,6 @@
 {
-  "name": "tabhaven",
-  "description": "TabHaven（页港）—— 本地优先、无账号无云端的标签工作台（浏览器侧边栏扩展）",
+  "name": "tabs",
+  "description": "Tabs —— 本地优先、无账号无云端的标签工作台（浏览器侧边栏扩展）",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "wxt",
     "dev:edge": "wxt -b edge",
     "build": "wxt build",
-    "build:compat": "cross-env TABHAVEN_VARIANT=compat wxt build",
+    "build:compat": "cross-env TABS_VARIANT=compat wxt build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

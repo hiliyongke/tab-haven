@@ -13,7 +13,7 @@ interface SessionData {
   manualStandaloneTabIds: number[];
 }
 
-const SESSION_KEY = 'tabhaven.session';
+const SESSION_KEY = 'tabs.session';
 
 const EMPTY_SESSION: SessionData = { itemTabBindings: {}, manualStandaloneTabIds: [] };
 

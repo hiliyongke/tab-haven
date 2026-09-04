@@ -8,7 +8,7 @@ import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger
  * 场景：撤销恢复/快照恢复发放豁免后 SW 被回收，重新拉起时令牌不丢。
  */
 
-const STORAGE_KEY = 'tabhaven.allowance.v1';
+const STORAGE_KEY = 'tabs.allowance.v1';
 
 afterEach(() => {
   fakeBrowser.reset();

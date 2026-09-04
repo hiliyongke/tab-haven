@@ -95,7 +95,7 @@ function renderSectionList(count: number, reorderEnabled: boolean) {
 
 /** 当前挂载的标签行数（虚拟窗口内的 li，非全量）。 */
 function mountedRows(view: ReturnType<typeof render>): NodeListOf<HTMLElement> {
-  return view.container.querySelectorAll<HTMLElement>('li[data-tabhaven-tab-id]');
+  return view.container.querySelectorAll<HTMLElement>('li[data-tabs-tab-id]');
 }
 
 describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
@@ -128,11 +128,11 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
     await waitFor(() => expect(mountedRows(view).length).toBeGreaterThan(0));
     // 目标在初始窗口外（初始窗口只含前 ~40 行）
     expect(
-      view.container.querySelector('li[data-tabhaven-tab-id="240"]')
+      view.container.querySelector('li[data-tabs-tab-id="240"]')
     ).toBeNull();
     window.dispatchEvent(new CustomEvent<number>(LOCATE_SCROLL_EVENT, { detail: 240 }));
     await waitFor(() => {
-      expect(view.container.querySelector('li[data-tabhaven-tab-id="240"]')).not.toBeNull();
+      expect(view.container.querySelector('li[data-tabs-tab-id="240"]')).not.toBeNull();
     });
   });
 });

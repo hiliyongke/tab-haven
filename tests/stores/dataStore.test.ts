@@ -131,8 +131,7 @@ describe('dataStore 固定空间事务', () => {
 
   it('importData：部分分区写入失败时整体回滚（不留下半套数据）', async () => {
     const payload = {
-      format: 'tabhaven.export',
-      formatVersion: 1,
+      format: 'tabs.export',
       exportedAt: new Date().toISOString(),
       fixedFolders: [
         {
@@ -152,7 +151,7 @@ describe('dataStore 固定空间事务', () => {
     const setSpy = vi
       .spyOn(fakeBrowser.storage.local, 'set')
       .mockImplementation(((items: Record<string, unknown>) => {
-        if ('tabhaven.persistent-pins.v1' in items) return Promise.reject(new Error('quota'));
+        if ('tabs.persistent-pins.v1' in items) return Promise.reject(new Error('quota'));
         return realSet(items);
       }) as never);
 
@@ -163,15 +162,15 @@ describe('dataStore 固定空间事务', () => {
     // 内存态未被污染
     expect(useDataStore.getState().folders).toHaveLength(0);
     // 已写入的分区已回滚：磁盘上不应残留导入的文件夹
-    const stored = (await fakeBrowser.storage.local.get('tabhaven.fixed-folders.v1')) as Record<
+    const stored = (await fakeBrowser.storage.local.get('tabs.fixed-folders.v1')) as Record<
       string,
       unknown
     >;
-    expect(stored['tabhaven.fixed-folders.v1'] ?? []).toEqual([]);
+    expect(stored['tabs.fixed-folders.v1'] ?? []).toEqual([]);
     setSpy.mockRestore();
   });
 
-  it('exportData：导出为完整备份 v2（含快照与归档）', async () => {
+  it('exportData：导出为完整备份（含快照与归档）', async () => {
     registerSnapshotProvider(() => [
       {
         id: 's1',
@@ -184,54 +183,20 @@ describe('dataStore 固定空间事务', () => {
     ]);
 
     const file = useDataStore.getState().exportData();
-    expect(file.formatVersion).toBe(2);
+    expect(file.format).toBe('tabs.export');
     expect(file.snapshots).toHaveLength(1);
     expect(file.snapshots[0]!.origin).toBe('archive');
   });
 
-  it('importData：v1 旧备份不清空现有快照', async () => {
-    const existing = [
-      {
-        id: 's1',
-        name: '我的快照',
-        origin: 'manual' as const,
-        createdAt: 1,
-        tabCount: 0,
-        tabs: []
-      }
-    ];
-    await fakeBrowser.storage.local.set({ 'tabhaven.snapshots.v1': existing });
-    registerSnapshotProvider(() => existing);
-
-    const v1 = {
-      format: 'tabhaven.export',
-      formatVersion: 1,
-      exportedAt: new Date().toISOString(),
-      fixedFolders: [],
-      persistentPins: [],
-      siteCollapse: [],
-      settings: DEFAULT_SETTINGS
-    };
-
-    await useDataStore.getState().importData(v1);
-
-    const stored = (await fakeBrowser.storage.local.get('tabhaven.snapshots.v1')) as Record<
-      string,
-      unknown
-    >;
-    expect(stored['tabhaven.snapshots.v1']).toHaveLength(1);
-  });
-
-  it('importData：v2 备份覆盖快照（完整备份语义）', async () => {
+  it('importData：备份覆盖快照（完整备份语义）', async () => {
     await fakeBrowser.storage.local.set({
-      'tabhaven.snapshots.v1': [
+      'tabs.snapshots.v1': [
         { id: 'old', name: '旧快照', origin: 'manual', createdAt: 1, tabCount: 0, tabs: [] }
       ]
     });
 
-    const v2 = {
-      format: 'tabhaven.export',
-      formatVersion: 2,
+    const payload = {
+      format: 'tabs.export',
       exportedAt: new Date().toISOString(),
       fixedFolders: [],
       persistentPins: [],
@@ -242,14 +207,14 @@ describe('dataStore 固定空间事务', () => {
       ]
     };
 
-    await useDataStore.getState().importData(v2);
+    await useDataStore.getState().importData(payload);
 
-    const stored = (await fakeBrowser.storage.local.get('tabhaven.snapshots.v1')) as Record<
+    const stored = (await fakeBrowser.storage.local.get('tabs.snapshots.v1')) as Record<
       string,
       { id: string }[]
     >;
-    expect(stored['tabhaven.snapshots.v1']).toHaveLength(1);
-    expect(stored['tabhaven.snapshots.v1']![0]!.id).toBe('new');
+    expect(stored['tabs.snapshots.v1']).toHaveLength(1);
+    expect(stored['tabs.snapshots.v1']![0]!.id).toBe('new');
   });
 
   it('updateSettings：落盘失败时不切换到新值并置起降级标志', async () => {

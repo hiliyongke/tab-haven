@@ -48,8 +48,8 @@ export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
  */
 export const SettingsSchema = z.object({
   themePreference: z.enum(['system', 'light', 'dark']).default('system'),
-  /** 主题色预设：forest 石墨绿（默认）/ ocean 雾霾蓝 / violet 暮山紫 / sunset 暖阳橙 / mono 中性灰 / plain 纯净（无底色，跟随 Chrome 明暗）。 */
-  colorTheme: z.enum(['forest', 'ocean', 'violet', 'sunset', 'mono', 'plain']).default('forest'),
+  /** 主题色预设：plain 纯净（默认，无底色跟随 Chrome 明暗）/ forest 石墨绿 / ocean 雾霾蓝 / violet 暮山紫 / sunset 暖阳橙 / mono 中性灰。 */
+  colorTheme: z.enum(['forest', 'ocean', 'violet', 'sunset', 'mono', 'plain']).default('plain'),
   /** 语言覆盖（BCP-47）。宽松校验兼容旧数据，仅约束长度与格式。 */
   language: z.string().min(2).max(32).optional(),
   /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
@@ -148,7 +148,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
   themePreference: 'system',
-  colorTheme: 'forest',
+  colorTheme: 'plain',
   language: undefined,
   aggregationThreshold: 2,
   tabOrderSync: true,
@@ -255,28 +255,14 @@ export const SnapshotSchema = z.object({
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
 /**
- * 导出文件格式。
+ * 导出文件格式（第一版，唯一格式，不背历史版本兼容包袱）。
  *
- * v1：仅固定空间与设置（快照/归档不导出，与 README「完整备份」文件名不符）。
- * v2：新增 snapshots（命名快照 + 关窗自动快照 + 归档 + 轻量空间快照），
- *     导出文件才真正等价于一次完整备份。
- *
- * 读取端同时接受 v1/v2（ExportFileV1Schema），v1 的快照分区视为「未导出」而非空，
- * 避免在覆盖导入时把用户已有的快照清空。
+ * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族
+ * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 轻量空间）。
+ * 格式演进时按「当前唯一格式」直接替换本 schema。
  */
-export const ExportFileV1Schema = z.object({
-  format: z.literal('tabhaven.export'),
-  formatVersion: z.literal(1),
-  exportedAt: z.string(),
-  fixedFolders: z.array(FixedFolderSchema),
-  persistentPins: z.array(PersistentPinSchema),
-  siteCollapse: SiteCollapseSchema,
-  settings: SettingsSchema
-});
-
-export const ExportFileV2Schema = z.object({
-  format: z.literal('tabhaven.export'),
-  formatVersion: z.literal(2),
+export const ExportFileSchema = z.object({
+  format: z.literal('tabs.export'),
   exportedAt: z.string(),
   fixedFolders: z.array(FixedFolderSchema),
   persistentPins: z.array(PersistentPinSchema),
@@ -286,21 +272,12 @@ export const ExportFileV2Schema = z.object({
   snapshots: z.array(SnapshotSchema).default([])
 });
 
-export type ExportFile = z.infer<typeof ExportFileV2Schema>;
+export type ExportFile = z.infer<typeof ExportFileSchema>;
 
-/** 导出文件统一读取口径：v1/v2 皆可，未知版本拒绝（不静默降级）。 */
-export function parseExportFile(raw: unknown):
-  | { success: true; data: ExportFile; snapshotsIncluded: boolean }
-  | { success: false } {
-  const v2 = ExportFileV2Schema.safeParse(raw);
-  if (v2.success) return { success: true, data: v2.data, snapshotsIncluded: true };
-  const v1 = ExportFileV1Schema.safeParse(raw);
-  if (v1.success) {
-    return {
-      success: true,
-      data: { ...v1.data, formatVersion: 2, snapshots: [] },
-      snapshotsIncluded: false
-    };
-  }
-  return { success: false };
+/** 导出文件统一读取口径：单一格式，不匹配即拒绝（不静默降级）。 */
+export function parseExportFile(
+  raw: unknown
+): { success: true; data: ExportFile } | { success: false } {
+  const parsed = ExportFileSchema.safeParse(raw);
+  return parsed.success ? { success: true, data: parsed.data } : { success: false };
 }

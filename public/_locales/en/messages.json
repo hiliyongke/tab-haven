@@ -1,6 +1,6 @@
 {
   "extName": {
-    "message": "TabHaven",
+    "message": "Tabs",
     "description": "Extension name shown in the store and toolbar"
   },
   "extDescription": {
@@ -8,15 +8,15 @@
     "description": "Extension long description shown in the store"
   },
   "actionDefaultTitle": {
-    "message": "TabHaven",
+    "message": "Tabs",
     "description": "Toolbar icon hover tooltip"
   },
   "sidePanelTitle": {
-    "message": "TabHaven Tab Panel",
+    "message": "Tabs Tab Panel",
     "description": "Side panel title"
   },
   "popupTitle": {
-    "message": "TabHaven Quick Switcher",
+    "message": "Tabs Quick Switcher",
     "description": "Popup quick switcher title"
   },
   "commandFocusSearch": {
@@ -24,7 +24,7 @@
     "description": "Command description for the keyboard shortcut"
   },
   "commandOpenPanel": {
-    "message": "Open / focus the TabHaven panel",
+    "message": "Open / focus the Tabs panel",
     "description": "Command description for the keyboard shortcut"
   },
   "commandLocateActive": {
@@ -60,7 +60,7 @@
     "description": "Context menu item on the tab strip"
   },
   "menuOpenPanel": {
-    "message": "Open TabHaven panel",
+    "message": "Open Tabs panel",
     "description": "Context menu item on the toolbar icon"
   },
   "menuDiscardInactive": {
@@ -68,7 +68,7 @@
     "description": "Context menu item on the toolbar icon"
   },
   "menuOpenSettings": {
-    "message": "Open TabHaven settings",
+    "message": "Open Tabs settings",
     "description": "Context menu item on the toolbar icon"
   }
 }

@@ -249,7 +249,7 @@ export default defineBackground(() => {
             url: info.linkUrl,
             title: info.selectionText || info.linkUrl
           }).then((added) => {
-            if (!added) notifyUser('TabHaven', 'Already in a folder (deduped).');
+            if (!added) notifyUser('Tabs', 'Already in a folder (deduped).');
           });
         }
       } else if (tab?.url) {
@@ -258,7 +258,7 @@ export default defineBackground(() => {
           title: tab.title || tab.url,
           favIconUrl: tab.favIconUrl
         }).then((added) => {
-          if (!added) notifyUser('TabHaven', 'Already in a folder (deduped).');
+          if (!added) notifyUser('Tabs', 'Already in a folder (deduped).');
         });
       }
       return;
@@ -331,7 +331,7 @@ export default defineBackground(() => {
   browser.omnibox?.onInputStarted.addListener(() => {
     if (!cachedSettings.omniboxEnabled) return;
     void browser.omnibox.setDefaultSuggestion({
-      description: 'TabHaven: type to search tabs, pins and folders'
+      description: 'Tabs: type to search tabs, pins and folders'
     });
   });
 
@@ -357,7 +357,7 @@ export default defineBackground(() => {
 
   // 自动休眠：白名单 + 台账 + 通知（alarms 保活调度，MV3 SW 回收后仍可触发）
   browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'tabhaven-auto-discard') void runAutoDiscard();
+    if (alarm.name === 'tabs-auto-discard') void runAutoDiscard();
     // 定时自动快照：兜住「崩溃 / 强制退出 / 长期不关窗」这些关窗保存覆盖不到的场景。
     if (alarm.name === AUTO_SNAPSHOT_ALARM) void runAutoSnapshot();
   });

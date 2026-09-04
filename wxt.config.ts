@@ -3,13 +3,13 @@ import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-// TABHAVEN_VARIANT=compat：兼容变体（剥离 sidePanel，面向不支持侧边栏的 Chromium 内核）
+// TABS_VARIANT=compat：兼容变体（剥离 sidePanel，面向不支持侧边栏的 Chromium 内核）
 // 见 docs/ARCHITECTURE.md 第 5 章「已知约束」的兼容变体条目。V1.0 只发布标准版，兼容版管道建成但随 V2.0 交付。
 //
 // 实现说明：WXT 会自动检测 sidepanel.html 入口并合并 side_panel 字段与
 // sidePanel 权限，manifest 配置函数无法可靠覆盖（实测）。因此兼容变体的
 // 字段剥离放在 build:manifestGenerated hook 中做确定性后处理。
-const isCompatVariant = process.env.TABHAVEN_VARIANT === 'compat';
+const isCompatVariant = process.env.TABS_VARIANT === 'compat';
 
 export default defineConfig({
   // 源码目录：分层结构（core/platform/stores/ui/entrypoints）位于 src/ 下

@@ -50,7 +50,7 @@ export function isWhitelisted(hostname: string, whitelist: readonly string[]): b
 export function notifyUser(title: string, message: string): void {
   if (!browser.notifications?.create) return;
   browser.notifications
-    .create('tabhaven-action', {
+    .create('tabs-action', {
       type: 'basic',
       iconUrl: browser.runtime.getURL('/icon/128.png'),
       title,

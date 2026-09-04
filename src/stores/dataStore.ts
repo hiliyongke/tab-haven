@@ -690,15 +690,11 @@ export const useDataStore = create<DataState>()((set, get) => {
     refreshSettings: () => syncSettingsFromStorage(),
 
     /**
-     * 导出为完整备份（formatVersion 2）：固定空间 + 设置 + 全部快照族。
-     *
-     * v1 只导出固定空间与设置，文件名却是 `tabhaven-backup-*.json`——
-     * 用户有充分理由认为它是一次完整备份，但快照/归档不在其中。
+     * 导出为完整备份：固定空间 + 设置 + 全部快照族。
      * 快照经仓库最新值读取：面板打开期间 background 可能写入关窗自动快照。
      */
     exportData: () => ({
-      format: 'tabhaven.export' as const,
-      formatVersion: 2 as const,
+      format: 'tabs.export' as const,
       exportedAt: new Date().toISOString(),
       fixedFolders: get().folders,
       persistentPins: get().pins,
@@ -708,19 +704,16 @@ export const useDataStore = create<DataState>()((set, get) => {
     }),
 
     /**
-     * 导入为事务：四个分区（文件夹 / 固定图标 / 折叠态 / 设置）全部落盘成功后才切换内存态。
+     * 导入为事务：五个分区（文件夹 / 固定图标 / 折叠态 / 设置 / 快照族）全部落盘成功后才切换内存态。
      *
      * 早期实现用 Promise.all 并发写且只看是否 reject——DataRepository.write 以 boolean
      * 表达失败，于是「部分分区写成功」也会整体提示导入成功，用户以为已完成备份迁移。
      * 现改为串行写 + 失败回滚：任一分区写失败即把已写入的分区还原为导入前的值。
-     *
-     * 版本：v2 含快照族；v1（旧备份）视为「未导出快照」，保留用户现有快照而不是清空。
      */
     importData: async (raw) => {
       const parsed = parseExportFile(raw);
       if (!parsed.success) throw new Error('invalid-tab-haven-export');
       const data = parsed.data;
-      const snapshotsIncluded = parsed.snapshotsIncluded;
 
       const before = {
         folders: get().folders,
@@ -753,15 +746,11 @@ export const useDataStore = create<DataState>()((set, get) => {
             rollback: () => repos.settings.write(before.settings)
           },
           // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
-          ...(snapshotsIncluded
-            ? [
-                {
-                  name: 'snapshots',
-                  write: () => repos.snapshots.write(data.snapshots),
-                  rollback: () => repos.snapshots.write(before.snapshots)
-                }
-              ]
-            : [])
+          {
+            name: 'snapshots',
+            write: () => repos.snapshots.write(data.snapshots),
+            rollback: () => repos.snapshots.write(before.snapshots)
+          }
         ];
 
       const done: (typeof steps)[number][] = [];

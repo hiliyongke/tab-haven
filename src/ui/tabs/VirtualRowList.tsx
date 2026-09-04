@@ -9,7 +9,7 @@ const OVERSCAN = 6;
  * 虚拟化后目标行可能在渲染窗口外（DOM 不存在），App 层的 querySelector
  * 永远找不到——必须「先滚动到 index、行挂载后再查 DOM」，故经此事件通知。
  */
-export const LOCATE_SCROLL_EVENT = 'tabhaven:locate-scroll';
+export const LOCATE_SCROLL_EVENT = 'tabs:locate-scroll';
 
 /**
  * 零依赖的定高虚拟列表：只渲染可视区 + 上下缓冲的少量行，用于长分组避免挂载上千个 DOM 节点。

@@ -5,7 +5,7 @@ import { SearchEngine } from '@/core/search/SearchEngine';
  * 行为规格（FR-D2.1）：模糊匹配、首字母/拼音命中、激活优先排序、高亮。
  */
 const tabs = [
-  { id: 1, title: 'GitHub · TabHaven 开发', url: 'https://github.com/example', active: false },
+  { id: 1, title: 'GitHub · Tabs 开发', url: 'https://github.com/example', active: false },
   { id: 2, title: '腾讯云控制台', url: 'https://console.cloud.tencent.com/', active: false },
   { id: 3, title: '今日热榜', url: 'https://example.com/hot', active: true },
   { id: 4, title: 'GitLab', url: 'https://gitlab.com/', active: false }

@@ -612,7 +612,7 @@ function buildSections(
                   title={t(swatch.labelKey)}
                   aria-label={t(swatch.labelKey)}
                   /* 样式走 .theme-swatch：视觉 20px / 命中 24px，
-                     选中态为「白色内环 + 品牌外环」双层（旧版 gray-500 外环
+                     选中态为「白色内环 + 品牌外环」双层（gray-500 外环
                      落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */
                   className="theme-swatch appearance-none"
                   style={{ backgroundColor: swatch.hex }}
@@ -1048,7 +1048,7 @@ export function SettingsPage() {
     const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `tabhaven-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `tabs-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
     setTransferStatus(t('settings.exportSuccess'));

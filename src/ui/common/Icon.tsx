@@ -3,6 +3,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  CircleAlert,
   Bookmark,
   BookmarkPlus,
   Command,
@@ -12,6 +13,7 @@ import {
   FolderOpen,
   GripVertical,
   History,
+  Layers,
   LocateFixed,
   Menu,
   Pencil,
@@ -81,6 +83,10 @@ export const Icons = {
   shield: Shield,
   /** 会话快照（命名快照 / 关窗自动保存）。 */
   snapshot: Camera,
+  /** 保存为工作区：层叠表达「一组标签的工作集」（区别于文件夹/快照相机）。 */
+  layers: Layers,
+  /** 需要补充说明的提醒（圆圈感叹号）。 */
+  infoAlert: CircleAlert,
   /** 右键菜单（功能可发现性）。 */
   menu: Menu,
   /** 能力发现 Tip（友好高亮）。 */

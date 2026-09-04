@@ -36,7 +36,7 @@ export function logDegraded(scope: string, message: string, error?: unknown): vo
   const detail =
     error instanceof Error ? error.message : error === undefined ? undefined : String(error);
   push({ at: new Date().toISOString(), scope, message, detail });
-  console.warn(`[TabHaven][${scope}] ${message}`, error ?? '');
+  console.warn(`[Tabs][${scope}] ${message}`, error ?? '');
 }
 
 /** 记录一次真实失败（操作未达成且无法自动恢复）。 */
@@ -44,7 +44,7 @@ export function logFailure(scope: string, message: string, error?: unknown): voi
   const detail =
     error instanceof Error ? error.message : error === undefined ? undefined : String(error);
   push({ at: new Date().toISOString(), scope, message, detail });
-  console.error(`[TabHaven][${scope}] ${message}`, error ?? '');
+  console.error(`[Tabs][${scope}] ${message}`, error ?? '');
 }
 
 /** 快照导出（按时间升序，供设置页「导出诊断信息」使用）。 */
@@ -64,7 +64,7 @@ export function clearDiagnostics(): void {
  */
 export function exportDiagnostics(): string {
   const payload = {
-    product: 'TabHaven',
+    product: 'Tabs',
     exportedAt: new Date().toISOString(),
     userAgent: navigator.userAgent,
     entries: readDiagnostics()
@@ -80,8 +80,8 @@ export function exportDiagnostics(): string {
 export async function checkStorageHealth(): Promise<{ local: boolean; session: boolean }> {
   const probe = async (area: typeof browser.storage.local): Promise<boolean> => {
     try {
-      await area.set({ 'tabhaven.__health': Date.now() });
-      await area.remove('tabhaven.__health');
+      await area.set({ 'tabs.__health': Date.now() });
+      await area.remove('tabs.__health');
       return true;
     } catch (error) {
       logDegraded('storage-health', '存储探针写入失败，持久化可能已降级为内存态', error);

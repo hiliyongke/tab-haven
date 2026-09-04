@@ -171,7 +171,7 @@ export const TabRow = memo(function TabRow({
   );
 
   return (
-    <li ref={liRef} data-tabhaven-tab-id={tab.id}>
+    <li ref={liRef} data-tabs-tab-id={tab.id}>
       <RowItem
         faviconSrc={tab.favIconUrl}
         faviconTitle={tab.title || ''}

@@ -15,7 +15,7 @@ import { groupAccentVar, useDomainAccent } from '@/ui/tabs/accent';
 import { computeSplitGroupRoles } from '@/ui/tabs/splitGroupRoles';
 import { useDataStore } from '@/stores/dataStore';
 /** 用户主动定位当前标签时，请求临时区展开其所属分组。 */
-export const LOCATE_SECTION_EVENT = 'tabhaven:locate-section';
+export const LOCATE_SECTION_EVENT = 'tabs:locate-section';
 
 /** 原生组可使用的标准颜色（tabGroups 枚举）。 */
 const GROUP_COLORS = [

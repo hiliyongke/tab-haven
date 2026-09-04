@@ -3,7 +3,7 @@
  *
  * 双通道：
  *  - 权威设置在 chrome.storage（dataStore.settings）；
- *  - 页面级镜像（tabhaven:theme）供 theme-init 在渲染前同步读取（防闪烁）。
+ *  - 页面级镜像（tabs:theme）供 theme-init 在渲染前同步读取（防闪烁）。
  * 任何主题变更必须同时写镜像与 documentElement 数据属性。
  */
 
@@ -11,8 +11,8 @@ type ThemePreference = 'system' | 'light' | 'dark';
 /** 主题色预设（与 models.ts SettingsSchema.colorTheme 保持一致）。 */
 export type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono' | 'plain';
 
-const THEME_MIRROR_KEY = 'tabhaven:theme';
-const HUE_MIRROR_KEY = 'tabhaven:theme-hue';
+const THEME_MIRROR_KEY = 'tabs:theme';
+const HUE_MIRROR_KEY = 'tabs:theme-hue';
 
 export const COLOR_THEMES: readonly ColorTheme[] = [
   'forest',
@@ -28,7 +28,7 @@ function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-export function applyTheme(preference: ThemePreference, colorTheme: ColorTheme = 'forest'): void {
+export function applyTheme(preference: ThemePreference, colorTheme: ColorTheme = 'plain'): void {
   try {
     window.localStorage.setItem(THEME_MIRROR_KEY, preference);
     window.localStorage.setItem(HUE_MIRROR_KEY, colorTheme);

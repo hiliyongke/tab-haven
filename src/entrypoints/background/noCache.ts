@@ -56,7 +56,7 @@ export async function syncNoCacheRules(settings: Settings): Promise<void> {
       await dnr.updateDynamicRules({ removeRuleIds, addRules });
     }
   } catch (error) {
-    console.warn('[TabHaven] no-cache rule sync failed:', error);
+    console.warn('[Tabs] no-cache rule sync failed:', error);
   }
 }
 

@@ -27,7 +27,7 @@ function buildTabs(count: number): Array<{ id: number; title: string; url: strin
     return {
       id: index + 1,
       title: `${topic} · ${site} #${index + 1}`,
-      url: `https://${site}/path/${index + 1}?ref=tabhaven`,
+      url: `https://${site}/path/${index + 1}?ref=tabs`,
       active: index === 0
     };
   });

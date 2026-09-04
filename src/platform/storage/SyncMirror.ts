@@ -14,7 +14,7 @@ import { logDegraded } from '@/platform/diagnostics';
  * 同步范围：设置 + 固定集合。归档/快照等大数据不镜像。
  */
 
-const CHUNK_PREFIX = 'tabhaven.sync.v1.';
+const CHUNK_PREFIX = 'tabs.sync.v1.';
 const CHUNK_META_KEY = `${CHUNK_PREFIX}meta`;
 /** 单块安全字符数（chrome.storage.sync 单 key 配额 8KB）。 */
 const CHUNK_SIZE = 6000;

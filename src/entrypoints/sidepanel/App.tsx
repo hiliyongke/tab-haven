@@ -217,7 +217,7 @@ export default function App() {
     const requestId = ++locateRequestRef.current;
     if (query.trim()) setQuery('');
     const locateTarget = () => {
-      const target = document.querySelector<HTMLElement>(`[data-tabhaven-tab-id="${activeTabId}"]`);
+      const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${activeTabId}"]`);
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });

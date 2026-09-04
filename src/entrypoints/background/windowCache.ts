@@ -7,7 +7,7 @@ import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { t } from '@/i18n/headless';
 import { logDegraded } from '@/platform/diagnostics';
 
-const WINDOW_TABS_KEY = 'tabhaven.window-tabs.v1';
+const WINDOW_TABS_KEY = 'tabs.window-tabs.v1';
 type WindowTabsCache = Record<string, SnapshotTab[]>;
 let memWindowTabs: WindowTabsCache = {};
 let windowTabsFlushTimer: ReturnType<typeof setTimeout> | undefined;

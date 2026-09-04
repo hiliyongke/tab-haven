@@ -30,6 +30,8 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<'list' | 'import' | 'report'>('list');
   const [importText, setImportText] = useState('');
   const [importName, setImportName] = useState('');
+  /** 当前展开查看标签清单的快照 id（再次点击收起）。 */
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const originBadge = (origin: string): { label: string; className: string } => {
     switch (origin) {
@@ -243,11 +245,14 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
               </button>
               <button
                 type="button"
+                title={t('snapshots.saveSpaceHint')}
                 className="flex items-center justify-center gap-2 rounded-lg border border-control bg-surface px-3 py-2 text-sm font-medium text-gray-600 transition-base hover:bg-gray-50"
                 onClick={() => void handleSaveSpace()}
               >
-                <Icon d={Icons.folder} className="h-4 w-4" />
-                {t('snapshots.space')}
+                <Icon d={Icons.layers} className="h-4 w-4" />
+                {t('snapshots.saveSpaceAction')}
+                {/* 感叹号提醒：该按钮语义不直观（每次保存都新增一条，不覆盖），悬停看完整说明 */}
+                <Icon d={Icons.infoAlert} className="h-3.5 w-3.5 text-gray-400" />
               </button>
             </div>
           ) : (
@@ -305,68 +310,117 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                 )}
               <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
                 {group.items.map((snap) => (
-                  <li key={snap.id} className="flex items-center gap-2 px-2.5 py-2">
-                    <div className="min-w-0 flex-1">
-                      {editingId === snap.id ? (
-                        <TextField
-                          size="sm"
-                          value={editingName}
-                          ariaLabel={t('snapshots.rename')}
-                          onChange={setEditingName}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') void commitRename();
-                            if (event.key === 'Escape') {
-                              setEditingId(null);
-                              setEditingName('');
+                  <li key={snap.id} className="px-2.5 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        {editingId === snap.id ? (
+                          <TextField
+                            size="sm"
+                            value={editingName}
+                            ariaLabel={t('snapshots.rename')}
+                            onChange={setEditingName}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') void commitRename();
+                              if (event.key === 'Escape') {
+                                setEditingId(null);
+                                setEditingName('');
+                              }
+                            }}
+                            onBlur={() => void commitRename()}
+                          />
+                        ) : (
+                          <span className="block truncate text-xs font-medium text-gray-700">
+                            {snap.name}
+                          </span>
+                        )}
+                        <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
+                          <span
+                            className={
+                              'rounded px-1 py-px text-2xs leading-none ' +
+                              originBadge(snap.origin).className
                             }
-                          }}
-                          onBlur={() => void commitRename()}
-                        />
-                      ) : (
-                        <span className="block truncate text-xs font-medium text-gray-700">
-                          {snap.name}
+                          >
+                            {originBadge(snap.origin).label}
+                          </span>
+                          <span>
+                            {snap.tabCount} {t('tabs.tabCountUnit')} · {formatTime(snap.createdAt)}
+                          </span>
                         </span>
-                      )}
-                      <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
-                        <span
-                          className={
-                            'rounded px-1 py-px text-2xs leading-none ' +
-                            originBadge(snap.origin).className
-                          }
+                      </div>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        {/* 查看详情：展开快照内的标签清单（恢复前可确认内容） */}
+                        <button
+                          type="button"
+                          title={t('snapshots.detail')}
+                          aria-expanded={detailId === snap.id}
+                          className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                          onClick={() => setDetailId(detailId === snap.id ? null : snap.id)}
                         >
-                          {originBadge(snap.origin).label}
-                        </span>
-                        <span>
-                          {snap.tabCount} {t('tabs.tabCountUnit')} · {formatTime(snap.createdAt)}
-                        </span>
-                      </span>
+                          <Icon
+                            d={Icons.chevron}
+                            className={
+                              'h-4 w-4 transition-transform' +
+                              (detailId === snap.id ? ' rotate-90' : '')
+                            }
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          title={t('snapshots.restore')}
+                          className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600"
+                          onClick={() => void handleRestore(snap.id, snap.tabCount)}
+                        >
+                          <Icon d={Icons.openAll} className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title={t('snapshots.rename')}
+                          className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                          onClick={() => beginRename(snap.id, snap.name)}
+                        >
+                          <Icon d={Icons.pencil} className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title={t('snapshots.delete')}
+                          className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => void handleDelete(snap.id)}
+                        >
+                          <Icon d={Icons.trash} className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <button
-                        type="button"
-                        title={t('snapshots.restore')}
-                        className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600"
-                        onClick={() => void handleRestore(snap.id, snap.tabCount)}
-                      >
-                        <Icon d={Icons.openAll} className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        title={t('snapshots.rename')}
-                        className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                        onClick={() => beginRename(snap.id, snap.name)}
-                      >
-                        <Icon d={Icons.pencil} className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        title={t('snapshots.delete')}
-                        className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
-                        onClick={() => void handleDelete(snap.id)}
-                      >
-                        <Icon d={Icons.trash} className="h-4 w-4" />
-                      </button>
-                    </div>
+                    {detailId === snap.id && (
+                      <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-gray-100 bg-gray-50/70 px-2 py-1">
+                        {snap.tabs.length === 0 ? (
+                          <p className="py-2 text-center text-2xs text-gray-500">
+                            {t('snapshots.empty')}
+                          </p>
+                        ) : (
+                          <ul className="divide-y divide-gray-100">
+                            {snap.tabs.map((tab, index) => (
+                              <li
+                                key={`${index}-${tab.url}`}
+                                className="flex min-w-0 items-center gap-1.5 py-1"
+                              >
+                                {tab.pinned && (
+                                  <Icon
+                                    d={Icons.pin}
+                                    className="h-3 w-3 shrink-0 text-gray-400"
+                                  />
+                                )}
+                                <span className="min-w-0 flex-1 truncate text-2xs text-gray-700">
+                                  {tab.title || tab.url}
+                                </span>
+                                <span className="max-w-[45%] truncate text-3xs text-gray-400">
+                                  {tab.url}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -167,14 +167,14 @@ export async function discardTabSafely(
   if (!rawTab || rawTab.id === undefined) return false;
   const tab = mapTab(rawTab);
   if (!canSafelyDiscardTab(tab)) {
-    notifyUser('TabHaven', 'This tab cannot be discarded right now.');
+    notifyUser('Tabs', 'This tab cannot be discarded right now.');
     return false;
   }
   const ok = await browser.tabs
     .discard(tab.id)
     .then(() => true)
     .catch(() => false);
-  if (ok) notifyUser('TabHaven', 'Tab discarded.');
+  if (ok) notifyUser('Tabs', 'Tab discarded.');
   return ok;
 }
 

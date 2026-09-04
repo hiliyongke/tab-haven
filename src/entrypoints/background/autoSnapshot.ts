@@ -17,7 +17,7 @@ import { logDegraded } from '@/platform/diagnostics';
  *  - 内容未变化时跳过写入，避免生成一串完全相同的噪音快照并快速耗尽 maxAutoSnapshots。
  */
 
-const AUTO_SNAPSHOT_ALARM = 'tabhaven-auto-snapshot';
+const AUTO_SNAPSHOT_ALARM = 'tabs-auto-snapshot';
 
 /** 现场指纹：定时快照的去重依据（URL 集合 + 顺序）。 */
 function signatureOf(tabs: readonly SnapshotTab[]): string {

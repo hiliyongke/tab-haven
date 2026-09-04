@@ -1,6 +1,6 @@
 {
   "extName": {
-    "message": "TabHaven（页港）",
+    "message": "Tabs",
     "description": "扩展在商店与工具栏显示的名称"
   },
   "extDescription": {
@@ -8,15 +8,15 @@
     "description": "扩展在商店展示的长描述"
   },
   "actionDefaultTitle": {
-    "message": "TabHaven（页港）",
+    "message": "Tabs",
     "description": "工具栏图标悬停提示"
   },
   "sidePanelTitle": {
-    "message": "TabHaven 标签面板",
+    "message": "Tabs 标签面板",
     "description": "侧边栏标题"
   },
   "popupTitle": {
-    "message": "TabHaven 快速切换",
+    "message": "Tabs 快速切换",
     "description": "弹窗快速切换器标题"
   },
   "commandFocusSearch": {
@@ -24,7 +24,7 @@
     "description": "快捷键命令的描述"
   },
   "commandOpenPanel": {
-    "message": "打开 / 聚焦 TabHaven 面板",
+    "message": "打开 / 聚焦 Tabs 面板",
     "description": "快捷键命令的描述"
   },
   "commandLocateActive": {
@@ -60,7 +60,7 @@
     "description": "标签栏右键菜单项"
   },
   "menuOpenPanel": {
-    "message": "打开 TabHaven 面板",
+    "message": "打开 Tabs 面板",
     "description": "工具栏图标右键菜单项"
   },
   "menuDiscardInactive": {
@@ -68,7 +68,7 @@
     "description": "工具栏图标右键菜单项"
   },
   "menuOpenSettings": {
-    "message": "打开 TabHaven 设置",
+    "message": "打开 Tabs 设置",
     "description": "工具栏图标右键菜单项"
   }
 }

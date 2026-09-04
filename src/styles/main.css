@@ -192,7 +192,9 @@
 }
 
 /* ---------- 主题色预设（data-hue） ----------
- * forest 为默认（:root 内置梯度，无需覆盖）；其余预设覆盖品牌色梯度及派生变量。
+ * 默认 plain（纯净，无底色跟随 Chrome 明暗），设置默认值与 theme-init 回退均与之对齐；
+ * :root 内置梯度为 forest（石墨绿），仅在 JS 未跑的首帧瞬间可见，plain/其余预设
+ * 均通过 :root[data-hue] 覆盖品牌色梯度及派生变量。
  * 浅色：品牌梯度 + 带色调的画布/浅灰阶（灰阶深档保持暖调中性，与各色调兼容）；
  * 深色：品牌梯度 + 整套灰阶 + 画布（默认绿灰底与其他色相冲突，须整体替换）。
  * 徽章/进度等派生变量引用 var(--c-brand-*)，随梯度自动换肤。 */
@@ -773,9 +775,13 @@ body {
   background: var(--canvas);
   border-bottom: 1px solid var(--border-subtle);
 }
-/* 键盘流主入口：输入框聚焦时给容器一道品牌色边，焦点位置一眼可辨 */
+/* 键盘流主入口：聚焦时由容器整体给出焦点指示 ——
+   底边框转品牌色 + 底部 2px 指示条（下划线式，干净且醒目）。
+   不在 input 上画全局焦点环：全宽裸输入框套 2px 圆角 outline 会与
+   底边框叠成双重描边，观感突兀。焦点可见性不减反增（容器级指示）。 */
 .search-bar:focus-within {
-  border-color: color-mix(in srgb, var(--c-brand-500) 45%, var(--border-subtle));
+  border-bottom-color: var(--c-brand-500);
+  box-shadow: inset 0 -2px 0 0 var(--c-brand-500);
 }
 
 .search-bar-icon {
@@ -794,7 +800,14 @@ body {
   background: transparent;
   color: var(--c-gray-800);
   font-size: 12px;
-  /* 不清除 outline：全局 focus-visible 焦点环在此生效（键盘流主入口必须焦点可见） */
+  /* 豁免全局 focus-visible 焦点环：全宽裸输入框套圆角 outline 与容器底边框
+     叠成双重描边。焦点可见性由 .search-bar:focus-within 的容器级指示条承担。 */
+}
+
+.search-bar-input:focus-visible {
+  outline: none;
+  /* 全局环还附带一圈 canvas 色 box-shadow 描边，一并重置 */
+  box-shadow: none;
 }
 
 .search-bar-input::placeholder {

@@ -142,8 +142,8 @@ export function CommandPalette({
       },
       {
         id: 'saveSpace',
-        label: t('snapshots.space'),
-        icon: Icons.folder,
+        label: t('snapshots.saveSpacePalette'),
+        icon: Icons.layers,
         run: actions.onSaveSpace
       },
       {

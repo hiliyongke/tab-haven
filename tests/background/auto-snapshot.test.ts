@@ -74,10 +74,10 @@ describe('定时自动快照', () => {
       autoSaveSnapshots: true,
       autoSnapshotIntervalMin: 30
     });
-    const created = await fakeBrowser.alarms.get('tabhaven-auto-snapshot');
+    const created = await fakeBrowser.alarms.get('tabs-auto-snapshot');
     expect(created?.periodInMinutes).toBe(30);
 
     await syncAutoSnapshotAlarm({ ...DEFAULT_SETTINGS, autoSaveSnapshots: false });
-    expect(await fakeBrowser.alarms.get('tabhaven-auto-snapshot')).toBeUndefined();
+    expect(await fakeBrowser.alarms.get('tabs-auto-snapshot')).toBeUndefined();
   });
 });

@@ -11,7 +11,7 @@ import { logDegraded } from '@/platform/diagnostics';
  * 单组失败静默跳过，不影响其余组（标签保持未分组，下轮快照重试）。
  *
  * 生命周期（与设置开关联动）：
- *  - 创建成功的组 id 持久化记录（tabhaven.auto-groups.v1）；
+ *  - 创建成功的组 id 持久化记录（tabs.auto-groups.v1）；
  *  - 关闭开关时由 disbandAutoGroups 解散记录的组（标签回到未分组）。
  */
 
