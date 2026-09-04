@@ -20,6 +20,13 @@ export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<n
   for (const plan of plans) {
     try {
       const tabIds = [...plan.tabIds] as [number, ...number[]];
+      if (plan.absorbIntoGroupId !== undefined) {
+        // 吸收模式：把同站点未分组标签移入既有原生组（tabs.group 携带 groupId 即移动）。
+        // 目标组标题即站点标签（归并条件保证），无需改标题；组非本功能新建，
+        // 不计入 createdIds——关闭开关时的解散范围保持不变。
+        await browser.tabs.group({ tabIds, groupId: plan.absorbIntoGroupId });
+        continue;
+      }
       const groupId = await browser.tabs.group({ tabIds });
       if (groupId !== undefined) {
         await updateGroupMeta(groupId, plan.title, plan.color);

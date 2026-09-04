@@ -55,7 +55,7 @@ interface AggregationOptions {
 export const AUTO_EXPAND_THRESHOLD = 3;
 
 /** 单子域分组展示标签：裸域为注册域，否则 "子域.注册域"。 */
-function subLabel(subdomain: string, registrableDomain: string): string {
+export function subLabel(subdomain: string, registrableDomain: string): string {
   return subdomain ? `${subdomain}.${registrableDomain}` : registrableDomain;
 }
 

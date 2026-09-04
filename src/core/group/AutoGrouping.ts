@@ -1,5 +1,8 @@
 import type { TemporarySection } from '@/core/site/Sections';
 import { deriveSections } from '@/core/site/Sections';
+import { subLabel } from '@/core/site/SiteGrouping';
+import { siteResolver } from '@/core/site/SiteResolver';
+import { domainToUnicode } from '@/core/url/punycode';
 import { NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
 
@@ -35,6 +38,12 @@ export interface AutoGroupPlan {
   /** Chrome 组色枚举。 */
   color: string;
   tabIds: number[];
+  /**
+   * 吸收目标：已有原生组 id（同站点归并产生的分区携带，见 deriveSections）。
+   * 设置时 tabIds 为要并入该组的未分组标签（同站点），不再新建组；
+   * 不设置时按原语义新建原生组。
+   */
+  absorbIntoGroupId?: number;
 }
 
 /** 标签 → 稳定的 8 色枚举（同一标题永远同色，且避开灰色）。 */
@@ -54,9 +63,20 @@ function isLanguageSection(section: TemporarySection): boolean {
   return section.kind === 'site' && section.siteKey.startsWith('lang-');
 }
 
+/** 标签 URL 的站点展示标签（子域.注册域 / 裸注册域）；无法解析（非 web 页）返回 null。 */
+function siteLabelOfTab(tab: TabRecord): string | null {
+  const site = tab.url ? siteResolver.resolve(tab.url) : null;
+  return site ? domainToUnicode(subLabel(site.subdomain, site.registrableDomain)) : null;
+}
+
 /**
  * 从展示 sections 推导自动分组计划。
- * 保守策略：任一标签已入原生组则整组跳过（绝不并入用户手动分组）。
+ * 保守策略：
+ *  - 未分组站点组照常新建原生组；
+ *  - 同站点归并产生的分区（mergedGroupIds，见 deriveSections）：把与既有原生组
+ *    同站点的未分组标签吸收进该组，收敛为"每站点一个原生组"——否则会为同一站点
+ *    另建一个重复域名组（碎片化）；
+ *  - 除此之外任一标签已入原生组则整组跳过（绝不并入用户手动分组）。
  */
 export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroupPlan[] {
   const plans: AutoGroupPlan[] = [];
@@ -65,7 +85,30 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
     // site section 已满足聚合阈值（阈值 1 时单标签站点也成组），此处不再设下限；
     // 语言分组是兜底聚合（每种语言无条件成 section），单标签语言组没有组织意义，设下限 2。
     if (isLanguageSection(section) && section.tabs.length < 2) continue;
-    if (section.tabs.some((tab) => tab.groupId !== NO_GROUP)) continue;
+
+    const groupedTabs = section.tabs.filter((tab) => tab.groupId !== NO_GROUP);
+    if (groupedTabs.length > 0) {
+      // 仅处理"单一原生组且组内成员全部属于它"的归并分区；多组混入时无法安全吸收，跳过。
+      const merged = section.mergedGroupIds;
+      if (!merged || merged.length !== 1) continue;
+      const targetGroupId = merged[0]!;
+      if (groupedTabs.some((tab) => tab.groupId !== targetGroupId)) continue;
+      // 吸收范围限于与既有组同站点的未分组标签（异子域标签保持未分组，由后续轮次处理）。
+      const anchorLabel = siteLabelOfTab(groupedTabs[0]!);
+      if (!anchorLabel) continue;
+      const absorbTabIds = section.tabs
+        .filter((tab) => tab.groupId === NO_GROUP && siteLabelOfTab(tab) === anchorLabel)
+        .map((tab) => tab.id);
+      if (absorbTabIds.length === 0) continue;
+      plans.push({
+        title: anchorLabel,
+        color: groupColorForLabel(anchorLabel),
+        tabIds: absorbTabIds,
+        absorbIntoGroupId: targetGroupId
+      });
+      continue;
+    }
+
     plans.push({
       title: section.title,
       color: groupColorForLabel(section.title),

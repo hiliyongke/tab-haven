@@ -99,4 +99,26 @@ describe('AutoGroupSync 生命周期', () => {
     expect(count).toBe(0);
     expect(removeMock).not.toHaveBeenCalled();
   });
+
+  it('吸收计划：把标签移入既有组，不新建组、不记录、不改标题', async () => {
+    const groupMock = stubTabsGroup();
+    const { updateMock } = stubTabGroups();
+
+    const absorbPlan: AutoGroupPlan = {
+      title: 'yehe.woa.com',
+      color: 'blue',
+      tabIds: [2],
+      absorbIntoGroupId: 7
+    };
+    const count = await syncAutoGroups([absorbPlan]);
+
+    expect(count).toBe(0);
+    // 只发生一次 tabs.group 调用，且携带目标组 id（移动语义而非新建）
+    expect(groupMock).toHaveBeenCalledTimes(1);
+    expect(groupMock).toHaveBeenCalledWith({ tabIds: [2], groupId: 7 });
+    // 不新建组（无 updateGroupMeta）、不写入自动组记录（解散范围不变）
+    expect(updateMock).not.toHaveBeenCalled();
+    const stored = await fakeBrowser.storage.local.get('tabhaven.auto-groups.v1');
+    expect(stored['tabhaven.auto-groups.v1']).toBeUndefined();
+  });
 });
