@@ -235,7 +235,7 @@
     "groupAccentAuto": "自动配色",
     "groupAccentMono": "统一中性",
     "newTabPosition": "新建标签位置",
-    "newTabPositionHint": "新建标签出现在窗口末尾，或当前激活标签之后",
+    "newTabPositionHint": "无论用哪种方式新建标签（Ctrl+T、浏览器 + 按钮、面板按钮），都出现在窗口末尾，或当前激活标签之后",
     "newTabEnd": "窗口末尾",
     "newTabAfterActive": "激活标签之后",
     "discardNotify": "自动休眠系统通知",

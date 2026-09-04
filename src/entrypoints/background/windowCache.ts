@@ -15,6 +15,21 @@ const windowRefreshTimers = new Map<number, ReturnType<typeof setTimeout>>();
 /** 下一次关闭时跳过自动保存的窗口（归档流程已自行留档，防重复快照）。 */
 export const skipAutoSaveWindowIds = new Set<number>();
 
+/**
+ * 每窗口最近一次激活的标签 id（onActivated 维护）。
+ * 「新建标签位置 = 激活标签之后」的定位锚点：onCreated 时新标签已被 Chrome
+ * 激活，直接 query active 只会查到它自己，必须用激活前的记录。
+ */
+const lastActiveTabIds = new Map<number, number>();
+
+export function recordActiveTab(windowId: number, tabId: number): void {
+  lastActiveTabIds.set(windowId, tabId);
+}
+
+export function getLastActiveTabId(windowId: number): number | undefined {
+  return lastActiveTabIds.get(windowId);
+}
+
 /** 把内存缓存刷入 storage.session（防 SW 回收后丢失）。 */
 function flushWindowTabs(): void {
   windowTabsFlushTimer = undefined;

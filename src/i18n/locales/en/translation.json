@@ -235,7 +235,7 @@
     "groupAccentAuto": "Auto",
     "groupAccentMono": "Neutral",
     "newTabPosition": "New tab position",
-    "newTabPositionHint": "Where a new tab opens: end of window, or right after the active tab",
+    "newTabPositionHint": "New tabs open at the end of the window, or right after the active tab — no matter how they are created (Ctrl+T, the browser + button, or the panel button)",
     "newTabEnd": "End of window",
     "newTabAfterActive": "After active tab",
     "discardNotify": "Auto-discard notification",

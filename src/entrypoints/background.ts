@@ -48,7 +48,9 @@ import {
   initWindowTabsCache,
   handleWindowRemoved,
   skipAutoSaveWindowIds,
-  refreshWindowTabs
+  refreshWindowTabs,
+  recordActiveTab,
+  getLastActiveTabId
 } from './background/windowCache';
 
 export default defineBackground(() => {
@@ -111,6 +113,36 @@ export default defineBackground(() => {
   }
   void syncActionClickBehavior();
 
+  /**
+   * 全局「新建标签位置」（settings.newTabPosition）：
+   * 任何来源的新标签（Ctrl+T / 浏览器 + 按钮 / 面板按钮 / 固定条目打开）
+   * 在 'after-active' 模式下都移动到上一激活标签之后。面板按钮路径已在
+   * 创建时指定 index，此处幂等跳过；'end' 模式下直接返回（浏览器默认即末尾）。
+   * 锚点用 onActivated 维护的最近激活标签——onCreated 时新标签已被 Chrome
+   * 激活，query active 只会查到它自己。
+   */
+  async function enforceNewTabPosition(tab: {
+    id?: number;
+    windowId?: number;
+    index?: number;
+    pinned?: boolean;
+  }): Promise<void> {
+    try {
+      if (cachedSettings.newTabPosition !== 'after-active') return;
+      if (tab.id === undefined || tab.windowId === undefined) return;
+      if (tab.pinned) return;
+      const anchorId = getLastActiveTabId(tab.windowId);
+      if (anchorId === undefined || anchorId === tab.id) return;
+      const anchor = await browser.tabs.get(anchorId).catch(() => undefined);
+      if (!anchor || anchor.windowId !== tab.windowId || anchor.index === undefined) return;
+      const target = anchor.index + 1;
+      if (tab.index === target) return;
+      await browser.tabs.move(tab.id, { windowId: tab.windowId, index: target });
+    } catch (error) {
+      logDegraded('background', '新建标签位置调整失败', error);
+    }
+  }
+
   // 关窗自动保存：恢复窗口标签缓存并为当前窗口建索引。
   void initWindowTabsCache();
   // 开发者禁缓存：DNR 规则对齐 + 命中站点警示条（设置变更经 watch 实时同步）。
@@ -122,6 +154,12 @@ export default defineBackground(() => {
     coordinator.handleCreated(mapTab(tab));
     refreshBadgeSoon();
     if (typeof tab.windowId === 'number') scheduleWindowRefresh(tab.windowId);
+    void enforceNewTabPosition(tab);
+  });
+  browser.tabs.onActivated.addListener((info) => {
+    if (typeof info.windowId === 'number' && typeof info.tabId === 'number') {
+      recordActiveTab(info.windowId, info.tabId);
+    }
   });
   browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     coordinator.handleUpdated(
