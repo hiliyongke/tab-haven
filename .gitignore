@@ -1,8 +1,46 @@
+# ---------- 依赖 ----------
 node_modules/
+
+# ---------- 构建产物（WXT / 扩展打包） ----------
 .output/
 .wxt/
 dist/
 stats.html
 *.zip
+*.crx
+*.pem
+*.key
+*.xpi
+
+# ---------- 测试与覆盖率 ----------
+coverage/
+.vitest-cache/
+
+# ---------- 日志 ----------
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------- 环境变量与密钥（扩展项目尤其禁止入库） ----------
+.env
+.env.*
+*.local
+!.env.example
+
+# ---------- 缓存与增量构建 ----------
+.eslintcache
+*.tsbuildinfo
+.vite/
+
+# ---------- 编辑器与系统文件 ----------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---------- 助手工作区 ----------
 .codebuddy
 .workbuddy

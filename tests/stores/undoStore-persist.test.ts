@@ -19,10 +19,12 @@ afterEach(() => {
 });
 
 async function closeOne(url = 'https://a.com/'): Promise<void> {
-  await useUndoStore.getState().closeWithUndo(
-    [{ id: 1, windowId: 1, index: 0, url, title: 'A', pinned: false, groupId: -1 } as never],
-    [1]
-  );
+  await useUndoStore
+    .getState()
+    .closeWithUndo(
+      [{ id: 1, windowId: 1, index: 0, url, title: 'A', pinned: false, groupId: -1 } as never],
+      [1]
+    );
 }
 
 describe('persistUndo 开关语义', () => {

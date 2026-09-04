@@ -12,10 +12,7 @@ import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
-import {
-  CapabilitiesGuide,
-  PresetsPanel
-} from '@/entrypoints/options/settingPresets';
+import { CapabilitiesGuide, PresetsPanel } from '@/entrypoints/options/settingPresets';
 
 /**
  * 设置页**编排层**：状态、写盘通道与弹窗流转。
