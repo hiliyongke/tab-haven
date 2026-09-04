@@ -2,10 +2,9 @@ import type { ReactNode } from 'react';
 
 /**
  * 行内操作按钮容器。
- * - 默认（forceVisible=false）：绝对定位浮层，悬停/聚焦时 opacity 淡入，
- *   不参与布局 —— 标题区零位移（替代旧 w-0→w-auto 的宽度挤压与不可过渡问题），
- *   左缘用渐变淡出到行底色（--row-bg，由各状态规则同步赋值），盖住长标题不突兀；
- * - forceVisible：回归静态占位（用户设置"操作按钮常显"时保留布局宽度）。
+ * - 默认（forceVisible=false）：max-width 0 → 150px 展开（悬停/聚焦触发，
+ *   main.css .row-actions），参与 flex 布局 —— 标题自动收缩省略，与按钮零重叠；
+ * - forceVisible：静态常显占位（用户设置"操作按钮常显"时保留布局宽度）。
  */
 export function RowActions({
   forceVisible = false,

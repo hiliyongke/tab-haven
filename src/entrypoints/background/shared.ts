@@ -107,11 +107,33 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
   browser.runtime.sendMessage(message).catch(() => {});
 }
 
-/** 打开（或聚焦）当前窗口的侧边栏。 */
+/**
+ * 打开（或聚焦）当前窗口的侧边栏。
+ *
+ * 关键约束：sidePanel.open 必须在用户手势回调的同步栈内调用 ——
+ * 此前先 await browser.tabs.query(...) 再 open，手势令牌在 await 后已被
+ * Chrome 消费，open 以「user gesture is required」拒绝，而错误被
+ * .catch(() => {}) 静默吞掉，表现为「右键菜单点『打开面板』没反应」。
+ * 现在 windowId 直接用 WINDOW_ID_CURRENT（免预查询），失败降级为
+ * lastFocusedWindow 二次尝试；所有失败都记入诊断，不再静默。
+ */
 export async function openSidePanel(): Promise<void> {
-  if (!browser.sidePanel?.open) return;
-  const [tab] = await browser.tabs.query({ currentWindow: true, active: true });
-  if (tab?.windowId !== undefined) {
-    await browser.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  const sidePanel = browser.sidePanel;
+  if (!sidePanel?.open) {
+    // Chrome < 116 无 open()：面板只能从 Chrome 侧边栏入口手动打开。
+    logDegraded('background', '当前浏览器不支持 sidePanel.open（需 Chrome 116+）');
+    return;
+  }
+  try {
+    await sidePanel.open({ windowId: browser.windows.WINDOW_ID_CURRENT });
+    return;
+  } catch {
+    // WINDOW_ID_CURRENT 不被接受（罕见）：降级为 lastFocusedWindow 再试一次。
+  }
+  try {
+    const win = await browser.windows.getLastFocused();
+    if (win?.id !== undefined) await sidePanel.open({ windowId: win.id });
+  } catch (error) {
+    logDegraded('background', '打开侧边栏失败', error);
   }
 }

@@ -180,6 +180,21 @@
     "importBookmarksHint": "将书签栏顶层文件夹导入为收藏夹（同名合并、网址全局去重）",
     "importBookmarksAction": "导入",
     "importBookmarksDone": "已导入 {{folders}} 个文件夹 / {{items}} 条",
+    "clearData": "清除所有数据",
+    "clearDataHint": "删除固定空间、固定图标、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复",
+    "clearDataTitle": "清除所有数据",
+    "clearDataDesc": "以下数据将被永久删除：",
+    "clearDataItemFolders": "固定空间与固定图标",
+    "clearDataItemSnapshots": "全部快照与归档",
+    "clearDataItemUndo": "撤销栈（内存与持久化记录）",
+    "clearDataItemSettings": "全部设置（恢复为默认值）",
+    "clearDataItemSync": "跨设备同步镜像",
+    "clearDataIrreversible": "此操作不可恢复。建议先导出一份备份。",
+    "exportBackupFirst": "先导出一份备份",
+    "clearDataAck": "我已了解上述数据将被永久删除，且无法恢复",
+    "clearDataAction": "永久清除",
+    "clearDataDone": "已清除全部数据",
+    "clearDataFailed": "清除失败，请重试",
     "export": "导出 JSON",
     "import": "导入 JSON",
     "exportSuccess": "备份已导出",
@@ -361,6 +376,9 @@
   },
   "presets": {
     "title": "快速预设",
+    "active": "使用中",
+    "custom": "自定义",
+    "customDesc": "当前配置由你手动调整，不对应任何预设；可点击上方预设一键套用",
     "hint": "一键套用适合你的配置，之后仍可逐项微调",
     "researcher": "研究者",
     "researcherDesc": "按项目收纳：网站聚合 + 最近访问排序 + 拼音搜索",
@@ -447,7 +465,8 @@
     "undoHow": "所有关闭操作都可撤销，误关也不怕"
   },
   "bg": {
-    "autoDiscarded": "已休眠 {{count}} 个标签（可在面板一键唤醒）"
+    "autoDiscarded": "已休眠 {{count}} 个标签（可在面板一键唤醒）",
+    "badgeTitle": "共 {{total}} 个标签 · {{dups}} 组重复 · {{discarded}} 个已休眠"
   },
   "popup": {
     "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭"

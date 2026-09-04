@@ -48,6 +48,8 @@ interface UndoState {
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
+  /** 清空撤销栈（内存 + 持久化）。清除所有数据时调用——被清除的数据不参与撤销。 */
+  clearBatches: () => Promise<void>;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -216,6 +218,14 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     notify: (message, action) => {
       set({ toast: { message, canUndo: false, batchId: undefined, action } });
       scheduleToastClear();
+    },
+
+    clearBatches: async () => {
+      clearTimeout(toastTimer);
+      set({ batches: [], toast: null });
+      // 持久层通常已被 storage.local.clear 清空，此处写空数组兜底（并消除文件缺失歧义）。
+      const ok = await undoRepository.write([]);
+      if (!ok) logFailure('undoStore', '撤销历史清空失败');
     }
   };
 });

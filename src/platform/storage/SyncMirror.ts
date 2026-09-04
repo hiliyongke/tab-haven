@@ -90,6 +90,19 @@ class SyncMirror {
     }
   }
 
+  /** 清除全部镜像（「清除所有数据」时调用：防止下次初始化时旧镜像回灌本地）。 */
+  async clearAll(): Promise<void> {
+    const area = browser.storage?.sync;
+    if (!area) return;
+    try {
+      const all = await area.get(null);
+      const keys = Object.keys(all).filter((key) => key.startsWith(CHUNK_PREFIX));
+      if (keys.length > 0) await area.remove(keys);
+    } catch (error) {
+      logDegraded('sync-mirror', '镜像清除失败', error);
+    }
+  }
+
   /** 读取镜像（不存在 / 损坏 / 过期返回 null）。 */
   async pull(): Promise<MirrorData | null> {
     const area = browser.storage?.sync;

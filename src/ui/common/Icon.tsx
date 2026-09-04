@@ -1,5 +1,6 @@
 import {
   Camera,
+  Check,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -43,6 +44,7 @@ import {
  */
 export const Icons = {
   plus: Plus,
+  check: Check,
   close: X,
   chevron: ChevronRight,
   collapseAll: ChevronsDownUp,

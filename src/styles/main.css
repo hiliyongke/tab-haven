@@ -1184,27 +1184,32 @@ body {
   box-shadow: 0 6px 16px rgb(var(--shadow-tint) / 0.16);
 }
 
-/* ---------- 行尾浮层操作（不占布局：悬停/聚焦淡入，标题零位移） ---------- */
-/* --row-bg 由各状态规则同步赋值，浮层左缘用渐变淡出到行底色，盖住长标题不突兀。
-   注意：base/hover/focus-within 三条声明放在 is-active 等状态规则之前（见上行区），
-   保证状态色（激活/搜索/媒体）在悬停时仍优先于灰底。 */
+/* ---------- 行尾操作（参与布局：悬停/聚焦时操作组以 max-width 展开，
+   标题自动收缩省略，与按钮零重叠 —— 旧「absolute 浮层 + 渐变遮罩」方案
+   在长中文标题上遮不干净，表现为文字压在按钮下） ---------- */
 .row-actions {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  right: 2px;
-  bottom: 0;
   display: flex;
+  flex: none;
   align-items: center;
   gap: 2px;
-  padding-left: 18px;
-  background: linear-gradient(to right, transparent, var(--row-bg) 45%);
+  max-width: 0;
+  overflow: hidden;
+  /* 纵向呼吸位：计数徽章顶部超出按钮 4px，没有它会被 overflow 裁掉一角 */
+  padding-top: 4px;
+  padding-bottom: 4px;
+  margin-top: -4px;
+  margin-bottom: -4px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease-out);
+  transition:
+    max-width var(--dur-fast) var(--ease-out),
+    padding-left var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
 }
 .row-item:hover .row-actions,
 .row-item:focus-within .row-actions {
+  max-width: 150px;
+  padding-left: 8px;
   opacity: 1;
   pointer-events: auto;
 }
@@ -1229,6 +1234,8 @@ body {
     opacity: 1;
   }
   .row-item .row-actions {
+    max-width: 150px;
+    padding-left: 8px;
     opacity: 1;
     pointer-events: auto;
   }

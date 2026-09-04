@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { webComparisonKey } from '@/core/url/UrlInspector';
+import { t } from '@/i18n/headless';
 import { cachedSettings } from './shared';
 import { logDegraded } from '@/platform/diagnostics';
 
@@ -46,7 +47,7 @@ async function refreshBadge(): Promise<void> {
     await browser.action.setBadgeText({ text });
     await browser.action.setBadgeBackgroundColor({ color });
     await browser.action.setTitle({
-      title: `${total} tabs · ${dupGroups.size} dup groups · ${discarded} discarded`
+      title: t('bg.badgeTitle', { total, dups: dupCount, discarded })
     });
   } catch (error) {
     logDegraded('badge', '工具栏角标更新失败', error);

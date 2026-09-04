@@ -241,6 +241,36 @@ describe('dataStore 固定空间事务', () => {
     expect(useDataStore.getState().collapsedSites).toEqual([]);
   });
 
+  it('clearAllData：清空 local/session/sync 三区存储，内存态重置为默认', async () => {
+    // 预置：固定空间 + 快照 + 同步镜像 + 会话绑定
+    await useDataStore.getState().createFolder('F');
+    await fakeBrowser.storage.local.set({
+      'tabs.snapshots.v1': [
+        { id: 's1', name: 'S', origin: 'manual', createdAt: 1, tabCount: 0, tabs: [] }
+      ]
+    });
+    await fakeBrowser.storage.sync.set({ 'tabs.sync.v1.meta': JSON.stringify({ count: 0 }) });
+    await fakeBrowser.storage.session.set({
+      'tabs.session': { itemTabBindings: { i1: 7 }, manualStandaloneTabIds: [] }
+    });
+
+    await useDataStore.getState().clearAllData();
+
+    // 三个存储区全部清空（旧键/遗留键一并带走）
+    const local = await fakeBrowser.storage.local.get(null);
+    expect(Object.keys(local)).toHaveLength(0);
+    const sync = await fakeBrowser.storage.sync.get(null);
+    expect(Object.keys(sync)).toHaveLength(0);
+    const session = await fakeBrowser.storage.session.get(null);
+    expect(Object.keys(session)).toHaveLength(0);
+
+    // 内存态重置为默认
+    expect(useDataStore.getState().settings).toEqual(DEFAULT_SETTINGS);
+    expect(useDataStore.getState().folders).toEqual([]);
+    expect(useDataStore.getState().boundTabIds).toEqual([]);
+    expect(useDataStore.getState().collapsedSites).toEqual([]);
+  });
+
   it('reconcileWithTabs：挂起条目导航转正 + 自动建立绑定', async () => {
     useDataStore.setState({
       folders: [

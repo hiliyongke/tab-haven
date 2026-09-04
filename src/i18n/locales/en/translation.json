@@ -180,6 +180,21 @@
     "importBookmarksHint": "Imports top-level bookmark-bar folders as collections (merged by name, URLs deduped)",
     "importBookmarksAction": "Import",
     "importBookmarksDone": "Imported {{folders}} folders / {{items}} items",
+    "clearData": "Clear all data",
+    "clearDataHint": "Delete fixed folders, pinned items, all snapshots & archives, the undo stack and the cross-device sync mirror; settings are reset to defaults. This cannot be undone",
+    "clearDataTitle": "Clear all data",
+    "clearDataDesc": "The following data will be permanently deleted:",
+    "clearDataItemFolders": "Fixed folders & pinned items",
+    "clearDataItemSnapshots": "All snapshots & archives",
+    "clearDataItemUndo": "The undo stack (in-memory & persisted)",
+    "clearDataItemSettings": "All settings (reset to defaults)",
+    "clearDataItemSync": "The cross-device sync mirror",
+    "clearDataIrreversible": "This cannot be undone. Export a backup first.",
+    "exportBackupFirst": "Export a backup first",
+    "clearDataAck": "I understand the data above will be permanently deleted and cannot be recovered",
+    "clearDataAction": "Erase permanently",
+    "clearDataDone": "All data cleared",
+    "clearDataFailed": "Failed to clear data, please retry",
     "export": "Export JSON",
     "import": "Import JSON",
     "exportSuccess": "Backup exported",
@@ -360,6 +375,9 @@
   },
   "presets": {
     "title": "Quick presets",
+    "active": "In use",
+    "custom": "Custom",
+    "customDesc": "Your current setup is manually tuned and doesn't match any preset; click a preset above to apply it in one go",
     "hint": "Apply a profile that fits you; fine-tune individual options afterward",
     "researcher": "Researcher",
     "researcherDesc": "Organize by project: site grouping + recency sort + pinyin search",
@@ -446,7 +464,8 @@
     "undoHow": "Every close is undoable — no fear of misclosing"
   },
   "bg": {
-    "autoDiscarded": "Discarded {{count}} tabs (wake them all from the panel)"
+    "autoDiscarded": "Discarded {{count}} tabs (wake them all from the panel)",
+    "badgeTitle": "{{total}} tabs · {{dups}} dup groups · {{discarded}} discarded"
   },
   "popup": {
     "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close"

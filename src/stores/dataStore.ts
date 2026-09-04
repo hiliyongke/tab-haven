@@ -117,6 +117,8 @@ interface DataState {
   updateSettings: (partial: Partial<Settings>) => Promise<void>;
   /** 恢复全部设置为默认值。 */
   resetSettings: () => Promise<void>;
+  /** 清除所有本地数据（不可恢复）：仓库 + 会话存储 + 跨设备镜像，内存态重置为默认。 */
+  clearAllData: () => Promise<void>;
   /** 重新从存储读取设置并应用到 store（跨页面同步兜底）。 */
   refreshSettings: () => Promise<void>;
   /** 导出完整备份（固定空间 + 设置 + 全部快照族），不包含当前打开标签或撤销栈。 */
@@ -683,6 +685,31 @@ export const useDataStore = create<DataState>()((set, get) => {
       }
       set({ settings: DEFAULT_SETTINGS });
       applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
+      scheduleMirror(get());
+      broadcastSettingsSynced();
+    },
+
+    /**
+     * 清除所有本地数据（不可恢复）：本地仓库 + 会话存储 + 跨设备镜像，内存态重置为默认。
+     *
+     * 顺序有讲究：先清 sync 镜像再清 local —— 否则下次初始化（seeded 标志随 local
+     * 清空）会从旧镜像把数据「复活」。撤销栈的持久化随 local.clear 一并清空；
+     * 内存栈由调用方（UI 层）经 undoStore.clearBatches 同步清空。
+     */
+    clearAllData: async () => {
+      await syncMirror.clearAll();
+      await browser.storage.local.clear();
+      await browser.storage.session.clear();
+      set({
+        folders: [],
+        pins: [],
+        collapsedSites: [],
+        settings: DEFAULT_SETTINGS,
+        boundTabIds: [],
+        ready: true
+      });
+      applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
+      // 把「空态」镜像回 sync（去抖落盘），保持 local/sync 终态一致。
       scheduleMirror(get());
       broadcastSettingsSynced();
     },

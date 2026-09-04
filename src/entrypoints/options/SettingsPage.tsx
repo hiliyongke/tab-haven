@@ -3,10 +3,11 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { useDataStore } from '@/stores/dataStore';
+import { useUndoStore } from '@/stores/undoStore';
 import type { Settings } from '@/core/schema/models';
 import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { Button } from '@/ui/common/Button';
-import { ConfirmDialog } from '@/ui/dialog/Dialog';
+import { ConfirmDialog, DialogShell } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { Select } from '@/ui/common/Select';
@@ -496,26 +497,67 @@ const PRESET_PROFILES: PresetProfile[] = [
 
 function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
   const { t } = useTranslation();
+  const settings = useDataStore((state) => state.settings);
   const updateSettings = useDataStore((state) => state.updateSettings);
+  /**
+   * 激活态 = 当前设置与预设 patch 逐字段完全一致（不记「最近点过谁」——
+   * 预设是配置模板，套用后用户逐项微调即漂移，按值比对才诚实）。
+   */
+  const isActive = (preset: PresetProfile): boolean =>
+    Object.entries(preset.patch).every(
+      ([key, value]) => settings[key as keyof Settings] === value
+    );
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
       <h2 className="mb-1 text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
       <p className="mb-3 text-2xs text-gray-600">{t('presets.hint')}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {PRESET_PROFILES.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            className="flex flex-col items-start gap-1 rounded-lg border border-control bg-surface px-3 py-2 text-left transition-base hover:border-accent-400 hover:bg-accent-50"
-            onClick={() => {
-              void updateSettings(preset.patch);
-              onApplied(t('presets.applied', { name: t(preset.nameKey) }));
-            }}
-          >
-            <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
-            <span className="text-3xs leading-snug text-gray-600">{t(preset.descKey)}</span>
-          </button>
-        ))}
+        {PRESET_PROFILES.map((preset) => {
+          const active = isActive(preset);
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              aria-pressed={active}
+              className={
+                'relative flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-base ' +
+                (active
+                  ? 'border-accent-500 bg-accent-50'
+                  : 'border-control bg-surface hover:border-accent-400 hover:bg-accent-50')
+              }
+              onClick={() => {
+                // 已在使用中的预设重复点击无副作用，直接忽略。
+                if (active) return;
+                void updateSettings(preset.patch);
+                onApplied(t('presets.applied', { name: t(preset.nameKey) }));
+              }}
+            >
+              <span className="flex w-full items-center justify-between gap-1">
+                <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
+                {active && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-accent-100 px-1.5 py-px text-3xs font-medium text-accent-700">
+                    <Icon d={Icons.check} className="h-3 w-3" />
+                    {t('presets.active')}
+                  </span>
+                )}
+              </span>
+              <span className="text-3xs leading-snug text-gray-600">{t(preset.descKey)}</span>
+            </button>
+          );
+        })}
+        {/* 三个预设均未命中（用户手动调整过）→ 显示「自定义」状态卡：非选项，仅状态呈现 */}
+        {!PRESET_PROFILES.some((preset) => isActive(preset)) && (
+          <div className="flex flex-col items-start gap-1 rounded-lg border border-dashed border-gray-300 bg-surface px-3 py-2 sm:col-span-3">
+            <span className="flex w-full items-center justify-between gap-1">
+              <span className="text-sm font-medium text-gray-700">{t('presets.custom')}</span>
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-px text-3xs font-medium text-gray-600">
+                <Icon d={Icons.check} className="h-3 w-3" />
+                {t('presets.active')}
+              </span>
+            </span>
+            <span className="text-3xs leading-snug text-gray-600">{t('presets.customDesc')}</span>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -885,7 +927,6 @@ function buildSections(
     },
     {
       titleKey: 'settings.advanced',
-      collapsible: true,
       specs: [
         {
           kind: 'toggle',
@@ -1012,6 +1053,7 @@ export function SettingsPage() {
   const resetSettings = useDataStore((state) => state.resetSettings);
   const exportData = useDataStore((state) => state.exportData);
   const importData = useDataStore((state) => state.importData);
+  const clearAllData = useDataStore((state) => state.clearAllData);
   const importBookmarksFromBar = useDataStore((state) => state.importBookmarksFromBar);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [transferStatus, setTransferStatus] = useState<string | null>(null);
@@ -1022,6 +1064,9 @@ export function SettingsPage() {
   const [settingsSearch, setSettingsSearch] = useState('');
   /** 恢复默认设置的确认弹窗。 */
   const [confirmingReset, setConfirmingReset] = useState(false);
+  /** 清除所有数据的确认弹窗 + 勾选确认（危险操作的防误触双保险）。 */
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearAck, setClearAck] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1098,6 +1143,18 @@ export function SettingsPage() {
       .then(() => setTransferStatus(t('settings.resetDone')))
       .catch(() => setTransferStatus(t('settings.resetFailed')));
     setConfirmingReset(false);
+  };
+
+  /** 清除所有数据：store 清仓库/会话/镜像，撤销栈由 UI 层同步清空（被清除的数据不参与撤销）。 */
+  const handleClearData = () => {
+    void clearAllData()
+      .then(() => {
+        void useUndoStore.getState().clearBatches();
+        setTransferStatus(t('settings.clearDataDone'));
+      })
+      .catch(() => setTransferStatus(t('settings.clearDataFailed')));
+    setConfirmingClear(false);
+    setClearAck(false);
   };
 
   // 分组配置见模块顶层的 buildSections。此处再 memo 一层：配置约 370 行且含大量
@@ -1237,6 +1294,17 @@ export function SettingsPage() {
             {t('settings.importBookmarksAction')}
           </Button>
         </Row>
+        <Row label={t('settings.clearData')} hint={t('settings.clearDataHint')}>
+          <Button
+            variant="danger-ghost"
+            onClick={() => {
+              setClearAck(false);
+              setConfirmingClear(true);
+            }}
+          >
+            {t('settings.clearDataAction')}
+          </Button>
+        </Row>
         {transferStatus && (
           <output className="px-4 py-2 text-xs text-gray-600">{transferStatus}</output>
         )}
@@ -1260,6 +1328,66 @@ export function SettingsPage() {
           onCancel={() => setConfirmingReset(false)}
           onConfirm={handleResetSettings}
         />
+      )}
+
+      {confirmingClear && (
+        <DialogShell
+          title={t('settings.clearDataTitle')}
+          onClose={() => {
+            setConfirmingClear(false);
+            setClearAck(false);
+          }}
+        >
+          <div className="flex flex-col gap-3">
+            <p className="text-2xs leading-relaxed text-gray-600">
+              {t('settings.clearDataDesc')}
+            </p>
+            <ul className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2 text-2xs text-gray-700">
+              <li>· {t('settings.clearDataItemFolders')}</li>
+              <li>· {t('settings.clearDataItemSnapshots')}</li>
+              <li>· {t('settings.clearDataItemUndo')}</li>
+              <li>· {t('settings.clearDataItemSettings')}</li>
+              <li>· {t('settings.clearDataItemSync')}</li>
+            </ul>
+            <p className="text-2xs font-medium text-warn-700">
+              {t('settings.clearDataIrreversible')}
+            </p>
+            <label className="flex cursor-pointer items-start gap-2 text-2xs text-gray-700">
+              <input
+                type="checkbox"
+                checked={clearAck}
+                onChange={(event) => setClearAck(event.target.checked)}
+                className="mt-px"
+              />
+              <span>{t('settings.clearDataAck')}</span>
+            </label>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <Button variant="secondary" size="sm" onClick={handleExport}>
+                {t('settings.exportBackupFirst')}
+              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setConfirmingClear(false);
+                    setClearAck(false);
+                  }}
+                >
+                  {t('dialog.cancel')}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={!clearAck}
+                  onClick={() => void handleClearData()}
+                >
+                  {t('settings.clearDataAction')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogShell>
       )}
     </div>
   );
