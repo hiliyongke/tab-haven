@@ -842,6 +842,16 @@ function buildSections(
           confirmOffKey: 'settings.autoGroupNativeDisableConfirm'
         },
         {
+          kind: 'select',
+          key: 'actionClickMode',
+          labelKey: 'settings.actionClick',
+          hintKey: 'settings.actionClickHint',
+          options: [
+            { value: 'panel', label: t('settings.actionClickPanel') },
+            { value: 'regroup', label: t('settings.actionClickRegroup') }
+          ]
+        },
+        {
           kind: 'toggle',
           key: 'uniqueUrlTabs',
           labelKey: 'settings.uniqueUrlTabs',

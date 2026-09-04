@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
 import { mapTab } from '@/platform/tabs';
+import { logDegraded } from '@/platform/diagnostics';
 import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
 import {
   foldersRepository,
@@ -39,6 +40,7 @@ import {
 } from './background/autoDiscard';
 import { AUTO_SNAPSHOT_ALARM, runAutoSnapshot, syncAutoSnapshotAlarm } from './background/autoSnapshot';
 import { refreshBadgeSoon } from './background/badge';
+import { runActionClickRegroup } from './background/actionRegroup';
 import { setupNoCache } from './background/noCache';
 import { queryOmnibox, handleOmniboxEnter } from './background/omnibox';
 import {
@@ -88,6 +90,27 @@ export default defineBackground(() => {
   void syncCoordinatorEnabled();
   // 设置缓存：SW 启动读一次（badge/通知/菜单/omnibox 共用；变更经 watch 更新）。
   void syncCachedSettings();
+
+  /**
+   * 工具栏图标点击行为（settings.actionClickMode）：
+   *  - 'panel'（默认）：Chrome 直接打开侧边栏（openPanelOnActionClick）；
+   *  - 'regroup'：不弹面板，改为在 onClicked 里后台整理临时区标签。
+   * setPanelBehavior 不跨浏览器会话持久，SW 每次唤醒/设置变更都要对齐一次；
+   * 读取实时设置而非共享缓存，避开 SW 刚唤醒时缓存尚未就绪的窗口。
+   */
+  async function syncActionClickBehavior(): Promise<void> {
+    if (!browser.sidePanel?.setPanelBehavior) return;
+    try {
+      const settings = await settingsRepository.read();
+      await browser.sidePanel.setPanelBehavior({
+        openPanelOnActionClick: settings.actionClickMode !== 'regroup'
+      });
+    } catch (error) {
+      logDegraded('background', '对齐工具栏点击行为失败', error);
+    }
+  }
+  void syncActionClickBehavior();
+
   // 关窗自动保存：恢复窗口标签缓存并为当前窗口建索引。
   void initWindowTabsCache();
   // 开发者禁缓存：DNR 规则对齐 + 命中站点警示条（设置变更经 watch 实时同步）。
@@ -189,11 +212,11 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onInstalled.addListener(() => {
-    enableActionClick();
+    void syncActionClickBehavior();
     void setupMenus();
   });
   browser.runtime.onStartup.addListener(() => {
-    enableActionClick();
+    void syncActionClickBehavior();
     void setupMenus();
   });
   // 文件夹变化时刷新菜单子项（SW 存活期间）
@@ -202,7 +225,7 @@ export default defineBackground(() => {
     else clearContextMenus();
   });
   // 设置变更：缓存更新 + 右键菜单开关联动（开关重新打开时按当前文件夹重建）
-  // + 角标即时刷新 + 自动休眠闹钟启停
+  // + 角标即时刷新 + 自动休眠闹钟启停 + 工具栏点击行为切换
   settingsRepository.watch((settings) => {
     void syncCachedSettings();
     coordinator.setEnabled(settings.uniqueUrlTabs);
@@ -211,6 +234,7 @@ export default defineBackground(() => {
     void syncAutoDiscardAlarm(settings);
     // 自动保存开关/间隔变更即时对齐闹钟（周期变化也需重建，alarms 无法就地改周期）。
     void syncAutoSnapshotAlarm(settings);
+    void syncActionClickBehavior();
     refreshBadgeSoon();
   });
 
@@ -314,14 +338,22 @@ export default defineBackground(() => {
   // action badge：标签事件驱动刷新（500ms 节流）
   refreshBadgeSoon();
 
-  function enableActionClick(): void {
-    if (browser.sidePanel?.setPanelBehavior) {
-      browser.sidePanel
-        .setPanelBehavior({ openPanelOnActionClick: true })
-        .catch((error) => console.error(error));
-    }
-  }
-  void enableActionClick();
+  // regroup 模式：openPanelOnActionClick 为 false 时 Chrome 才会派发 onClicked，
+  // 两种点击方式由设置驱动的 behavior 切换实现并存。
+  browser.action?.onClicked.addListener(() => {
+    void settingsRepository
+      .read()
+      .then(async (settings) => {
+        if (settings.actionClickMode !== 'regroup') return;
+        const count = await runActionClickRegroup();
+        if (count <= 0) return;
+        // 轻量完成反馈：角标短暂打勾（无文案噪音），随后按设置恢复正常角标。
+        await browser.action.setBadgeText({ text: '✓' });
+        await browser.action.setBadgeBackgroundColor({ color: '#16a34a' });
+        setTimeout(() => refreshBadgeSoon(), 1500);
+      })
+      .catch((error) => logDegraded('background', '工具栏点击处理失败', error));
+  });
 
   // 自动休眠：白名单 + 台账 + 通知（alarms 保活调度，MV3 SW 回收后仍可触发）
   browser.alarms.onAlarm.addListener((alarm) => {

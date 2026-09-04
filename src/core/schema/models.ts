@@ -92,6 +92,8 @@ export const SettingsSchema = z.object({
   groupMode: z.enum(['site', 'opener', 'language']).default('site'),
   /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups；关闭开关会解散本功能创建的组。 */
   autoGroupNative: z.boolean().default(false),
+  /** 工具栏图标点击行为：panel 打开侧边栏（默认）/ regroup 后台整理临时区标签，不弹面板。 */
+  actionClickMode: z.enum(['panel', 'regroup']).default('panel'),
   /** 撤销栈深度（FIFO 淘汰上限）。 */
   undoStackLimit: z.number().int().min(5).max(50).default(10),
   /**
@@ -165,6 +167,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoDiscardMinutes: 30,
   groupMode: 'site',
   autoGroupNative: false,
+  actionClickMode: 'panel',
   undoStackLimit: 10,
   autoSaveSnapshots: false,
   autoSnapshotIntervalMin: 30,

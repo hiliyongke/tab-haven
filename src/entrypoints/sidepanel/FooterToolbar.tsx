@@ -34,7 +34,8 @@ export interface FooterToolbarProps {
 
 /** 功能组之间的细分隔线（与设置前的分隔线同款，帮助用户按组理解图标语义）。 */
 function GroupDivider() {
-  return <span className="mx-0.5 h-3.5 w-px shrink-0 bg-gray-200" aria-hidden="true" />;
+  // 间距交给 nav 的 gap 提供（此前 mx-0.5 在窄面板会把图标行挤到换行）。
+  return <span className="h-3.5 w-px shrink-0 bg-gray-200" aria-hidden="true" />;
 }
 
 export function FooterToolbar(props: FooterToolbarProps) {
@@ -61,11 +62,14 @@ export function FooterToolbar(props: FooterToolbarProps) {
   } = props;
 
   return (
-    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-gray-200 px-2.5 py-0.5 text-2xs text-gray-500">
+    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5 border-t border-gray-200 px-2.5 py-0.5 text-2xs text-gray-500">
       <span className="whitespace-nowrap">
         {t('tabs.currentOpen')} <strong>{tabCount}</strong> {t('tabs.tabCountUnit')}
       </span>
-      <nav className="flex flex-wrap items-center gap-1" aria-label={t('footer.utilityLabel')}>
+      <nav
+        className="flex min-w-0 flex-wrap items-center gap-0.5"
+        aria-label={t('footer.utilityLabel')}
+      >
         {/* 组 1 · 视图与组织：命令面板 / 折叠全部 / 快速整理 / 定位 */}
         <IconButton
           icon={Icons.shortcuts}
