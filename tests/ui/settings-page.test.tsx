@@ -29,9 +29,7 @@ beforeEach(() => {
   const sidePanel = fakeBrowser.sidePanel as unknown as {
     getLayout?: () => Promise<{ side: 'left' | 'right' }>;
   };
-  sidePanel.getLayout = vi.fn(
-    async (): Promise<{ side: 'left' | 'right' }> => ({ side: 'right' })
-  );
+  sidePanel.getLayout = vi.fn(async (): Promise<{ side: 'left' | 'right' }> => ({ side: 'right' }));
 });
 
 describe('SettingsPage（渲染冒烟）', () => {

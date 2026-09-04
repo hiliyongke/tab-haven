@@ -4,7 +4,7 @@ import { canSafelyDiscardTab } from '@/core/tab-types';
 import { mapTab } from '@/platform/tabs';
 import { readSession } from '@/platform/storage/session';
 import { autoDiscardRepository, settingsRepository } from '@/platform/storage/repositories';
-import { AutoDiscardedMessageSchema } from '@/platform/messages';
+import { sendMessage } from '@/platform/messages';
 import { t } from '@/i18n/headless';
 import { cachedSettings, hostnameOf, isWhitelisted, notifyUser } from './shared';
 import { logDegraded } from '@/platform/diagnostics';
@@ -16,13 +16,7 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
     notifyUser('Tabs', t('bg.autoDiscarded', { count: tabIds.length }));
   }
-  const message = AutoDiscardedMessageSchema.parse({
-    type: 'auto-discarded',
-    tabIds,
-    count: tabIds.length,
-    at: Date.now()
-  });
-  browser.runtime.sendMessage(message).catch(() => {});
+  sendMessage({ type: 'auto-discarded', tabIds, count: tabIds.length, at: Date.now() });
 }
 
 /** 清理已失效的自动休眠台账（批次标签全部不存在或已唤醒）。 */

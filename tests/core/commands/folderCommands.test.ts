@@ -12,6 +12,14 @@ import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 function item(id: string, url: string): FixedFolderItem {
   return { id, url, title: url, createdAt: 1 };
 }
+/**
+ * 候选 Map 的键必须是**已归一化**的比较键——与生产调用方
+ * （dataStore.addTabsToFolder 用 webComparisonKey 作键）保持同一口径。
+ * 直接拿原始 URL 当键，会与条目侧 fixedItemKey 归出来的键对不上。
+ */
+function candidates(...urls: string[]): Map<string, { url: string; title: string }> {
+  return new Map(urls.map((url) => [fixedItemKey(url), { url, title: url }]));
+}
 function folder(
   id: string,
   name: string,
@@ -33,9 +41,10 @@ describe('folderCommands 纯计算', () => {
   });
 
   it('computeToggleFolderCollapsed 翻转折叠态', () => {
-    expect(computeToggleFolderCollapsed([folder('a', 'A', { items: [], collapsed: false })], 'a')[0]?.collapsed).toBe(
-      true
-    );
+    expect(
+      computeToggleFolderCollapsed([folder('a', 'A', { items: [], collapsed: false })], 'a')[0]
+        ?.collapsed
+    ).toBe(true);
   });
 
   it('computeMoveFolderItem 跨文件夹移动并展开目标', () => {
@@ -43,7 +52,11 @@ describe('folderCommands 纯计算', () => {
       folder('a', 'A', { items: [item('i1', 'https://x.com')] }),
       folder('b', 'B', { items: [], collapsed: true })
     ];
-    const next = computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'b' });
+    const next = computeMoveFolderItem(folders, {
+      sourceFolderId: 'a',
+      itemId: 'i1',
+      targetFolderId: 'b'
+    });
     expect(next.find((f) => f.id === 'a')?.items).toHaveLength(0);
     const target = next.find((f) => f.id === 'b');
     expect(target?.items?.map((i) => i.id)).toEqual(['i1']);
@@ -55,32 +68,33 @@ describe('folderCommands 纯计算', () => {
       folder('a', 'A', { items: [item('i1', 'https://x.com')] }),
       folder('b', 'B', { items: [item('i2', 'https://x.com')] })
     ];
-    const next = computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'b' });
+    const next = computeMoveFolderItem(folders, {
+      sourceFolderId: 'a',
+      itemId: 'i1',
+      targetFolderId: 'b'
+    });
     expect(next.find((f) => f.id === 'a')?.items).toHaveLength(0);
     expect(next.find((f) => f.id === 'b')?.items?.map((i) => i.id)).toEqual(['i2']);
   });
 
   it('computeMoveFolderItem 同文件夹内移动为 no-op（返回原引用）', () => {
     const folders = [folder('a', 'A', { items: [item('i1', 'u')] })];
-    expect(computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'a' })).toBe(folders);
+    expect(
+      computeMoveFolderItem(folders, { sourceFolderId: 'a', itemId: 'i1', targetFolderId: 'a' })
+    ).toBe(folders);
   });
 
   it('computeAddTabsToFolder 新增条目', () => {
     const folders = [folder('a', 'A', { items: [item('i1', 'https://a.com')] })];
-    const candidates = new Map([['https://b.com', { url: 'https://b.com', title: 'B' }]]);
-    const res = computeAddTabsToFolder(folders, candidates, 'a');
-    expect(res.next.find((f) => f.id === 'a')?.items?.map((i) => i.url)).toEqual([
-      'https://a.com',
-      'https://b.com'
-    ]);
+    const res = computeAddTabsToFolder(folders, candidates('https://b.com'), 'a');
+    expect(res.newItems.map((i) => i.url)).toEqual(['https://b.com']);
     expect(res.newItems).toHaveLength(1);
     expect(res.moved).toBe(0);
   });
 
   it('computeAddTabsToFolder 同文件夹重复 URL 计入 targetDuplicates 且不新增', () => {
     const folders = [folder('a', 'A', { items: [item('i1', 'https://a.com')] })];
-    const candidates = new Map([['https://a.com', { url: 'https://a.com', title: 'A' }]]);
-    const res = computeAddTabsToFolder(folders, candidates, 'a');
+    const res = computeAddTabsToFolder(folders, candidates('https://a.com'), 'a');
     expect(res.newItems).toHaveLength(0);
     expect(res.targetDuplicates).toBe(1);
     // 原条目保留原位（重复拖入同文件夹不移动）
@@ -92,8 +106,7 @@ describe('folderCommands 纯计算', () => {
       folder('a', 'A', { items: [item('i1', 'https://a.com')] }),
       folder('b', 'B', { items: [item('i2', 'https://b.com')] })
     ];
-    const candidates = new Map([['https://b.com', { url: 'https://b.com', title: 'B' }]]);
-    const res = computeAddTabsToFolder(folders, candidates, 'a');
+    const res = computeAddTabsToFolder(folders, candidates('https://b.com'), 'a');
     expect(res.next.find((f) => f.id === 'a')?.items?.map((i) => i.id)).toEqual(['i1', 'i2']);
     expect(res.next.find((f) => f.id === 'b')?.items).toHaveLength(0);
     expect(res.moved).toBe(1);

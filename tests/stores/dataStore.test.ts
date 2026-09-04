@@ -3,11 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
-import {
-  useDataStore,
-  registerSnapshotProvider,
-  resetSnapshotProvider
-} from '@/stores/dataStore';
+import { useDataStore } from '@/stores/dataStore';
+import { snapshotsRepository } from '@/platform/storage/repositories';
 import { readSession } from '@/platform/storage/session';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -33,17 +30,7 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
  */
 describe('dataStore 固定空间事务', () => {
   beforeEach(() => {
-    // ThemeApplier.resolveTheme 依赖 matchMedia（jsdom 缺失）
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      onchange: null,
-      dispatchEvent: vi.fn()
-    })) as unknown as typeof window.matchMedia;
+    // matchMedia 的 polyfill 已统一在 tests/setup.ts（ThemeApplier 依赖它）。
     useDataStore.setState({
       folders: [],
       pins: [],
@@ -57,7 +44,6 @@ describe('dataStore 固定空间事务', () => {
 
   afterEach(() => {
     fakeBrowser.reset();
-    resetSnapshotProvider();
     vi.restoreAllMocks();
   });
 
@@ -125,7 +111,7 @@ describe('dataStore 固定空间事务', () => {
 
   it('importData：非法导出数据被拒绝', async () => {
     await expect(useDataStore.getState().importData({ format: 'bad' })).rejects.toThrow(
-      'invalid-tab-haven-export'
+      'invalid-tabs-export'
     );
   });
 
@@ -148,12 +134,12 @@ describe('dataStore 固定空间事务', () => {
 
     // 只让第二个分区（persistentPins）写失败：校验事务是否回滚已写入的 folders。
     const realSet = fakeBrowser.storage.local.set;
-    const setSpy = vi
-      .spyOn(fakeBrowser.storage.local, 'set')
-      .mockImplementation(((items: Record<string, unknown>) => {
-        if ('tabs.persistent-pins.v1' in items) return Promise.reject(new Error('quota'));
-        return realSet(items);
-      }) as never);
+    const setSpy = vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(((
+      items: Record<string, unknown>
+    ) => {
+      if ('tabs.persistent-pins.v1' in items) return Promise.reject(new Error('quota'));
+      return realSet(items);
+    }) as never);
 
     await expect(useDataStore.getState().importData(payload)).rejects.toThrow(
       'import-write-failed:pins'
@@ -170,8 +156,13 @@ describe('dataStore 固定空间事务', () => {
     setSpy.mockRestore();
   });
 
-  it('exportData：导出为完整备份（含快照与归档）', async () => {
-    registerSnapshotProvider(() => [
+  /**
+   * 回归：导出入口在设置页（options），而设置页从不加载 snapshotStore。
+   * 早期实现走「快照读取桥」，未登记时导出 `snapshots: []`——用户拿这份备份
+   * 恢复时快照全丢。现改为直读仓库，与页面是否加载过快照 store 无关。
+   */
+  it('exportData：导出为完整备份（含快照与归档，不依赖快照 store 是否已加载）', async () => {
+    await snapshotsRepository.write([
       {
         id: 's1',
         name: '归档',
@@ -182,7 +173,7 @@ describe('dataStore 固定空间事务', () => {
       }
     ]);
 
-    const file = useDataStore.getState().exportData();
+    const file = await useDataStore.getState().exportData();
     expect(file.format).toBe('tabs.export');
     expect(file.snapshots).toHaveLength(1);
     expect(file.snapshots[0]!.origin).toBe('archive');

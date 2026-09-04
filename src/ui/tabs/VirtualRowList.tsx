@@ -48,7 +48,10 @@ export function VirtualRowList({
 
   // 事件处理器读取「触发那一刻」的最新 tabs，避免 tabs 每次快照更新都解绑/重绑监听。
   const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
+  // 提交后更新而非渲染期赋值：并发渲染下渲染可能不提交，渲染期写 ref 会泄漏中间值。
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   useEffect(() => {
     const el = scrollRef.current;

@@ -75,7 +75,10 @@ describe('KeeperPolicy', () => {
   });
 
   it('无激活无固定时保留位置最靠前者', () => {
-    const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: tabs('https://a.com/') });
+    const { keeper, removable } = KeeperPolicy.default.select({
+      key: 'x',
+      tabs: tabs('https://a.com/')
+    });
     expect(keeper.id).toBe(1);
     expect(removable.map((tab) => tab.id)).toEqual([2, 3]);
   });

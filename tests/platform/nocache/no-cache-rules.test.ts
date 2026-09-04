@@ -1,48 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildNoCacheDnrRules,
-  matchesNoCachePattern,
-  normalizeNoCachePattern
-} from '@/platform/nocache/noCacheRules';
+import { buildNoCacheDnrRules, matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
 
 /**
- * 开发者禁缓存：pattern 归一化 / URL 命中 / DNR 规则编译。
- * 重点保证三条链路口径一致：
- *  1. 用户输入归一化（UI 添加时）；
- *  2. JS 侧命中判定（横幅注入）；
- *  3. DNR 规则条件（urlFilter / regexFilter，RE2 与 JS RegExp 在本特性使用的
+ * 开发者禁缓存：URL 命中判定 / DNR 规则编译（platform 层）。
+ * pattern 的归一化与校验已下沉到 core，见
+ * `tests/core/nocache/no-cache-pattern.test.ts`。
+ *
+ * 重点保证两条链路口径一致：
+ *  1. JS 侧命中判定（横幅注入）；
+ *  2. DNR 规则条件（urlFilter / regexFilter，RE2 与 JS RegExp 在本特性使用的
  *     简单模式子集上语义等价，可用 RegExp 交叉验证）。
  */
-
-describe('normalizeNoCachePattern', () => {
-  it('纯域名：小写归一', () => {
-    expect(normalizeNoCachePattern('  EXAMPLE.com ')).toBe('example.com');
-  });
-
-  it('域名 + 路径：host 小写、路径保留大小写', () => {
-    expect(normalizeNoCachePattern('Example.com/App/V2')).toBe('example.com/App/V2');
-  });
-
-  it('完整 URL 前缀：scheme/host 小写、端口与路径保留', () => {
-    expect(normalizeNoCachePattern('HTTPS://Local.Host:8080/app?x=1')).toBe(
-      'https://local.host:8080/app?x=1'
-    );
-  });
-
-  it('非法输入返回 null', () => {
-    expect(normalizeNoCachePattern('')).toBeNull();
-    expect(normalizeNoCachePattern('   ')).toBeNull();
-    expect(normalizeNoCachePattern('ftp://example.com')).toBeNull(); // 仅支持 http/https
-    expect(normalizeNoCachePattern('example.com:8080')).toBeNull(); // 带端口的纯域名 → 走完整前缀形态
-    expect(normalizeNoCachePattern('example..com')).toBeNull();
-    expect(normalizeNoCachePattern('a b.com')).toBeNull(); // 含空白
-    expect(normalizeNoCachePattern('example.com|')).toBeNull(); // DNR 锚字符
-    expect(normalizeNoCachePattern('*.example.com')).toBeNull(); // DNR 通配符
-    expect(normalizeNoCachePattern('ex^mple.com')).toBeNull();
-    expect(normalizeNoCachePattern('-example.com')).toBeNull(); // 首尾非法字符
-    expect(normalizeNoCachePattern('https://')).toBeNull(); // 无法解析的 URL
-  });
-});
 
 describe('matchesNoCachePattern', () => {
   describe('形态 2：纯域名（裸域 + 任意深度子域）', () => {

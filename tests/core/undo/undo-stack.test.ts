@@ -21,9 +21,10 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
   };
 }
 
-const batch = (label: string) => createUndoBatch('close', [
-  { url: `https://${label}.com/`, index: 0, pinned: false, muted: false, groupId: -1 }
-]);
+const batch = (label: string) =>
+  createUndoBatch('close', [
+    { url: `https://${label}.com/`, index: 0, pinned: false, muted: false, groupId: -1 }
+  ]);
 
 /**
  * 行为规格（FR-D8.1）：栈深上限 10、FIFO 淘汰、恢复记录携带五元组。

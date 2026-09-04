@@ -38,9 +38,13 @@ function snapshotOf(tabs: SnapshotTab[]): Snapshot {
 }
 
 /** fake-browser 对 tabs.group / tabGroups.query 部分实现不全，注入最小实现。 */
-function stubTabsApi(): { groupMock: ReturnType<typeof vi.fn>; updateMock: ReturnType<typeof vi.fn> } {
-  const groupMock = vi.fn(async (options: { tabIds?: number[]; groupId?: number }) =>
-    options.groupId ?? 100 + Math.max(...(options.tabIds ?? [0]))
+function stubTabsApi(): {
+  groupMock: ReturnType<typeof vi.fn>;
+  updateMock: ReturnType<typeof vi.fn>;
+} {
+  const groupMock = vi.fn(
+    async (options: { tabIds?: number[]; groupId?: number }) =>
+      options.groupId ?? 100 + Math.max(...(options.tabIds ?? [0]))
   );
   const updateMock = vi.fn(async () => undefined);
   const tabs = fakeBrowser.tabs as unknown as { group: typeof groupMock };
@@ -136,9 +140,7 @@ describe('restoreSnapshot（FR-D5.1 加法恢复）', () => {
   it('固定标签不参与分组（Chrome 限制）', async () => {
     const { groupMock } = stubTabsApi();
     await ensureWindow();
-    const snap = snapshotOf([
-      snapTab({ url: 'https://a.com/', pinned: true, groupTitle: '研究' })
-    ]);
+    const snap = snapshotOf([snapTab({ url: 'https://a.com/', pinned: true, groupTitle: '研究' })]);
     await restoreSnapshot(snap, WINDOW_ID);
     expect(groupMock).not.toHaveBeenCalled();
   });
@@ -163,23 +165,54 @@ describe('collectSnapshotTabs（采集端）', () => {
   it('记录静音与组归属，过滤内部页', () => {
     const tabs: TabRecord[] = [
       {
-        id: 1, windowId: 1, index: 0, active: false, pinned: false, incognito: false,
-        url: 'https://a.com/', pendingUrl: undefined, title: 'A', favIconUrl: undefined,
-        status: 'complete', discarded: false, muted: true, audible: false, groupId: 7,
-        splitViewId: undefined, lastAccessed: 1000, autoDiscardable: true
+        id: 1,
+        windowId: 1,
+        index: 0,
+        active: false,
+        pinned: false,
+        incognito: false,
+        url: 'https://a.com/',
+        pendingUrl: undefined,
+        title: 'A',
+        favIconUrl: undefined,
+        status: 'complete',
+        discarded: false,
+        muted: true,
+        audible: false,
+        groupId: 7,
+        splitViewId: undefined,
+        lastAccessed: 1000,
+        autoDiscardable: true
       },
       {
-        id: 2, windowId: 1, index: 1, active: false, pinned: false, incognito: false,
-        url: 'chrome://newtab', pendingUrl: undefined, title: '内部页', favIconUrl: undefined,
-        status: 'complete', discarded: false, muted: false, audible: false, groupId: -1,
-        splitViewId: undefined, lastAccessed: 1000, autoDiscardable: true
+        id: 2,
+        windowId: 1,
+        index: 1,
+        active: false,
+        pinned: false,
+        incognito: false,
+        url: 'chrome://newtab',
+        pendingUrl: undefined,
+        title: '内部页',
+        favIconUrl: undefined,
+        status: 'complete',
+        discarded: false,
+        muted: false,
+        audible: false,
+        groupId: -1,
+        splitViewId: undefined,
+        lastAccessed: 1000,
+        autoDiscardable: true
       }
     ];
     const groups: TabGroupRecord[] = [{ id: 7, title: '研究', color: 'blue', collapsed: false }];
     const collected = collectSnapshotTabs(tabs, groups);
     expect(collected).toHaveLength(1); // 内部页过滤
     expect(collected[0]).toMatchObject({
-      url: 'https://a.com/', muted: true, groupTitle: '研究', groupColor: 'blue'
+      url: 'https://a.com/',
+      muted: true,
+      groupTitle: '研究',
+      groupColor: 'blue'
     });
   });
 });

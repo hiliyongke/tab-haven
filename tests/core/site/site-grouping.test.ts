@@ -125,7 +125,11 @@ describe('aggregateBySite', () => {
     const { groups, singles } = aggregateBySite(tabs, { threshold: 1 });
     // 3 个不同子域 → 自动展开为 3 个独立组（阈值 1 下无 singles）。
     expect(singles).toHaveLength(0);
-    expect(groups.map((g) => g.key.value).sort()).toEqual(['docs.qq.com', 'mail.qq.com', 'v.qq.com']);
+    expect(groups.map((g) => g.key.value).sort()).toEqual([
+      'docs.qq.com',
+      'mail.qq.com',
+      'v.qq.com'
+    ]);
   });
 });
 
@@ -162,7 +166,8 @@ describe('deriveSections', () => {
     // 标题用注册域（子域折叠展示）
     expect(site && site.kind === 'site' && site.title).toBe('google.com');
     expect(site && site.kind === 'site' && site.subgroups).toHaveLength(2);
-    const mail = site && site.kind === 'site' ? site.subgroups.find((g) => g.subdomain === 'mail') : undefined;
+    const mail =
+      site && site.kind === 'site' ? site.subgroups.find((g) => g.subdomain === 'mail') : undefined;
     expect(mail?.tabs.map((tab) => tab.id)).toEqual([1, 2]);
   });
 

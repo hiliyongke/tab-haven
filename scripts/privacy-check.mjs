@@ -30,18 +30,35 @@ const ALLOWED_PERMISSIONS = new Set([
   'sessions', // 撤销历史面板恢复浏览器最近关闭
   'bookmarks', // 用户主动的固定文件夹 ↔ 书签互转
   'notifications', // 自动休眠完成的本机通知
-  'declarativeNetRequest', // 开发者禁缓存：按用户站点规则改写响应头（默认关闭，配套 host 权限走 optional）
-  'scripting' // 开发者禁缓存：向命中站点注入醒目警示条
+  'declarativeNetRequest' // 开发者禁缓存：按用户站点规则改写响应头（默认关闭，配套 host 权限走 optional）
 ]);
 
-/** 禁止出现的网络通道调用。 */
+/**
+ * 可选主机权限冻结清单（按需请求，未开启功能时安装不出现全站权限警告）。
+ * 与 permissions 同样需要走 PRD 变更才能放开。
+ */
+const ALLOWED_OPTIONAL_HOST_PERMISSIONS = new Set(['<all_urls>']);
+
+/**
+ * 禁止出现的网络通道调用。
+ * 覆盖直接调用与常见间接形式（EventSource / 远程 import / 图片打点 / 外部连接）。
+ */
 const NETWORK_PATTERNS = [
   /\bfetch\s*\(/,
   /\bXMLHttpRequest\b/,
   /\bWebSocket\b/,
   /\bsendBeacon\b/,
+  /\bEventSource\b/,
+  // 远程资源引用（img / script / iframe 的 src 赋值或 JSX 属性）。
+  // 只匹配「字面量远程 URL」：`new Image()` 配 data: URL 取色是本机操作，不在此列。
+  /\bsrc\s*=\s*["'`]https?:\/\//,
+  /\bimport\s*\(\s*['"]https?:\/\//,
+  /\bruntime\.connect\s*\(/,
   /<script[^>]+src=["']https?:\/\//
 ];
+
+/** 静态资源引用（img src 等）本身不是扩展发起的网络通道，单独放行。 */
+const NETWORK_EXEMPT = /^\s*(?:\/\/|\*|\/\*)/;
 
 const SCANNABLE = new Set(['.ts', '.tsx', '.html', '.js']);
 
@@ -67,9 +84,23 @@ const permissions = new Set(manifest.permissions ?? []);
 const unexpected = [...permissions].filter((p) => !ALLOWED_PERMISSIONS.has(p));
 if (unexpected.length > 0) issues.push(`未授权权限: ${unexpected.sort().join(', ')}`);
 
+// 主机权限同样进冻结清单：`<all_urls>` 是本项目最敏感的一项声明，
+// 只查 permissions 会让它完全游离在守卫之外。
+const hostPermissions = new Set([
+  ...(manifest.host_permissions ?? []),
+  ...(manifest.optional_host_permissions ?? [])
+]);
+const unexpectedHosts = [...hostPermissions].filter(
+  (p) => !ALLOWED_OPTIONAL_HOST_PERMISSIONS.has(p)
+);
+if (unexpectedHosts.length > 0) {
+  issues.push(`未授权主机权限: ${unexpectedHosts.sort().join(', ')}`);
+}
+
 for (const file of walk(SRC)) {
   const lines = readFileSync(file, 'utf8').split('\n');
   lines.forEach((line, i) => {
+    if (NETWORK_EXEMPT.test(line)) return;
     for (const pattern of NETWORK_PATTERNS) {
       if (pattern.test(line)) {
         issues.push(`发现网络调用: ${relative(ROOT, file)}:${i + 1} ${line.trim().slice(0, 80)}`);
@@ -87,5 +118,6 @@ if (issues.length > 0) {
 const sourceCount = walk(SRC).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')).length;
 console.log(
   `隐私回归检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
+    `主机权限 ${[...hostPermissions].sort().join(', ')}，` +
     `网络通道调用 0，源码文件 ${sourceCount} 个`
 );

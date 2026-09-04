@@ -127,9 +127,7 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
     const view = renderSectionList(250, true);
     await waitFor(() => expect(mountedRows(view).length).toBeGreaterThan(0));
     // 目标在初始窗口外（初始窗口只含前 ~40 行）
-    expect(
-      view.container.querySelector('li[data-tabs-tab-id="240"]')
-    ).toBeNull();
+    expect(view.container.querySelector('li[data-tabs-tab-id="240"]')).toBeNull();
     window.dispatchEvent(new CustomEvent<number>(LOCATE_SCROLL_EVENT, { detail: 240 }));
     await waitFor(() => {
       expect(view.container.querySelector('li[data-tabs-tab-id="240"]')).not.toBeNull();

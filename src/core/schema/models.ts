@@ -1,12 +1,41 @@
 import { z } from 'zod';
-import { NO_CACHE_PATTERNS_LIMIT } from '@/platform/nocache/noCacheRules';
+import {
+  NO_CACHE_PATTERNS_LIMIT,
+  NO_CACHE_PATTERN_MAX_LENGTH,
+  normalizeNoCachePattern
+} from '@/core/nocache/noCachePattern';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
  *
  * 设计：数据带格式版本（key 后缀 v<n>），读取经 safeParse 校验，
  * 坏数据隔离（不扩散）由 DataRepository 统一处理。
+ *
+ * 所有集合与字符串都有**显式体积上限**。持久化数据有两个来源：用户操作与
+ * 导入的备份文件——后者可被任意构造。无上限的数组会让「导入一个 JSON」
+ * 变成内存与遍历成本的攻击面（例如 `isWhitelisted` 对每个标签 O(n) 遍历白名单，
+ * 超大 whitelist 会放大自动休眠的每次判定）。上限取远超正常使用规模的值，
+ * 只拦异常数据，不影响正常用户。
  */
+
+/** 单文件夹条目数上限。 */
+export const FOLDER_ITEMS_LIMIT = 500;
+/** 固定文件夹数量上限。 */
+export const FOLDERS_LIMIT = 200;
+/** 永久固定图标数量上限。 */
+export const PINS_LIMIT = 200;
+/** 折叠站点记录条数上限。 */
+export const SITE_COLLAPSE_LIMIT = 2_000;
+/** 休眠白名单条目上限。 */
+export const DISCARD_WHITELIST_LIMIT = 500;
+/** hostname / 域名字符串长度上限（DNS 标签总长上限 253）。 */
+export const HOST_MAX_LENGTH = 253;
+/** 单个撤销批次的标签条目上限。 */
+export const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
+/** 单个快照的标签数上限。 */
+export const SNAPSHOT_TABS_LIMIT = 1_000;
+/** 快照族总条数上限（含归档与自动快照）。 */
+export const SNAPSHOTS_LIMIT = 200;
 
 export const FixedFolderItemSchema = z.object({
   id: z.string(),
@@ -23,7 +52,7 @@ export const FixedFolderSchema = z.object({
   id: z.string(),
   name: z.string(),
   collapsed: z.boolean(),
-  items: z.array(FixedFolderItemSchema)
+  items: z.array(FixedFolderItemSchema).max(FOLDER_ITEMS_LIMIT)
 });
 export type FixedFolder = z.infer<typeof FixedFolderSchema>;
 
@@ -37,7 +66,7 @@ export const PersistentPinSchema = z.object({
 });
 export type PersistentPin = z.infer<typeof PersistentPinSchema>;
 
-export const SiteCollapseSchema = z.array(z.string());
+export const SiteCollapseSchema = z.array(z.string().max(HOST_MAX_LENGTH)).max(SITE_COLLAPSE_LIMIT);
 export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
 
 /**
@@ -118,8 +147,15 @@ export const SettingsSchema = z.object({
   persistUndo: z.boolean().default(true),
   /** 同一网址只保留一个标签：新开已存在则切到最近访问的既有标签，其余（含新建）关闭。 */
   uniqueUrlTabs: z.boolean().default(true),
-  /** 自动休眠白名单：这些域名（hostname）永不被自动休眠（手动休眠不受限）。 */
-  discardWhitelist: z.array(z.string()).default([]),
+  /**
+   * 自动休眠白名单：这些域名（hostname）永不被自动休眠（手动休眠不受限）。
+   * 字符串按 hostname 长度封顶，条数另行限制——`isWhitelisted` 对每个标签
+   * O(n) 遍历此列表，无上限会放大每次休眠判定。
+   */
+  discardWhitelist: z
+    .array(z.string().max(HOST_MAX_LENGTH))
+    .max(DISCARD_WHITELIST_LIMIT)
+    .default([]),
   /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
   searchAllWindows: z.boolean().default(false),
   /** 自动休眠完成时的系统通知（通知面板内始终有「全部唤醒」可撤销）。 */
@@ -133,8 +169,21 @@ export const SettingsSchema = z.object({
   omniboxEnabled: z.boolean().default(true),
   /** 开发者：指定站点禁用前端缓存（DNR 响应头强制 no-store；需网站访问权限）。 */
   noCacheEnabled: z.boolean().default(false),
-  /** 禁缓存站点列表：纯域名（含子域）/ 域名+路径前缀 / 完整 URL 前缀，三种形态。 */
-  noCachePatterns: z.array(z.string().min(1).max(200)).max(NO_CACHE_PATTERNS_LIMIT).default([]),
+  /**
+   * 禁缓存站点列表：纯域名（含子域）/ 域名+路径前缀 / 完整 URL 前缀，三种形态。
+   *
+   * 归一化必须在 schema 层完成（而非只在 UI 编辑器）：这些字符串最终会被编译成
+   * DNR 动态规则的 urlFilter / regexFilter，而备份导入与设置同步同样经过本 schema。
+   * 非法项（含 DNR 通配/锚定语法）在此丢弃，使「能读出的 pattern」恒等于
+   * 「可安全编译的 pattern」。
+   */
+  noCachePatterns: z
+    .array(z.string().min(1).max(NO_CACHE_PATTERN_MAX_LENGTH))
+    .max(NO_CACHE_PATTERNS_LIMIT)
+    .default([])
+    .transform((patterns) =>
+      patterns.map(normalizeNoCachePattern).filter((pattern): pattern is string => pattern !== null)
+    ),
   /** 命中禁缓存站点时在页面顶部显示醒目警示条。 */
   noCacheBannerEnabled: z.boolean().default(true),
   /** 首启引导是否已看过（仅首次展示交互式引导）。 */
@@ -142,7 +191,15 @@ export const SettingsSchema = z.object({
   /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
   tipSeen: z.boolean().default(false),
   /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
-  conceptsSeen: z.boolean().default(false)
+  conceptsSeen: z.boolean().default(false),
+  /**
+   * 是否把固定集合与设置镜像到浏览器账号同步通道（chrome.storage.sync）。
+   *
+   * **默认关闭**。开启后这些数据会经由浏览器厂商的同步通道离开本机——
+   * 与「本地优先」的定位相悖，且此前无任何开关、用户完全无感知。
+   * 关闭时 `dataStore` 不调度镜像，并在关闭动作发生时清除已上传的镜像。
+   */
+  syncMirrorEnabled: z.boolean().default(false)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -190,7 +247,8 @@ export const DEFAULT_SETTINGS: Settings = {
   noCacheBannerEnabled: true,
   onboarded: false,
   tipSeen: false,
-  conceptsSeen: false
+  conceptsSeen: false,
+  syncMirrorEnabled: false
 };
 
 /** 撤销栈条目（Phase 5 使用，先行定义以固定数据形态）。 */
@@ -209,14 +267,14 @@ export const UndoBatchSchema = z.object({
   id: z.string(),
   kind: z.string(),
   createdAt: z.number(),
-  entries: z.array(UndoTabRecordSchema)
+  entries: z.array(UndoTabRecordSchema).max(UNDO_BATCH_ENTRIES_LIMIT)
 });
 export type UndoBatch = z.infer<typeof UndoBatchSchema>;
 
 /** 自动休眠批次台账：SW 自动休眠后记录，UI 据此提供「全部唤醒」撤销。 */
 export const AutoDiscardBatchSchema = z
   .object({
-    tabIds: z.array(z.number().int()),
+    tabIds: z.array(z.number().int()).max(UNDO_BATCH_ENTRIES_LIMIT),
     at: z.number(),
     count: z.number().int()
   })
@@ -250,7 +308,7 @@ export const SnapshotSchema = z.object({
   createdAt: z.number(),
   windowId: z.number().optional(),
   tabCount: z.number().int().nonnegative(),
-  tabs: z.array(SnapshotTabSchema)
+  tabs: z.array(SnapshotTabSchema).max(SNAPSHOT_TABS_LIMIT)
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
@@ -264,12 +322,12 @@ export type Snapshot = z.infer<typeof SnapshotSchema>;
 export const ExportFileSchema = z.object({
   format: z.literal('tabs.export'),
   exportedAt: z.string(),
-  fixedFolders: z.array(FixedFolderSchema),
-  persistentPins: z.array(PersistentPinSchema),
+  fixedFolders: z.array(FixedFolderSchema).max(FOLDERS_LIMIT),
+  persistentPins: z.array(PersistentPinSchema).max(PINS_LIMIT),
   siteCollapse: SiteCollapseSchema,
   settings: SettingsSchema,
   /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 轻量空间。 */
-  snapshots: z.array(SnapshotSchema).default([])
+  snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
 });
 
 export type ExportFile = z.infer<typeof ExportFileSchema>;

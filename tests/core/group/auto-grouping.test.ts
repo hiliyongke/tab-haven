@@ -32,9 +32,7 @@ function siteSection(title: string, tabs: TabRecord[]): TemporarySection {
 
 describe('planAutoGroups', () => {
   it('全部未分组的站点组产出计划（标题 + 稳定色）', () => {
-    const plans = planAutoGroups([
-      siteSection('github.com', [makeTab(1), makeTab(2)])
-    ]);
+    const plans = planAutoGroups([siteSection('github.com', [makeTab(1), makeTab(2)])]);
     expect(plans).toHaveLength(1);
     expect(plans[0]).toMatchObject({ title: 'github.com', tabIds: [1, 2] });
   });
@@ -161,16 +159,7 @@ describe('groupColorForLabel', () => {
   });
 
   it('颜色是合法枚举且不含 grey', () => {
-    const valid = new Set([
-      'blue',
-      'red',
-      'yellow',
-      'green',
-      'pink',
-      'purple',
-      'cyan',
-      'orange'
-    ]);
+    const valid = new Set(['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']);
     for (const label of ['github.com', 'zh-CN', 'a.com', 'b.io', 'c.net']) {
       expect(valid.has(groupColorForLabel(label))).toBe(true);
     }

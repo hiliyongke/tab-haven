@@ -119,9 +119,7 @@ describe('undoStore', () => {
     expect(useUndoStore.getState().batches[0]!.entries).toHaveLength(2);
 
     // 只让 b.com 恢复失败（a.com 成功），模拟部分失败。
-    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation((async (
-      info: { url?: string }
-    ) => {
+    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation((async (info: { url?: string }) => {
       if (info.url?.includes('b.com')) throw new Error('cannot create');
       return { id: 99, index: 0, windowId: 1, active: false, pinned: false };
     }) as never);
@@ -140,11 +138,9 @@ describe('undoStore', () => {
     const tab = makeTab({ id: 1, url: 'https://a.com/', index: 0 });
     await useUndoStore.getState().closeWithUndo([tab], [tab.id]);
 
-    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation(
-      (async () => {
-        throw new Error('cannot create');
-      }) as never
-    );
+    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation((async () => {
+      throw new Error('cannot create');
+    }) as never);
 
     await useUndoStore.getState().undo();
 

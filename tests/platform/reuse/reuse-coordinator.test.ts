@@ -69,7 +69,9 @@ describe('ReuseCoordinator', () => {
       makeTab({ id: 1, index: 0, url: 'https://a.com/' }),
       makeTab({ id: 2, index: 1, url: 'https://b.com/' })
     ]);
-    h.coordinator.handleCreated(makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' }));
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' })
+    );
     await h.flush();
 
     expect(h.calls.activate).toEqual([1]);
@@ -99,7 +101,9 @@ describe('ReuseCoordinator', () => {
     h.setWindowTabs([makeTab({ id: 1, index: 0, url: 'https://a.com/' })]);
     h.coordinator.grantAllowance(1, 'https://a.com/');
 
-    h.coordinator.handleCreated(makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' }));
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' })
+    );
     await h.flush();
     expect(h.calls.close).toEqual([]);
     expect(h.calls.notifications).toBe(0);
@@ -128,7 +132,9 @@ describe('ReuseCoordinator', () => {
   it('窗口内无同址标签 → 保留新标签', async () => {
     const h = createHarness();
     h.setWindowTabs([makeTab({ id: 1, index: 0, url: 'https://b.com/' })]);
-    h.coordinator.handleCreated(makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' }));
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' })
+    );
     await h.flush();
     expect(h.calls.close).toEqual([]);
   });
@@ -139,7 +145,9 @@ describe('ReuseCoordinator', () => {
       makeTab({ id: 1, index: 0, url: 'https://a.com/', lastAccessed: 100 }),
       makeTab({ id: 2, index: 1, url: 'https://a.com/', lastAccessed: 300 })
     ]);
-    h.coordinator.handleCreated(makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' }));
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' })
+    );
     await h.flush();
 
     expect(h.calls.activate).toEqual([2]); // 最近访问的既有标签
@@ -152,14 +160,18 @@ describe('ReuseCoordinator', () => {
     h.setWindowTabs([makeTab({ id: 1, index: 0, url: 'https://a.com/' })]);
     h.coordinator.setEnabled(false);
 
-    h.coordinator.handleCreated(makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' }));
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' })
+    );
     await h.flush();
     expect(h.calls.close).toEqual([]);
     expect(h.calls.notifications).toBe(0);
 
     // 重新开启后恢复追踪
     h.coordinator.setEnabled(true);
-    h.coordinator.handleCreated(makeTab({ id: 11, index: 2, url: 'https://a.com/', status: 'complete' }));
+    h.coordinator.handleCreated(
+      makeTab({ id: 11, index: 2, url: 'https://a.com/', status: 'complete' })
+    );
     await h.flush();
     expect(h.calls.close).toEqual([11]);
   });
@@ -182,8 +194,12 @@ describe('ReuseCoordinator', () => {
       notifyReuse: () => {}
     });
 
-    coordinator.handleCreated(makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' }));
-    coordinator.handleCreated(makeTab({ id: 11, index: 3, url: 'https://b.com/', status: 'complete' }));
+    coordinator.handleCreated(
+      makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' })
+    );
+    coordinator.handleCreated(
+      makeTab({ id: 11, index: 3, url: 'https://b.com/', status: 'complete' })
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // 任务 10 的 close 抛错不影响任务 11 照常激活与关闭

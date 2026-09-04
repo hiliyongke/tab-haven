@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { browser } from 'wxt/browser';
 import i18n from '@/i18n';
+import { createCoalescedWriter } from '@/platform/storage/coalescedWriter';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import {
   createFolder as createFolderModel,
@@ -30,8 +31,7 @@ import {
   type FixedFolder,
   type PersistentPin,
   type Settings,
-  type SiteCollapseState,
-  type Snapshot
+  type SiteCollapseState
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
@@ -40,7 +40,7 @@ import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { getRepositories } from '@/platform/storage/repositories';
 import { syncMirror } from '@/platform/storage/SyncMirror';
 import { readBookmarkBar } from '@/platform/bookmarks';
-import { SettingsSyncedMessageSchema } from '@/platform/messages';
+import { sendMessage } from '@/platform/messages';
 import { readSession, mutateSession, type MutateSessionResult } from '@/platform/storage/session';
 import { logDegraded, logFailure } from '@/platform/diagnostics';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
@@ -115,15 +115,27 @@ interface DataState {
   /** 设置站点分组折叠状态（持久化）。 */
   toggleSiteCollapsed: (siteKey: string, collapsed: boolean) => Promise<void>;
   updateSettings: (partial: Partial<Settings>) => Promise<void>;
+  /**
+   * updateSettings 的 UI 安全变体：吞掉失败并返回是否生效。
+   *
+   * updateSettings 在「schema 校验失败」与「落盘失败」时都 throw，而 UI 调用点
+   * 大多是 `void updateSettings(...)`——既得不到失败信号，又留下未捕获的 rejection。
+   * 失败本身已由 reportPersistenceFailure 置起 storageDegraded，这里只负责让
+   * 调用方不必层层 try/catch，也不至于产生 unhandled rejection。
+   */
+  tryUpdateSettings: (partial: Partial<Settings>) => Promise<boolean>;
   /** 恢复全部设置为默认值。 */
   resetSettings: () => Promise<void>;
   /** 清除所有本地数据（不可恢复）：仓库 + 会话存储 + 跨设备镜像，内存态重置为默认。 */
   clearAllData: () => Promise<void>;
   /** 重新从存储读取设置并应用到 store（跨页面同步兜底）。 */
   refreshSettings: () => Promise<void>;
-  /** 导出完整备份（固定空间 + 设置 + 全部快照族），不包含当前打开标签或撤销栈。 */
-  exportData: () => ExportFile;
-  /** 校验并覆盖导入备份（事务），不触碰当前打开标签；快照由 snapshotStore 接管。 */
+  /**
+   * 导出完整备份（固定空间 + 设置 + 全部快照族），不包含当前打开标签或撤销栈。
+   * 异步：快照直读仓库，不依赖任何页面是否加载过 snapshotStore。
+   */
+  exportData: () => Promise<ExportFile>;
+  /** 校验并覆盖导入备份（事务），不触碰当前打开标签。 */
   importData: (raw: unknown) => Promise<void>;
   /** 从书签栏导入固定文件夹（同名合并，URL 全局去重）。 */
   importBookmarksFromBar: () => Promise<{ foldersCreated: number; itemsImported: number }>;
@@ -132,60 +144,8 @@ interface DataState {
   reconcileWithTabs: (tabs: readonly TabRecord[]) => Promise<void>;
 }
 
-/**
- * 高频写合并器：同一写入批次（上一次写完成前到达的调用）只落盘最终值，
- * 消除拖拽重排等连续操作时的 chrome.storage 全量写入放大。
- * 语义：调用方 await 的 Promise 在“本批最终值已落盘”后 resolve。
- * 注意：DataRepository.write 内部已捕获错误并返回成败标志，此合并器不改变该语义。
- */
-function createCoalescedWriter<T, R>(repo: { write: (value: T) => Promise<R> }) {
-  let inflight: Promise<R> | null = null;
-  let queued: T | undefined;
-  let hasQueued = false;
-
-  /**
-   * 返回本批次最后一次真实落盘的结果：
-   * 合并掉的中间值不再单独落盘，因此它们的成败对用户不可见也无意义；
-   * 调用方关心的始终是「最终值是否保存成功」，故返回末次 write 的返回值。
-   */
-  return (value: T): Promise<R> => {
-    queued = value;
-    hasQueued = true;
-    if (inflight) return inflight;
-    inflight = (async () => {
-      let last!: R;
-      while (hasQueued) {
-        hasQueued = false;
-        const target = queued as T;
-        last = await repo.write(target);
-      }
-      return last;
-    })();
-    void inflight.finally(() => {
-      inflight = null;
-    });
-    return inflight;
-  };
-}
-
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
 let initialized = false;
-
-/**
- * 快照读取桥（避免 dataStore → snapshotStore 直接依赖造成的模块环）。
- * 由 snapshotStore 在初始化时登记；未登记（如设置页未加载快照）时导出快照为空数组。
- */
-let snapshotProvider: (() => readonly Snapshot[]) | undefined;
-
-/** 登记快照读取器（snapshotStore 初始化时调用）。 */
-export function registerSnapshotProvider(provider: () => readonly Snapshot[]): void {
-  snapshotProvider = provider;
-}
-
-/** 撤销登记（测试隔离用）。 */
-export function resetSnapshotProvider(): void {
-  snapshotProvider = undefined;
-}
 
 export const useDataStore = create<DataState>()((set, get) => {
   // 依赖访问器：经组合根取用，便于测试注入（见 registry.ts）。
@@ -202,6 +162,9 @@ export const useDataStore = create<DataState>()((set, get) => {
     pins: PersistentPin[];
     settings: Settings;
   }): void => {
+    // 开关即闸门：未开启时一次 sync 写入都不发。此前这里是无条件镜像，
+    // 用户完全无感知就把完整收藏 URL 推上了浏览器账号通道。
+    if (!state.settings.syncMirrorEnabled) return;
     syncMirror.schedule({ folders: state.folders, pins: state.pins, settings: state.settings });
   };
 
@@ -258,8 +221,7 @@ export const useDataStore = create<DataState>()((set, get) => {
     }
   };
   const broadcastSettingsSynced = (): void => {
-    const message = SettingsSyncedMessageSchema.parse({ type: 'settings-synced' });
-    browser.runtime.sendMessage(message).catch(() => {});
+    sendMessage({ type: 'settings-synced' });
   };
   let settingsWatcherStarted = false;
   const startSettingsWatcher = (): void => {
@@ -293,8 +255,10 @@ export const useDataStore = create<DataState>()((set, get) => {
         let effectiveFolders = folders;
         let effectivePins = pins;
         let effectiveSettings = settings;
-        if (!seeded) {
-          // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）
+        if (!seeded && settings.syncMirrorEnabled) {
+          // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）。
+          // 开关关闭时不拉取——「不上传」与「不下载」必须同开同关，
+          // 否则关掉同步的用户在换机时仍会被旧镜像回灌。
           const mirror = await syncMirror.pull();
           if (mirror) {
             const parsedFolders = FixedFolderSchema.array().safeParse(mirror.folders);
@@ -672,9 +636,24 @@ export const useDataStore = create<DataState>()((set, get) => {
         reportPersistenceFailure('dataStore', '设置写入失败，本次修改未保存');
         throw new Error('settings-write-failed');
       }
+      const wasMirrorEnabled = get().settings.syncMirrorEnabled;
       set({ settings: parsed.data });
       scheduleMirror(get());
       broadcastSettingsSynced();
+      // 关闭镜像时必须清掉已上传的块：否则浏览器账号通道里那份会一直留着，
+      // 用户以为「关了同步」，数据其实仍在厂商侧，且下次开启会被回灌。
+      if (partial.syncMirrorEnabled === false && wasMirrorEnabled) {
+        void syncMirror.clearAll();
+      }
+    },
+
+    tryUpdateSettings: async (partial) => {
+      try {
+        await get().updateSettings(partial);
+        return true;
+      } catch {
+        return false;
+      }
     },
 
     resetSettings: async () => {
@@ -718,16 +697,19 @@ export const useDataStore = create<DataState>()((set, get) => {
 
     /**
      * 导出为完整备份：固定空间 + 设置 + 全部快照族。
-     * 快照经仓库最新值读取：面板打开期间 background 可能写入关窗自动快照。
+     *
+     * 快照直读仓库而非内存桥：导出入口在设置页，而设置页从不加载 snapshotStore——
+     * 走内存桥会静默导出 `snapshots: []`，用户拿这份备份恢复时快照全丢。
+     * 直读仓库同时拿到最新值（面板打开期间 background 可能写入关窗自动快照）。
      */
-    exportData: () => ({
+    exportData: async () => ({
       format: 'tabs.export' as const,
       exportedAt: new Date().toISOString(),
       fixedFolders: get().folders,
       persistentPins: get().pins,
       siteCollapse: get().collapsedSites,
       settings: get().settings,
-      snapshots: [...(snapshotProvider?.() ?? [])]
+      snapshots: await repos.snapshots.read()
     }),
 
     /**
@@ -739,7 +721,7 @@ export const useDataStore = create<DataState>()((set, get) => {
      */
     importData: async (raw) => {
       const parsed = parseExportFile(raw);
-      if (!parsed.success) throw new Error('invalid-tab-haven-export');
+      if (!parsed.success) throw new Error('invalid-tabs-export');
       const data = parsed.data;
 
       const before = {
@@ -747,38 +729,42 @@ export const useDataStore = create<DataState>()((set, get) => {
         pins: get().pins,
         collapse: get().collapsedSites,
         settings: get().settings,
-        snapshots: [...(snapshotProvider?.() ?? [])]
+        // 与导出同口径直读仓库：回滚值必须是磁盘真实值，否则失败回滚会清空快照。
+        snapshots: await repos.snapshots.read()
       };
 
-      const steps: { name: string; write: () => Promise<boolean>; rollback: () => Promise<boolean> }[] =
-        [
-          {
-            name: 'folders',
-            write: () => repos.folders.write(data.fixedFolders),
-            rollback: () => repos.folders.write(before.folders)
-          },
-          {
-            name: 'pins',
-            write: () => repos.pins.write(data.persistentPins),
-            rollback: () => repos.pins.write(before.pins)
-          },
-          {
-            name: 'siteCollapse',
-            write: () => repos.collapse.write(data.siteCollapse),
-            rollback: () => repos.collapse.write(before.collapse)
-          },
-          {
-            name: 'settings',
-            write: () => repos.settings.write(data.settings),
-            rollback: () => repos.settings.write(before.settings)
-          },
-          // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
-          {
-            name: 'snapshots',
-            write: () => repos.snapshots.write(data.snapshots),
-            rollback: () => repos.snapshots.write(before.snapshots)
-          }
-        ];
+      const steps: {
+        name: string;
+        write: () => Promise<boolean>;
+        rollback: () => Promise<boolean>;
+      }[] = [
+        {
+          name: 'folders',
+          write: () => repos.folders.write(data.fixedFolders),
+          rollback: () => repos.folders.write(before.folders)
+        },
+        {
+          name: 'pins',
+          write: () => repos.pins.write(data.persistentPins),
+          rollback: () => repos.pins.write(before.pins)
+        },
+        {
+          name: 'siteCollapse',
+          write: () => repos.collapse.write(data.siteCollapse),
+          rollback: () => repos.collapse.write(before.collapse)
+        },
+        {
+          name: 'settings',
+          write: () => repos.settings.write(data.settings),
+          rollback: () => repos.settings.write(before.settings)
+        },
+        // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
+        {
+          name: 'snapshots',
+          write: () => repos.snapshots.write(data.snapshots),
+          rollback: () => repos.snapshots.write(before.snapshots)
+        }
+      ];
 
       const done: (typeof steps)[number][] = [];
       for (const step of steps) {

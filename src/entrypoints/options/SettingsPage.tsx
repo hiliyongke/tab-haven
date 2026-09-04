@@ -1,1042 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import { useDataStore } from '@/stores/dataStore';
 import { useUndoStore } from '@/stores/undoStore';
 import type { Settings } from '@/core/schema/models';
-import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { Button } from '@/ui/common/Button';
 import { ConfirmDialog, DialogShell } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
-import { Select } from '@/ui/common/Select';
 import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
+import { Row, Section } from '@/entrypoints/options/settingControls';
+import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
+import {
+  CapabilitiesGuide,
+  PresetsPanel
+} from '@/entrypoints/options/settingPresets';
+
+/**
+ * 设置页**编排层**：状态、写盘通道与弹窗流转。
+ *
+ * 已按职责拆分（自上而下单向依赖）：
+ *  - `settingControls.tsx` —— 展示层控件（分区 / 行容器 / 编辑器），叶子；
+ *  - `settingSections.tsx` —— 声明式配置（buildSections + SettingRow）；
+ *  - `settingPresets.tsx` —— 引导层（预设画像 / 能力发现）；
+ *  - 本文件 —— 只做状态编排与 JSX 组装，不再承载任何配置体。
+ */
 
 type SidePanelSide = 'left' | 'right' | 'unknown';
 type SidePanelLayoutApi = { getLayout?: () => Promise<{ side: 'left' | 'right' }> };
 
-function SectionCount({ count }: { count?: number }) {
-  if (count === undefined) return null;
-  return (
-    <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs leading-none text-gray-500">
-      {count}
-    </span>
-  );
-}
-
-/** 设置分区：collapsible 时折叠为「高级设置」抽屉（details/summary）；forceOpen 用于搜索时展开。 */
-function Section({
-  title,
-  children,
-  collapsible = false,
-  count,
-  forceOpen
-}: {
-  title: string;
-  children: ReactNode;
-  collapsible?: boolean;
-  count?: number;
-  /** 搜索时强制展开折叠分区；缺省不传保持非受控。 */
-  forceOpen?: boolean;
-}) {
-  if (!collapsible) {
-    return (
-      <section className="mb-6 sm:mb-8">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-600">
-          <span>{title}</span>
-          <SectionCount count={count} />
-        </h2>
-        <div className="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200 bg-surface">
-          {children}
-        </div>
-      </section>
-    );
-  }
-  return (
-    <details className="group mb-6 sm:mb-8" open={forceOpen}>
-      <summary className="mb-3 flex cursor-pointer items-center justify-between text-sm font-semibold tracking-wide text-gray-600 select-none">
-        <span className="flex items-center gap-2">
-          {title}
-          <SectionCount count={count} />
-        </span>
-        <Icon d={Icons.chevron} className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
-      </summary>
-      <div className="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200 bg-surface">
-        {children}
-      </div>
-    </details>
-  );
-}
-
-/** 休眠白名单编辑器：输入域名 → 添加；chip 列表可单个删除。 */
-function WhitelistEditor({
-  value,
-  onChange
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const { t } = useTranslation();
-  const [input, setInput] = useState('');
-  const add = () => {
-    const host = input
-      .trim()
-      .toLowerCase()
-      .replace(/^https?:\/\//, '')
-      .replace(/\/.*$/, '')
-      .replace(/^www\./, '');
-    if (!host) return;
-    if (!value.includes(host)) onChange([...value, host]);
-    setInput('');
-  };
-  return (
-    <div className="flex w-full flex-col items-end gap-1.5 sm:w-auto">
-      {value.length > 0 && (
-        <ul className="flex max-w-full flex-wrap justify-end gap-1 sm:max-w-[240px]">
-          {value.map((entry) => (
-            <li
-              key={entry}
-              className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs text-gray-600"
-            >
-              {entry}
-              <button
-                type="button"
-                aria-label={t('settings.whitelistRemove')}
-                title={t('settings.whitelistRemove')}
-                onClick={() => onChange(value.filter((v) => v !== entry))}
-                className="text-gray-500 hover:text-gray-600"
-              >
-                <Icon d={Icons.close} className="h-3 w-3" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex gap-1">
-        <TextField
-          size="sm"
-          className="w-32"
-          placeholder={t('settings.whitelistPlaceholder')}
-          ariaLabel={t('settings.whitelistPlaceholder')}
-          value={input}
-          onChange={setInput}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') add();
-          }}
-        />
-        <Button variant="secondary" size="sm" onClick={add}>
-          {t('settings.whitelistAdd')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0">
-        <div className="text-sm text-gray-800">{label}</div>
-        {hint && <div className="mt-0.5 text-2xs text-gray-600">{hint}</div>}
-      </div>
-      {/* 窄屏下控件撑满整行（右对齐改为起始对齐，避免长文本域溢出） */}
-      <div className="w-full shrink-0 sm:w-auto sm:pl-4">{children}</div>
-    </div>
-  );
-}
-
-/** 禁缓存站点编辑器：大文本框即列表（每行一条 pattern），所见即所得。
- *  编辑/删行直接改文本；失焦或点「保存」时按行归一化、去重写回设置，
- *  无效行被忽略并计数提示；外部变更（重置/导入）经 useEffect 回流同步。 */
-function NoCachePatternEditor({
-  value,
-  onChange
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const { t } = useTranslation();
-  const [text, setText] = useState(() => value.join('\n'));
-  const [invalidCount, setInvalidCount] = useState(0);
-  /** 最近一次与设置对齐的文本（防「保存 → settings 回流 → 重置光标」循环）。 */
-  const lastSyncedRef = useRef(value.join('\n'));
-  const full = value.length >= NO_CACHE_PATTERNS_LIMIT;
-
-  // 外部变更（重置设置 / 导入备份）同步进文本框；内容一致时跳过。
-  useEffect(() => {
-    const joined = value.join('\n');
-    if (joined !== lastSyncedRef.current) {
-      lastSyncedRef.current = joined;
-      setText(joined);
-    }
-  }, [value]);
-
-  const commit = () => {
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const seen = new Set<string>();
-    const next: string[] = [];
-    let invalid = 0;
-    for (const line of lines) {
-      const normalized = normalizeNoCachePattern(line);
-      if (!normalized) {
-        invalid++;
-        continue;
-      }
-      if (seen.has(normalized) || next.length >= NO_CACHE_PATTERNS_LIMIT) continue;
-      seen.add(normalized);
-      next.push(normalized);
-    }
-    setInvalidCount(invalid);
-    const joined = next.join('\n');
-    if (joined !== lastSyncedRef.current) {
-      lastSyncedRef.current = joined;
-      onChange(next);
-    }
-    // 文本框规整为归一化后的权威列表（无效行移除、空行压缩）。
-    if (text !== joined) setText(joined);
-  };
-
-  return (
-    <div className="flex w-full flex-col items-end gap-1 sm:w-96">
-      <TextField
-        multiline
-        rows={5}
-        resize
-        className="font-mono leading-5"
-        placeholder={t('settings.noCachePatternPlaceholder')}
-        ariaLabel={t('settings.noCachePatterns')}
-        inputProps={{ spellCheck: false }}
-        value={text}
-        onChange={(next) => {
-          setText(next);
-          if (invalidCount > 0) setInvalidCount(0);
-        }}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          // ⌘/Ctrl+Enter 快捷保存（Enter 保持默认换行：列表编辑语义优先）
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            commit();
-          }
-        }}
-      />
-      <div className="flex w-full items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-2xs text-gray-500">
-          {invalidCount > 0
-            ? t('settings.noCachePatternInvalidLines', { count: invalidCount })
-            : t('settings.noCachePatternHelp')}
-        </span>
-        <Button variant="secondary" size="sm" onClick={commit}>
-          {t('settings.noCachePatternSave')}
-        </Button>
-      </div>
-      {full && <span className="text-2xs text-gray-500">{t('settings.noCachePatternFull')}</span>}
-    </div>
-  );
-}
-
-/** 禁缓存总开关：开启前请求 optional 全站 host 权限（拒绝则不开启）；权限被回收时引导重新授权。 */
-function NoCacheToggle({
-  settings,
-  update
-}: {
-  settings: Settings;
-  update: (key: keyof Settings, value: unknown) => void;
-}) {
-  const { t } = useTranslation();
-  const [denied, setDenied] = useState(false);
-  const [permissionLost, setPermissionLost] = useState(false);
-
-  useEffect(() => {
-    if (!settings.noCacheEnabled) {
-      setPermissionLost(false);
-      return;
-    }
-    let cancelled = false;
-    void browser.permissions
-      .contains({ origins: ['<all_urls>'] })
-      .then((has) => {
-        if (!cancelled) setPermissionLost(!has);
-      })
-      .catch(() => {
-        if (!cancelled) setPermissionLost(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [settings.noCacheEnabled]);
-
-  const requestSiteAccess = () =>
-    browser.permissions.request({ origins: ['<all_urls>'] }).catch(() => false);
-
-  const handleToggle = async (enabled: boolean) => {
-    if (enabled) {
-      // permissions.request 必须在用户手势内首发调用（Toggle onChange 满足）。
-      const granted = await requestSiteAccess();
-      if (!granted) {
-        setDenied(true);
-        return;
-      }
-      setDenied(false);
-    }
-    update('noCacheEnabled', enabled);
-  };
-
-  const regrant = async () => {
-    const granted = await requestSiteAccess();
-    if (granted) {
-      setPermissionLost(false);
-      setDenied(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <Toggle
-        checked={settings.noCacheEnabled}
-        onChange={(enabled) => void handleToggle(enabled)}
-        ariaLabel={t('settings.noCache')}
-      />
-      {denied && !settings.noCacheEnabled && (
-        <span className="text-2xs text-red-600">{t('settings.noCachePermissionDenied')}</span>
-      )}
-      {permissionLost && settings.noCacheEnabled && (
-        <span className="flex items-center gap-1.5 text-2xs text-warn-600">
-          {t('settings.noCachePermissionLost')}
-          <Button variant="secondary" size="sm" onClick={() => void regrant()}>
-            {t('settings.noCachePermissionRegrant')}
-          </Button>
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** Settings 中类型为 boolean 的键（Toggle 行专用）。 */
-type BooleanSettingKey =
-  | 'tabOrderSync'
-  | 'showPinnedStrip'
-  | 'showUrl'
-  | 'showSplitBadges'
-  | 'autoScrollActive'
-  | 'closeOnMiddleClick'
-  | 'autoDiscardEnabled'
-  | 'autoGroupNative'
-  | 'rowActionsVisible'
-  | 'footerLabels'
-  | 'pinyinSearch'
-  | 'persistUndo'
-  | 'autoSaveSnapshots'
-  | 'uniqueUrlTabs'
-  | 'searchAllWindows'
-  | 'discardNotifyEnabled'
-  | 'reuseNotifyEnabled'
-  | 'contextMenusEnabled'
-  | 'omniboxEnabled';
-
-interface SettingRowContext {
-  settings: Settings;
-  update: (key: keyof Settings, value: unknown) => void;
-  t: (key: string) => string;
-}
-
-/** 设置行声明（配置化渲染，消灭手写重复的 Row+Toggle/Select 组合）。 */
-type SettingSpec =
-  | {
-      kind: 'toggle';
-      key: BooleanSettingKey;
-      labelKey: string;
-      hintKey?: string;
-      /** 关闭开关时的确认文案 key；用户取消则不更新。 */
-      confirmOffKey?: string;
-      /** 条件渲染：返回 false 时整行不显示（如依赖开关的子设置）。 */
-      visible?: (settings: Settings) => boolean;
-    }
-  | {
-      kind: 'select';
-      key: keyof Settings;
-      labelKey: string;
-      hintKey?: string;
-      options: { value: string; label: string }[];
-      /** select 值 → 设置值（默认按字符串直传）。 */
-      parse?: (value: string) => unknown;
-      /** 条件渲染：返回 false 时整行不显示（如依赖开关的子设置）。 */
-      visible?: (settings: Settings) => boolean;
-    }
-  | {
-      kind: 'custom';
-      labelKey: string;
-      hintKey?: string;
-      /** 条件渲染：返回 false 时整行不显示（如依赖开关的子设置）。 */
-      visible?: (settings: Settings) => boolean;
-      render: (ctx: SettingRowContext) => ReactNode;
-    };
-
-/** 按 spec 渲染单个设置行（行容器/控件/翻译统一在此收敛）。 */
-function SettingRow({
-  spec,
-  settings,
-  update
-}: {
-  spec: SettingSpec;
-  settings: Settings;
-  update: (key: keyof Settings, value: unknown) => void;
-}) {
-  const { t } = useTranslation();
-  const label = t(spec.labelKey);
-  const hint = spec.kind !== 'custom' && spec.hintKey ? t(spec.hintKey) : undefined;
-  // 关闭带确认的开关时，用项目自制的 ConfirmDialog（focus trap + Esc）而非浏览器原生 confirm。
-  const [confirmingKey, setConfirmingKey] = useState<BooleanSettingKey | null>(null);
-
-  if (spec.kind === 'toggle') {
-    return (
-      <>
-        <Row label={label} hint={hint}>
-          <Toggle
-            checked={settings[spec.key] as boolean}
-            onChange={(v) => {
-              if (!v && spec.confirmOffKey) {
-                setConfirmingKey(spec.key);
-                return;
-              }
-              update(spec.key, v);
-            }}
-            ariaLabel={label}
-          />
-        </Row>
-        {confirmingKey === spec.key && spec.confirmOffKey && (
-          <ConfirmDialog
-            title={t('dialog.confirmTitle')}
-            message={t(spec.confirmOffKey)}
-            danger
-            onCancel={() => setConfirmingKey(null)}
-            onConfirm={() => {
-              update(spec.key, false);
-              setConfirmingKey(null);
-            }}
-          />
-        )}
-      </>
-    );
-  }
-
-  if (spec.kind === 'select') {
-    return (
-      <Row label={label} hint={hint}>
-        <Select
-          value={String(settings[spec.key])}
-          onChange={(v) => update(spec.key, spec.parse ? spec.parse(v) : v)}
-          options={spec.options}
-          ariaLabel={label}
-        />
-      </Row>
-    );
-  }
-
-  return (
-    <Row label={label} hint={spec.hintKey ? t(spec.hintKey) : undefined}>
-      {spec.render({ settings, update, t })}
-    </Row>
-  );
-}
-
-/** 主题色预设色板（与 main.css data-hue 预设一一对应，hex 取各预设浅色 500 主色）。 */
-const COLOR_THEME_SWATCHES = [
-  { id: 'forest', labelKey: 'settings.colorThemeForest', hex: '#347554' },
-  { id: 'ocean', labelKey: 'settings.colorThemeOcean', hex: '#3a6ea8' },
-  { id: 'violet', labelKey: 'settings.colorThemeViolet', hex: '#6f4ba6' },
-  { id: 'sunset', labelKey: 'settings.colorThemeSunset', hex: '#b85f22' },
-  { id: 'mono', labelKey: 'settings.colorThemeMono', hex: '#4a524a' },
-  { id: 'plain', labelKey: 'settings.colorThemePlain', hex: '#80868b' }
-] as const;
-
-/** 预设画像：一键套用一组相关设置，降低 33 项设置的决策疲劳。 */
-type PresetProfile = {
-  id: 'researcher' | 'saver' | 'efficiency';
-  nameKey: string;
-  descKey: string;
-  patch: Partial<Settings>;
-};
-
-const PRESET_PROFILES: PresetProfile[] = [
-  {
-    id: 'researcher',
-    nameKey: 'presets.researcher',
-    descKey: 'presets.researcherDesc',
-    patch: {
-      groupMode: 'site',
-      aggregationThreshold: 2,
-      sortMode: 'recency',
-      pinyinSearch: true,
-      searchAllWindows: false
-    }
-  },
-  {
-    id: 'saver',
-    nameKey: 'presets.saver',
-    descKey: 'presets.saverDesc',
-    patch: { autoDiscardEnabled: true, autoDiscardMinutes: 30, discardNotifyEnabled: true }
-  },
-  {
-    id: 'efficiency',
-    nameKey: 'presets.efficiency',
-    descKey: 'presets.efficiencyDesc',
-    patch: {
-      rowActionsVisible: true,
-      closeOnMiddleClick: true,
-      pinyinSearch: true,
-      searchAllWindows: false
-    }
-  }
-];
-
-function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
-  const { t } = useTranslation();
-  const settings = useDataStore((state) => state.settings);
-  const updateSettings = useDataStore((state) => state.updateSettings);
-  /**
-   * 激活态 = 当前设置与预设 patch 逐字段完全一致（不记「最近点过谁」——
-   * 预设是配置模板，套用后用户逐项微调即漂移，按值比对才诚实）。
-   */
-  const isActive = (preset: PresetProfile): boolean =>
-    Object.entries(preset.patch).every(
-      ([key, value]) => settings[key as keyof Settings] === value
-    );
-  return (
-    <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
-      <h2 className="mb-1 text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
-      <p className="mb-3 text-2xs text-gray-600">{t('presets.hint')}</p>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {PRESET_PROFILES.map((preset) => {
-          const active = isActive(preset);
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              aria-pressed={active}
-              className={
-                'relative flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-base ' +
-                (active
-                  ? 'border-accent-500 bg-accent-50'
-                  : 'border-control bg-surface hover:border-accent-400 hover:bg-accent-50')
-              }
-              onClick={() => {
-                // 已在使用中的预设重复点击无副作用，直接忽略。
-                if (active) return;
-                void updateSettings(preset.patch);
-                onApplied(t('presets.applied', { name: t(preset.nameKey) }));
-              }}
-            >
-              <span className="flex w-full items-center justify-between gap-1">
-                <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
-                {active && (
-                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-accent-100 px-1.5 py-px text-3xs font-medium text-accent-700">
-                    <Icon d={Icons.check} className="h-3 w-3" />
-                    {t('presets.active')}
-                  </span>
-                )}
-              </span>
-              <span className="text-3xs leading-snug text-gray-600">{t(preset.descKey)}</span>
-            </button>
-          );
-        })}
-        {/* 三个预设均未命中（用户手动调整过）→ 显示「自定义」状态卡：非选项，仅状态呈现 */}
-        {!PRESET_PROFILES.some((preset) => isActive(preset)) && (
-          <div className="flex flex-col items-start gap-1 rounded-lg border border-dashed border-gray-300 bg-surface px-3 py-2 sm:col-span-3">
-            <span className="flex w-full items-center justify-between gap-1">
-              <span className="text-sm font-medium text-gray-700">{t('presets.custom')}</span>
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-px text-3xs font-medium text-gray-600">
-                <Icon d={Icons.check} className="h-3 w-3" />
-                {t('presets.active')}
-              </span>
-            </span>
-            <span className="text-3xs leading-snug text-gray-600">{t('presets.customDesc')}</span>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/** 能力发现清单：用图标 + 一句话 +「试用」把藏得深的能力推到用户面前。 */
-const CAPABILITIES = [
-  { icon: Icons.menu, titleKey: 'cap.contextMenuTitle', howKey: 'cap.contextMenuHow' },
-  { icon: Icons.search, titleKey: 'cap.omniboxTitle', howKey: 'cap.omniboxHow' },
-  { icon: Icons.shortcuts, titleKey: 'cap.paletteTitle', howKey: 'cap.paletteHow' },
-  { icon: Icons.pin, titleKey: 'cap.pinTitle', howKey: 'cap.pinHow' },
-  { icon: Icons.snapshot, titleKey: 'cap.snapshotTitle', howKey: 'cap.snapshotHow' },
-  { icon: Icons.history, titleKey: 'cap.undoTitle', howKey: 'cap.undoHow' }
-] as const;
-
-function CapabilitiesGuide() {
-  const { t } = useTranslation();
-  return (
-    <Section title={t('settings.capabilitiesGuide')}>
-      <div className="divide-y divide-gray-100">
-        {CAPABILITIES.map((cap) => (
-          <div key={cap.titleKey} className="flex items-center gap-3 px-4 py-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-50 text-accent-600">
-              <Icon d={cap.icon} className="h-4 w-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-800">{t(cap.titleKey)}</p>
-              <p className="mt-0.5 text-3xs leading-snug text-gray-600">{t(cap.howKey)}</p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void (async () => {
-                  try {
-                    const win = await browser.windows.getCurrent();
-                    if (win.id !== undefined) await browser.sidePanel.open({ windowId: win.id });
-                  } catch {
-                    /* 侧边栏打开失败不阻断设置页 */
-                  }
-                })();
-              }}
-            >
-              {t('settings.capTry')}
-            </Button>
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-/**
- * 构建设置分组配置（声明式描述设置行，渲染由 SettingRow 统一完成）。
- *
- * 放在模块顶层而非常量/组件内：配置约 370 行，含大量 t() 调用与 render 闭包。
- * 配置体量大且含大量 t() 调用，故按依赖参数化后由组件 memo 调用。
- * 现在按依赖参数化（t 与 sidePanelSide 是运行时值），由组件调用一次即可。
- */
-function buildSections(
-  t: (key: string, options?: Record<string, unknown>) => string,
-  sidePanelSide: string
-): { titleKey: string; collapsible?: boolean; specs: SettingSpec[] }[] {
-  return [
-    {
-      titleKey: 'settings.appearance',
-      specs: [
-        {
-          kind: 'select',
-          key: 'themePreference',
-          labelKey: 'settings.theme',
-          options: [
-            { value: 'system', label: t('settings.themeSystem') },
-            { value: 'light', label: t('settings.themeLight') },
-            { value: 'dark', label: t('settings.themeDark') }
-          ]
-        },
-        {
-          kind: 'custom',
-          labelKey: 'settings.colorTheme',
-          hintKey: 'settings.colorThemeHint',
-          render: ({ settings, update, t }) => (
-            <div
-              className="flex items-center gap-1.5"
-              role="radiogroup"
-              aria-label={t('settings.colorTheme')}
-            >
-              {COLOR_THEME_SWATCHES.map((swatch) => (
-                <input
-                  key={swatch.id}
-                  type="radio"
-                  name="colorTheme"
-                  checked={settings.colorTheme === swatch.id}
-                  title={t(swatch.labelKey)}
-                  aria-label={t(swatch.labelKey)}
-                  /* 样式走 .theme-swatch：视觉 20px / 命中 24px，
-                     选中态为「白色内环 + 品牌外环」双层（gray-500 外环
-                     落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */
-                  className="theme-swatch appearance-none"
-                  style={{ backgroundColor: swatch.hex }}
-                  onChange={() => update('colorTheme', swatch.id)}
-                />
-              ))}
-            </div>
-          )
-        },
-        {
-          kind: 'toggle',
-          key: 'showPinnedStrip',
-          labelKey: 'settings.showPinnedStrip',
-          hintKey: 'settings.showPinnedStripHint'
-        },
-        {
-          kind: 'custom',
-          labelKey: 'settings.sidePanelPosition',
-          hintKey: 'settings.sidePanelPositionHint',
-          render: () => (
-            <span className="rounded border border-gray-200 bg-surface px-2 py-1 text-xs text-gray-600">
-              {sidePanelSide === 'left'
-                ? t('settings.sidePanelPositionLeft')
-                : sidePanelSide === 'right'
-                  ? t('settings.sidePanelPositionRight')
-                  : t('settings.sidePanelPositionUnknown')}
-            </span>
-          )
-        },
-        {
-          kind: 'select',
-          key: 'density',
-          labelKey: 'settings.density',
-          options: [
-            { value: 'compact', label: t('settings.densityCompact') },
-            { value: 'cozy', label: t('settings.densityCozy') }
-          ]
-        },
-        {
-          kind: 'toggle',
-          key: 'showUrl',
-          labelKey: 'settings.showUrl',
-          hintKey: 'settings.showUrlHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'footerLabels',
-          labelKey: 'settings.footerLabels',
-          hintKey: 'settings.footerLabelsHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'showSplitBadges',
-          labelKey: 'settings.showSplitBadges',
-          hintKey: 'settings.showSplitBadgesHint'
-        },
-        {
-          kind: 'select',
-          key: 'pinnedStripSize',
-          labelKey: 'settings.pinnedStripSize',
-          hintKey: 'settings.pinnedStripSizeHint',
-          options: [
-            { value: 'sm', label: t('settings.pinnedStripSizeSm') },
-            { value: 'md', label: t('settings.pinnedStripSizeMd') },
-            { value: 'lg', label: t('settings.pinnedStripSizeLg') }
-          ]
-        },
-        {
-          kind: 'select',
-          key: 'groupAccentStyle',
-          labelKey: 'settings.groupAccentStyle',
-          hintKey: 'settings.groupAccentStyleHint',
-          options: [
-            { value: 'auto', label: t('settings.groupAccentAuto') },
-            { value: 'mono', label: t('settings.groupAccentMono') }
-          ]
-        }
-      ]
-    },
-    {
-      titleKey: 'settings.behavior',
-      specs: [
-        {
-          kind: 'custom',
-          labelKey: 'settings.language',
-          // settings 来自 SettingRow 注入的 render 参数（配置已外提为模块级函数，
-          // 不能再捕获组件作用域的 settings 变量）。
-          render: ({ settings: currentSettings, update, t }) => (
-            <Select
-              value={currentSettings.language ?? 'zh-CN'}
-              onChange={(v) => update('language', v)}
-              options={[
-                { value: 'zh-CN', label: '简体中文' },
-                { value: 'en', label: 'English' }
-              ]}
-              ariaLabel={t('settings.language')}
-            />
-          )
-        },
-        {
-          kind: 'select',
-          key: 'newTabPosition',
-          labelKey: 'settings.newTabPosition',
-          hintKey: 'settings.newTabPositionHint',
-          options: [
-            { value: 'end', label: t('settings.newTabEnd') },
-            { value: 'after-active', label: t('settings.newTabAfterActive') }
-          ]
-        },
-        {
-          kind: 'toggle',
-          key: 'autoScrollActive',
-          labelKey: 'settings.autoScrollActive',
-          hintKey: 'settings.autoScrollActiveHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'closeOnMiddleClick',
-          labelKey: 'settings.closeOnMiddleClick',
-          hintKey: 'settings.closeOnMiddleClickHint'
-        },
-        {
-          kind: 'select',
-          key: 'sortMode',
-          labelKey: 'settings.sortMode',
-          hintKey: 'settings.sortModeHint',
-          options: [
-            { value: 'browser', label: t('settings.sortBrowser') },
-            { value: 'recency', label: t('settings.sortRecency') }
-          ]
-        },
-        {
-          kind: 'toggle',
-          key: 'tabOrderSync',
-          labelKey: 'settings.tabOrderSync',
-          hintKey: 'settings.tabOrderSyncHint'
-        },
-        {
-          kind: 'select',
-          key: 'aggregationThreshold',
-          labelKey: 'settings.threshold',
-          hintKey: 'settings.thresholdHint',
-          parse: (v) => Number(v),
-          options: [
-            { value: '1', label: t('settings.thresholdOne') },
-            { value: '2', label: '2' },
-            { value: '3', label: '3' },
-            { value: '4', label: '4' },
-            { value: '5', label: '5' }
-          ]
-        }
-      ]
-    },
-    {
-      // P0-3：原 21 项「进阶功能」平铺区按语义三分（休眠与内存 / 分组与搜索 / 高级与恢复），
-      // 低频的「高级与恢复」默认折叠（collapsible），搜索时由 forceOpen 自动展开。
-      titleKey: 'settings.memory',
-      specs: [
-        {
-          kind: 'toggle',
-          key: 'autoDiscardEnabled',
-          labelKey: 'settings.autoDiscard',
-          hintKey: 'settings.autoDiscardHint'
-        },
-        {
-          kind: 'custom',
-          labelKey: 'settings.autoDiscardMinutes',
-          visible: (s) => s.autoDiscardEnabled,
-          render: ({ settings, update, t }) => (
-            <TextField
-              type="number"
-              size="sm"
-              className="w-20"
-              min={5}
-              max={240}
-              value={String(settings.autoDiscardMinutes)}
-              ariaLabel={t('settings.autoDiscardMinutes')}
-              onChange={(next) =>
-                update('autoDiscardMinutes', Math.min(240, Math.max(5, Number(next) || 30)))
-              }
-            />
-          )
-        },
-        {
-          kind: 'custom',
-          labelKey: 'settings.discardWhitelist',
-          hintKey: 'settings.discardWhitelistHint',
-          render: ({ settings, update }) => (
-            <WhitelistEditor
-              value={settings.discardWhitelist}
-              onChange={(next) => update('discardWhitelist', next)}
-            />
-          )
-        },
-        {
-          kind: 'toggle',
-          key: 'discardNotifyEnabled',
-          labelKey: 'settings.discardNotify',
-          hintKey: 'settings.discardNotifyHint'
-        }
-      ]
-    },
-    {
-      titleKey: 'settings.groupSearch',
-      specs: [
-        {
-          kind: 'toggle',
-          key: 'searchAllWindows',
-          labelKey: 'settings.searchAllWindows',
-          hintKey: 'settings.searchAllWindowsHint'
-        },
-        {
-          kind: 'select',
-          key: 'groupMode',
-          labelKey: 'settings.groupMode',
-          options: [
-            { value: 'site', label: t('settings.groupModeSite') },
-            { value: 'opener', label: t('settings.groupModeOpener') },
-            { value: 'language', label: t('settings.groupModeLanguage') }
-          ]
-        },
-        {
-          kind: 'toggle',
-          key: 'autoGroupNative',
-          labelKey: 'settings.autoGroupNative',
-          hintKey: 'settings.autoGroupNativeHint',
-          confirmOffKey: 'settings.autoGroupNativeDisableConfirm'
-        },
-        {
-          kind: 'select',
-          key: 'actionClickMode',
-          labelKey: 'settings.actionClick',
-          hintKey: 'settings.actionClickHint',
-          options: [
-            { value: 'panel', label: t('settings.actionClickPanel') },
-            { value: 'regroup', label: t('settings.actionClickRegroup') }
-          ]
-        },
-        {
-          kind: 'toggle',
-          key: 'uniqueUrlTabs',
-          labelKey: 'settings.uniqueUrlTabs',
-          hintKey: 'settings.uniqueUrlTabsHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'pinyinSearch',
-          labelKey: 'settings.pinyinSearch',
-          hintKey: 'settings.pinyinSearchHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'rowActionsVisible',
-          labelKey: 'settings.rowActionsVisible',
-          hintKey: 'settings.rowActionsVisibleHint'
-        },
-        {
-          kind: 'select',
-          key: 'badgeMode',
-          labelKey: 'settings.badgeMode',
-          hintKey: 'settings.badgeModeHint',
-          options: [
-            { value: 'auto', label: t('settings.badgeAuto') },
-            { value: 'count', label: t('settings.badgeCount') },
-            { value: 'dups', label: t('settings.badgeDups') },
-            { value: 'off', label: t('settings.badgeOff') }
-          ]
-        }
-      ]
-    },
-    {
-      titleKey: 'settings.advanced',
-      specs: [
-        {
-          kind: 'toggle',
-          key: 'reuseNotifyEnabled',
-          labelKey: 'settings.reuseNotify',
-          hintKey: 'settings.reuseNotifyHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'contextMenusEnabled',
-          labelKey: 'settings.contextMenus',
-          hintKey: 'settings.contextMenusHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'omniboxEnabled',
-          labelKey: 'settings.omnibox',
-          hintKey: 'settings.omniboxHint'
-        },
-        {
-          kind: 'custom',
-          labelKey: 'settings.noCache',
-          hintKey: 'settings.noCacheHint',
-          render: ({ settings, update }) => <NoCacheToggle settings={settings} update={update} />
-        },
-        {
-          kind: 'custom',
-          labelKey: 'settings.noCachePatterns',
-          hintKey: 'settings.noCachePatternsHint',
-          visible: (s) => s.noCacheEnabled,
-          render: ({ settings, update }) => (
-            <NoCachePatternEditor
-              value={settings.noCachePatterns}
-              onChange={(next) => update('noCachePatterns', next)}
-            />
-          )
-        },
-        {
-          kind: 'select',
-          key: 'undoStackLimit',
-          labelKey: 'settings.undoStackLimit',
-          hintKey: 'settings.undoStackLimitHint',
-          parse: (v) => Number(v),
-          options: [
-            { value: '5', label: '5' },
-            { value: '10', label: '10' },
-            { value: '20', label: '20' },
-            { value: '50', label: '50' }
-          ]
-        },
-        {
-          kind: 'select',
-          key: 'toastDurationSec',
-          labelKey: 'settings.toastDuration',
-          hintKey: 'settings.toastDurationHint',
-          parse: (v) => Number(v),
-          options: [
-            { value: '3', label: '3s' },
-            { value: '5', label: '5s' },
-            { value: '7', label: '7s' },
-            { value: '10', label: '10s' }
-          ]
-        },
-        {
-          kind: 'toggle',
-          key: 'persistUndo',
-          labelKey: 'settings.persistUndo',
-          hintKey: 'settings.persistUndoHint'
-        },
-        {
-          kind: 'toggle',
-          key: 'autoSaveSnapshots',
-          labelKey: 'settings.autoSaveSnapshots',
-          hintKey: 'settings.autoSaveSnapshotsHint'
-        },
-        {
-          kind: 'select',
-          key: 'autoSnapshotIntervalMin',
-          labelKey: 'settings.autoSnapshotIntervalMin',
-          hintKey: 'settings.autoSnapshotIntervalMinHint',
-          visible: (s) => s.autoSaveSnapshots,
-          parse: (v) => Number(v),
-          options: [
-            { value: '5', label: t('settings.minutesUnit', { count: 5 }) },
-            { value: '15', label: t('settings.minutesUnit', { count: 15 }) },
-            { value: '30', label: t('settings.minutesUnit', { count: 30 }) },
-            { value: '60', label: t('settings.minutesUnit', { count: 60 }) },
-            { value: '180', label: t('settings.minutesUnit', { count: 180 }) },
-            { value: '720', label: t('settings.hoursUnit', { count: 12 }) }
-          ]
-        },
-        {
-          kind: 'select',
-          key: 'maxAutoSnapshots',
-          labelKey: 'settings.maxAutoSnapshots',
-          hintKey: 'settings.maxAutoSnapshotsHint',
-          visible: (s) => s.autoSaveSnapshots,
-          parse: (v) => Number(v),
-          options: [
-            { value: '5', label: '5' },
-            { value: '10', label: '10' },
-            { value: '20', label: '20' },
-            { value: '30', label: '30' },
-            { value: '50', label: '50' }
-          ]
-        }
-      ]
-    }
-  ];
-}
+/** 导入文件体积上限（5MB）：备份为纯 JSON，此上限已远超正常使用规模。 */
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 /**
  * 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl+Shift。
@@ -1049,7 +44,7 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const settings = useDataStore((state) => state.settings);
   const ready = useDataStore((state) => state.ready);
-  const updateSettings = useDataStore((state) => state.updateSettings);
+  const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const resetSettings = useDataStore((state) => state.resetSettings);
   const exportData = useDataStore((state) => state.exportData);
   const importData = useDataStore((state) => state.importData);
@@ -1085,24 +80,44 @@ export function SettingsPage() {
     };
   }, []);
 
-  const update = (key: keyof Settings, value: unknown) =>
-    updateSettings({ [key]: value } as Partial<Settings>);
+  /**
+   * 设置页的唯一写入通道。
+   *
+   * 失败必须在页面上说清楚：设置是跨会话行为契约，写盘失败时 store 不会变更，
+   * 界面会静默弹回旧值——用户只会觉得「开关点不动」，而不会知道数据根本没保存。
+   */
+  const update = (key: keyof Settings, value: unknown) => {
+    void tryUpdateSettings({ [key]: value } as Partial<Settings>).then((ok) => {
+      if (!ok) setTransferStatus(t('settings.saveFailed'));
+    });
+  };
 
-  const handleExport = () => {
-    const payload = JSON.stringify(exportData(), null, 2);
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `tabs-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setTransferStatus(t('settings.exportSuccess'));
+  const handleExport = async () => {
+    try {
+      const payload = JSON.stringify(await exportData(), null, 2);
+      const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `tabs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setTransferStatus(t('settings.exportSuccess'));
+    } catch {
+      // 快照读取或序列化失败：宁可明确报错，也不能给出一份内容不全的备份。
+      setTransferStatus(t('settings.exportFailed'));
+    }
   };
 
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    // 体积上限：备份是纯 JSON，5MB 已远超正常使用规模；不设限会让超大文件
+    // 在 file.text() 阶段直接卡死设置页。
+    if (file.size > MAX_IMPORT_BYTES) {
+      setTransferStatus(t('settings.importFailed'));
+      return;
+    }
     try {
       // 先解析，确认弹窗由自制 ConfirmDialog 承接（与全站弹窗体系一致）。
       setPendingImport(JSON.parse(await file.text()) as unknown);
@@ -1157,7 +172,7 @@ export function SettingsPage() {
     setClearAck(false);
   };
 
-  // 分组配置见模块顶层的 buildSections。此处再 memo 一层：配置约 370 行且含大量
+  // 分组配置见 settingSections.ts 的 buildSections。此处再 memo 一层：配置约 370 行且含大量
   // t() 调用，若每次渲染重建，每敲一个搜索字符都会全量重算翻译与 render 闭包。
   // 必须在下面的 early return 之前调用（Hooks 规则：调用顺序须每次渲染一致）。
   const sections = useMemo(() => buildSections(t, sidePanelSide), [t, sidePanelSide]);
@@ -1271,7 +286,7 @@ export function SettingsPage() {
 
       <Section title={t('settings.data')}>
         <Row label={t('settings.exportData')} hint={t('settings.exportDataHint')}>
-          <Button variant="secondary" onClick={handleExport}>
+          <Button variant="secondary" onClick={() => void handleExport()}>
             {t('settings.export')}
           </Button>
         </Row>
@@ -1293,6 +308,13 @@ export function SettingsPage() {
           <Button variant="secondary" onClick={handleImportBookmarks}>
             {t('settings.importBookmarksAction')}
           </Button>
+        </Row>
+        <Row label={t('settings.syncMirror')} hint={t('settings.syncMirrorHint')}>
+          <Toggle
+            checked={settings.syncMirrorEnabled}
+            onChange={(checked) => update('syncMirrorEnabled', checked)}
+            ariaLabel={t('settings.syncMirror')}
+          />
         </Row>
         <Row label={t('settings.clearData')} hint={t('settings.clearDataHint')}>
           <Button
@@ -1339,9 +361,7 @@ export function SettingsPage() {
           }}
         >
           <div className="flex flex-col gap-3">
-            <p className="text-2xs leading-relaxed text-gray-600">
-              {t('settings.clearDataDesc')}
-            </p>
+            <p className="text-3xs leading-relaxed text-gray-600">{t('settings.clearDataDesc')}</p>
             <ul className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2 text-2xs text-gray-700">
               <li>· {t('settings.clearDataItemFolders')}</li>
               <li>· {t('settings.clearDataItemSnapshots')}</li>

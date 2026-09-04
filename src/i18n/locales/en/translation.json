@@ -181,6 +181,8 @@
     "importBookmarksAction": "Import",
     "importBookmarksDone": "Imported {{folders}} folders / {{items}} items",
     "clearData": "Clear all data",
+    "syncMirror": "Sync across devices",
+    "syncMirrorHint": "Off by default. When on, your collections and settings are mirrored to your browser account's sync channel (Tabs has no server of its own). Turning it off deletes the data already uploaded",
     "clearDataHint": "Delete fixed folders, pinned items, all snapshots & archives, the undo stack and the cross-device sync mirror; settings are reset to defaults. This cannot be undone",
     "clearDataTitle": "Clear all data",
     "clearDataDesc": "The following data will be permanently deleted:",
@@ -198,6 +200,8 @@
     "export": "Export JSON",
     "import": "Import JSON",
     "exportSuccess": "Backup exported",
+    "exportFailed": "Export failed: local data could not be read",
+    "saveFailed": "Setting not saved: storage unavailable, please retry",
     "importConfirm": "Importing will replace current fixed data, settings, and snapshots. Continue?",
     "importSuccess": "Backup imported",
     "importFailed": "Import failed: invalid or unreadable backup",
@@ -465,7 +469,9 @@
   },
   "bg": {
     "autoDiscarded": "Discarded {{count}} tabs (wake them all from the panel)",
-    "badgeTitle": "{{total}} tabs · {{dups}} dup groups · {{discarded}} discarded"
+    "badgeTitle": "{{total}} tabs · {{dups}} dup groups · {{discarded}} discarded",
+    "discardNotSafe": "This tab can't be discarded right now.",
+    "discardDone": "Tab discarded."
   },
   "popup": {
     "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close"

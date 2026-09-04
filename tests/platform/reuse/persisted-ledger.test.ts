@@ -21,7 +21,9 @@ describe('createPersistedAllowanceLedger', () => {
     ledger.grant(1, 'https://a.com/');
 
     const stored = await fakeBrowser.storage.session.get(STORAGE_KEY);
-    expect(stored[STORAGE_KEY]).toEqual({ '1:https://a.com/': { tokens: 1, expiresAt: expect.any(Number) } });
+    expect(stored[STORAGE_KEY]).toEqual({
+      '1:https://a.com/': { tokens: 1, expiresAt: expect.any(Number) }
+    });
   });
 
   it('SW 回收重启恢复：新账本从镜像继承未过期令牌', async () => {

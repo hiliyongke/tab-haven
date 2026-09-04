@@ -80,8 +80,7 @@ const isReferenced = (key) =>
   new RegExp(`['\`]${key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}(?![\\w.])`).test(sourceBlob);
 
 const deadKeys = localeKeys['zh-CN'].filter(
-  (key) =>
-    !isReferenced(key) && !DYNAMIC_KEY_PATTERNS.some((pattern) => pattern.test(key))
+  (key) => !isReferenced(key) && !DYNAMIC_KEY_PATTERNS.some((pattern) => pattern.test(key))
 );
 if (deadKeys.length > 0) {
   issues.push(`死键（零源码引用）: ${deadKeys.sort().join(', ')}`);

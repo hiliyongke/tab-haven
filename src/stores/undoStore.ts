@@ -44,7 +44,11 @@ interface UndoState {
    * 外部关闭路径登记撤销（如窗口归档）。
    * 归档此前不进撤销栈：标签已关闭却无处可撤，恢复只能靠快照列表，违背「可信关闭」。
    */
-  recordClosedBatch: (tabs: readonly TabRecord[], kind: string, groupNameById?: ReadonlyMap<number, string | undefined>) => Promise<void>;
+  recordClosedBatch: (
+    tabs: readonly TabRecord[],
+    kind: string,
+    groupNameById?: ReadonlyMap<number, string | undefined>
+  ) => Promise<void>;
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
@@ -82,9 +86,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
     // 失败项保留为一个新批次（放回栈顶，位置最靠前，便于立刻重试）。
     const nextBatches =
-      failedCount > 0
-        ? [{ ...batch, entries: result.failed }, ...remaining]
-        : remaining;
+      failedCount > 0 ? [{ ...batch, entries: result.failed }, ...remaining] : remaining;
 
     set({ batches: nextBatches });
     const settings = await settingsRepository.read();

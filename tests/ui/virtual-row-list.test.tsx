@@ -44,8 +44,9 @@ beforeAll(() => {
     unobserve(): void {}
     disconnect(): void {}
   };
-  (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = (cb: FrameRequestCallback) =>
-    setTimeout(() => cb(performance.now()), 0) as unknown as number;
+  (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = (
+    cb: FrameRequestCallback
+  ) => setTimeout(() => cb(performance.now()), 0) as unknown as number;
   (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame = (handle: number) =>
     clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
 });
@@ -100,7 +101,9 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
     fireEvent.scroll(scroller!);
     // rAF stub 经 setTimeout 调度，等待一拍让 setState 生效
     await waitFor(() => {
-      const translated = view.container.querySelector<HTMLElement>('.virtual-row-scroll > div > div');
+      const translated = view.container.querySelector<HTMLElement>(
+        '.virtual-row-scroll > div > div'
+      );
       expect(translated?.style.transform).toBe(`translateY(${(100 - 6) * 32}px)`);
     });
     // 平移后仍只挂载少量行

@@ -20,10 +20,7 @@ export function FixedConceptsMap({ className }: { className?: string }) {
         {items.map((item) => (
           // 刻意不加边框、背景压到 gray-50：这组条目纯展示、无任何点击行为，
           // 带 border 的卡片外观会让用户误以为可点（点了没反应），属于错误的可交互暗示。
-          <li
-            key={item.name}
-            className="flex items-start gap-2 rounded-lg bg-gray-50 px-2.5 py-2"
-          >
+          <li key={item.name} className="flex items-start gap-2 rounded-lg bg-gray-50 px-2.5 py-2">
             <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md bg-accent-50 text-accent-600">
               <Icon d={item.icon} className="h-3 w-3" />
             </span>

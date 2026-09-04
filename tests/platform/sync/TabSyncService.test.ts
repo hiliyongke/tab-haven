@@ -59,23 +59,25 @@ function stubEvents(): void {
   }
 }
 
-
 describe('TabSyncService', () => {
   it('监听 tab 事件并刷新快照（实时性）', async () => {
     stubEvents();
     const service = new TabSyncService();
     const snapshots: number[] = [];
-    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() => Promise.resolve([makeTab({ id: 1, title: 'A' })]));
-    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() => Promise.resolve([] as TabGroupRecord[]));
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() =>
+      Promise.resolve([makeTab({ id: 1, title: 'A' })])
+    );
+    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() =>
+      Promise.resolve([] as TabGroupRecord[])
+    );
 
     const stop = service.start((snap) => snapshots.push(snap.generation));
     await vi.waitFor(() => expect(snapshots.length).toBeGreaterThanOrEqual(1));
 
     // 触发一次标签变化
-    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() => Promise.resolve([
-      makeTab({ id: 1, title: 'A' }),
-      makeTab({ id: 2, title: 'B' })
-    ]));
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() =>
+      Promise.resolve([makeTab({ id: 1, title: 'A' }), makeTab({ id: 2, title: 'B' })])
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (fakeBrowser.tabs.onCreated as any).trigger({ id: 2 });
     await vi.waitFor(() => expect(snapshots.length).toBeGreaterThanOrEqual(2));
@@ -87,8 +89,12 @@ describe('TabSyncService', () => {
     stubEvents();
     const service = new TabSyncService();
     const snapshotCount = { value: 0 };
-    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() => Promise.resolve([makeTab({ id: 1 })]));
-    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() => Promise.resolve([] as TabGroupRecord[]));
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() =>
+      Promise.resolve([makeTab({ id: 1 })])
+    );
+    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() =>
+      Promise.resolve([] as TabGroupRecord[])
+    );
 
     // 第一次：start → 立即 stop（模拟 StrictMode 的挂载-清理）
     const stop1 = service.start(() => {
@@ -103,10 +109,9 @@ describe('TabSyncService', () => {
     await vi.waitFor(() => expect(snapshotCount.value).toBeGreaterThanOrEqual(1));
 
     // 触发事件，第二次订阅必须仍能刷新（不应被第一次的 stopped 影响）
-    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() => Promise.resolve([
-      makeTab({ id: 1 }),
-      makeTab({ id: 2 })
-    ]));
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() =>
+      Promise.resolve([makeTab({ id: 1 }), makeTab({ id: 2 })])
+    );
     const before = snapshotCount.value;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (fakeBrowser.tabs.onCreated as any).trigger({ id: 2 });
@@ -123,7 +128,9 @@ describe('TabSyncService', () => {
       queryCalls += 1;
       return [makeTab({ id: 1 })];
     });
-    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() => Promise.resolve([] as TabGroupRecord[]));
+    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() =>
+      Promise.resolve([] as TabGroupRecord[])
+    );
 
     const stop = service.start(() => {});
     await vi.waitFor(() => expect(queryCalls).toBeGreaterThanOrEqual(1));

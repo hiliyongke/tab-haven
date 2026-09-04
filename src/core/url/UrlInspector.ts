@@ -39,6 +39,33 @@ function isWebUrl(raw: string): boolean {
   }
 }
 
+/** 各协议的默认端口（显式写出时与省略等价）。 */
+const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' };
+
+/**
+ * 归约为比较键：只动 authority（主机名小写 + 剥离默认端口），其余原样保留。
+ *
+ * 为什么必须归一：比较键是重复判定、复用引擎、固定空间去重的唯一口径，
+ * 而这些 URL 有三个来源——浏览器 API（已是规范形）、**用户手输**（omnibox `pin:`）、
+ * **导入的备份文件**。后两者完全可能出现 `HTTPS://A.COM/P` 这类写法，
+ * 不归一的结果是「明明是同一个页面却判成两个」，即重复标签检测静默漏判。
+ *
+ * 为什么只动 authority：路径 / 查询 / 片段参与页面身份——`/a` 与 `/a/`
+ * 在部分站点确为不同资源，剥离查询参数更会把带追踪参数的链接与裸链接混为一谈。
+ * 这两类刻意保留（等价类矩阵见 `tests/core/url/url-normalize.test.ts`）。
+ */
+function toComparisonKey(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const defaultPort = DEFAULT_PORTS[url.protocol];
+    const port = url.port && url.port !== defaultPort ? `:${url.port}` : '';
+    return `${url.protocol}//${url.hostname.toLowerCase()}${port}${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    // 无法解析时原样返回：此处只在 isWebUrl 已通过后被调用，属兜底。
+    return raw;
+  }
+}
+
 /**
  * 检视一个标签的 URL。判定优先级：
  *  1. 导航中（pending 存在且为 web 页）→ web，比较键取 pending；
@@ -54,7 +81,7 @@ export function inspectUrl(
   const pending = pendingUrl ?? '';
 
   if (pending && isWebUrl(pending)) {
-    return { category: 'web', comparisonKey: pending, committedUrl: committed };
+    return { category: 'web', comparisonKey: toComparisonKey(pending), committedUrl: committed };
   }
 
   if (isBlankStartUrl(committed)) {
@@ -66,7 +93,11 @@ export function inspectUrl(
   }
 
   if (isWebUrl(committed)) {
-    return { category: 'web', comparisonKey: committed, committedUrl: committed };
+    return {
+      category: 'web',
+      comparisonKey: toComparisonKey(committed),
+      committedUrl: committed
+    };
   }
 
   return { category: 'internal', comparisonKey: pending || committed, committedUrl: committed };

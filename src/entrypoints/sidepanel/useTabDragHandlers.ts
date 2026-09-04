@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import type { DragEndEvent } from '@dnd-kit/core';
@@ -28,7 +28,10 @@ import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/FixedArea';
 export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
   const { t } = useTranslation();
   const sectionsRef = useRef(restSections);
-  sectionsRef.current = restSections;
+  // 同上：渲染期写 ref 在并发渲染下会把未提交的中间值泄漏出去，改在提交后更新。
+  useEffect(() => {
+    sectionsRef.current = restSections;
+  }, [restSections]);
 
   /** 拖拽落点相对位置：纵向列表用 Y（在下方 = 插后），横向磁贴用 X（在右侧 = 插后）。 */
   const isPlaceAfter = useCallback((event: DragEndEvent): boolean => {

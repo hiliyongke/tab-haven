@@ -1,83 +1,178 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tabs Logo 预览</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "SF Pro Display", "PingFang SC", sans-serif;
-    background: #f5f6f8; color: #1a1d21;
-    padding: 48px 24px; min-height: 100vh;
-  }
-  .wrap { max-width: 720px; margin: 0 auto; }
-  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-  .sub { color: #6b7280; font-size: 13px; margin-bottom: 32px; }
-  .hero {
-    display: flex; align-items: center; gap: 20px;
-    background: #fff; border-radius: 16px; padding: 32px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 28px;
-  }
-  .hero img { width: 96px; height: 96px; border-radius: 20px; }
-  .hero .t { font-size: 26px; font-weight: 700; letter-spacing: -.3px; }
-  .hero .d { color: #6b7280; font-size: 13px; margin-top: 4px; }
-  .grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px;
-  }
-  .card {
-    background: #fff; border-radius: 14px; padding: 24px 12px; text-align: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,.06);
-  }
-  .card img { width: 48px; height: 48px; border-radius: 10px; }
-  .card .size { margin-top: 12px; font-size: 13px; font-weight: 600; }
-  .card .px { color: #9ca3af; font-size: 11px; margin-top: 2px; }
-  .on-dark {
-    background: #111418; border-radius: 14px; padding: 32px; text-align: center; margin-bottom: 28px;
-  }
-  .on-dark img { width: 64px; height: 64px; border-radius: 14px; }
-  .on-dark .label { color: #9ca3af; font-size: 12px; margin-top: 10px; }
-  .note {
-    background: #fff; border-radius: 14px; padding: 20px 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.06); font-size: 13px; line-height: 1.7; color: #374151;
-  }
-  .note b { color: #1a1d21; }
-  .note code { background:#f3f4f6; padding:1px 6px; border-radius:5px; font-size:12px; font-family:ui-monospace,monospace;}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>Tabs · Logo 预览</h1>
-  <p class="sub">极简线条 · 层叠标签页 + 港湾锚点</p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tabs Logo 预览</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, 'SF Pro Display', 'PingFang SC', sans-serif;
+        background: #f5f6f8;
+        color: #1a1d21;
+        padding: 48px 24px;
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #6b7280;
+        font-size: 13px;
+        margin-bottom: 32px;
+      }
+      .hero {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        background: #fff;
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        margin-bottom: 28px;
+      }
+      .hero img {
+        width: 96px;
+        height: 96px;
+        border-radius: 20px;
+      }
+      .hero .t {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+      }
+      .hero .d {
+        color: #6b7280;
+        font-size: 13px;
+        margin-top: 4px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 24px 12px;
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+      .card img {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+      }
+      .card .size {
+        margin-top: 12px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .card .px {
+        color: #9ca3af;
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      .on-dark {
+        background: #111418;
+        border-radius: 14px;
+        padding: 32px;
+        text-align: center;
+        margin-bottom: 28px;
+      }
+      .on-dark img {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+      }
+      .on-dark .label {
+        color: #9ca3af;
+        font-size: 12px;
+        margin-top: 10px;
+      }
+      .note {
+        background: #fff;
+        border-radius: 14px;
+        padding: 20px 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        font-size: 13px;
+        line-height: 1.7;
+        color: #374151;
+      }
+      .note b {
+        color: #1a1d21;
+      }
+      .note code {
+        background: #f3f4f6;
+        padding: 1px 6px;
+        border-radius: 5px;
+        font-size: 12px;
+        font-family: ui-monospace, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Tabs · Logo 预览</h1>
+      <p class="sub">极简线条 · 层叠标签页 + 落定锚点</p>
 
-  <div class="hero">
-    <img src="logo.svg" alt="Tabs logo">
-    <div>
-      <div class="t">Tabs 页港</div>
-      <div class="d">三层带标签耳的卡片 = 一眼识别「标签页」<br>水滴锚点 = 港湾停靠（Haven）点睛</div>
+      <div class="hero">
+        <img src="logo.svg" alt="Tabs logo" />
+        <div>
+          <div class="t">Tabs</div>
+          <div class="d">
+            三层带标签耳的卡片 = 一眼识别「标签页」<br />水滴锚点 = 标签落定、随时找回
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <img src="128.png" alt="" />
+          <div class="size">128</div>
+          <div class="px">扩展主图标</div>
+        </div>
+        <div class="card">
+          <img src="48.png" alt="" />
+          <div class="size">48</div>
+          <div class="px">设置页 / 列表</div>
+        </div>
+        <div class="card">
+          <img src="32.png" alt="" />
+          <div class="size">32</div>
+          <div class="px">弹窗 / 面板</div>
+        </div>
+        <div class="card">
+          <img src="16.png" alt="" />
+          <div class="size">16</div>
+          <div class="px">标签栏小图标</div>
+        </div>
+      </div>
+
+      <div class="on-dark">
+        <img src="logo.svg" alt="" />
+        <div class="label">深色背景下的效果</div>
+      </div>
+
+      <div class="note">
+        <b>设计说明</b><br />
+        · 底色 <code>#22C55E → #0EA5A5</code> 蓝绿渐变，清新专业。<br />
+        · 三张白色卡片由后到前递减、错落堆叠，每张带经典<b>标签耳</b>，一眼识别「标签页」。<br />
+        · 层次用描边 + 填充区分（非纯透明度），小尺寸下边缘更利落、不发糊。<br />
+        · 前景卡片上的<b>水滴锚点</b>，是「在当前页精准落定」的视觉落点，也是品牌记忆点。<br />
+        · 源文件 <code>public/icon/logo.svg</code> 为矢量母版，PNG 均由其无损导出。
+      </div>
     </div>
-  </div>
-
-  <div class="grid">
-    <div class="card"><img src="128.png" alt=""><div class="size">128</div><div class="px">扩展主图标</div></div>
-    <div class="card"><img src="48.png" alt=""><div class="size">48</div><div class="px">设置页 / 列表</div></div>
-    <div class="card"><img src="32.png" alt=""><div class="size">32</div><div class="px">弹窗 / 面板</div></div>
-    <div class="card"><img src="16.png" alt=""><div class="size">16</div><div class="px">标签栏小图标</div></div>
-  </div>
-
-  <div class="on-dark">
-    <img src="logo.svg" alt="">
-    <div class="label">深色背景下的效果</div>
-  </div>
-
-  <div class="note">
-    <b>设计说明</b><br>
-    · 底色 <code>#22C55E → #0EA5A5</code> 蓝绿渐变，呼应「港 / 海」意象，清新专业。<br>
-    · 三张白色卡片由后到前递减、错落堆叠，每张带经典<b>标签耳</b>，一眼识别「标签页」。<br>
-    · 层次用描边 + 填充区分（非纯透明度），小尺寸下边缘更利落、不发糊。<br>
-    · 前景卡片上的<b>水滴锚点</b>，是 Haven（避风港）的视觉落点，也是品牌记忆点。<br>
-    · 源文件 <code>public/icon/logo.svg</code> 为矢量母版，PNG 均由其无损导出。
-  </div>
-</div>
-</body>
+  </body>
 </html>

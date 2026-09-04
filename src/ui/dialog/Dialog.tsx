@@ -32,7 +32,11 @@ export function useModalA11y(
   onClose: () => void
 ): void {
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  // 提交后更新：onClose 只在用户按键时读取，effect 保证读到的是最新值，
+  // 同时避免在并发渲染下把未提交的中间回调写进 ref。
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;

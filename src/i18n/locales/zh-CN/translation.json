@@ -181,6 +181,8 @@
     "importBookmarksAction": "导入",
     "importBookmarksDone": "已导入 {{folders}} 个文件夹 / {{items}} 条",
     "clearData": "清除所有数据",
+    "syncMirror": "跨设备同步",
+    "syncMirrorHint": "默认关闭。开启后，收藏夹与设置会镜像到你浏览器账号的同步通道（Tabs 没有自己的服务器）；关闭时会一并删除已上传的数据",
     "clearDataHint": "删除固定空间、固定图标、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复",
     "clearDataTitle": "清除所有数据",
     "clearDataDesc": "以下数据将被永久删除：",
@@ -198,6 +200,8 @@
     "export": "导出 JSON",
     "import": "导入 JSON",
     "exportSuccess": "备份已导出",
+    "exportFailed": "导出失败：本地数据读取未完成",
+    "saveFailed": "设置未保存：存储不可用，请重试",
     "importConfirm": "导入会覆盖当前固定数据、设置与快照，是否继续？",
     "importSuccess": "备份已导入",
     "importFailed": "导入失败：备份文件无效或无法读取",
@@ -466,7 +470,9 @@
   },
   "bg": {
     "autoDiscarded": "已休眠 {{count}} 个标签（可在面板一键唤醒）",
-    "badgeTitle": "共 {{total}} 个标签 · {{dups}} 组重复 · {{discarded}} 个已休眠"
+    "badgeTitle": "共 {{total}} 个标签 · {{dups}} 组重复 · {{discarded}} 个已休眠",
+    "discardNotSafe": "该标签当前无法休眠。",
+    "discardDone": "标签已休眠。"
   },
   "popup": {
     "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭"

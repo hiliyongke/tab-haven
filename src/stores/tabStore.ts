@@ -1,9 +1,5 @@
 import { create } from 'zustand';
-import {
-  mergeSnapshotTabs,
-  type TabGroupRecord,
-  type TabRecord
-} from '@/core/tab-types';
+import { mergeSnapshotTabs, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import {
   activateTab as activateTabPlatform,
   closeTabs as closeTabsPlatform,

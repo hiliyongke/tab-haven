@@ -318,11 +318,18 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
         <FolderEditDialog
           initialName={folder.name}
           onRename={(name) => {
-            void renameFolder(folder.id, name).then(() => notify(t('toast.folderRenamed')));
+            void renameFolder(folder.id, name).then(
+              () => notify(t('toast.folderRenamed')),
+              () => notify(t('errors.operationFailed'))
+            );
           }}
           onDelete={() => {
-            void deleteFolder(folder.id);
-            notify(t('toast.folderRemoved'));
+            // 删除不可撤销，绝不能先报成功：写盘失败时必须明确告知，
+            // 否则用户以为已删除，实际数据还在（或反之）。
+            void deleteFolder(folder.id).then(
+              () => notify(t('toast.folderRemoved')),
+              () => notify(t('errors.operationFailed'))
+            );
           }}
           onClose={() => setDialog(null)}
         />
@@ -351,8 +358,10 @@ function FolderRow({ folder }: { folder: FixedFolder }) {
           confirmLabel={t('fixed.confirmDelete')}
           onConfirm={() => {
             setDialog(null);
-            void deleteFolder(folder.id);
-            notify(t('toast.folderRemoved'));
+            void deleteFolder(folder.id).then(
+              () => notify(t('toast.folderRemoved')),
+              () => notify(t('errors.operationFailed'))
+            );
           }}
           onCancel={() => setDialog(null)}
         />
@@ -368,7 +377,7 @@ export function FixedArea() {
   const folders = useDataStore((state) => state.folders);
   const createFolder = useDataStore((state) => state.createFolder);
   const addTabsToFolder = useDataStore((state) => state.addTabsToFolder);
-  const updateSettings = useDataStore((state) => state.updateSettings);
+  const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const settings = useDataStore((state) => state.settings);
   const notify = useUndoStore((state) => state.notify);
   const tabs = useTabStore((state) => state.tabs);
@@ -438,7 +447,7 @@ export function FixedArea() {
                 <button
                   type="button"
                   className="absolute right-1 top-0.5 shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium text-gray-400 transition-base hover:bg-gray-100 hover:text-gray-600"
-                  onClick={() => void updateSettings({ conceptsSeen: true })}
+                  onClick={() => void tryUpdateSettings({ conceptsSeen: true })}
                   title={t('fixed.dismissConcepts')}
                 >
                   {t('fixed.dismissConcepts')}
@@ -454,9 +463,11 @@ export function FixedArea() {
           <PromptDialog
             title={t('fixed.newFolderPrompt')}
             onConfirm={(name) => {
-              void createFolder(name);
-              notify(t('toast.folderCreated'));
               setCreating(false);
+              void createFolder(name).then(
+                () => notify(t('toast.folderCreated')),
+                () => notify(t('errors.operationFailed'))
+              );
             }}
             onCancel={() => setCreating(false)}
           />

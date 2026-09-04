@@ -19,8 +19,12 @@ describe('canSafelyDiscardTab', () => {
 
   it('rejects protected tabs', () => {
     expect(canSafelyDiscardTab({ ...safeTab, lastAccessed: Date.now(), active: true })).toBe(false);
-    expect(canSafelyDiscardTab({ ...safeTab, lastAccessed: Date.now(), audible: true })).toBe(false);
-    expect(canSafelyDiscardTab({ ...safeTab, lastAccessed: Date.now(), autoDiscardable: false })).toBe(false);
+    expect(canSafelyDiscardTab({ ...safeTab, lastAccessed: Date.now(), audible: true })).toBe(
+      false
+    );
+    expect(
+      canSafelyDiscardTab({ ...safeTab, lastAccessed: Date.now(), autoDiscardable: false })
+    ).toBe(false);
   });
 });
 

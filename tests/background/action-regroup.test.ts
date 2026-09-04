@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { NO_GROUP } from '@/core/tab-types';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { runActionClickRegroup } from '@/entrypoints/background/actionRegroup';
@@ -13,6 +14,11 @@ import { runActionClickRegroup } from '@/entrypoints/background/actionRegroup';
  *
  * 环境说明：fake-browser 的 tabs.group / tabs.ungroup / tabGroups.update
  * 实现不全（参照 auto-group-sync.test.ts 注入最小实现）。
+ *
+ * 另：fake-browser 的窗口/标签模型与 Chrome 有两处偏差，直接建标签会因环境而非因
+ * 被测逻辑失败——默认窗口（id 0）从未被聚焦，tabs.query({ currentWindow: true })
+ * 会同步抛 TypeError；新建标签的 groupId 是 0，而 Chrome 中「未分组」为 -1。
+ * 本用例的输入前提就是「当前窗口内一批未分组标签」，故直接注入查询结果。
  */
 
 afterEach(() => {
@@ -38,19 +44,26 @@ function stubGroupApis(): {
   return { groupMock, ungroupMock };
 }
 
-async function seedTabs(urls: readonly string[]): Promise<number[]> {
-  const ids: number[] = [];
-  for (const url of urls) {
-    const tab = await fakeBrowser.tabs.create({ url });
-    if (typeof tab.id === 'number') ids.push(tab.id);
-  }
-  return ids;
+/** 注入「当前窗口」的未分组标签集合，返回其标签 id。 */
+function stubCurrentWindowTabs(urls: readonly string[]): number[] {
+  const tabs = urls.map((url, index) => ({
+    id: index + 1,
+    index,
+    windowId: 1,
+    url,
+    pinned: false,
+    groupId: NO_GROUP
+  }));
+  const queryMock = vi.fn(async () => tabs);
+  const tabsApi = fakeBrowser.tabs as unknown as { query: typeof queryMock };
+  tabsApi.query = queryMock as unknown as typeof tabsApi.query;
+  return tabs.map((tab) => tab.id);
 }
 
 describe('工具栏一键整理', () => {
   it('同站点多标签聚合成组并返回组数', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS });
-    const ids = await seedTabs(['https://a.com/1', 'https://a.com/2']);
+    const ids = stubCurrentWindowTabs(['https://a.com/1', 'https://a.com/2']);
     const { groupMock, ungroupMock } = stubGroupApis();
 
     const count = await runActionClickRegroup();
@@ -65,7 +78,7 @@ describe('工具栏一键整理', () => {
 
   it('固定空间绑定标签不参与整理（不会被打散/入组）', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS });
-    const ids = await seedTabs(['https://a.com/1', 'https://a.com/2']);
+    const ids = stubCurrentWindowTabs(['https://a.com/1', 'https://a.com/2']);
     const { groupMock, ungroupMock } = stubGroupApis();
     // 与面板侧 fixedExcludedTabIds 同口径：session 绑定把其中一个标签固定到空间条目
     await fakeBrowser.storage.session.set({
@@ -85,7 +98,7 @@ describe('工具栏一键整理', () => {
 
   it('无可整理内容时返回 0 且不产生写操作', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS });
-    await seedTabs(['https://a.com/1']);
+    stubCurrentWindowTabs(['https://a.com/1']);
     const { groupMock, ungroupMock } = stubGroupApis();
 
     const count = await runActionClickRegroup();

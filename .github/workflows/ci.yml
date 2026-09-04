@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# 同一分支的新推送会取消在途的旧任务，避免排队浪费。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: 质量门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 单一入口，与本地 `pnpm check` 完全一致：
+      # typecheck → lint → check:i18n → test → build → check:privacy
+      - name: 格式一致性
+        run: pnpm format:check
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 代码规范
+        run: pnpm lint
+
+      - name: 文案键一致性
+        run: pnpm check:i18n
+
+      - name: 测试
+        run: pnpm test
+
+      - name: 生产构建
+        run: pnpm build
+
+      - name: 隐私回归（权限冻结 + 零网络调用）
+        run: pnpm check:privacy

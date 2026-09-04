@@ -9,13 +9,11 @@ import { deriveSections } from '@/core/site/Sections';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
 import {
-  AutoDiscardedMessageSchema,
-  DuplicateReusedMessageSchema,
-  LocateActiveMessageSchema,
+  onRuntimeMessage,
   PENDING_ACTIONS_KEY,
-  SearchDomainMessageSchema,
-  SearchFocusMessageSchema,
-  SettingsSyncedMessageSchema
+  PendingActionSchema,
+  type Message,
+  type PendingAction
 } from '@/platform/messages';
 import { activateTabAcrossWindows, detectLanguage, reloadTabs } from '@/platform/tabs';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
@@ -33,11 +31,11 @@ import { OnboardingTour } from '@/ui/common/OnboardingTour';
 import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
 import { DndRoot } from '@/ui/dnd/DndRoot';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
-import { FixedArea, LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
+import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
-import { LOCATE_SECTION_EVENT, SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
-import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
+import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
+import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
@@ -73,7 +71,7 @@ export default function App() {
   const moveGroup = useTabStore((state) => state.moveGroup);
   const startTabSync = useTabStore((state) => state.startTabSync);
   const initializeData = useDataStore((state) => state.initialize);
-  const updateSettings = useDataStore((state) => state.updateSettings);
+  const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const dataReady = useDataStore((state) => state.ready);
   const boundTabIds = useDataStore((state) => state.boundTabIds);
   const folders = useDataStore((state) => state.folders);
@@ -94,7 +92,6 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const locateRequestRef = useRef(0);
   /**
    * 用户主动滚动后的一段静默期（防"抢滚"）：静默中不自动跟随激活标签滚动。
    *
@@ -209,44 +206,12 @@ export default function App() {
     }
   };
   const activeTabId = tabs.find((tab) => tab.active)?.id;
-  const handleLocateActive = useCallback(() => {
-    if (activeTabId === undefined) {
-      notify(t('toast.activeTabNotFound'));
-      return;
-    }
-    const requestId = ++locateRequestRef.current;
-    if (query.trim()) setQuery('');
-    const locateTarget = () => {
-      const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${activeTabId}"]`);
-      if (!target) return false;
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
-      // 高亮动画定义在 .row-item 上：滚动锚点是 li，视觉行是内部 .row-item。
-      const row = target.querySelector<HTMLElement>('.row-item') ?? target;
-      row.classList.remove('is-located');
-      void row.offsetWidth;
-      row.classList.add('is-located');
-      window.setTimeout(() => row.classList.remove('is-located'), 1200);
-      return true;
-    };
-    if (locateTarget()) return;
-    window.dispatchEvent(new CustomEvent<number>(LOCATE_SECTION_EVENT, { detail: activeTabId }));
-    window.dispatchEvent(new CustomEvent<number>(LOCATE_TAB_EVENT, { detail: activeTabId }));
-    // 虚拟列表：目标行可能在渲染窗口外（DOM 不存在），先让所属虚拟列表滚到
-    // 目标 index，行挂载后 locateTarget 的 querySelector 才能命中（B6 关键路径）。
-    window.dispatchEvent(new CustomEvent<number>(LOCATE_SCROLL_EVENT, { detail: activeTabId }));
-    let attempts = 0;
-    const retryLocate = () => {
-      if (requestId !== locateRequestRef.current) return;
-      window.dispatchEvent(new CustomEvent<number>(LOCATE_SECTION_EVENT, { detail: activeTabId }));
-      window.dispatchEvent(new CustomEvent<number>(LOCATE_TAB_EVENT, { detail: activeTabId }));
-      window.dispatchEvent(new CustomEvent<number>(LOCATE_SCROLL_EVENT, { detail: activeTabId }));
-      if (locateTarget()) return;
-      attempts += 1;
-      if (attempts < 12) window.setTimeout(retryLocate, 50);
-    };
-    window.setTimeout(retryLocate, 0);
-  }, [activeTabId, notify, query, setQuery, t]);
+  const handleLocateActive = useLocateActive({
+    activeTabId,
+    notify,
+    clearQuery: useCallback(() => setQuery(''), [setQuery]),
+    t
+  });
 
   /**
    * 执行挂起动作（搜索域名 / 定位激活）。
@@ -254,7 +219,7 @@ export default function App() {
    * 无 at 的旧数据（面板未开时写入、启动消费）直接执行。
    */
   const handlePendingAction = useCallback(
-    (action: { type: string; query?: string; at?: number }) => {
+    (action: PendingAction) => {
       if (action.at !== undefined) {
         const seen = handledActionsRef.current;
         if (seen.has(action.at)) return;
@@ -334,43 +299,37 @@ export default function App() {
         return;
       }
     };
-    const onMessage = (message: unknown) => {
-      // 经 handlePendingAction 统一处理：即时消息与 session 挂起双通道按 at 去重，
-      // 避免同一次快捷键触发被消费两次（表现为搜索框内容被全选两次）。
-      const searchFocus = SearchFocusMessageSchema.safeParse(message);
-      if (searchFocus.success) {
-        handlePendingAction(searchFocus.data);
-        return;
-      }
-      if (DuplicateReusedMessageSchema.safeParse(message).success) {
-        notify(t('duplicates.reused'));
-        return;
-      }
-      const auto = AutoDiscardedMessageSchema.safeParse(message);
-      if (auto.success) {
-        showDiscardUndoToast(auto.data);
-        return;
-      }
-      const searchDomain = SearchDomainMessageSchema.safeParse(message);
-      if (searchDomain.success) {
-        handlePendingAction(searchDomain.data);
-        return;
-      }
-      const locateActive = LocateActiveMessageSchema.safeParse(message);
-      if (locateActive.success) {
-        handlePendingAction(locateActive.data);
-        return;
-      }
-      // 设置落盘通知（storage.onChanged 之外的兜底同步）。
-      if (SettingsSyncedMessageSchema.safeParse(message).success) {
-        void useDataStore.getState().refreshSettings();
+    // 单一协议入口：未经 MessageSchema 校验的消息已被 onMessage 丢弃，
+    // 这里只按 type 分发。新增消息类型时在本 switch 补分支。
+    const onMessage = (message: Message) => {
+      switch (message.type) {
+        // 挂起动作经 handlePendingAction 统一处理：即时消息与 session 挂起
+        // 双通道按 at 去重，避免同一次快捷键触发被消费两次（表现为搜索框内容被全选两次）。
+        case 'focus-search':
+        case 'search-domain':
+        case 'locate-active':
+          handlePendingAction(message);
+          return;
+        case 'duplicate-reused':
+          notify(t('duplicates.reused'));
+          return;
+        case 'auto-discarded':
+          showDiscardUndoToast(message);
+          return;
+        case 'settings-synced':
+          // 设置落盘通知（storage.onChanged 之外的兜底同步）。
+          void useDataStore.getState().refreshSettings();
+          return;
+        default:
+          // UI → SW 方向的消息由 SW 处理，UI 无需响应。
+          return;
       }
     };
     document.addEventListener('keydown', onKeyDown);
-    browser.runtime.onMessage.addListener(onMessage);
+    const offMessage = onRuntimeMessage(onMessage);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      browser.runtime.onMessage.removeListener(onMessage);
+      offMessage();
     };
   }, [handleLocateActive, handlePendingAction, notify, showDiscardUndoToast, t]);
 
@@ -390,19 +349,10 @@ export default function App() {
     /** 消费并清除 session 队列：执行即清，杜绝历史动作随下次写入重放。 */
     const consume = (list: unknown[]) => {
       for (const action of list) {
-        const search = SearchDomainMessageSchema.safeParse(action);
-        if (search.success) {
-          handlePendingAction(search.data);
-          continue;
-        }
-        const locate = LocateActiveMessageSchema.safeParse(action);
-        if (locate.success) {
-          handlePendingAction(locate.data);
-          continue;
-        }
-        // 快捷键聚焦搜索：面板未注册监听时经 session 队列补投递。
-        const focus = SearchFocusMessageSchema.safeParse(action);
-        if (focus.success) handlePendingAction(focus.data);
+        // 队列里的每一项都可能是任意形状，统一走挂起动作 schema 校验，
+        // 不再为三种类型各写一条 parse 链（此前是第三条手写分发链）。
+        const parsed = PendingActionSchema.safeParse(action);
+        if (parsed.success) handlePendingAction(parsed.data);
       }
       void sessionArea?.remove(PENDING_ACTIONS_KEY).catch(() => {});
     };
@@ -569,9 +519,7 @@ export default function App() {
    */
   const handleTogglePin = useCallback(
     (tab: TabRecord) => {
-      void togglePinned(tab).then(() =>
-        notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned'))
-      );
+      void togglePinned(tab).then(() => notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned')));
     },
     [togglePinned, notify, t]
   );
@@ -776,7 +724,7 @@ export default function App() {
             <button
               type="button"
               className="shrink-0 rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
-              onClick={() => void updateSettings({ tipSeen: true })}
+              onClick={() => void tryUpdateSettings({ tipSeen: true })}
             >
               {t('tips.gotIt')}
             </button>
@@ -903,9 +851,9 @@ export default function App() {
           // 同步收起三层引导（Tour / Tip Banner / 固定空间概念卡）中的后两层，
           // 避免"关完一层还有一层"（概念卡仍可从设置页「固定概念一览」随时查看）。
           <OnboardingTour
-            onDone={() =>
-              void updateSettings({ onboarded: true, tipSeen: true, conceptsSeen: true })
-            }
+            onDone={() => {
+              void tryUpdateSettings({ onboarded: true, tipSeen: true, conceptsSeen: true });
+            }}
           />
         )}
         {showPalette && (

@@ -46,7 +46,9 @@ describe('reconcilePendingItems', () => {
   it('挂起标签关闭 → 条目移除', () => {
     const folder = {
       ...createFolder('A'),
-      items: [{ ...createFolderItem({ url: '', title: '新标签页' }), id: 'item1', pendingTabId: 99 }]
+      items: [
+        { ...createFolderItem({ url: '', title: '新标签页' }), id: 'item1', pendingTabId: 99 }
+      ]
     };
     const { folders, changed } = reconcilePendingItems([folder], []);
     expect(changed).toBe(true);

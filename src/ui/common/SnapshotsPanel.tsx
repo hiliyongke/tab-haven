@@ -298,133 +298,134 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
               <p className="py-8 text-center text-xs text-gray-500">{t('snapshots.emptyHint')}</p>
             ) : (
               groups.map((group) => (
-              <div key={group.key}>
-                <h3 className="mb-1 flex items-baseline gap-1 text-2xs font-medium text-gray-500">
-                  {group.title}
-                  <span className="text-gray-400">
-                    {t('snapshots.groupCount', { count: group.items.length })}
-                  </span>
-                </h3>
-                {group.desc && (
-                  <p className="mb-1 text-3xs leading-snug text-gray-500">{group.desc}</p>
-                )}
-              <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-                {group.items.map((snap) => (
-                  <li key={snap.id} className="px-2.5 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        {editingId === snap.id ? (
-                          <TextField
-                            size="sm"
-                            value={editingName}
-                            ariaLabel={t('snapshots.rename')}
-                            onChange={setEditingName}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') void commitRename();
-                              if (event.key === 'Escape') {
-                                setEditingId(null);
-                                setEditingName('');
-                              }
-                            }}
-                            onBlur={() => void commitRename()}
-                          />
-                        ) : (
-                          <span className="block truncate text-xs font-medium text-gray-700">
-                            {snap.name}
-                          </span>
-                        )}
-                        <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
-                          <span
-                            className={
-                              'rounded px-1 py-px text-2xs leading-none ' +
-                              originBadge(snap.origin).className
-                            }
-                          >
-                            {originBadge(snap.origin).label}
-                          </span>
-                          <span>
-                            {snap.tabCount} {t('tabs.tabCountUnit')} · {formatTime(snap.createdAt)}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        {/* 查看详情：展开快照内的标签清单（恢复前可确认内容） */}
-                        <button
-                          type="button"
-                          title={t('snapshots.detail')}
-                          aria-expanded={detailId === snap.id}
-                          className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                          onClick={() => setDetailId(detailId === snap.id ? null : snap.id)}
-                        >
-                          <Icon
-                            d={Icons.chevron}
-                            className={
-                              'h-4 w-4 transition-transform' +
-                              (detailId === snap.id ? ' rotate-90' : '')
-                            }
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          title={t('snapshots.restore')}
-                          className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600"
-                          onClick={() => void handleRestore(snap.id, snap.tabCount)}
-                        >
-                          <Icon d={Icons.openAll} className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          title={t('snapshots.rename')}
-                          className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                          onClick={() => beginRename(snap.id, snap.name)}
-                        >
-                          <Icon d={Icons.pencil} className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          title={t('snapshots.delete')}
-                          className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
-                          onClick={() => void handleDelete(snap.id)}
-                        >
-                          <Icon d={Icons.trash} className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                    {detailId === snap.id && (
-                      <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-gray-100 bg-gray-50/70 px-2 py-1">
-                        {snap.tabs.length === 0 ? (
-                          <p className="py-2 text-center text-2xs text-gray-500">
-                            {t('snapshots.empty')}
-                          </p>
-                        ) : (
-                          <ul className="divide-y divide-gray-100">
-                            {snap.tabs.map((tab, index) => (
-                              <li
-                                key={`${index}-${tab.url}`}
-                                className="flex min-w-0 items-center gap-1.5 py-1"
+                <div key={group.key}>
+                  <h3 className="mb-1 flex items-baseline gap-1 text-2xs font-medium text-gray-500">
+                    {group.title}
+                    <span className="text-gray-400">
+                      {t('snapshots.groupCount', { count: group.items.length })}
+                    </span>
+                  </h3>
+                  {group.desc && (
+                    <p className="mb-1 text-3xs leading-snug text-gray-500">{group.desc}</p>
+                  )}
+                  <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                    {group.items.map((snap) => (
+                      <li key={snap.id} className="px-2.5 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            {editingId === snap.id ? (
+                              <TextField
+                                size="sm"
+                                value={editingName}
+                                ariaLabel={t('snapshots.rename')}
+                                onChange={setEditingName}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') void commitRename();
+                                  if (event.key === 'Escape') {
+                                    setEditingId(null);
+                                    setEditingName('');
+                                  }
+                                }}
+                                onBlur={() => void commitRename()}
+                              />
+                            ) : (
+                              <span className="block truncate text-xs font-medium text-gray-700">
+                                {snap.name}
+                              </span>
+                            )}
+                            <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
+                              <span
+                                className={
+                                  'rounded px-1 py-px text-2xs leading-none ' +
+                                  originBadge(snap.origin).className
+                                }
                               >
-                                {tab.pinned && (
-                                  <Icon
-                                    d={Icons.pin}
-                                    className="h-3 w-3 shrink-0 text-gray-400"
-                                  />
-                                )}
-                                <span className="min-w-0 flex-1 truncate text-2xs text-gray-700">
-                                  {tab.title || tab.url}
-                                </span>
-                                <span className="max-w-[45%] truncate text-3xs text-gray-400">
-                                  {tab.url}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
+                                {originBadge(snap.origin).label}
+                              </span>
+                              <span>
+                                {snap.tabCount} {t('tabs.tabCountUnit')} ·{' '}
+                                {formatTime(snap.createdAt)}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-0.5">
+                            {/* 查看详情：展开快照内的标签清单（恢复前可确认内容） */}
+                            <button
+                              type="button"
+                              title={t('snapshots.detail')}
+                              aria-expanded={detailId === snap.id}
+                              className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                              onClick={() => setDetailId(detailId === snap.id ? null : snap.id)}
+                            >
+                              <Icon
+                                d={Icons.chevron}
+                                className={
+                                  'h-4 w-4 transition-transform' +
+                                  (detailId === snap.id ? ' rotate-90' : '')
+                                }
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              title={t('snapshots.restore')}
+                              className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600"
+                              onClick={() => void handleRestore(snap.id, snap.tabCount)}
+                            >
+                              <Icon d={Icons.openAll} className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title={t('snapshots.rename')}
+                              className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                              onClick={() => beginRename(snap.id, snap.name)}
+                            >
+                              <Icon d={Icons.pencil} className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title={t('snapshots.delete')}
+                              className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
+                              onClick={() => void handleDelete(snap.id)}
+                            >
+                              <Icon d={Icons.trash} className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        {detailId === snap.id && (
+                          <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-gray-100 bg-gray-50/70 px-2 py-1">
+                            {snap.tabs.length === 0 ? (
+                              <p className="py-2 text-center text-2xs text-gray-500">
+                                {t('snapshots.empty')}
+                              </p>
+                            ) : (
+                              <ul className="divide-y divide-gray-100">
+                                {snap.tabs.map((tab, index) => (
+                                  <li
+                                    key={`${index}-${tab.url}`}
+                                    className="flex min-w-0 items-center gap-1.5 py-1"
+                                  >
+                                    {tab.pinned && (
+                                      <Icon
+                                        d={Icons.pin}
+                                        className="h-3 w-3 shrink-0 text-gray-400"
+                                      />
+                                    )}
+                                    <span className="min-w-0 flex-1 truncate text-2xs text-gray-700">
+                                      {tab.title || tab.url}
+                                    </span>
+                                    <span className="max-w-[45%] truncate text-3xs text-gray-400">
+                                      {tab.url}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         )}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))
             )}
           </div>

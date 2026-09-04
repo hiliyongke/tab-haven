@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AutoDiscardBatchSchema,
-  DEFAULT_SETTINGS,
-  SettingsSchema
-} from '@/core/schema/models';
+import { AutoDiscardBatchSchema, DEFAULT_SETTINGS, SettingsSchema } from '@/core/schema/models';
 
 /**
  * schema 层行为规格：
@@ -40,14 +36,14 @@ describe('SettingsSchema', () => {
 
 describe('AutoDiscardBatchSchema', () => {
   it('count 与 tabIds.length 一致时通过', () => {
-    expect(
-      AutoDiscardBatchSchema.safeParse({ tabIds: [1, 2], at: 123, count: 2 }).success
-    ).toBe(true);
+    expect(AutoDiscardBatchSchema.safeParse({ tabIds: [1, 2], at: 123, count: 2 }).success).toBe(
+      true
+    );
   });
 
   it('count 与 tabIds.length 不一致时拒绝（防脏数据）', () => {
-    expect(
-      AutoDiscardBatchSchema.safeParse({ tabIds: [1, 2], at: 123, count: 5 }).success
-    ).toBe(false);
+    expect(AutoDiscardBatchSchema.safeParse({ tabIds: [1, 2], at: 123, count: 5 }).success).toBe(
+      false
+    );
   });
 });

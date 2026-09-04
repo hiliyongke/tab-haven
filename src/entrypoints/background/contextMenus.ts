@@ -5,6 +5,7 @@ import { canSafelyDiscardTab } from '@/core/tab-types';
 import { createFolderItem } from '@/core/fixed/FolderOps';
 import { mapTab } from '@/platform/tabs';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
+import { t } from '@/i18n/headless';
 import { notifyUser } from './shared';
 
 export const MENU_IDS = {
@@ -145,9 +146,12 @@ export async function addEntryToFolder(
   const folders = await foldersRepository.read();
   const target = folders.find((folder) => folder.id === folderId);
   if (!target) return false;
-  const key = webComparisonKey(entry.url, undefined) ?? entry.url;
+  // 非 http(s) 一律拒绝，不回落到原始字符串：右键的 linkUrl 由被点击页面提供，
+  // 页面可控；javascript: / data: 等一旦落库，用户点一下固定图标即执行。
+  const key = webComparisonKey(entry.url, undefined);
+  if (key === null) return false;
   const exists = folders.some((folder) =>
-    folder.items.some((item) => (webComparisonKey(item.url, undefined) ?? item.url) === key)
+    folder.items.some((item) => webComparisonKey(item.url, undefined) === key)
   );
   if (exists) return false;
   const item = createFolderItem({ url: key, title: entry.title, favIconUrl: entry.favIconUrl });
@@ -167,14 +171,14 @@ export async function discardTabSafely(
   if (!rawTab || rawTab.id === undefined) return false;
   const tab = mapTab(rawTab);
   if (!canSafelyDiscardTab(tab)) {
-    notifyUser('Tabs', 'This tab cannot be discarded right now.');
+    notifyUser('Tabs', t('bg.discardNotSafe'));
     return false;
   }
   const ok = await browser.tabs
     .discard(tab.id)
     .then(() => true)
     .catch(() => false);
-  if (ok) notifyUser('Tabs', 'Tab discarded.');
+  if (ok) notifyUser('Tabs', t('bg.discardDone'));
   return ok;
 }
 

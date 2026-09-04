@@ -11,12 +11,7 @@ import {
 } from '@/platform/storage/repositories';
 import { initHeadlessI18n } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
-import {
-  AllowDuplicateOnceMessageSchema,
-  DuplicateReusedMessageSchema,
-  SettingsSyncedMessageSchema,
-  SkipAutoSaveOnceMessageSchema
-} from '@/platform/messages';
+import { MessageSchema, sendMessage } from '@/platform/messages';
 import {
   cachedSettings,
   syncCachedSettings,
@@ -38,7 +33,11 @@ import {
   discardInactiveTabs,
   syncAutoDiscardAlarm
 } from './background/autoDiscard';
-import { AUTO_SNAPSHOT_ALARM, runAutoSnapshot, syncAutoSnapshotAlarm } from './background/autoSnapshot';
+import {
+  AUTO_SNAPSHOT_ALARM,
+  runAutoSnapshot,
+  syncAutoSnapshotAlarm
+} from './background/autoSnapshot';
 import { refreshBadgeSoon } from './background/badge';
 import { runActionClickRegroup } from './background/actionRegroup';
 import { setupNoCache } from './background/noCache';
@@ -73,8 +72,7 @@ export default defineBackground(() => {
       // 复用通知经 runtime 消息推给面板（无面板时静默丢弃）。
       notifyReuse: () => {
         if (!cachedSettings.reuseNotifyEnabled) return;
-        const notification = DuplicateReusedMessageSchema.parse({ type: 'duplicate-reused' });
-        browser.runtime.sendMessage(notification).catch(() => {});
+        sendMessage({ type: 'duplicate-reused' });
       }
     },
     { allowances: allowanceLedger, allowancesReady: allowanceLedgerReady }
@@ -209,22 +207,35 @@ export default defineBackground(() => {
     void handleWindowRemoved(windowId);
   });
 
-  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (SettingsSyncedMessageSchema.safeParse(message).success) {
-      void syncCachedSettings();
-      return;
-    }
-    const skipAutoSave = SkipAutoSaveOnceMessageSchema.safeParse(message);
-    if (skipAutoSave.success) {
-      skipAutoSaveWindowIds.add(skipAutoSave.data.windowId);
-      sendResponse({ ok: true });
-      return;
-    }
-    const parsed = AllowDuplicateOnceMessageSchema.safeParse(message);
+  browser.runtime.onMessage.addListener((raw, sender, sendResponse) => {
+    // 来源校验：当前版本没有 externally_connectable / content_scripts /
+    // web_accessible_resources，外部网页无法投递消息；但端点一旦放开就会立刻暴露
+    // （如 allow-duplicate-once 能改变去重行为），故在此前置拦截。
+    if (sender.id !== undefined && sender.id !== browser.runtime.id) return;
+
+    const parsed = MessageSchema.safeParse(raw);
     if (!parsed.success) return;
-    const { windowId, url } = parsed.data;
-    coordinator.grantAllowance(windowId, url);
-    sendResponse({ ok: true });
+    const message = parsed.data;
+
+    switch (message.type) {
+      case 'settings-synced':
+        void syncCachedSettings();
+        // 此前此分支提前 return 且不响应，与其他分支行为不一致：
+        // 发送方的 await 会一直挂到超时。
+        sendResponse({ ok: true });
+        return;
+      case 'skip-auto-save-once':
+        skipAutoSaveWindowIds.add(message.windowId);
+        sendResponse({ ok: true });
+        return;
+      case 'allow-duplicate-once':
+        coordinator.grantAllowance(message.windowId, message.url);
+        sendResponse({ ok: true });
+        return;
+      default:
+        // SW → UI 方向的消息由 UI 侧处理，SW 无需响应。
+        return;
+    }
   });
 
   // 浏览器级快捷键命令分发

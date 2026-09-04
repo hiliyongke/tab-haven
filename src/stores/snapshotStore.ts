@@ -3,10 +3,9 @@ import { browser } from 'wxt/browser';
 import i18n from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
-import { SkipAutoSaveOnceMessageSchema } from '@/platform/messages';
+import { sendMessage } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import { logFailure } from '@/platform/diagnostics';
-import { registerSnapshotProvider } from '@/stores/dataStore';
 import { useUndoStore } from '@/stores/undoStore';
 import {
   buildSnapshot,
@@ -49,8 +48,6 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   ready: false,
 
   load: async () => {
-    // 登记快照读取桥：供 dataStore 导出完整备份（避免 store 间直接依赖成环）。
-    registerSnapshotProvider(() => get().snapshots);
     const snapshots = await snapshotsRepository.read();
     set({ snapshots, ready: true });
     // 关窗自动保存由 background SW 直写仓库：面板打开期间需实时同步列表/角标。
@@ -129,16 +126,14 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     // 若关闭后窗口将随之关闭（全部标签都已留档），提前请求跳过本次关窗自动保存，
     // 避免 background 再写一条同内容的 auto 快照。
     if (windowId !== undefined && closableIds.length > 0 && closableIds.length === tabs.length) {
-      const message = SkipAutoSaveOnceMessageSchema.parse({
-        type: 'skip-auto-save-once',
-        windowId
-      });
-      await browser.runtime.sendMessage(message).catch(() => {});
+      sendMessage({ type: 'skip-auto-save-once', windowId });
     }
     if (closableIds.length > 0) {
       // 先登记撤销再关闭：归档也是一次「关闭动作」，关闭后必须存在可撤销入口，
       // 否则用户只能去归档列表翻找（关窗即失联，违背可信关闭原则）。
-      const closing = tabs.filter((tab) => typeof tab.id === 'number' && closableIds.includes(tab.id!));
+      const closing = tabs.filter(
+        (tab) => typeof tab.id === 'number' && closableIds.includes(tab.id!)
+      );
       const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
       await useUndoStore
         .getState()

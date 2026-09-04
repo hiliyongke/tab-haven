@@ -98,11 +98,7 @@ export function mergeSnapshotTabs(
     const prev = prevById.get(tab.id);
     if (!prev) return tab;
     let merged = tab;
-    if (
-      prev.language !== undefined &&
-      prev.url === tab.url &&
-      prev.pendingUrl === tab.pendingUrl
-    ) {
+    if (prev.language !== undefined && prev.url === tab.url && prev.pendingUrl === tab.pendingUrl) {
       merged = { ...merged, language: prev.language };
     }
     if (typeof prev.lastAccessed === 'number') {

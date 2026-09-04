@@ -1,5 +1,4 @@
-import { browser } from 'wxt/browser';
-import { AllowDuplicateOnceMessageSchema } from '@/platform/messages';
+import { sendMessage } from '@/platform/messages';
 
 /**
  * 向 background 申请一次复用豁免（显式保留副本语义）。
@@ -11,11 +10,6 @@ import { AllowDuplicateOnceMessageSchema } from '@/platform/messages';
  * SW 在「发放与消费之间」被回收也不会丢失授权；发送失败静默
  * （background 极端不可达时豁免失效，最坏退化为被合并，与历史行为一致）。
  */
-export async function grantReuseAllowance(windowId: number, url: string): Promise<void> {
-  const message = AllowDuplicateOnceMessageSchema.parse({
-    type: 'allow-duplicate-once',
-    windowId,
-    url
-  });
-  await browser.runtime.sendMessage(message).catch(() => {});
+export function grantReuseAllowance(windowId: number, url: string): void {
+  sendMessage({ type: 'allow-duplicate-once', windowId, url });
 }

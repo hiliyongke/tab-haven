@@ -57,11 +57,7 @@ function createRepositories(): Repositories {
       SiteCollapseSchema,
       []
     ),
-    settings: new DataRepository<Settings>(
-      'tabs.settings.v1',
-      SettingsSchema,
-      DEFAULT_SETTINGS
-    ),
+    settings: new DataRepository<Settings>('tabs.settings.v1', SettingsSchema, DEFAULT_SETTINGS),
     undo: new DataRepository<UndoBatch[]>('tabs.undo-stack.v1', UndoBatchSchema.array(), []),
     autoGroups: new DataRepository<number[]>('tabs.auto-groups.v1', z.array(z.number()), []),
     autoDiscard: new DataRepository<AutoDiscardBatch | null>(

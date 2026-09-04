@@ -82,7 +82,10 @@ export default function App() {
   );
   /** 可渲染的命中：与 hits 恒等（数据源已对齐），保留过滤作为防御，
    *  避免将来任一处数据源改动时再次出现「播报数 ≠ 渲染行数」。 */
-  const renderableHits = useMemo(() => hits.filter((hit) => tabById.has(hit.tabId)), [hits, tabById]);
+  const renderableHits = useMemo(
+    () => hits.filter((hit) => tabById.has(hit.tabId)),
+    [hits, tabById]
+  );
 
   /** 智能激活：目标标签在其他窗口时先聚焦窗口再激活。 */
   const smartActivate = (tabId: number) => {

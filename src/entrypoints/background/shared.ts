@@ -1,6 +1,13 @@
 import { browser } from 'wxt/browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
-import { PENDING_ACTIONS_KEY } from '@/platform/messages';
+import {
+  PENDING_ACTIONS_KEY,
+  PENDING_ACTIONS_LIMIT,
+  PendingActionsSchema,
+  sendMessage,
+  type Message,
+  type PendingAction
+} from '@/platform/messages';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { logDegraded } from '@/platform/diagnostics';
 
@@ -67,44 +74,35 @@ export function notifyUser(title: string, message: string): void {
  * 面板文档可能尚未注册监听，消息无人接收，用户看到「按了快捷键没反应」。
  * 落一份到 session 队列后，面板挂载时补消费，动作不会丢。
  */
-type PendingAction =
-  | { type: 'search-domain'; query: string; at: number }
-  | { type: 'locate-active'; at: number }
-  | { type: 'focus-search'; at: number };
-
+/**
+ * 挂起动作的类型取自 `@/platform/messages` 的协议 schema，不在此处另抄一份——
+ * 此前这里有一个手工维护的 `PendingActionMessage` 结构类型，与协议 schema 毫无关联，
+ * 改协议时极易漏改，且漏改只表现为「动作静默不执行」。
+ */
 type PendingActionInput =
-  | { type: 'search-domain'; query: string }
-  | { type: 'locate-active' }
-  | { type: 'focus-search' };
-
-interface PendingActionMessage {
-  type: 'search-domain' | 'locate-active' | 'focus-search';
-  query?: string;
-  at: number;
-}
+  { type: 'search-domain'; query: string } | { type: 'locate-active' } | { type: 'focus-search' };
 
 export async function queueAction(action: PendingActionInput): Promise<void> {
   // at 时间戳：面板经「即时消息 + session onChanged」双通道收到同一动作时按 at 去重，
   // 且面板消费后清除 session 列表，不会重放历史动作。
   const at = Date.now();
-  const stamped: PendingAction = { ...action, at } as PendingAction;
+  const stamped = { ...action, at } as PendingAction;
   try {
     const sessionArea = browser.storage?.session;
     if (sessionArea) {
       const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
-      const list: PendingAction[] = Array.isArray(existing[PENDING_ACTIONS_KEY])
-        ? (existing[PENDING_ACTIONS_KEY] as PendingAction[])
-        : [];
+      // 存的是外部数据，必须经 schema 校验：手写的 `as PendingAction[]` 断言
+      // 会把任何形状的垃圾都当成合法队列。
+      const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
+      const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
       list.push(stamped);
-      await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-5) });
+      await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
     }
   } catch (error) {
     logDegraded('background', '共享上下文操作失败', error);
     // session 存储不可用时仅即时广播
   }
-  const message: PendingActionMessage = { type: stamped.type, at: stamped.at };
-  if (stamped.type === 'search-domain') message.query = stamped.query;
-  browser.runtime.sendMessage(message).catch(() => {});
+  sendMessage(stamped as Message);
 }
 
 /**

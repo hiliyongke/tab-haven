@@ -4,7 +4,7 @@ import { z, type ZodType } from 'zod';
 /**
  * 数据仓库：单 key 的读写 + 校验 + 变更订阅（chrome.storage.local 通道）。
  *
- * 读写管线（docs/ARCHITECTURE.md 5.1）：
+ * 读写管线：
  *  - 写入：schema.parse 通过后落盘；
  *  - 读取：safeParse 失败 → 坏数据隔离（写入隔离区供诊断）+ 返回默认值；
  *  - 订阅：storage.onChanged 过滤本 key，解析后回调。

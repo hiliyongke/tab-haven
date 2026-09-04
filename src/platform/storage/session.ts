@@ -82,21 +82,33 @@ export function mutateSession(
   // 避免用非空断言（let result!）掩盖「队列尚未执行」这一状态。
   let result: MutateSessionResult = { data: { ...EMPTY_SESSION }, persisted: true };
 
-  chain = chain.then(async () => {
-    const current = await readSession();
-    const partial = updater(current);
-    const next: SessionData = { ...current, ...partial };
+  const step = async (): Promise<void> => {
+    try {
+      const current = await readSession();
+      const partial = updater(current);
+      const next: SessionData = { ...current, ...partial };
 
-    // updater 无变更（空 partial）时跳过写盘，消除高频路径（如 reconcileWithTabs）的写放大。
-    // 此时沿用队列内上一次写入的持久化结果。
-    if (Object.keys(partial).length === 0) {
-      result = { data: next, persisted: result.persisted };
-      return;
+      // updater 无变更（空 partial）时跳过写盘，消除高频路径（如 reconcileWithTabs）的写放大。
+      // 此时沿用队列内上一次写入的持久化结果。
+      if (Object.keys(partial).length === 0) {
+        result = { data: next, persisted: result.persisted };
+        return;
+      }
+
+      const persisted = await writeSession(next);
+      result = { data: next, persisted };
+    } catch (error) {
+      // 异常必须就地消化。链上任何一环抛出，chain 都会变成 rejected promise，
+      // 此后每个 mutateSession 的 `.then` 回调全部被跳过 —— 会话写入永久静默失效，
+      // 而调用方拿到的仍是一个「成功」的 Promise。updater 是调用方闭包，不可信任。
+      logDegraded('session', '会话数据变更失败，已保留当前内存值', error);
+      result = { data: result.data, persisted: false };
     }
+  };
 
-    const persisted = await writeSession(next);
-    result = { data: next, persisted };
-  });
+  // 双保险：step 自身已 try/catch，第二个参数再兜住上一次遗留的 rejection，
+  // 确保队列不会被污染成永久 rejected。
+  chain = chain.then(step, step);
 
   return chain.then(() => result);
 }

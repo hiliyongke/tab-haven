@@ -7,6 +7,24 @@ interface OmniSuggestion {
   description: string;
 }
 
+/**
+ * 转义建议描述中的 XML 标记字符。
+ *
+ * Chrome 把 omnibox 的 description 当作受限 XML 解析（支持 `<url>` / `<match>` / `<dim>`），
+ * 而文件夹名与固定条目标题可来自**导入的备份文件**——含 `<url>` 之类片段时会被
+ * 当成样式指令解析，轻则吞掉文案，重则把普通文本渲染成可点击链接的观感。
+ */
+function escapeSuggestionText(text: string): string {
+  return text.replace(/[<>&]/g, (char) =>
+    char === '<' ? '&lt;' : char === '>' ? '&gt;' : '&amp;'
+  );
+}
+
+/** 仅 http(s) 才允许经地址栏打开（固定图标可来自导入的备份）。 */
+function isOpenableUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
 /** 实时建议：文件夹 / 固定条目 / 站内搜索。 */
 async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
   const q = text.trim().toLowerCase();
@@ -14,17 +32,28 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
   const out: OmniSuggestion[] = [];
   for (const folder of folders) {
     if (!q || folder.name.toLowerCase().includes(q)) {
-      out.push({ content: `folder:${folder.id}`, description: `Open folder: ${folder.name}` });
+      out.push({
+        content: `folder:${folder.id}`,
+        description: `Open folder: ${escapeSuggestionText(folder.name)}`
+      });
     }
   }
   for (const pin of pins) {
+    // 非 http(s) 的固定图标不给建议（同时下方回车路径也会再校验一次）。
+    if (!isOpenableUrl(pin.url)) continue;
     const host = hostnameOf(pin.url);
     if (!q || host.includes(q) || pin.title.toLowerCase().includes(q)) {
-      out.push({ content: `pin:${pin.url}`, description: `Open pinned: ${pin.title}` });
+      out.push({
+        content: `pin:${pin.url}`,
+        description: `Open pinned: ${escapeSuggestionText(pin.title)}`
+      });
     }
   }
   if (q) {
-    out.push({ content: `search:${q}`, description: `Search tabs for: ${q}` });
+    out.push({
+      content: `search:${q}`,
+      description: `Search tabs for: ${escapeSuggestionText(q)}`
+    });
   }
   return out;
 }
@@ -45,8 +74,10 @@ async function handleOmniboxEnter(text: string, disposition?: string): Promise<v
     return;
   }
   if (raw.startsWith('pin:')) {
-    const url = raw.slice('pin:'.length);
-    if (url) await createTabsWithUrls([url], undefined, foreground);
+    const url = raw.slice('pin:'.length).trim();
+    // 必须再校验一次：用户可以直接敲 `th pin:javascript:...` 而不选建议，
+    // 建议列表的过滤拦不住手输内容。
+    if (isOpenableUrl(url)) await createTabsWithUrls([url], undefined, foreground);
     return;
   }
   if (raw.startsWith('search:')) {
