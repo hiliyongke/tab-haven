@@ -8,20 +8,13 @@
  */
 
 type ThemePreference = 'system' | 'light' | 'dark';
-/** 主题色预设（与 models.ts SettingsSchema.colorTheme 保持一致）。 */
-export type ColorTheme = 'forest' | 'ocean' | 'violet' | 'sunset' | 'mono' | 'plain';
 
 const THEME_MIRROR_KEY = 'tabs:theme';
 const HUE_MIRROR_KEY = 'tabs:theme-hue';
 
-export const COLOR_THEMES: readonly ColorTheme[] = [
-  'forest',
-  'ocean',
-  'violet',
-  'sunset',
-  'mono',
-  'plain'
-];
+/** 色号定义见 `@/core/theme/colorThemes`（色号 id 的唯一权威来源）。 */
+import type { ColorTheme } from '@/core/theme/colorThemes';
+export type { ColorTheme };
 
 function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
   if (preference !== 'system') return preference;

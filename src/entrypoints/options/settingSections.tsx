@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Settings } from '@/core/schema/models';
+import { COLOR_THEMES, type ColorTheme } from '@/core/theme/colorThemes';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Select } from '@/ui/common/Select';
 import { TextField } from '@/ui/common/TextField';
@@ -148,15 +149,18 @@ export function SettingRow({
   );
 }
 
-/** 主题色预设色板（与 main.css data-hue 预设一一对应，hex 取各预设浅色 500 主色）。 */
-const COLOR_THEME_SWATCHES = [
-  { id: 'forest', labelKey: 'settings.colorThemeForest', hex: '#347554' },
-  { id: 'ocean', labelKey: 'settings.colorThemeOcean', hex: '#3a6ea8' },
-  { id: 'violet', labelKey: 'settings.colorThemeViolet', hex: '#6f4ba6' },
-  { id: 'sunset', labelKey: 'settings.colorThemeSunset', hex: '#b85f22' },
-  { id: 'mono', labelKey: 'settings.colorThemeMono', hex: '#4a524a' },
-  { id: 'plain', labelKey: 'settings.colorThemePlain', hex: '#80868b' }
-] as const;
+/**
+ * 色号 → 展示文案。色值取自 `@/core/theme/colorThemes` 的唯一来源，此处只补 UI 文案。
+ * 用 `Record<ColorTheme, string>` 约束，新增色号时漏配文案会直接编译报错。
+ */
+const COLOR_THEME_LABELS: Record<ColorTheme, string> = {
+  forest: 'settings.colorThemeForest',
+  ocean: 'settings.colorThemeOcean',
+  violet: 'settings.colorThemeViolet',
+  sunset: 'settings.colorThemeSunset',
+  mono: 'settings.colorThemeMono',
+  plain: 'settings.colorThemePlain'
+};
 
 /**
  * 构建设置分组配置（声明式描述设置行，渲染由 SettingRow 统一完成）。
@@ -193,14 +197,14 @@ export function buildSections(
               role="radiogroup"
               aria-label={t('settings.colorTheme')}
             >
-              {COLOR_THEME_SWATCHES.map((swatch) => (
+              {COLOR_THEMES.map((swatch) => (
                 <input
                   key={swatch.id}
                   type="radio"
                   name="colorTheme"
                   checked={settings.colorTheme === swatch.id}
-                  title={t(swatch.labelKey)}
-                  aria-label={t(swatch.labelKey)}
+                  title={t(COLOR_THEME_LABELS[swatch.id])}
+                  aria-label={t(COLOR_THEME_LABELS[swatch.id])}
                   /* 样式走 .theme-swatch：视觉 20px / 命中 24px，
                      选中态为「白色内环 + 品牌外环」双层（gray-500 外环
                      落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */

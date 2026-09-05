@@ -83,7 +83,3 @@ export function getRepositories(): Repositories {
 export function setRepositoriesForTest(next: Repositories): void {
   current = next;
 }
-
-export function resetRepositories(): void {
-  current = createRepositories();
-}

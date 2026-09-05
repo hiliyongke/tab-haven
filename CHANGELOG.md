@@ -46,6 +46,23 @@ Tabs 首个对外公开版本。定位为**本地优先、无自有账号、无�
 
 ### 修复
 
+- **色号 id 曾散落六处**（SettingsSchema 的 enum、ThemeApplier 的类型与 COLOR_THEMES 数组、
+  theme-init 的内联类型与白名单、设置页色板），新增一个色号要改六遍，漏改即出现
+  「设置里能选、主题不生效」。现统一到 `core/theme/colorThemes`（id + 色值唯一来源）：
+  schema 用 `COLOR_THEME_IDS` 派生枚举，设置页只补 UI 文案且以 `Record<ColorTheme, string>`
+  强制全覆盖，theme-init 因需同步执行而保留内联白名单，但同样用 Record 约束为编译期可校验
+
+### 清理
+
+- 移除零引用的依赖 `@webext-core/fake-browser`（测试实际使用 `wxt/testing/fake-browser`）
+- 删除零引用的导出：`collapseRepository` / `seededRepository`（实例仍由
+  `getRepositories()` 提供）、`resetRepositories`（测试隔离已由 `fakeBrowser.reset()` 覆盖）、
+  `warnSettingsUnavailable`（DataRepository 已有 `onUnavailable` 机制）、
+  `checkStorageHealth`（存储降级感知已由 `storageDegraded` 覆盖，且该探针有写入副作用）
+- 诊断能力接线到设置页：新增「导出诊断信息」入口。此前 `readDiagnostics` /
+  `exportDiagnostics` / `clearDiagnostics` 均已实现但零引用，无遥测产品恰恰需要这个出口
+- 复查并清除全部指向已删除 `docs/` 文件的过时注释
+
 - **URL 比较键未归一化**：`https://A.COM/p` 与 `https://a.com/p`、显式默认端口与省略写法
   此前判为不同，重复标签检测在用户手输 URL 与导入备份两条路径上会静默漏判。
   现归一化主机名大小写并剥离默认端口；路径 / 查询 / 片段刻意保留

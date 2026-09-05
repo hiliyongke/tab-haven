@@ -10,6 +10,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
+import { clearDiagnostics, exportDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
 import { CapabilitiesGuide, PresetsPanel } from '@/entrypoints/options/settingPresets';
@@ -147,6 +148,28 @@ export function SettingsPage() {
   /** 打开浏览器「扩展快捷键」设置页。 */
   const openShortcutSettings = () => {
     void browser.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {});
+  };
+
+  /**
+   * 导出诊断信息。
+   *
+   * 无遥测产品看不见线上故障，用户报障时只能描述「点了没反应」。
+   * 这份本地报告是唯一的排查凭据；内容刻意不含页面标题与网址，
+   * 所以「导出诊断」这一用户主动行为依然不泄露浏览内容。
+   */
+  const handleExportDiagnostics = () => {
+    if (readDiagnostics().length === 0) {
+      setTransferStatus(t('settings.diagnosticsEmpty'));
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([exportDiagnostics()], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tabs-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    clearDiagnostics();
+    setTransferStatus(t('settings.exportSuccess'));
   };
 
   /** 恢复全部设置为默认值（带确认弹窗）。 */
@@ -312,6 +335,11 @@ export function SettingsPage() {
             onChange={(checked) => update('syncMirrorEnabled', checked)}
             ariaLabel={t('settings.syncMirror')}
           />
+        </Row>
+        <Row label={t('settings.exportDiagnostics')} hint={t('settings.exportDiagnosticsHint')}>
+          <Button variant="secondary" onClick={handleExportDiagnostics}>
+            {t('settings.export')}
+          </Button>
         </Row>
         <Row label={t('settings.clearData')} hint={t('settings.clearDataHint')}>
           <Button

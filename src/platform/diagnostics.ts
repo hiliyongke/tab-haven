@@ -1,6 +1,3 @@
-import { browser } from 'wxt/browser';
-import { settingsRepository } from '@/platform/storage/repositories';
-
 /**
  * 降级诊断日志：把静默 catch 收口为可观测记录。
  *
@@ -70,39 +67,4 @@ export function exportDiagnostics(): string {
     entries: readDiagnostics()
   };
   return JSON.stringify(payload, null, 2);
-}
-
-/**
- * 存储健康自检：确认持久化通道可用。
- *
- * 与 logDegraded 配合，构成「失败可感知」闭环——设置页可展示存储是否降级为内存态。
- */
-export async function checkStorageHealth(): Promise<{ local: boolean; session: boolean }> {
-  const probe = async (area: typeof browser.storage.local): Promise<boolean> => {
-    try {
-      await area.set({ 'tabs.__health': Date.now() });
-      await area.remove('tabs.__health');
-      return true;
-    } catch (error) {
-      logDegraded('storage-health', '存储探针写入失败，持久化可能已降级为内存态', error);
-      return false;
-    }
-  };
-  try {
-    const [local, session] = await Promise.all([
-      probe(browser.storage.local),
-      probe(browser.storage.session)
-    ]);
-    return { local, session };
-  } catch (error) {
-    logDegraded('storage-health', '存储健康自检异常', error);
-    return { local: false, session: false };
-  }
-}
-
-/** 读取失败时同步记录一次降级（供 DataRepository 等模块复用）。 */
-export function warnSettingsUnavailable(): void {
-  void settingsRepository.read().catch((error) => {
-    logDegraded('settings', '设置读取失败，使用默认值', error);
-  });
 }

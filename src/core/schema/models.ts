@@ -4,6 +4,7 @@ import {
   NO_CACHE_PATTERN_MAX_LENGTH,
   normalizeNoCachePattern
 } from '@/core/nocache/noCachePattern';
+import { COLOR_THEME_IDS } from '@/core/theme/colorThemes';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
@@ -78,7 +79,8 @@ export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
 export const SettingsSchema = z.object({
   themePreference: z.enum(['system', 'light', 'dark']).default('system'),
   /** 主题色预设：plain 纯净（默认，无底色跟随 Chrome 明暗）/ forest 石墨绿 / ocean 雾霾蓝 / violet 暮山紫 / sunset 暖阳橙 / mono 中性灰。 */
-  colorTheme: z.enum(['forest', 'ocean', 'violet', 'sunset', 'mono', 'plain']).default('plain'),
+  // 色号取自 `@/core/theme/colorThemes` 的唯一来源，避免与主题应用/设置页各写一份。
+  colorTheme: z.enum(COLOR_THEME_IDS).default('plain'),
   /** 语言覆盖（BCP-47）。宽松校验兼容旧数据，仅约束长度与格式。 */
   language: z.string().min(2).max(32).optional(),
   /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */

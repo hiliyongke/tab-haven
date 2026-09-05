@@ -14,14 +14,14 @@ import { getRepositories } from '@/platform/registry';
 // 引用组合根默认实例，保证与 getRepositories() 返回的是同一组对象。
 const current = getRepositories();
 
+// 只导出实际有消费方的实例；零引用的具名导出不再保留（实例本身仍由
+// getRepositories() 提供，新增消费方时按需要再加回）。
 export const foldersRepository = current.folders;
 export const pinsRepository = current.pins;
-export const collapseRepository = current.collapse;
 export const settingsRepository = current.settings;
 export const undoRepository = current.undo;
 export const autoGroupsRepository = current.autoGroups;
 export const autoDiscardRepository = current.autoDiscard;
-export const seededRepository = current.seeded;
 export const snapshotsRepository = current.snapshots;
 
 export { getRepositories } from '@/platform/registry';
