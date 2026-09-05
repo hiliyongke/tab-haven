@@ -66,6 +66,13 @@ Tabs 首个对外公开版本。定位为**本地优先、无自有账号、无�
 
 ### 变更
 
+- **导出备份格式新增 `version` 字段**（当前为 1）。格式契约一旦发布就再无零成本补版本号的机会；
+  带版本号后，导入端可先读版本再分发解析，老备份走显式迁移路径而非「猜字段」。
+  缺省 version 仍按 1 处理以容错早期备份，未来版本会被拒绝（旧版扩展不误读新结构）
+- 新增 `SECURITY.md`（漏洞披露通道与响应时限）与 `CONTRIBUTING.md`（硬性约定：分层方向、
+  schema 单一校验口径、权限冻结、文案双写、持久化变更同步点）
+- 安装 pre-commit 钩子（此前 `.simple-git-hooks.cjs` 已配置但未初始化，lint-staged 实际从未执行）
+- CI 新增依赖漏洞审计（`pnpm audit --audit-level=high`）
 - 项目改用 MIT 许可证（此前无 LICENSE 文件，与 README 声明的开源路径矛盾）
 - README 移除三个指向已删除 `docs/` 文件的失效链接，改为可直接执行的分层约束清单
 - 消息协议收敛为 `z.discriminatedUnion`，background 与侧边栏的手写分发链合并为单一入口

@@ -313,14 +313,30 @@ export const SnapshotSchema = z.object({
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
 /**
- * 导出文件格式（第一版，唯一格式，不背历史版本兼容包袱）。
+ * 导出文件格式版本号。
+ *
+ * 必须在**第一个公开版本**就带上：格式一旦发布且无版本号，后续每次加字段都只能靠
+ * 「猜字段是否存在」来兼容，迁移逻辑会随版本数指数膨胀。带版本号后，导入端可以
+ * 先读 version 再分发到对应 schema，老备份走显式迁移路径。
+ *
+ * 演进方式：新增 version 常量 → 保留旧结构为 `ExportFileV{n}Schema` →
+ * `parseExportFile` 按 version 分发并把旧结构升到最新结构。
+ */
+export const EXPORT_FILE_VERSION = 1;
+
+/**
+ * 导出文件格式。
  *
  * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族
  * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 轻量空间）。
- * 格式演进时按「当前唯一格式」直接替换本 schema。
+ *
+ * `version` 缺省时按 1 处理（容错未带版本号的早期备份）；
+ * 未来版本会被字面量拒绝 —— 旧版扩展不认识新版数据结构，
+ * 宁可提示用户升级，也不能让旧代码误读新字段。
  */
 export const ExportFileSchema = z.object({
   format: z.literal('tabs.export'),
+  version: z.literal(EXPORT_FILE_VERSION).default(EXPORT_FILE_VERSION),
   exportedAt: z.string(),
   fixedFolders: z.array(FixedFolderSchema).max(FOLDERS_LIMIT),
   persistentPins: z.array(PersistentPinSchema).max(PINS_LIMIT),
@@ -332,7 +348,10 @@ export const ExportFileSchema = z.object({
 
 export type ExportFile = z.infer<typeof ExportFileSchema>;
 
-/** 导出文件统一读取口径：单一格式，不匹配即拒绝（不静默降级）。 */
+/**
+ * 导出文件统一读取口径：单一格式，不匹配即拒绝（不静默降级）。
+ * 当前只识别 `EXPORT_FILE_VERSION`；版本不同即拒绝，避免跨版本数据被误读。
+ */
 export function parseExportFile(
   raw: unknown
 ): { success: true; data: ExportFile } | { success: false } {

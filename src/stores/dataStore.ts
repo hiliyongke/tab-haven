@@ -23,6 +23,7 @@ import {
 import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
 import {
   DEFAULT_SETTINGS,
+  EXPORT_FILE_VERSION,
   FixedFolderSchema,
   PersistentPinSchema,
   SettingsSchema,
@@ -704,6 +705,7 @@ export const useDataStore = create<DataState>()((set, get) => {
      */
     exportData: async () => ({
       format: 'tabs.export' as const,
+      version: EXPORT_FILE_VERSION,
       exportedAt: new Date().toISOString(),
       fixedFolders: get().folders,
       persistentPins: get().pins,

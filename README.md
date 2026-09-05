@@ -12,6 +12,7 @@ Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它只管理**�
 - 一键清理重复标签、安全休眠、JSON 数据导出导入
 
 隐私详情见 [PRIVACY.md](./PRIVACY.md)，版本变更记录见 [CHANGELOG.md](./CHANGELOG.md)，许可证见 [LICENSE](./LICENSE)。
+漏洞报告见 [SECURITY.md](./SECURITY.md)，参与开发见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ---
 
