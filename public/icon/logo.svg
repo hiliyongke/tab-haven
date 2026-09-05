@@ -1,22 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Tabs logo：清新翡翠渐变底 + 两个叠放的浏览器窗口（横向，mac 三色控制点） -->
+  <!--
+    Tabs Logo v6 — 单个标准 Mac 窗口（放大填满画布）
+    白色窗体 + 品牌绿标题栏 + 左侧三色控制点
+  -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#5CBF8C"/>
-      <stop offset="1" stop-color="#2E7D57"/>
-    </linearGradient>
-    <clipPath id="front"><rect x="22" y="48" width="76" height="56" rx="11"/></clipPath>
+    <clipPath id="bar"><rect x="0" y="0" width="128" height="30" rx="14"/></clipPath>
+    <filter id="s" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#166534" flood-opacity="0.15"/>
+    </filter>
   </defs>
-  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg)"/>
-  <!-- 后层窗口：半透明白剪影，错位叠于右上（同样宽 > 高） -->
-  <rect x="38" y="26" width="66" height="50" rx="10" fill="#ffffff" opacity="0.4"/>
-  <!-- 前层窗口 + 顶部标题栏（圆角内裁切） -->
-  <rect x="22" y="48" width="76" height="56" rx="11" fill="#ffffff"/>
-  <g clip-path="url(#front)">
-    <rect x="22" y="48" width="76" height="15" fill="#2E7D57" opacity="0.14"/>
+
+  <g filter="url(#s)">
+    <!-- 窗体 -->
+    <rect x="4" y="4" width="120" height="110" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
+
+    <!-- 标题栏 -->
+    <rect x="4" y="4" width="120" height="30" rx="14" fill="#22c55e"/>
+
+    <!-- macOS 三色控制点 -->
+    <circle cx="22" cy="19" r="6" fill="#ff5f57"/>
+    <circle cx="42" cy="19" r="6" fill="#febc2e"/>
+    <circle cx="62" cy="19" r="6" fill="#28c840"/>
+
+    <!-- 内容区占位行 -->
+    <rect x="16" y="48" width="64" height="6" rx="3" fill="#e2e8f0"/>
+    <rect x="16" y="62" width="48" height="6" rx="3" fill="#f1f5f9"/>
+    <rect x="16" y="76" width="32" height="6" rx="3" fill="#f8fafc"/>
+
+    <!-- 右下角品牌绿活跃指示 -->
+    <circle cx="104" cy="96" r="6" fill="#22c55e"/>
   </g>
-  <!-- macOS 窗口控制点：红 / 黄 / 绿 -->
-  <circle cx="28" cy="55.5" r="2.7" fill="#FF5F57"/>
-  <circle cx="36" cy="55.5" r="2.7" fill="#FEBC2E"/>
-  <circle cx="44" cy="55.5" r="2.7" fill="#28C840"/>
 </svg>
