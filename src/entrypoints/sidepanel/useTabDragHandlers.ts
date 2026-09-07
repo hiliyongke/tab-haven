@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import type { DragEndEvent } from '@dnd-kit/core';
+import { reorderBlockedReason } from '@/core/site/reorderCapability';
 import { computeGroupMoveIndex, computeReorderIndex, moveTab, moveTabs } from '@/platform/tabs';
 import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -28,24 +29,39 @@ import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/FixedArea';
 export function useTabDragHandlers() {
   const { t } = useTranslation();
 
-  /** 拖拽落点相对位置：纵向列表用 Y（在下方 = 插后），横向磁贴用 X（在右侧 = 插后）。 */
+  /**
+   * 落点方向：**由 dnd-kit 的 sortable index 判定，不做几何比较。**
+   *
+   * dnd-kit 已基于 SortableContext 的 items 顺序算出 active / over 的 index，
+   * 插入位动画也是据此绘制的。直接复用它，落点与所见必然一致。
+   *
+   * 此前另用矩形中心比一次（纵向比 Y、横向磁贴比 X），等于把落点算了两遍：
+   * 一套按 items 顺序、一套按屏幕矩形。两者不一致就表现为「动画显示在 A、
+   * 实际落到 B」，以及需要停留一下 / 偏一点才命中。
+   *
+   * 后移（to > from）→ 落到 over 之后；前移（to < from）→ 落到 over 之前。
+   * 这与 arrayMove(items, from, to) 一致：over 总被挤到源的相邻位。
+   */
   const isPlaceAfter = useCallback((event: DragEndEvent): boolean => {
-    const activeRect = event.active.rect.current.translated;
-    const overRect = event.over?.rect;
-    if (!activeRect || !overRect) return true;
-    const activeData = event.active.data.current as DragData | undefined;
-    if (activeData?.type === DragType.Pin) {
-      return activeRect.left + activeRect.width / 2 > overRect.left + overRect.width / 2;
-    }
-    return activeRect.top + activeRect.height / 2 > overRect.top + overRect.height / 2;
+    const from = (event.active.data.current as { sortable?: { index?: number } } | undefined)
+      ?.sortable?.index;
+    const to = (event.over?.data.current as { sortable?: { index?: number } } | undefined)?.sortable
+      ?.index;
+    // 索引缺失（非 sortable 目标，如跨容器投到 fixed-area）时退回「插后」。
+    if (from === undefined || to === undefined) return true;
+    return to > from;
   }, []);
 
-  /** 拖拽重排：用当前全部标签计算目标原生索引并写回浏览器。 */
+  /** 拖拽重排：用当前全部标签计算目标原生索引，先本地生效再写回浏览器。 */
   const handleReorder = useCallback((sourceId: number, targetId: number, placeAfter: boolean) => {
     const allTabs = useTabStore.getState().tabs;
     const index = computeReorderIndex({ tabs: allTabs, sourceId, targetId, placeAfter });
+    if (index < 0) return;
+    // 乐观更新：先让本地顺序立即生效，再写浏览器。真相源仍在浏览器——
+    // 写失败或期间有并发变化时，下一次快照会把顺序校正回来（见 tabStore.applyReorder）。
+    useTabStore.getState().applyReorder(sourceId, index);
     // 拖拽过程中目标标签可能已被关闭：失败静默（下一帧快照自愈），不产生未捕获 rejection。
-    if (index >= 0) void moveTab(sourceId, index).catch(() => {});
+    void moveTab(sourceId, index).catch(() => {});
   }, []);
 
   /** 键盘重排（Alt+↑/↓）：把标签向相邻展示位置移动。 */
@@ -120,6 +136,10 @@ export function useTabDragHandlers() {
       });
       if (index < 0) return;
 
+      // 乐观更新：整组先本地生效。两条落库路径（tabGroups.move / 整组 tabs.move）
+      // 改动的是同一批标签的 index，所以放在分支之前统一处理。
+      useTabStore.getState().applyGroupReorder(sourceTabIds, index);
+
       if (activeData.groupId !== undefined && overData.groupId !== undefined) {
         void useTabStore
           .getState()
@@ -142,15 +162,19 @@ export function useTabDragHandlers() {
       if (!activeData) return;
       const { notify } = useUndoStore.getState();
       const dataStore = useDataStore.getState();
+      // 列表内排序是否被阻断：统一判定，UI 与拖拽分发共用同一口径
+      // （详见 core/site/reorderCapability）。
+      const blocked = reorderBlockedReason({
+        tabOrderSync: dataStore.settings.tabOrderSync,
+        sortMode: dataStore.settings.sortMode
+      });
 
       // 标签：跨容器排序（受排序开关控制）/ 拖入文件夹 / 拖到固定空间空白（建文件夹）/ 拖到顶部固定区（固定）。
       if (activeData.type === DragType.Tab) {
         if (overData?.type === DragType.Tab) {
           if (dataStore.settings.tabOrderSync) {
-            // 「最近访问」下显示顺序由冻结的 lastAccessed 决定，与 index 已解耦，
-            // 此时拖拽改 index 不会反映到界面。必须显式告知而不是静默失效，
-            // 否则用户只会以为功能坏了。
-            if (dataStore.settings.sortMode === 'recency') {
+            // recency 下显示顺序与 index 已解耦，拖了不会反映到界面，必须告知。
+            if (blocked === 'recency') {
               notify(t('tabs.orderLockedBySortMode'));
               return;
             }
@@ -207,9 +231,8 @@ export function useTabDragHandlers() {
         if (overData?.type === DragType.Section && isSameContainer(activeData, overData)) {
           // 与标签排序共用同一道闸门：双向同步关闭时不写回浏览器，排序无从持久化。
           if (dataStore.settings.tabOrderSync) {
-            // 同上：recency 下分区顺序同样由冻结的 lastAccessed 决定，
-            // 整组改 index 不会反映到界面，必须显式告知而非静默失效。
-            if (dataStore.settings.sortMode === 'recency') {
+            // 同上：recency 下分区顺序同样与 index 解耦，必须显式告知。
+            if (blocked === 'recency') {
               notify(t('tabs.orderLockedBySortMode'));
               return;
             }

@@ -87,6 +87,10 @@ export const TabRow = memo(function TabRow({
   // 列表内排序是否生效由 App 层按 tabOrderSync 设置控制。
   const sortable = useSortable({
     id: tab.id,
+    // 关掉让位过渡：其余行会在 200ms 内持续位移，而碰撞检测读的是实时矩形，
+    // 动画期间矩形一直在变，落点随之漂移 —— 表现为「松手前要停一下才准」。
+    // 去掉过渡后元素瞬间到位，矩形立即稳定，落点与所见一致。
+    transition: null,
     data: {
       type: DragType.Tab,
       tabId: tab.id,

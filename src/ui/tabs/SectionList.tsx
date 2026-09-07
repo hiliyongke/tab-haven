@@ -150,7 +150,8 @@ function RowList({
   searchActiveTabId,
   noCacheTabIds,
   callbacks,
-  containerKey
+  containerKey,
+  sortableItems
 }: {
   tabs: readonly TabRecord[];
   duplicateCounts: ReadonlyMap<string, number>;
@@ -170,6 +171,13 @@ function RowList({
   callbacks: SectionCallbacks;
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
   containerKey: string;
+  /**
+   * 排序上下文的 id 全集，缺省取本块的 tab id。
+   * **多子域分块渲染时必须传入整个分区的全集**：各块若只包含自己那部分，
+   * 跨块拖拽时 over 的 id 不在对方 items 里，dnd-kit 无法排序，
+   * 表现为「组内两个标签互相拖不动」。
+   */
+  sortableItems?: readonly (string | number)[];
 }) {
   const { t } = useTranslation();
   // 分屏组竖线角色：同一 splitViewId 的「连续」标签段 → 组首/组中/组尾（单标签段也画线）。
@@ -240,7 +248,10 @@ function RowList({
   }
 
   return (
-    <SortableContext items={tabs.map((tab) => tab.id)} strategy={verticalListSortingStrategy}>
+    <SortableContext
+      items={sortableItems ? [...sortableItems] : tabs.map((tab) => tab.id)}
+      strategy={verticalListSortingStrategy}
+    >
       <ul>
         {tabs.map((tab) => (
           <TabRow
@@ -321,13 +332,24 @@ function SectionRows({
   tabs,
   depths,
   containerKey,
+  sortableItems,
   ...rest
 }: {
   tabs: readonly TabRecord[];
   depths?: ReadonlyMap<number, number>;
   containerKey: string;
+  /** 排序上下文的 id 全集；多子域分块时由调用方传入整个分区的全集（见 RowList）。 */
+  sortableItems?: readonly (string | number)[];
 } & RowListPassthrough) {
-  return <RowList tabs={tabs} depths={depths} containerKey={containerKey} {...rest} />;
+  return (
+    <RowList
+      tabs={tabs}
+      depths={depths}
+      containerKey={containerKey}
+      sortableItems={sortableItems}
+      {...rest}
+    />
+  );
 }
 
 /** 拖拽数据：原生组与虚拟分区（站点组 / 语言组）都参与排序；置顶/未分组禁用 sortable。 */
@@ -524,6 +546,10 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
           .filter((sub) => sub.tabs.length > 0)
       : [];
 
+  // 多子域分块时各块共享整个分区的排序全集（见 RowList.sortableItems）：
+  // 否则跨块拖拽的 over 不在对方 items 里，dnd-kit 无法排序。
+  const subGroupTabIds = subGroups.flatMap((sub) => sub.tabs.map((tab) => tab.id));
+
   const renderBody = () => (
     <>
       {section.kind === 'native' && editOpen && (
@@ -541,7 +567,12 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
             {subGroups.map((sub) => (
               <div key={sub.subdomain || 'root'}>
                 <div className="px-1.5 py-0 text-3xs leading-tight text-gray-600">{sub.label}</div>
-                <SectionRows tabs={sub.tabs} containerKey={section.key} {...rowProps} />
+                <SectionRows
+                  tabs={sub.tabs}
+                  containerKey={section.key}
+                  sortableItems={subGroupTabIds}
+                  {...rowProps}
+                />
               </div>
             ))}
           </div>

@@ -83,6 +83,8 @@ export function SortablePinnedTile({
 }) {
   const sortable = useSortable({
     id,
+    // 同 TabRow：关掉让位过渡，避免动画期间矩形漂移导致落点不准。
+    transition: null,
     data: { type: DragType.Pin, pinId, tabId, title, favIconUrl }
   });
 

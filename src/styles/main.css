@@ -1169,9 +1169,11 @@ body {
   padding-top: 6px;
   padding-bottom: 6px;
 }
-.row-item:hover .drag-grip,
-.row-item:focus-within .drag-grip,
-.row-item.is-selected .drag-grip {
+/* 仅悬停显示。此前带 :focus-within —— 行内主按钮点击后会保持焦点，
+   导致激活标签永远满足条件、把手常驻在它的 favicon 上，干扰「当前是哪个标签」的识别。
+   键盘排序走 Alt+↑↓，不依赖这个纯视觉提示（grip 本身 aria-hidden）。
+   注：.is-selected 类从未被任何组件添加，属于死条件，一并移除。 */
+.row-item:hover .drag-grip {
   opacity: 1;
 }
 .row-item .drag-grip:active {
@@ -1226,6 +1228,13 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/* 拖拽期间对所有行同样处理（.is-sorting 只标记被拖的那一行）：
+   指针扫过目标行会触发 hover，行尾操作展开 150px 挤动行内布局，
+   与拖拽中的持续重测叠加会表现为落点抖动、要停一下才命中。 */
+body.dnd-dragging .row-item .row-actions {
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* 无悬停设备（触屏）：常显悬停态操作，否则无法呼出；同时隐藏行尾徽标避免重叠 */
 @media (hover: none) {
@@ -1264,6 +1273,10 @@ body {
   box-shadow: 0 6px 18px rgb(var(--shadow-tint) / 0.18);
   font-size: 12px;
   color: var(--c-gray-800);
+  /* 必须穿透指针：overlay 常驻指针正下方，不设会抢走 hover/焦点，
+     行不高亮、拖拽手感发涩。（dnd-kit 的 pointerWithin 是几何计算，
+     不受此影响——这里修的是原生 hover 与视觉反馈。） */
+  pointer-events: none;
 }
 
 /* 行尾浮层底色基准（--row-bg）：base/hover/focus-within 必须在下方状态规则之前声明，
@@ -1339,9 +1352,8 @@ body {
   padding-left: 6px;
   z-index: 1;
 }
-/* 状态层级：激活标签是主状态，搜索/多选只提供辅助提示，不覆盖激活圆点。 */
-.row-item.is-active.is-search-active,
-.row-item.is-active.is-selected {
+/* 状态层级：激活标签是主状态，搜索只提供辅助提示，不覆盖激活圆点。 */
+.row-item.is-active.is-search-active {
   background: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
   --row-bg: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
 }

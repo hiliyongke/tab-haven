@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
+  MeasuringStrategy,
   PointerSensor,
   closestCenter,
   pointerWithin,
@@ -23,6 +24,29 @@ import { DragType, type DragData } from './types';
 const POINTER_SENSOR_CONFIG = { activationConstraint: { distance: 4 } } as const;
 /** KeyboardSensor：焦点落在拖拽 activator 上时，Space/Enter 抓取 + 方向键移动 + Space/Enter 放置。 */
 const KEYBOARD_SENSOR_CONFIG = { coordinateGetter: sortableKeyboardCoordinates } as const;
+
+/**
+ * 投放目标测量：拖拽期间持续重测。
+ *
+ * 默认 WhileDragging 只在拖拽开始测一次，而排序时其余行会因让位 transform 持续位移
+ * （transition 期间位置一直在变），旧矩形与实际位置错位 —— 表现为「落点飘、
+ * 要停一会儿才命中、指针得偏一点才成」。Always 让矩形始终跟随真实布局。
+ * 代价是拖拽期间每帧重测，但侧边栏行数有限（超 200 行的分区已走虚拟化、不参与排序），
+ * 不构成性能问题。
+ */
+const DROPPABLE_MEASURING = {
+  droppable: { strategy: MeasuringStrategy.Always }
+} as const;
+
+/**
+ * 关闭拖拽自动滚动。
+ *
+ * 默认在容器上下 20% 触发滚动：侧边栏可见区 400–600px 时触发带达 80–120px，
+ * 恰好罩住列表的首两行与末两行。要把标签拖到最前/最后，指针必然进入该区域，
+ * 列表随即持续滚动、落点漂移 —— 正是「首尾位置要试很多次才成功」的成因。
+ * 同屏拖拽本就无需滚动；跨屏移动改用 Alt+↑/↓ 键盘重排。
+ */
+const AUTO_SCROLL_CONFIG = { enabled: false } as const;
 
 /**
  * 拖拽碰撞检测：优先取指针实际所在的最深层投放目标（解决拖分组头/标签到固定空间时
@@ -70,7 +94,32 @@ function dragCollisionDetection(args: Parameters<CollisionDetection>[0]): Collis
     });
     return sorted;
   }
-  return closestCenter(args);
+  // 指针落在列表空白/边界外：只在「同级且同容器」的行目标里取最近中心。
+  // 两层限定缺一不可：
+  //  - 不限定层级，外层容器（fixed-area / pinned-strip）面积大、中心更贴近指针，
+  //    会把拖放截胡成「拖入固定空间」；
+  //  - 不限定容器，相邻分区的行会被跨列表命中（未分组区首行紧挨上一个站点组，
+  //    指针略偏上就落到隔壁分区），表现为「某分区的首尾拖不动」。
+  const activeContainer = activeData?.type === DragType.Tab ? activeData.containerKey : undefined;
+  const rowContainers = args.droppableContainers.filter((container) => {
+    const data = container.data.current as DragData | undefined;
+    if (!data) return false;
+    if (data.type === DragType.Tab) {
+      return activeContainer === undefined || data.containerKey === activeContainer;
+    }
+    return data.type === DragType.FolderItem;
+  });
+  if (rowContainers.length > 0) {
+    return closestCenter({ ...args, droppableContainers: rowContainers });
+  }
+  // 同容器无候选（跨容器拖拽且指针落在空白）：退到全部行级目标。
+  // 到此为止，不再退回全部 droppable —— 那会让指针落在列表之外时
+  // 被外层容器（fixed-area / pinned-strip）截胡，凭空变成「拖入固定空间」。
+  const anyRow = args.droppableContainers.filter((container) => {
+    const data = container.data.current as DragData | undefined;
+    return data?.type === DragType.Tab || data?.type === DragType.FolderItem;
+  });
+  return closestCenter({ ...args, droppableContainers: anyRow });
 }
 
 /** 根据拖拽数据生成 DragOverlay 的轻量跟随内容。 */
@@ -137,10 +186,22 @@ export function DndRoot({
   };
   const handleDragCancel = () => setOverlay(null);
 
+  // 拖拽期间给 body 打标记：所有行的行尾操作都不再 hover 展开（配套规则见 main.css 的
+  // body.dnd-dragging）——150px 的展开会挤动行内布局，叠加持续重测会让落点发飘。
+  useEffect(() => {
+    if (overlay === null) return;
+    document.body.classList.add('dnd-dragging');
+    return () => {
+      document.body.classList.remove('dnd-dragging');
+    };
+  }, [overlay]);
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={dragCollisionDetection}
+      measuring={DROPPABLE_MEASURING}
+      autoScroll={AUTO_SCROLL_CONFIG}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={(event: DragCancelEvent) => {

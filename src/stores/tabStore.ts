@@ -56,6 +56,10 @@ interface TabState {
   recolorGroup: (groupId: number, color: string) => Promise<void>;
   /** 移动原生组到指定索引（组排序）。 */
   moveGroup: (groupId: number, index: number) => Promise<void>;
+  /** 乐观重排：拖拽松手后立即本地生效，不等浏览器事件回灌（详见实现处注释）。 */
+  applyReorder: (sourceId: number, targetIndex: number) => void;
+  /** 整组乐观重排（分区头拖拽）：同理，把一组标签整体落到目标索引。 */
+  applyGroupReorder: (sourceTabIds: readonly number[], targetIndex: number) => void;
   /** 启动同步服务（组件挂载时调用一次）；返回清理函数。 */
   startTabSync: () => () => void;
 }
@@ -128,6 +132,52 @@ export const useTabStore = create<TabState>()((set, get) => ({
 
   moveGroup: async (groupId, index) => {
     await moveGroupPlatform(groupId, index);
+  },
+
+  /**
+   * 乐观重排：拖拽松手后立即在本地生效，不等浏览器事件回灌。
+   *
+   * 真相源仍在浏览器 —— 写失败或期间有并发变化时，下一次快照会按真实顺序校正回来，
+   * 因此这里不需要回滚逻辑。没有这一步，松手后要等
+   * `tabs.move → 浏览器事件 → 快照广播 → React 重渲染` 的整段往返，
+   * 那几十到几百毫秒的空窗正是「拖完像没反应、于是再拖一次」的来源。
+   *
+   * index 必须重新连续分配：显示顺序按 `index` 排序，直接拼接会留下空洞。
+   */
+  applyReorder: (sourceId, targetIndex) => {
+    set((state) => {
+      const source = state.tabs.find((tab) => tab.id === sourceId);
+      if (!source) return {};
+      const ordered = [...state.tabs]
+        .filter((tab) => tab.id !== sourceId)
+        .sort((a, b) => a.index - b.index);
+      if (targetIndex < 0 || targetIndex > ordered.length) return {};
+      ordered.splice(targetIndex, 0, source);
+      const tabs = ordered.map((tab, i) => (tab.index === i ? tab : { ...tab, index: i }));
+      return { tabs };
+    });
+  },
+
+  /**
+   * 整组乐观重排：分区头拖拽时把一组标签整体落到目标索引。
+   * 与 applyReorder 同理（同一套「剔除 → 插入 → 重排 index」流程，只是 source 是一组）。
+   * 组内相对顺序按当前 index 保持，与浏览器批量 move 的行为一致。
+   */
+  applyGroupReorder: (sourceTabIds, targetIndex) => {
+    set((state) => {
+      const sourceIds = new Set(sourceTabIds);
+      const moving = state.tabs
+        .filter((tab) => sourceIds.has(tab.id))
+        .sort((a, b) => a.index - b.index);
+      if (moving.length === 0) return {};
+      const ordered = [...state.tabs]
+        .filter((tab) => !sourceIds.has(tab.id))
+        .sort((a, b) => a.index - b.index);
+      if (targetIndex < 0 || targetIndex > ordered.length) return {};
+      ordered.splice(targetIndex, 0, ...moving);
+      const tabs = ordered.map((tab, i) => (tab.index === i ? tab : { ...tab, index: i }));
+      return { tabs };
+    });
   },
 
   startTabSync: () =>

@@ -46,7 +46,8 @@ export function GroupCard({
   className?: string;
   children?: ReactNode;
 }) {
-  const sortable = useSortable({ id, data: dragData, disabled });
+  // transition: null —— 同 TabRow：关掉让位过渡，避免动画期间矩形漂移导致落点不准。
+  const sortable = useSortable({ id, data: dragData, disabled, transition: null });
   // 指针拖拽挂整个头部（整头可拖），键盘拖拽挂专用手柄（KeyboardSensor 要求 keydown
   // 目标即 activator；手柄是真实 button，不与头部内 toggle 按钮的 Space/Enter 冲突）。
   const { onKeyDown: headKeyDown, ...headPointerListeners } = sortable.listeners ?? {};

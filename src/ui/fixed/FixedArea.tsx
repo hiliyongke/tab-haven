@@ -48,6 +48,8 @@ function FolderItemRow({ folder, item }: { folder: FixedFolder; item: FixedFolde
   // 固定条目始终可排序（无论是否打开），不再用 isOpen 禁用。
   const sortable = useSortable({
     id: item.id,
+    // 同 TabRow：关掉让位过渡，避免动画期间矩形漂移导致落点不准。
+    transition: null,
     data: {
       type: DragType.FolderItem,
       folderId: folder.id,
