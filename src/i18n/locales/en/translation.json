@@ -22,6 +22,7 @@
     "dragToMove": "Drag to reorder (hold here to drag into the fixed space)",
     "locateActive": "Locate current tab",
     "largeListNotice": "Large list optimized: smoother scrolling; drag sorting paused in this section",
+    "orderLockedBySortMode": "Auto-sorted by \"Most recent\"; switch to \"Browser order\" to drag and reorder",
     "switchTo": "Switch to: {{title}}"
   },
   "footer": {

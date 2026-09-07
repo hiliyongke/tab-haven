@@ -183,6 +183,24 @@ export async function moveTab(tabId: number, index: number): Promise<boolean> {
 }
 
 /**
+ * 批量移动标签到窗口内指定扁平索引（拖拽整个分区/站点组时用）。
+ *
+ * Chrome 的 tabs.move 接受 id 数组，按传入顺序原子地落到 index 起的连续位置，
+ * 组内相对顺序得以保持——这正是「整组搬家」所需的语义，无需逐个 move 再补偿位移。
+ * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态，不视为错误）。
+ */
+export async function moveTabs(tabIds: readonly number[], index: number): Promise<boolean> {
+  if (tabIds.length === 0) return false;
+  try {
+    await browser.tabs.move([...tabIds], { index });
+    return true;
+  } catch (error) {
+    logDegraded('tabs', `移动 ${tabIds.length} 个标签到索引 ${index} 失败`, error);
+    return false;
+  }
+}
+
+/**
  * 依据“侧边栏展示顺序”计算把 source 放到 target 之前/之后时应去的原生索引。
  * 通过重建扁平有序列表（排除 source 后按 index 排序，再在目标位插入）得到目标位置，
  * 该位置即可作为 chrome.tabs.move 的 index（窗口内标签索引连续 0..n-1）。
@@ -201,6 +219,45 @@ export function computeReorderIndex(params: {
   if (!source) return -1;
   ordered.splice(placeAfter ? targetPos + 1 : targetPos, 0, source);
   return ordered.findIndex((tab) => tab.id === sourceId);
+}
+
+/**
+ * 计算把 source 整组搬到 target 组之前/之后时，组内首个标签应去的原生索引。
+ *
+ * 站点组 / 语言组这类「虚拟分区」没有原生 groupId，无法用 tabGroups.move；
+ * 但它们的展示顺序由组内标签的 index 决定（见 SiteGrouping 的 groups.sort），
+ * 因此把整组标签连续地落到目标组的前面或后面，即可真正改变分区顺序并持久化
+ * 到浏览器——不需要额外的顺序存储，也不会与自动归类冲突。
+ *
+ * 算法与 computeReorderIndex 同构：先剔除整组 source 消除自身占位，
+ * 再在剩余有序列表里取 target 组的首/末位置作为落点。
+ * 返回 -1 表示目标组已不存在（拖拽期间被关闭/解散），调用方应静默放弃。
+ */
+export function computeGroupMoveIndex(params: {
+  tabs: readonly TabRecord[];
+  sourceTabIds: readonly number[];
+  targetTabIds: readonly number[];
+  placeAfter: boolean;
+}): number {
+  const { tabs, sourceTabIds, targetTabIds, placeAfter } = params;
+  const sourceIds = new Set(sourceTabIds);
+  if (sourceIds.size === 0) return -1;
+  const targetIds = new Set(targetTabIds);
+  if (targetIds.size === 0) return -1;
+
+  const ordered = [...tabs]
+    .filter((tab) => !sourceIds.has(tab.id))
+    .sort((a, b) => a.index - b.index);
+  let first: number | undefined;
+  let last: number | undefined;
+  for (let i = 0; i < ordered.length; i += 1) {
+    if (targetIds.has(ordered[i]!.id)) {
+      if (first === undefined) first = i;
+      last = i;
+    }
+  }
+  if (first === undefined || last === undefined) return -1;
+  return placeAfter ? last + 1 : first;
 }
 
 /** 冻结（卸载）标签并返回是否成功。休眠后的标签点击会重新加载。 */

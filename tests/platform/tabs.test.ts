@@ -4,6 +4,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import {
   closeTabs,
+  computeGroupMoveIndex,
   computeReorderIndex,
   createNewTab,
   discardTab,
@@ -107,6 +108,85 @@ describe('computeReorderIndex', () => {
     expect(
       computeReorderIndex({ tabs: shuffled, sourceId: 3, targetId: 1, placeAfter: false })
     ).toBe(0);
+  });
+});
+
+describe('computeGroupMoveIndex', () => {
+  // 三个连续分区：A=[1,2] B=[3,4] C=[5,6]
+  const tabs = [
+    tab({ id: 1, index: 0 }),
+    tab({ id: 2, index: 1 }),
+    tab({ id: 3, index: 2 }),
+    tab({ id: 4, index: 3 }),
+    tab({ id: 5, index: 4 }),
+    tab({ id: 6, index: 5 })
+  ];
+  const A = [1, 2];
+  const B = [3, 4];
+  const C = [5, 6];
+
+  it('把整组搬到目标分区之后', () => {
+    // 剔除 A 后扁平序为 [3,4,5,6]，B 占 0..1，插其后即 2。
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: A, targetTabIds: B, placeAfter: true })
+    ).toBe(2);
+  });
+
+  it('把整组搬到目标分区之前', () => {
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: C, targetTabIds: B, placeAfter: false })
+    ).toBe(2);
+  });
+
+  it('搬到首位分区之前落到 0', () => {
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: C, targetTabIds: A, placeAfter: false })
+    ).toBe(0);
+  });
+
+  it('搬到末位分区之后落到末尾', () => {
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: A, targetTabIds: C, placeAfter: true })
+    ).toBe(4);
+  });
+
+  it('先剔除 source 整组占位，避免 off-by-N', () => {
+    // A 在前、B 在后：若沿用「移动前的快照索引」会把落点算成 B 末标签 index 3 + 1 = 4，
+    // 但剔除 A 的两条之后 B 的末位是 1，正确落点为 2。此即旧实现的错位来源。
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: A, targetTabIds: B, placeAfter: true })
+    ).toBe(2);
+  });
+
+  it('目标分区在 index 上不连续时按位置而非 index 定位', () => {
+    // X 的标签被其他分区穿插（index 0/2/4），落点应取其在扁平序中的首/末位置。
+    const mixed = [
+      tab({ id: 1, index: 0 }),
+      tab({ id: 2, index: 1 }),
+      tab({ id: 3, index: 2 }),
+      tab({ id: 4, index: 3 }),
+      tab({ id: 5, index: 4 })
+    ];
+    const X = [1, 3, 5];
+    // 剔除 source(2) 后为 [1,3,4,5]，X 占 0 / 1 / 3 → 首 0、末 3。
+    expect(
+      computeGroupMoveIndex({ tabs: mixed, sourceTabIds: [2], targetTabIds: X, placeAfter: false })
+    ).toBe(0);
+    expect(
+      computeGroupMoveIndex({ tabs: mixed, sourceTabIds: [2], targetTabIds: X, placeAfter: true })
+    ).toBe(4);
+  });
+
+  it('目标分区已消失时返回 -1（调用方静默放弃）', () => {
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: A, targetTabIds: [99], placeAfter: true })
+    ).toBe(-1);
+  });
+
+  it('source 为空时返回 -1', () => {
+    expect(
+      computeGroupMoveIndex({ tabs, sourceTabIds: [], targetTabIds: B, placeAfter: true })
+    ).toBe(-1);
   });
 });
 

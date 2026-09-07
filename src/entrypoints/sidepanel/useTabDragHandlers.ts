@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browser } from 'wxt/browser';
 import type { DragEndEvent } from '@dnd-kit/core';
-import type { TemporarySection } from '@/core/site/Sections';
-import { computeReorderIndex, moveTab } from '@/platform/tabs';
+import { computeGroupMoveIndex, computeReorderIndex, moveTab, moveTabs } from '@/platform/tabs';
 import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -23,15 +22,11 @@ import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/FixedArea';
  *
  * 设计：所有 handler 都是事件驱动（仅在拖拽结束时调用），不订阅渲染期数据，
  * 一律经 store getState 读取最新状态，因此引用稳定（useCallback 空/少量依赖），
- * 不会导致下游 memo 组件失效。restSections 是渲染期计算值，经 ref 保持最新。
+ * 不会导致下游 memo 组件失效。排序所需的分区成员由拖拽数据自带的 tabIds 提供，
+ * 因此本 hook 不接收渲染期的分区列表。
  */
-export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
+export function useTabDragHandlers() {
   const { t } = useTranslation();
-  const sectionsRef = useRef(restSections);
-  // 同上：渲染期写 ref 在并发渲染下会把未提交的中间值泄漏出去，改在提交后更新。
-  useEffect(() => {
-    sectionsRef.current = restSections;
-  }, [restSections]);
 
   /** 拖拽落点相对位置：纵向列表用 Y（在下方 = 插后），横向磁贴用 X（在右侧 = 插后）。 */
   const isPlaceAfter = useCallback((event: DragEndEvent): boolean => {
@@ -95,24 +90,44 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
     [t]
   );
 
-  /** 分组头排序：按目标组首/末 tab 的真实索引换算 Chrome tabGroups.move 目标。 */
+  /**
+   * 分区头排序：把 source 分区整体搬到 target 分区之前/之后。
+   *
+   * 落点用 computeGroupMoveIndex 统一计算（先剔除 source 整组再定位），
+   * 避免旧实现「用移动前的快照索引 + 方向猜前后」带来的 off-by-N。
+   *
+   * 两类分区的落库路径不同，但都必须落到底层真实顺序，否则下一次派生就会被覆盖：
+   *  - 双方都是原生组 → chrome.tabGroups.move，由浏览器维护组序；
+   *  - 虚拟分区（站点组 / 语言组，无 groupId）及混合场景 → 整组标签连续 move。
+   *    其展示顺序由组内标签 index 决定，整组搬家即真正改变分区顺序并持久。
+   */
   const handleSectionReorder = useCallback(
-    (activeData: SectionDragData, overData: SectionDragData) => {
-      if (activeData.groupId === undefined || overData.groupId === undefined) return;
-      const sections = sectionsRef.current;
-      const oldIndex = sections.findIndex((s) => s.key === activeData.sectionKey);
-      const newIndex = sections.findIndex((s) => s.key === overData.sectionKey);
-      if (oldIndex < 0 || newIndex < 0) return;
-      const overSection = sections[newIndex];
-      if (!overSection || overSection.kind !== 'native' || overSection.tabs.length === 0) return;
-      const overFirst = overSection.tabs[0]!.index;
-      const overLast = overSection.tabs.at(-1)!.index;
-      // 前移 → 插到目标组首 tab；后移 → 插到目标组末 tab + 1。
-      // 组可能在拖拽过程中被解散：失败静默（快照自愈），不产生未捕获 rejection。
-      void useTabStore
-        .getState()
-        .moveGroup(activeData.groupId, newIndex < oldIndex ? overFirst : overLast + 1)
-        .catch(() => {});
+    (activeData: SectionDragData, overData: SectionDragData, placeAfter: boolean) => {
+      // 自投放无意义：source 与 target 同区，位置不变。
+      if (activeData.sectionKey === overData.sectionKey) return;
+      const allTabs = useTabStore.getState().tabs;
+      const liveIds = new Set(allTabs.map((tab) => tab.id));
+      const sourceTabIds = activeData.tabIds.filter((id) => liveIds.has(id));
+      const targetTabIds = overData.tabIds.filter((id) => liveIds.has(id));
+      // 拖拽期间分区可能被关闭/解散：静默放弃，下一帧快照自愈。
+      if (sourceTabIds.length === 0 || targetTabIds.length === 0) return;
+
+      const index = computeGroupMoveIndex({
+        tabs: allTabs,
+        sourceTabIds,
+        targetTabIds,
+        placeAfter
+      });
+      if (index < 0) return;
+
+      if (activeData.groupId !== undefined && overData.groupId !== undefined) {
+        void useTabStore
+          .getState()
+          .moveGroup(activeData.groupId, index)
+          .catch(() => {});
+        return;
+      }
+      void moveTabs(sourceTabIds, index).catch(() => {});
     },
     []
   );
@@ -132,6 +147,13 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
       if (activeData.type === DragType.Tab) {
         if (overData?.type === DragType.Tab) {
           if (dataStore.settings.tabOrderSync) {
+            // 「最近访问」下显示顺序由冻结的 lastAccessed 决定，与 index 已解耦，
+            // 此时拖拽改 index 不会反映到界面。必须显式告知而不是静默失效，
+            // 否则用户只会以为功能坏了。
+            if (dataStore.settings.sortMode === 'recency') {
+              notify(t('tabs.orderLockedBySortMode'));
+              return;
+            }
             handleReorder(activeData.tabId, overData.tabId, isPlaceAfter(event));
             // 跨原生组：把 source 标签加入目标组（moveTab 只改位置不改归属）。
             const latest = useTabStore.getState().tabs;
@@ -183,7 +205,16 @@ export function useTabDragHandlers(restSections: readonly TemporarySection[]) {
       // 分组：同容器排序 / 拖入文件夹 / 拖到固定空间空白（建文件夹）。
       if (activeData.type === DragType.Section) {
         if (overData?.type === DragType.Section && isSameContainer(activeData, overData)) {
-          handleSectionReorder(activeData, overData);
+          // 与标签排序共用同一道闸门：双向同步关闭时不写回浏览器，排序无从持久化。
+          if (dataStore.settings.tabOrderSync) {
+            // 同上：recency 下分区顺序同样由冻结的 lastAccessed 决定，
+            // 整组改 index 不会反映到界面，必须显式告知而非静默失效。
+            if (dataStore.settings.sortMode === 'recency') {
+              notify(t('tabs.orderLockedBySortMode'));
+              return;
+            }
+            handleSectionReorder(activeData, overData, isPlaceAfter(event));
+          }
           return;
         }
         if (overData?.type === DragType.FolderItem || overData?.type === DragType.Folder) {

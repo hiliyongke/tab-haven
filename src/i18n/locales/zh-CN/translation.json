@@ -22,6 +22,7 @@
     "dragToMove": "拖拽调整顺序（按住此处可拖到固定空间）",
     "locateActive": "定位当前标签",
     "largeListNotice": "大列表已优化：滚动更流畅，本分区拖拽排序已暂停",
+    "orderLockedBySortMode": "当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序",
     "switchTo": "切换到：{{title}}"
   },
   "footer": {

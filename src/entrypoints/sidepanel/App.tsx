@@ -451,7 +451,7 @@ export default function App() {
   const pinnedSection = useMemo(() => allSections.find((s) => s.kind === 'pinned'), [allSections]);
   const restSections = useMemo(() => allSections.filter((s) => s.kind !== 'pinned'), [allSections]);
   // 拖拽分发（排序/投放/建文件夹/固定）独立为 hook，handler 引用稳定。
-  const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers(restSections);
+  const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers();
   const duplicateIndex = useMemo(() => DuplicateIndex.build(tabs), [tabs]);
   const duplicateCounts = useMemo(() => duplicateIndex.counts(), [duplicateIndex]);
 

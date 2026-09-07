@@ -330,7 +330,7 @@ function SectionRows({
   return <RowList tabs={tabs} depths={depths} containerKey={containerKey} {...rest} />;
 }
 
-/** 拖拽数据：原生组参与排序；站点组仅支持拖出到固定空间；置顶/未分组禁用 sortable。 */
+/** 拖拽数据：原生组与虚拟分区（站点组 / 语言组）都参与排序；置顶/未分组禁用 sortable。 */
 function sectionDragDataFor(section: TemporarySection) {
   return {
     type: DragType.Section,
@@ -669,8 +669,12 @@ function SectionListImpl({
     return () => window.removeEventListener(LOCATE_SECTION_EVENT, handleLocateSection);
   }, []);
 
-  // 分组头排序（dnd-kit）：只对原生组参与排序，排序逻辑由全局 DndContext 的 onDragEnd 处理。
-  const sortableSectionKeys = sections.filter((s) => s.kind === 'native').map((s) => s.key);
+  // 分区头排序（dnd-kit）：原生组与虚拟分区（站点组 / 语言组）都可拖动排序，
+  // 排序逻辑由全局 DndContext 的 onDragEnd 处理。
+  // 置顶区独立渲染、未分组区是兜底容器，两者不参与分区排序。
+  const sortableSectionKeys = sections
+    .filter((s) => s.kind === 'native' || s.kind === 'site')
+    .map((s) => s.key);
 
   const nativeSiteSections = sections.filter((s) => s.kind === 'native' || s.kind === 'site');
   const ungroupedSection = sections.find((s) => s.kind === 'ungrouped');
