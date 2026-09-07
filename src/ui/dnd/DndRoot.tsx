@@ -157,6 +157,22 @@ function buildDragOverlay(data: DragData): ReactNode {
 }
 
 /**
+ * 标记「刚放下」：给 body 打一个一次性标记，指针下次移动即自动清除。
+ *
+ * 松手瞬间指针仍停在落点那一行，纯 `:hover` 会让拖拽把手继续显示——
+ * 观感上像"拖完卡住了"，也与「把手只在 hover 时出现」的预期不符。
+ * 打上标记后把手先隐藏，指针一动就恢复（此时已是真正的重新悬停）。
+ */
+function markJustDropped(): void {
+  document.body.classList.add('dnd-just-dropped');
+  const clear = () => {
+    document.body.classList.remove('dnd-just-dropped');
+    window.removeEventListener('pointermove', clear);
+  };
+  window.addEventListener('pointermove', clear, { once: true });
+}
+
+/**
  * 全局拖拽根：整个侧边栏共享一个 DndContext + DragOverlay。
  * - 列表内排序：各列表的 SortableContext 直接挂在下面；
  * - 跨容器投放（标签/分组 → 固定空间）：用 useDroppable，由 App 层 onDragEnd 分派；
@@ -182,6 +198,8 @@ export function DndRoot({
   };
   const handleDragEnd = (event: DragEndEvent) => {
     setOverlay(null);
+    // 松手处那一行会残留把手（指针还在上面），先抑制到指针再次移动为止。
+    markJustDropped();
     onDragEnd(event);
   };
   const handleDragCancel = () => setOverlay(null);

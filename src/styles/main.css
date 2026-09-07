@@ -1169,6 +1169,11 @@ body {
   padding-top: 6px;
   padding-bottom: 6px;
 }
+/* 刚放下的一瞬间：指针仍停在落点行上，纯 :hover 会让把手残留不消，
+   观感像「拖完卡住」。抑制到指针再次移动（那才是真正的重新悬停）。 */
+body.dnd-just-dropped .row-item .drag-grip {
+  opacity: 0;
+}
 /* 仅悬停显示。此前带 :focus-within —— 行内主按钮点击后会保持焦点，
    导致激活标签永远满足条件、把手常驻在它的 favicon 上，干扰「当前是哪个标签」的识别。
    键盘排序走 Alt+↑↓，不依赖这个纯视觉提示（grip 本身 aria-hidden）。
