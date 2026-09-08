@@ -94,7 +94,8 @@ interface DataState {
   /** 打开固定条目（挂起/绑定/精确匹配/新建 四级）。 */
   openSavedItem: (item: { id: string; url?: string; pendingTabId?: number }) => Promise<void>;
   /** 从原生组保存为固定文件夹（去重 + 建立绑定）。 */
-  createFolderFromNativeGroup: (name: string, groupTabs: readonly TabRecord[]) => Promise<void>;
+  /** 把原生组保存为固定文件夹；无可收藏条目时返回 false（不建空夹），成功返回 true。 */
+  createFolderFromNativeGroup: (name: string, groupTabs: readonly TabRecord[]) => Promise<boolean>;
   /** 将固定文件夹恢复为原生标签组，并移除已转换的固定文件夹。 */
   syncFolderToNativeGroup: (folderId: string) => Promise<boolean>;
 

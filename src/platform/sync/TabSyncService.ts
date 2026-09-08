@@ -25,6 +25,8 @@ interface TabSnapshot {
 }
 
 const THROTTLE_MS = 40;
+/** 发声标签存在时的校准轮询间隔：Chrome 对 audible 置 false 存在秒级时滞，轮询将其收敛上限压至该值。 */
+const AUDIBLE_POLL_MS = 2000;
 /**
  * 只有这些字段变化才需要重新查询快照。
  *
@@ -48,6 +50,18 @@ const MAX_BACKOFF_FACTOR = 32;
 
 export class TabSyncService {
   private generation = 0;
+  /** 当前活跃 start 会话的刷新信号（由 start 注册、cleanup 注销）。 */
+  private activeSignal: (() => void) | null = null;
+
+  /**
+   * 显式请求一次快照刷新（幂等）：供「直接改写浏览器标签/组结构」的写操作
+   * （如固定文件夹转原生组）完成后调用，确保 UI 立即反映，不依赖
+   * tabs/tabGroups 事件被派发到本上下文的时序（事件驱动的 refresh 照常生效，
+   * 两者经 signal 的 querying/timer 合并机制天然去重，不会重复查询）。
+   */
+  requestRefresh(): void {
+    this.activeSignal?.();
+  }
 
   start(onSnapshot: (snapshot: TabSnapshot) => void): () => void {
     // 每次 start 拥有独立的运行态闭包，互不污染：
@@ -60,6 +74,8 @@ export class TabSyncService {
     let querying = false;
     /** 连续失败次数：用于 trailing 重试的指数退避。 */
     let failures = 0;
+    /** 发声标签存在时的校准轮询（见 syncAudiblePolling）。 */
+    let audibleTimer: ReturnType<typeof setInterval> | null = null;
 
     const run = async () => {
       querying = true;
@@ -70,6 +86,8 @@ export class TabSyncService {
         ]);
         if (stopped) return;
         failures = 0;
+        // 依据最新快照启停「发声校准轮询」（先于广播，让 onSnapshot 立即获得最新值）。
+        syncAudiblePolling(tabs);
         this.generation += 1;
         onSnapshot({ tabs, groups, windowId: tabs[0]?.windowId, generation: this.generation });
       } catch (error) {
@@ -97,6 +115,26 @@ export class TabSyncService {
         return;
       }
       void run();
+    };
+
+    /**
+     * 发声校准轮询（仅当窗口存在 audible 标签时启用，2s 间隔）。
+     *
+     * 根因：页面停止发声后，Chrome 对 tabs.Tab.audible 的置 false 与
+     * `tabs.onUpdated(changeInfo.audible)` 派发存在可达秒级的内部时滞（与网页是否
+     * 释放 AudioContext 相关）。扩展没有比事件更快的信号，但纯事件驱动会让
+     * 「暂停后绿点/播放提示迟迟不消失」的时长完全不可预期。这里用低频轮询把
+     * 收敛上限压到 ~2s：有发声标签才轮询，静止（无 audible）即自动停表，无播放
+     * 场景零开销。事件正常时轮询经 signal 合并机制几乎不产生额外查询。
+     */
+    const syncAudiblePolling = (tabs: readonly TabRecord[]) => {
+      const hasAudible = tabs.some((tab) => tab.audible);
+      if (hasAudible && audibleTimer === null) {
+        audibleTimer = setInterval(() => signal(), AUDIBLE_POLL_MS);
+      } else if (!hasAudible && audibleTimer !== null) {
+        clearInterval(audibleTimer);
+        audibleTimer = null;
+      }
     };
 
     const events: Array<{
@@ -131,11 +169,14 @@ export class TabSyncService {
     }
 
     // 启动即刷新一次（首帧数据）。
+    this.activeSignal = signal;
     signal();
 
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
+      if (audibleTimer !== null) clearInterval(audibleTimer);
+      if (this.activeSignal === signal) this.activeSignal = null;
       browser.tabs.onUpdated.removeListener(onUpdated);
       for (const event of events) {
         event.removeListener(signal);
@@ -143,3 +184,6 @@ export class TabSyncService {
     };
   }
 }
+
+/** 标签镜像 store 复用的单例同步服务（start 可多页面各自挂载/清理）。 */
+export const tabSyncService = new TabSyncService();

@@ -336,7 +336,11 @@ describe('dataStore 固定空间事务', () => {
   });
 
   it('reconcileWithTabs：挂起条目导航转正 + 自动建立绑定', async () => {
+    // ready: true —— 真实入口（sidepanel/popup）在 initialize 完成前不会协调
+    // （reconcileWithTabs 有 ready 守卫：folders 为空是「未加载」而非真实状态，
+    // 否则每次挂载首帧会把磁盘绑定整表清空）。
     useDataStore.setState({
+      ready: true,
       folders: [
         {
           id: 'f1',
@@ -379,7 +383,9 @@ describe('dataStore 固定空间事务', () => {
   });
 
   it('reconcileWithTabs：挂起标签已关闭则条目移除', async () => {
+    // ready: true —— 同上方用例：协调是初始化完成后的行为。
     useDataStore.setState({
+      ready: true,
       folders: [
         {
           id: 'f1',

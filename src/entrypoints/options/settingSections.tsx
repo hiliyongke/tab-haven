@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import type { Settings } from '@/core/schema/models';
 import { COLOR_THEMES, type ColorTheme } from '@/core/theme/colorThemes';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
@@ -296,7 +297,11 @@ export function buildSections(
           // 不能再捕获组件作用域的 settings 变量）。
           render: ({ settings: currentSettings, update, t }) => (
             <Select
-              value={currentSettings.language ?? 'zh-CN'}
+              // 显示值必须与「实际生效语言」一致：settings.language 缺省时界面语言
+              // 由浏览器语言决定（i18n 初始化），此前硬编码兜底 'zh-CN' 会让英文
+              // 环境的用户看到下拉框显示「简体中文」而界面实为英文。
+              // 运行时 i18n.language 已被 SettingsSync 对齐为设置值，两者互补。
+              value={currentSettings.language ?? i18n.language}
               onChange={(v) => update('language', v)}
               options={[
                 { value: 'zh-CN', label: '简体中文' },

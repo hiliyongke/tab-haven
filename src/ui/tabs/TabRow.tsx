@@ -95,6 +95,11 @@ export const TabRow = memo(function TabRow({
       type: DragType.Tab,
       tabId: tab.id,
       containerKey,
+      // 行间排序是否可用（false = 超阈值强制虚拟化分区的行：UI 已提示
+      // 「拖拽排序已暂停」，但行仍保留 draggable/droppable 以支持跨容器
+      // 拖到固定空间）。拖放分发据此拦截 Tab→Tab 真实排序——否则出现
+      // 「提示暂停、松手却真实重排」的行为矛盾。
+      canReorder: reorderEnabled !== false,
       title: tab.title || '',
       favIconUrl: tab.favIconUrl
     }

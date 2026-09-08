@@ -49,8 +49,10 @@
   },
   "discard": {
     "allInactive": "Discard all inactive tabs (free memory)",
+    "allInactiveNone": "No inactive tabs to discard",
     "autoDiscarded": "Auto-discarded {{count}} tabs",
     "wakeAll": "Wake all",
+    "wakeNone": "No discarded tabs to wake",
     "woken": "Woke {{count}} tabs"
   },
   "fixed": {
@@ -82,6 +84,7 @@
     "toBookmarks": "Save as bookmark folder",
     "bookmarked": "Exported {{count}} items to bookmarks",
     "bookmarkEmpty": "Collection is empty; nothing exported",
+    "saveEmpty": "This group has no saveable web tabs",
     "bookmarksImportName": "Bookmarks import"
   },
   "fixedMap": {
@@ -433,6 +436,7 @@
     "restored": "Restored {{count}} tabs",
     "rename": "Rename",
     "delete": "Delete",
+    "deleteConfirm": "Delete this snapshot? This cannot be undone.",
     "crashGuidance": "No undo records this session, but you have auto-saved snapshots — restore a whole window from them.",
     "openSnapshots": "View my snapshots",
     "archive": "Archive",

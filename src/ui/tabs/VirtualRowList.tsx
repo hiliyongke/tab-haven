@@ -25,6 +25,7 @@ export function VirtualRowList({
   maxHeight,
   activeTabId,
   autoScrollActive = true,
+  searchActiveTabId,
   renderRow
 }: {
   tabs: readonly TabRecord[];
@@ -36,6 +37,13 @@ export function VirtualRowList({
   activeTabId?: number;
   /** 激活标签自动滚入可视区（与 TabRow 同名开关）。 */
   autoScrollActive?: boolean;
+  /**
+   * 搜索键盘导航选中的标签 id。
+   * 搜索过滤后命中行可能仍在渲染窗口之外（DOM 不存在，TabRow 的
+   * scrollIntoView 无从触发）——必须在列表层按 index 滚动，键盘流
+   * （↑/↓ + Enter）才不会指向看不见的行。
+   */
+  searchActiveTabId?: number;
   renderRow: (tab: TabRecord) => ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -114,6 +122,26 @@ export function VirtualRowList({
     window.addEventListener(LOCATE_SCROLL_EVENT, handleLocateScroll);
     return () => window.removeEventListener(LOCATE_SCROLL_EVENT, handleLocateScroll);
   }, [effectiveItemSize]);
+
+  // 搜索键盘导航选中行滚入可视区：命中行可能未挂载（TabRow 的 scrollIntoView
+  // 无从触发），按 index 直接滚动容器。键盘逐行移动用瞬时滚动（auto），
+  // 平滑动画在快速连按时会拖沓且目标位置持续过期。
+  useEffect(() => {
+    if (searchActiveTabId === undefined) return;
+    const index = tabsRef.current.findIndex((tab) => tab.id === searchActiveTabId);
+    const el = scrollRef.current;
+    if (index === -1 || !el) return;
+    const top = index * effectiveItemSize;
+    const bottom = top + effectiveItemSize;
+    if (top < el.scrollTop) {
+      el.scrollTop = top;
+      setScrollTop(top);
+    } else if (bottom > el.scrollTop + el.clientHeight) {
+      const next = bottom - el.clientHeight;
+      el.scrollTop = next;
+      setScrollTop(next);
+    }
+  }, [searchActiveTabId, effectiveItemSize]);
 
   // 激活标签自动滚入可视区：目标行可能未挂载，TabRow 内部的 scrollIntoView
   // 不可用，需按 index 直接滚动容器（等价 block:'nearest'：只在目标不可见时滚）。

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
-import { DialogShell } from '@/ui/dialog/Dialog';
+import { ConfirmDialog, DialogShell } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
 import { SnapshotRow } from '@/ui/common/SnapshotRow';
@@ -32,6 +32,10 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
   const [importName, setImportName] = useState('');
   /** 当前展开查看标签清单的快照 id（再次点击收起）。 */
   const [detailId, setDetailId] = useState<string | null>(null);
+  /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  /** 正在恢复的快照 id：恢复会新建大量标签（耗时数百 ms），期间禁用该行按钮防双击并发。 */
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const ordered = useMemo(
     () => [...snapshots].sort((a, b) => b.createdAt - a.createdAt),
@@ -116,10 +120,25 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
       notify(t('snapshots.empty'));
       return;
     }
+    // 互斥：恢复期间再点会基于同一窗口现状并发 create，可能把同一批标签开两份
+    // （快照恢复没有 undo 栈式的 undoInFlight 互斥，这里在组件层补上）。
+    if (restoringId !== null) return;
+    setRestoringId(id);
     try {
       const count = await restore(id);
       notify(t('snapshots.restored', { count }));
       onClose();
+    } catch {
+      notify(t('errors.operationFailed'));
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const performDelete = async (id: string) => {
+    setConfirmDeleteId(null);
+    try {
+      await deleteSnapshot(id);
     } catch {
       notify(t('errors.operationFailed'));
     }
@@ -140,12 +159,10 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteSnapshot(id);
-    } catch {
-      notify(t('errors.operationFailed'));
-    }
+  const handleDelete = (id: string) => {
+    // 快照（尤其归档/手动）是长期资产，单击删除不可恢复且相邻操作多、易误触。
+    // 先弹确认，确认后由 performDelete 执行。
+    setConfirmDeleteId(id);
   };
 
   const weekStart = Date.now() - 7 * 24 * 3600 * 1000;
@@ -316,6 +333,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                         onToggleDetail={(id) => setDetailId(detailId === id ? null : id)}
                         onRestore={handleRestore}
                         onDelete={handleDelete}
+                        restoring={restoringId === snap.id}
                       />
                     ))}
                   </ul>
@@ -341,6 +359,16 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </div>
+      )}
+      {confirmDeleteId !== null && (
+        <ConfirmDialog
+          title={t('dialog.confirmTitle')}
+          message={t('snapshots.deleteConfirm')}
+          danger
+          confirmLabel={t('fixed.confirmDelete')}
+          onConfirm={() => void performDelete(confirmDeleteId)}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
       )}
     </DialogShell>
   );

@@ -21,9 +21,11 @@ import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
 export default function App() {
   const { t } = useTranslation();
   const tabs = useTabStore((state) => state.tabs);
+  const tabSyncReady = useTabStore((state) => state.tabSyncReady);
   const startTabSync = useTabStore((state) => state.startTabSync);
   const initializeData = useDataStore((state) => state.initialize);
   const reconcileWithTabs = useDataStore((state) => state.reconcileWithTabs);
+  const dataReady = useDataStore((state) => state.ready);
   const settings = useDataStore((state) => state.settings);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -35,9 +37,12 @@ export default function App() {
   }, [initializeData, startTabSync]);
 
   // 快照联动：挂起转正 + 绑定维护（固定空间一致性）。
+  // dataReady + tabSyncReady 双守卫同侧边栏：folders 未加载、首帧标签快照未回
+  // 时的空状态跑绑定协调会把磁盘绑定整表清空。
   useEffect(() => {
+    if (!dataReady || !tabSyncReady) return;
     void reconcileWithTabs(tabs);
-  }, [tabs, reconcileWithTabs]);
+  }, [tabs, reconcileWithTabs, dataReady, tabSyncReady]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -123,6 +128,14 @@ export default function App() {
   useEffect(() => {
     document.getElementById(`popup-hit-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, renderableHits.length]);
+
+  // 结果集收缩时钳制选中索引：标签实时变化（关闭/离开当前窗口）会让列表变短，
+  // 越界的选中行不复存在 —— aria-activedescendant 指向空项、Enter 无动作。
+  useEffect(() => {
+    setSelectedIndex((current) =>
+      renderableHits.length === 0 ? 0 : Math.min(current, renderableHits.length - 1)
+    );
+  }, [renderableHits.length]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

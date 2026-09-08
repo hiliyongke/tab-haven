@@ -18,6 +18,12 @@ interface TabDragData {
   tabId: number;
   /** 所属容器 key（section key），用于判断同容器排序。 */
   containerKey: string;
+  /**
+   * 行间排序是否可用（false = 超阈值强制虚拟化分区）。
+   * 拖放分发据此拦截 Tab→Tab 真实排序：虚拟行仍保留 draggable/droppable
+   * 以支持跨容器拖到固定空间，但行间落点必须忽略。
+   */
+  canReorder: boolean;
   title: string;
   favIconUrl?: string;
 }

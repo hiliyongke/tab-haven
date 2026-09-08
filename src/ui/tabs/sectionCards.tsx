@@ -101,6 +101,7 @@ function RowList({
           maxHeight={480}
           activeTabId={activeTabId}
           autoScrollActive={autoScrollActive}
+          searchActiveTabId={searchActiveTabId}
           renderRow={(tab) => (
             <TabRow
               tab={tab}
@@ -401,15 +402,6 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
 
   const renderBody = () => (
     <>
-      {section.kind === 'native' && editOpen && (
-        <GroupEditDialog
-          title={section.title}
-          color={section.color}
-          onRename={(name) => rowProps.callbacks.onGroupRename(section.groupId, name)}
-          onRecolor={(color) => rowProps.callbacks.onGroupRecolor(section.groupId, color)}
-          onClose={() => setEditOpen(false)}
-        />
-      )}
       <div className="section-body">
         {subGroups.length > 0 ? (
           <div className="flex flex-col gap-1">
@@ -438,21 +430,36 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
   );
 
   return (
-    <GroupCard
-      id={section.key}
-      dragData={sectionDragDataFor(section)}
-      disabled={isSortableDisabled(section)}
-      title={section.title}
-      count={count}
-      accent={accent}
-      icon={chevron}
-      onToggle={onToggle}
-      mediaIndicator={mediaIndicator}
-      action={headerAction}
-      collapsed={isCollapsed}
-    >
-      {isCollapsed ? null : renderBody()}
-    </GroupCard>
+    <>
+      <GroupCard
+        id={section.key}
+        dragData={sectionDragDataFor(section)}
+        disabled={isSortableDisabled(section)}
+        title={section.title}
+        count={count}
+        accent={accent}
+        icon={chevron}
+        onToggle={onToggle}
+        mediaIndicator={mediaIndicator}
+        action={headerAction}
+        collapsed={isCollapsed}
+      >
+        {isCollapsed ? null : renderBody()}
+      </GroupCard>
+      {/* 弹窗必须脱离 GroupCard 的折叠闸门（{!collapsed && children}）：
+          折叠时点「编辑」此前无任何反应（弹窗不挂载），展开后弹窗还会
+          「僵尸弹出」——状态在闸门外、渲染在闸门内所致（FolderRow 同型坑）。
+          弹窗经 DialogShell portal 到 body，DOM 位置不影响显示。 */}
+      {section.kind === 'native' && editOpen && (
+        <GroupEditDialog
+          title={section.title}
+          color={section.color}
+          onRename={(name) => rowProps.callbacks.onGroupRename(section.groupId, name)}
+          onRecolor={(color) => rowProps.callbacks.onGroupRecolor(section.groupId, color)}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
+    </>
   );
 });
 

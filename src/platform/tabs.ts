@@ -120,12 +120,19 @@ export async function toggleMute(tabId: number, currentlyMuted: boolean): Promis
   }
 }
 
-export async function togglePinned(tabId: number, currentlyPinned: boolean): Promise<void> {
+/**
+ * 切换标签固定状态，返回是否成功。
+ * 调用方（行内固定按钮等）据此给真实反馈：平台层吞错 + UI 无条件提示成功，
+ * 会在 Chrome 实际失败（标签已关闭 / 系统页面不可固定）时造成「提示已固定、实际没变」。
+ */
+export async function togglePinned(tabId: number, currentlyPinned: boolean): Promise<boolean> {
   try {
     await browser.tabs.update(tabId, { pinned: !currentlyPinned });
+    return true;
   } catch (error) {
     logDegraded('tabs', '切换固定失败', error);
     // 标签可能已关闭
+    return false;
   }
 }
 
@@ -280,13 +287,15 @@ export async function discardTab(tabId: number): Promise<boolean> {
   }
 }
 
-/** 复制标签（对标浏览器原生右键「复制标签页」）。 */
-export async function duplicateTab(tabId: number): Promise<void> {
+/** 复制标签（对标浏览器原生右键「复制标签页」），返回是否成功（某些页面不可复制）。 */
+export async function duplicateTab(tabId: number): Promise<boolean> {
   try {
     await browser.tabs.duplicate(tabId);
+    return true;
   } catch (error) {
     logDegraded('tabs', '复制标签失败', error);
-    // 某些特殊页面无法复制，静默忽略
+    // 某些特殊页面无法复制
+    return false;
   }
 }
 
@@ -309,6 +318,36 @@ export async function groupTabs(
   } catch (error) {
     logDegraded('tabs', groupId === undefined ? '创建原生标签组失败' : '加入原生标签组失败', error);
     return undefined;
+  }
+}
+
+/**
+ * 等待标签被真正归入目标组（确定式收敛）。
+ *
+ * Chrome 在 `tabs.group()` resolve 后，成员 tab 的 `groupId` 与组元数据的
+ * 可见性仍存在几十到几百 ms 的收敛窗口：此刻立即 query 可能仍拿到「未入组」
+ * 的旧值。扩展没有比事件更快的数据源，但可以在写操作后**主动等到状态可见**
+ * 再刷新一次 UI —— 把「切一下 tab 才显示」这类不可预期延迟变为确定性的收敛。
+ *
+ * best-effort：超时未收敛不抛错（标签中途被关闭等情况），由事件驱动最终兜底。
+ */
+export async function waitForTabGroupAssignment(
+  tabIds: readonly number[],
+  groupId: number,
+  maxAttempts = 6,
+  intervalMs = 200
+): Promise<void> {
+  const target = new Set(tabIds);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const tabs = await browser.tabs.query({ currentWindow: true });
+      const live = tabs.filter((tab) => tab.id !== undefined && target.has(tab.id));
+      // 仅要求「仍存活」的成员已入组；中途关闭的标签不阻塞。
+      if (live.every((tab) => (tab.groupId ?? NO_GROUP) === groupId)) return;
+    } catch {
+      // 查询失败视为未收敛，继续下一次尝试
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
 

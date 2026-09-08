@@ -13,7 +13,7 @@ import {
   toggleMute as toggleMutePlatform,
   togglePinned as togglePinnedPlatform
 } from '@/platform/tabs';
-import { TabSyncService } from '@/platform/sync/TabSyncService';
+import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { structuralSignature } from '@/core/util/signature';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
@@ -28,6 +28,15 @@ interface TabState {
   tabs: readonly TabRecord[];
   groups: readonly TabGroupRecord[];
   currentWindowId: number | undefined;
+  /**
+   * 是否已收到首帧标签快照。
+   *
+   * 初始 tabs=[] 有两种含义：同步尚未开始（首次查询在途/失败退避），或当前窗口
+   * 真的没有标签。协调逻辑（reconcileWithTabs）不能把「未同步」误当成「无标签」：
+   * 否则挂载早期会把磁盘上全部 item↔tab 绑定判定失效清空（与 folders 未加载
+   * 是同一类初始化竞态，见 dataStore ready 守卫）。收到任意一次成功快照后为 true。
+   */
+  tabSyncReady: boolean;
   /** 当前浏览器高亮（多选区）的标签 id 集合，与 tabs.onHighlighted 同步。 */
   highlightedIds: ReadonlySet<number>;
   /** 切换标签（点击行为）。 */
@@ -36,14 +45,14 @@ interface TabState {
   closeTabs: (tabIds: readonly number[]) => Promise<number[]>;
   /** 切换静音。 */
   toggleMute: (tab: TabRecord) => Promise<void>;
-  /** 切换固定。 */
-  togglePinned: (tab: TabRecord) => Promise<void>;
+  /** 切换固定，返回是否成功（供 UI 按真实结果反馈）。 */
+  togglePinned: (tab: TabRecord) => Promise<boolean>;
   /** 折叠/展开原生组。 */
   setGroupCollapsed: (groupId: number, collapsed: boolean) => Promise<void>;
   /** 在当前窗口新建标签。 */
   createNewTab: () => Promise<void>;
-  /** 复制单个标签（对标浏览器原生右键「复制标签页」）。 */
-  duplicateTab: (tabId: number) => Promise<void>;
+  /** 复制单个标签（对标浏览器原生右键「复制标签页」），返回是否成功。 */
+  duplicateTab: (tabId: number) => Promise<boolean>;
   /** 冻结（休眠）单个标签以释放内存，返回是否成功。 */
   discardTab: (tabId: number) => Promise<boolean>;
   /** 同步浏览器高亮选区。 */
@@ -64,12 +73,11 @@ interface TabState {
   startTabSync: () => () => void;
 }
 
-const tabSyncService = new TabSyncService();
-
 export const useTabStore = create<TabState>()((set, get) => ({
   tabs: [],
   groups: [],
   currentWindowId: undefined,
+  tabSyncReady: false,
   highlightedIds: new Set<number>(),
 
   activateTab: async (tabId) => {
@@ -82,9 +90,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
     await toggleMutePlatform(tab.id, Boolean(tab.muted));
   },
 
-  togglePinned: async (tab) => {
-    await togglePinnedPlatform(tab.id, tab.pinned);
-  },
+  togglePinned: async (tab) => togglePinnedPlatform(tab.id, tab.pinned),
 
   setGroupCollapsed: async (groupId, collapsed) => {
     await setGroupCollapsedPlatform(groupId, collapsed);
@@ -101,7 +107,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
     const source = get().tabs.find((tab) => tab.id === tabId);
     const key = source ? webComparisonKey(source.url, source.pendingUrl) : null;
     if (source && key) await grantReuseAllowance(source.windowId, key);
-    await duplicateTabPlatform(tabId);
+    return duplicateTabPlatform(tabId);
   },
 
   discardTab: (tabId) => discardTabPlatform(tabId),
@@ -189,14 +195,19 @@ export const useTabStore = create<TabState>()((set, get) => ({
         // （新 id 首次出现）时一次性纳入，其余操作零重排。
         const tabs = mergeSnapshotTabs(state.tabs, snapshot.tabs);
         // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
-        if (
+        // 例外：首次成功快照即使内容与初始态相同（窗口真无标签）也必须落
+        // tabSyncReady=true——下游协调据此区分「未同步」与「无标签」。
+        const sameContent =
           state.currentWindowId === snapshot.windowId &&
           structuralSignature(tabs) === structuralSignature(state.tabs) &&
-          structuralSignature(snapshot.groups) === structuralSignature(state.groups)
-        ) {
-          return {};
-        }
-        return { tabs, groups: snapshot.groups, currentWindowId: snapshot.windowId };
+          structuralSignature(snapshot.groups) === structuralSignature(state.groups);
+        if (sameContent && state.tabSyncReady) return {};
+        return {
+          tabs,
+          groups: snapshot.groups,
+          currentWindowId: snapshot.windowId,
+          tabSyncReady: true
+        };
       });
     })
 }));

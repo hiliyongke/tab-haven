@@ -22,6 +22,7 @@ import {
 import { openOptionsPage } from '@/platform/navigation';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
 import { syncAutoGroups, disbandAutoGroups, regroupTempArea } from '@/platform/group/AutoGroupSync';
+import { tabSyncService } from '@/platform/sync/TabSyncService';
 import i18n from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -54,11 +55,17 @@ import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
  * 的依赖项，引用变动会引发整条派生链重算。
  */
 const EMPTY_NO_CACHE_SET: ReadonlySet<number> = new Set();
+/** 搜索态下「展示用」折叠集合的空集单例（见 displayCollapsed*）：模块级常量，
+ *  避免每次渲染重建新 Set/数组 —— 新引用会把 memo(SectionList) 的浅比较击穿，
+ *  过滤态每键击都让整棵列表派生树重算（SectionList 只对 props 引用变化有感知）。 */
+const EMPTY_COLLAPSED_GROUPS: ReadonlySet<number> = new Set();
+const EMPTY_COLLAPSED_SITES: readonly string[] = [];
 
 export default function App() {
   const { t } = useTranslation();
 
   const tabs = useTabStore((state) => state.tabs);
+  const tabSyncReady = useTabStore((state) => state.tabSyncReady);
   const groups = useTabStore((state) => state.groups);
   const activateTab = useTabStore((state) => state.activateTab);
   const toggleMute = useTabStore((state) => state.toggleMute);
@@ -250,9 +257,24 @@ export default function App() {
   });
 
   /**
+   * 定位回调的最新值。
+   *
+   * 它依赖 `activeTabId`，每次切换激活标签都会换新引用。若直接进 effect 依赖，
+   * 键盘监听与消息监听会在每次切换标签时解绑/重绑一遍；用 ref 取最新值可让
+   * 监听只挂载一次，行为不变。
+   */
+  const locateActiveRef = useRef(handleLocateActive);
+  locateActiveRef.current = handleLocateActive;
+
+  /**
    * 执行挂起动作（搜索域名 / 定位激活）。
    * 同一动作可能经「即时消息」与「session onChanged」双通道到达：按 at 时间戳去重，
    * 无 at 的旧数据（面板未开时写入、启动消费）直接执行。
+   *
+   * 引用必须稳定：内部经 locateActiveRef 调用定位（同键盘路径），不再依赖
+   * handleLocateActive —— 此前 handlePendingAction 随激活标签变化重建，使
+   * runtime 消息监听与 watchPendingActions 每次切标签都解绑重挂（挂起队列
+   * 重挂还会异步重读一次 session）。
    */
   const handlePendingAction = useCallback(
     (action: PendingAction) => {
@@ -270,13 +292,13 @@ export default function App() {
         setQuery(action.query);
         searchInputRef.current?.focus();
       } else if (action.type === 'locate-active') {
-        handleLocateActive();
+        locateActiveRef.current();
       } else if (action.type === 'focus-search') {
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
       }
     },
-    [handleLocateActive]
+    [setQuery]
   );
 
   /**
@@ -326,19 +348,13 @@ export default function App() {
 
   // 快照联动：挂起转正 + 绑定维护（固定空间一致性，由入口层编排，
   // 避免 tabStore ↔ dataStore 相互依赖）。
+  // dataReady + tabSyncReady 双守卫：初始化完成前 folders 为空、首帧标签
+  // 快照未回时 tabs=[]，都不是真实状态——此刻跑绑定协调会把磁盘绑定整表
+  // 清空。二者都就绪后补跑首次协调（幂等，无变更不写盘）。
   useEffect(() => {
+    if (!dataReady || !tabSyncReady) return;
     void reconcileWithTabs(tabs);
-  }, [tabs, reconcileWithTabs]);
-
-  /**
-   * 定位回调的最新值。
-   *
-   * 它依赖 `activeTabId`，每次切换激活标签都会换新引用。若直接进 effect 依赖，
-   * 键盘监听与消息监听会在每次切换标签时解绑/重绑一遍；用 ref 取最新值可让
-   * 监听只挂载一次，行为不变。
-   */
-  const locateActiveRef = useRef(handleLocateActive);
-  locateActiveRef.current = handleLocateActive;
+  }, [tabs, reconcileWithTabs, dataReady, tabSyncReady]);
 
   // ⌘J / Ctrl+J 定位激活标签；⌘K / Ctrl+K 打开搜索
   useEffect(() => {
@@ -523,9 +539,9 @@ export default function App() {
   );
   // 搜索时强制展开所有折叠分组/站点，确保命中标签可见。
   // 仅覆盖「展示用」折叠集合，不改动已存储的折叠偏好；清空搜索即原样还原。
-  const displayCollapsedGroups = isFiltering ? new Set<number>() : collapsedGroupIds;
+  const displayCollapsedGroups = isFiltering ? EMPTY_COLLAPSED_GROUPS : collapsedGroupIds;
   const displayCollapsedSites: ReadonlySet<string> | readonly string[] = isFiltering
-    ? []
+    ? EMPTY_COLLAPSED_SITES
     : collapsedSites;
   const collapsibleSections = restSections.filter(
     (section) => section.kind === 'native' || section.kind === 'site'
@@ -563,13 +579,25 @@ export default function App() {
    */
   const handleTogglePin = useCallback(
     (tab: TabRecord) => {
-      void togglePinned(tab).then(() => notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned')));
+      void togglePinned(tab).then((ok) => {
+        // 平台层真实结果驱动反馈：失败（标签已关闭/不可固定）时不提示「已固定」。
+        if (!ok) {
+          notify(t('errors.operationFailed'));
+          return;
+        }
+        notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned'));
+        // 固定↔取消固定会改变标签在分组的归属（置顶区 ↔ 站点分组/未分组）：
+        // 主动刷新快照，让标签立即按新 pinned 状态归类，不依赖事件回灌时序。
+        tabSyncService.requestRefresh();
+      });
     },
     [togglePinned, notify, t]
   );
   const handleDuplicateTab = useCallback(
     (tab: TabRecord) => {
-      void duplicateTab(tab.id).then(() => notify(t('toast.duplicated')));
+      void duplicateTab(tab.id).then((ok) =>
+        notify(t(ok ? 'toast.duplicated' : 'errors.operationFailed'))
+      );
     },
     [duplicateTab, notify, t]
   );
@@ -594,6 +622,12 @@ export default function App() {
       const targets = allInactive.filter(
         (tab) => !boundTabIds.includes(tab.id) && canSafelyDiscardTab(tab)
       );
+      // 无任何候选时必须给反馈（FooterToolbar / 命令面板按钮恒可用）：
+      // 静默空跑会被当成「按钮坏了」。
+      if (targets.length === 0 && allInactive.length === 0) {
+        notify(t('discard.allInactiveNone'));
+        return;
+      }
       const results = await Promise.all(targets.map((tab) => discardTab(tab.id)));
       const discardedCount = results.filter(Boolean).length;
       const skippedCount = allInactive.length - discardedCount;
@@ -614,7 +648,11 @@ export default function App() {
       .getState()
       .tabs.filter((tab) => tab.discarded)
       .map((tab) => tab.id);
-    if (discardedIds.length === 0) return;
+    if (discardedIds.length === 0) {
+      // 命令面板/底栏入口恒可用：无休眠标签时点按不能静默。
+      notify(t('discard.wakeNone'));
+      return;
+    }
     void reloadTabs(discardedIds).then((woken) =>
       notify(t('discard.woken', { count: woken.length }))
     );
@@ -627,8 +665,9 @@ export default function App() {
         useTabStore.getState().groups.find((g) => g.id === groupId)?.title ||
         t('tabs.unnamedGroup');
       const groupTabs = useTabStore.getState().tabs.filter((tab) => tab.groupId === groupId);
-      void createFolderFromNativeGroup(name, groupTabs).then(() =>
-        notify(t('toast.savedAsFolder'))
+      void createFolderFromNativeGroup(name, groupTabs).then((saved) =>
+        // 组内无可收藏网页标签时不建空夹（返回 false），用区分文案而非“已保存”。
+        notify(t(saved ? 'toast.savedAsFolder' : 'fixed.saveEmpty'))
       );
     },
     [createFolderFromNativeGroup, notify, t]
@@ -663,7 +702,12 @@ export default function App() {
     }
     setQuickRegrouping(true);
     void regroupTempArea(plan.ungroupTabIds, plan.plans)
-      .then((count) => notify(t('footer.quickRegroupDone', { count })))
+      .then((count) => {
+        // 快速整理直接打散并重建浏览器原生组：显式请求快照刷新，让整理结果
+        // 立即呈现（与事件驱动刷新共用 signal 合并，不会重复查询）。
+        tabSyncService.requestRefresh();
+        notify(t('footer.quickRegroupDone', { count }));
+      })
       .catch(() => notify(t('errors.operationFailed')))
       .finally(() => setQuickRegrouping(false));
   };
@@ -817,7 +861,9 @@ export default function App() {
                       isAudible={tab.audible}
                       onOpen={() => activateTab(tab.id)}
                       onMiddleClick={() => handleCloseTab(tab)}
-                      onUnpin={() => togglePinned(tab)}
+                      // 与行内取消固定同一入口：裸 togglePinned 无任何反馈，当
+                      // showPinnedStrip 关闭或置顶区滚出视野时用户无从确认生效。
+                      onUnpin={() => handleTogglePin(tab)}
                       onDuplicate={() => handleDuplicateTab(tab)}
                       unpinTitle={t('tabs.unpin')}
                     />

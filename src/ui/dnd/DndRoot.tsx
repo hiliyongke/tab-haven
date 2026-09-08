@@ -16,14 +16,28 @@ import {
   type DragStartEvent
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { KeyboardCode } from '@dnd-kit/core';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { DragType, type DragData } from './types';
 
 /** dnd-kit sensor 配置：必须模块级稳定对象引用。 */
 const POINTER_SENSOR_CONFIG = { activationConstraint: { distance: 4 } } as const;
-/** KeyboardSensor：焦点落在拖拽 activator 上时，Space/Enter 抓取 + 方向键移动 + Space/Enter 放置。 */
-const KEYBOARD_SENSOR_CONFIG = { coordinateGetter: sortableKeyboardCoordinates } as const;
+/**
+ * KeyboardSensor：焦点落在拖拽 activator 上时，Space 抓取 + 方向键移动 + Space 放置。
+ * keyboardCodes 刻意排除 Enter：KeyboardSensor 默认把 Space/Enter 都当抓取键，而
+ * 行主按钮（标签行/固定条目行）既是键盘拖拽 activator 又是激活/打开按钮 —— Enter
+ * 若被拖拽拦截（keydown preventDefault 吞掉合成 click），键盘用户将永远无法用 Enter
+ * 激活标签或打开条目。保留 Space 完成拖拽语义，Enter 交还给按钮的点击行为。
+ */
+const KEYBOARD_SENSOR_CONFIG = {
+  coordinateGetter: sortableKeyboardCoordinates,
+  keyboardCodes: {
+    start: [KeyboardCode.Space],
+    cancel: [KeyboardCode.Esc],
+    end: [KeyboardCode.Space]
+  }
+};
 
 /**
  * 投放目标测量：拖拽期间持续重测。

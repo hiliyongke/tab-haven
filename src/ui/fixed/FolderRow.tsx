@@ -75,15 +75,22 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
   const [dialog, setDialog] = useState<
     { type: 'edit' } | { type: 'convert' } | { type: 'delete' } | null
   >(null);
+  /** 转原生组执行中：该操作会先恢复已关闭条目（逐个开标签）再建组，耗时可能数百 ms，
+   *  期间禁用转换入口，避免重复触发同一文件夹的第二次转换。 */
+  const [converting, setConverting] = useState(false);
 
   /**
    * 定位事件依赖的最新值。
    *
    * `tabs` 每次标签快照都是新数组，若进 effect 依赖，每个文件夹都会在每次快照时
    * 解绑/重绑一次监听。用 ref 取最新值，监听只挂载一次（与 SectionList 同写法）。
+   * 提交后更新而非渲染期赋值：并发渲染下渲染可能不提交，渲染期写 ref 会把
+   * 未提交的中间值泄漏给事件监听（同 VirtualRowList/SectionList 的约定）。
    */
   const locateRef = useRef({ tabs, folder });
-  locateRef.current = { tabs, folder };
+  useEffect(() => {
+    locateRef.current = { tabs, folder };
+  }, [tabs, folder]);
 
   useEffect(() => {
     const handleLocate = (event: Event) => {
@@ -167,7 +174,7 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
         className="row-action"
         title={t('fixed.toNativeGroup')}
         aria-label={t('fixed.toNativeGroup')}
-        disabled={importing}
+        disabled={importing || converting}
         onClick={(event) => {
           event.stopPropagation();
           setDialog({ type: 'convert' });
@@ -275,11 +282,13 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
           danger
           onConfirm={() => {
             setDialog(null);
+            setConverting(true);
             void onRestoreFolderAsGroup(folder.id)
               .then((converted) =>
                 notify(t(converted ? 'toast.folderConverted' : 'toast.folderConvertSkipped'))
               )
-              .catch(() => notify(t('toast.folderConvertFailed')));
+              .catch(() => notify(t('toast.folderConvertFailed')))
+              .finally(() => setConverting(false));
           }}
           onCancel={() => setDialog(null)}
         />

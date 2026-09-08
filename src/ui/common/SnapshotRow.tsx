@@ -32,6 +32,8 @@ interface SnapshotRowProps {
   onToggleDetail: (id: string) => void;
   onRestore: (id: string, tabCount: number) => void;
   onDelete: (id: string) => void;
+  /** 恢复执行中：禁用本行恢复按钮，防止双击并发恢复重复打开同一批标签。 */
+  restoring?: boolean;
 }
 
 /** 单条快照：命名 / 徽标 / 展开标签清单 / 恢复·改名·删除。 */
@@ -46,7 +48,8 @@ export function SnapshotRow({
   onCancelRename,
   onToggleDetail,
   onRestore,
-  onDelete
+  onDelete,
+  restoring = false
 }: SnapshotRowProps) {
   const { t } = useTranslation();
   return (
@@ -98,7 +101,8 @@ export function SnapshotRow({
           <button
             type="button"
             title={t('snapshots.restore')}
-            className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600"
+            disabled={restoring}
+            className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600 disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={() => void onRestore(snap.id, snap.tabCount)}
           >
             <Icon d={Icons.openAll} className="h-4 w-4" />

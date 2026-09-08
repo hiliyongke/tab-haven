@@ -57,7 +57,14 @@ export function useLocateActive(params: {
     };
 
     const locateTarget = (): boolean => {
-      const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${activeTabId}"]`);
+      // 优先真实标签行（data-tabs-tab-id）；未命中再查固定条目行
+      // （data-folder-tab-id）作兜底——绑定标签被排除在临时区之外时，
+      // 它在固定区条目的 DOM 表示是唯一可见的定位目标。
+      // 两条路径必须分开：共用属性会让 querySelector 因 DOM 顺序
+      // （固定区在列表之前）永远先命中条目，列表中的激活行反而滚不到。
+      const target =
+        document.querySelector<HTMLElement>(`[data-tabs-tab-id="${activeTabId}"]`) ??
+        document.querySelector<HTMLElement>(`[data-folder-tab-id="${activeTabId}"]`);
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });

@@ -21,9 +21,11 @@ import {
   groupTabs,
   queryCurrentWindowTabs,
   updateGroupMeta,
-  updateTabUrl
+  updateTabUrl,
+  waitForTabGroupAssignment
 } from '@/platform/tabs';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+import { tabSyncService } from '@/platform/sync/TabSyncService';
 import type { AddTabsToFolderResult, DataContext, DataState } from './types';
 
 /**
@@ -52,6 +54,9 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       });
       await ctx.writeFolders(computeRemoveFolder(ctx.get().folders, folderId));
       ctx.applyBindings(result);
+      // 删除文件夹后其打开标签的绑定被释放：主动刷新快照让它们立即回到临时区
+      // （站点分组/未分组），避免依赖下一次标签事件。
+      tabSyncService.requestRefresh();
     },
 
     toggleFolderCollapsed: async (folderId) => {
@@ -150,6 +155,9 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
               : folder
           )
       );
+      // 主动刷新快照：被释放的标签可能带原生组/固定等浏览器侧状态，UI 分组要按
+      // 其最新 groupId/pinned 立刻归类（站点分组等），不能等下一次事件驱动刷新。
+      tabSyncService.requestRefresh();
     },
 
     reorderFolderItems: async ({ folderId, sourceId, targetId, placeAfter }) => {
@@ -220,7 +228,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       // 会留下指向不存在条目的脏绑定。整条路径跳过。
       if (ctx.isImporting()) {
         logDegraded('dataStore', '导入事务进行中，本次「保存为固定文件夹」已跳过');
-        return;
+        return false;
       }
       const savable = new Map<string, { url: string; title: string; favIconUrl?: string }>();
       for (const tab of groupTabs) {
@@ -233,8 +241,11 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
           });
         }
       }
-      const folder = createFolderModel(name);
       const items = [...savable.values()].map((entry) => createFolderItem(entry));
+      // 组内全部是不可收藏的内部页（chrome:// 等）时，不建「空文件夹」并向调用方
+      // 说明 —— 否则固定空间凭空多一个空夹、界面还提示「已保存」，看似丢数据。
+      if (items.length === 0) return false;
+      const folder = createFolderModel(name);
       await ctx.writeFolders([...ctx.get().folders, { ...folder, items }]);
 
       // 建立绑定：精确 URL 匹配（串行化内完成，防并发覆盖）
@@ -256,6 +267,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
         return { itemTabBindings: bindings };
       });
       ctx.applyBindings(result);
+      return true;
     },
 
     syncFolderToNativeGroup: async (folderId) => {
@@ -296,11 +308,23 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       const groupId = await groupTabs(memberIds);
       if (groupId === undefined) return false;
       await updateGroupMeta(groupId, folder.name);
+      // 确定性收敛：等待 Chrome 把成员 tab 的 groupId 真正置为新组（tabs.group()
+      // resolve 后存在可见性收敛窗口，此前表现为「转完不显示，切换一下 tab 才
+      // 出现」）。收敛完成后再删夹、再刷新，UI 拿到的快照即最终状态。
+      await waitForTabGroupAssignment(memberIds, groupId);
       await ctx.get().deleteFolder(folderId);
+      // 主动请求快照刷新：把最终状态呈现为新原生组/归并到对应分区。requestRefresh
+      // 与事件驱动共用 signal 的合并机制，二者同时发生时不会重复查询。
+      tabSyncService.requestRefresh();
       return true;
     },
 
     reconcileWithTabs: async (tabs) => {
+      // 初始化完成前 folders 为初始空值，不是真实状态：若此时执行绑定协调，
+      // reconcileBindings 会把磁盘上全部 item↔tab 绑定判定为「条目已不存在」
+      // 并整表写空（sidepanel/popup 每次挂载的首帧都会触发，属确定性数据丢失）。
+      // ready 后才允许协调；同时保证 ready 切换后至少重跑一次见入口层依赖。
+      if (!ctx.get().ready) return;
       // 挂起条目转正
       const pending = reconcilePendingItems(ctx.get().folders, tabs);
       if (pending.changed) {

@@ -8,6 +8,7 @@ import {
   updateTabUrl
 } from '@/platform/tabs';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+import { tabSyncService } from '@/platform/sync/TabSyncService';
 import type { DataContext, DataState } from './types';
 
 /** 固定图标切片：永久固定图标的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
@@ -22,6 +23,9 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
       // 同步把真实标签置为 Chrome 固定。
       // togglePinned 为翻转语义：传入「当前未固定 false」→ 翻转为固定。
       if (!tab.pinned) await togglePinnedPlatform(tab.id, false);
+      // 标签变为固定后应从临时区（站点分组）立即移入置顶区：主动刷新快照
+      // 消除对 pinned 事件回灌时序的依赖。
+      tabSyncService.requestRefresh();
     },
 
     removePin: async (pin) => {
@@ -34,6 +38,9 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
           await togglePinnedPlatform(tab.id, true);
         }
       }
+      // 取消固定后标签应回到临时区（站点分组/未分组）显示：主动刷新快照，
+      // 不依赖 pinned 事件回灌时序（此前表现为「切一下 tab 才出现」）。
+      tabSyncService.requestRefresh();
     },
 
     reorderPins: async (sourceId, targetId, placeAfter) => {

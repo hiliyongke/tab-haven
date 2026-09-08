@@ -61,7 +61,11 @@ export const FolderItemRow = memo(function FolderItemRow({
   const { onKeyDown: sortableKeyDown, ...sortablePointerListeners } = sortable.listeners ?? {};
 
   return (
-    <li data-tabs-tab-id={runtimeTab?.id}>
+    // 独立属性名：data-tabs-tab-id 保留给真实标签行（TabRow）。此前固定条目
+    // 与标签行共用该属性，⌘J 定位的 querySelector 取「第一个命中」，固定区
+    // DOM 在列表之前 → 同 URL 未绑定时定位永远落在条目上而非列表行。
+    // 定位工具按「真实行优先、条目兜底」两段查找（见 useLocateActive）。
+    <li data-folder-tab-id={runtimeTab?.id}>
       <RowItem
         faviconSrc={item.favIconUrl}
         faviconTitle={item.title}

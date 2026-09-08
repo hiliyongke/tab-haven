@@ -201,6 +201,13 @@ export function useTabDragHandlers() {
               notify(t('tabs.orderLockedBySortMode'));
               return;
             }
+            // 任一侧行处于「超阈值强制虚拟化」分区（canReorder=false，UI 已提示
+            // 排序暂停）时拦截真实排序：行拖拽仍可跨容器拖到固定空间，但 Tab→Tab
+            // 落点必须忽略——否则出现「提示已暂停、松手却真的重排」的行为矛盾。
+            if (activeData.canReorder === false || overData.canReorder === false) {
+              notify(t('tabs.largeListNotice'));
+              return;
+            }
             handleReorder(activeData.tabId, overData.tabId, isPlaceAfter(event));
             // 跨原生组：把 source 标签加入目标组（moveTab 只改位置不改归属）。
             const latest = useTabStore.getState().tabs;

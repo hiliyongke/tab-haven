@@ -72,6 +72,39 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
  */
 let undoInFlight = false;
 
+/**
+ * undoRepository 写盘串行链（追加顺序）。
+ *
+ * 撤销恢复耗时数百 ms，期间新批次仍可入栈（closeWithUndo 刻意不受
+ * undoInFlight 拦截）。旧实现中 appendBatch 与撤销出栈各自基于自己的快照
+ * 写盘，两条异步链的 `chrome.storage.set` 完成先后无保证 —— 磁盘终态可能
+ * 是被「旧栈+新批」覆盖（已撤销批次重启后复活，可被再次撤销、重复恢复标签）。
+ * 统一收口到本链，且写盘内容一律在链内执行时读取（makeData），消除读-写窗口。
+ */
+let undoPersistChain: Promise<void> = Promise.resolve();
+/**
+ * 入队一次撤销库写盘，返回该步骤完成的 promise（调用方按需等待）。
+ *
+ * 常规写入（入栈/撤销出栈）遵循 persistUndo 开关（关闭时不写库）；
+ * 清库类写入（load 清历史库 / clearBatches 兜底）必须无条件执行：
+ * 它们防的是「上一轮开启时留下的批次复活」，与开关无关。
+ */
+function enqueueUndoPersist(
+  makeData: () => UndoBatch[],
+  opts?: { alwaysWrite?: boolean }
+): Promise<void> {
+  const step = undoPersistChain.then(async () => {
+    if (!opts?.alwaysWrite) {
+      const settings = await settingsRepository.read();
+      if (!settings.persistUndo) return;
+    }
+    const ok = await undoRepository.write(makeData());
+    if (!ok) logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
+  });
+  undoPersistChain = step.catch((error) => logFailure('undoStore', '撤销历史写入失败', error));
+  return step;
+}
+
 export const useUndoStore = create<UndoState>()((set, get) => {
   const scheduleToastClear = (): void => {
     clearTimeout(toastTimer);
@@ -126,12 +159,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 用入口快照会把它们整批抹掉。
     onCommitted(get().batches, retryBatch);
 
-    const nextBatches = get().batches;
-    const settings = await settingsRepository.read();
-    if (settings.persistUndo) {
-      const ok = await undoRepository.write(nextBatches);
-      if (!ok) logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
-    }
+    // 出栈后入队持久化：写盘内容在链内执行时读取最新内存栈，避免与
+    // 恢复期间入栈的新批次产生「旧快照覆盖新数据」的交错（见 enqueueUndoPersist）。
+    await enqueueUndoPersist(() => get().batches);
 
     set({
       toast: {
@@ -151,11 +181,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     const settings = await settingsRepository.read();
     const next = pushBatch(get().batches, batch, settings.undoStackLimit);
     set({ batches: next });
-    // persistUndo 关闭时不写库：load() 已清过历史库，会话内批次仅存活于内存。
-    if (settings.persistUndo) {
-      const ok = await undoRepository.write(next);
-      if (!ok) logFailure('undoStore', '撤销历史写入失败，该批次可能未持久化');
-    }
+    // 入队持久化：链内执行时重读最新内存栈（可能已含后续批次或撤销出栈，
+    // 保证磁盘终态与内存一致）；persistUndo 关闭时不写库（链内检查）。
+    await enqueueUndoPersist(() => get().batches);
   };
 
   return {
@@ -167,7 +195,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     load: async () => {
       const settings = await settingsRepository.read();
       const batches = settings.persistUndo ? await undoRepository.read() : [];
-      if (!settings.persistUndo) await undoRepository.write([]);
+      if (!settings.persistUndo) await enqueueUndoPersist(() => [], { alwaysWrite: true });
       set({ batches, ready: true });
     },
 
@@ -289,9 +317,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     clearBatches: async () => {
       clearTimeout(toastTimer);
       set({ batches: [], toast: null });
-      // 持久层通常已被 storage.local.clear 清空，此处写空数组兜底（并消除文件缺失歧义）。
-      const ok = await undoRepository.write([]);
-      if (!ok) logFailure('undoStore', '撤销历史清空失败');
+      // 持久层通常已被 storage.local.clear 清空，此处入队写空数组兜底（并消除文件缺失歧义）。
+      await enqueueUndoPersist(() => [], { alwaysWrite: true });
     }
   };
 });

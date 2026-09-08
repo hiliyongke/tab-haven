@@ -177,7 +177,15 @@ export const RowItem = memo(
         {badges ? (
           <span className="row-badges inline-flex shrink-0 items-center">{badges}</span>
         ) : null}
-        {actions}
+        {actions ? (
+          /* 行内操作按钮区禁止成为指针拖拽起点（display:contents 不产生额外盒子）：
+             拖拽监听挂在整行容器（RowItem 外层 div），PointerSensor 距离 4px 即可激活，
+             在此区域内按下并轻微移动会把一次点击吞成拖拽 → 关闭/固定/静音等按钮
+             “点一下没反应”。与 SectionHead 的 .section-head-actions 同一拦截方案。 */
+          <span className="contents" onPointerDown={(event) => event.stopPropagation()}>
+            {actions}
+          </span>
+        ) : null}
       </div>
     );
   })

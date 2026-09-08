@@ -184,6 +184,12 @@ export function CommandPalette({
     setIndex(0);
   }, [query]);
 
+  // 命令集收缩（标签关闭 / 过滤变窄）时钳制选中索引：越界时高亮消失、
+  // aria-activedescendant 指向不存在的项、Enter 无动作。
+  useEffect(() => {
+    setIndex((current) => (commands.length === 0 ? 0 : Math.min(current, commands.length - 1)));
+  }, [commands.length]);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -213,9 +219,6 @@ export function CommandPalette({
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[12vh]"
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
     >
       <dialog
         ref={panelRef}
@@ -224,6 +227,12 @@ export function CommandPalette({
         onCancel={(event) => {
           event.preventDefault();
           onClose();
+        }}
+        // 点击遮罩关闭：dialog 经 showModal() 后背景被置 inert，外层容器收不到指针
+        // 事件（原 onMouseDown 是死代码）；点击 ::backdrop 时事件 target 恰为 dialog
+        // 元素本身，据此判定（target===currentTarget）即可实现「点暗区关闭」。
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
         }}
       >
         <div className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">

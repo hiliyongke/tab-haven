@@ -99,6 +99,19 @@ export default defineConfig({
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url))
       }
+    },
+    // 收紧 modulepreload：默认 Vite 会把入口的整张依赖图作为
+    // `<link rel="modulepreload">` 注入 HTML，跨 entry 共享 chunk（splitChunks）
+    // 也会被加入未真正同步依赖它们的 entry，Chrome 会在
+    // 「<link rel=modulepreload> 预加载的 chunk 在数秒内未使用」上报警。
+    // 这里返回空数组让 Vite 不生成 modulepreload 链接 —— 启动期
+    // 会因此多出几十到一百多毫秒的按需下载（副作用），对扩展 UI 可接受，
+    // 换取的代价是消除全部 3 条 preload 警告与潜在的渲染阻塞。
+    build: {
+      modulePreload: {
+        polyfill: false,
+        resolveDependencies: () => []
+      }
     }
   })
 });
