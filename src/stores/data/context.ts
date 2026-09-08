@@ -27,7 +27,8 @@ let watchersSuspended = false;
  */
 const FOLDERS_SCOPE = 'fixed-folders';
 const PINS_SCOPE = 'persistent-pins';
-const BINDINGS_SCOPE = 'session-bindings';
+/** 会话绑定分区的降级记账 scope（folderSlice 的 reconcile 路径共用同一 scope）。 */
+export const BINDINGS_SCOPE = 'session-bindings';
 
 export function buildDataContext(
   set: (partial: Partial<DataState>) => void,
@@ -205,6 +206,7 @@ export function buildDataContext(
     cancelWrites,
     scheduleMirror,
     reportPersistenceFailure,
+    clearDegraded,
     resetDegraded,
     applyBindings,
     syncSettingsFromStorage,

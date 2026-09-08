@@ -89,6 +89,38 @@ export const NO_GROUP = -1;
  * 背景侧（自动休眠 / 复用合并）不经过此函数：它们直接查询浏览器拿实时
  * lastAccessed，不受冻结影响。
  */
+/** TabRecord 全字段逐值比较（引用保持判等用）。 */
+const TAB_FIELDS = [
+  'id',
+  'windowId',
+  'index',
+  'active',
+  'pinned',
+  'incognito',
+  'url',
+  'pendingUrl',
+  'title',
+  'favIconUrl',
+  'status',
+  'discarded',
+  'muted',
+  'audible',
+  'groupId',
+  'splitViewId',
+  'lastAccessed',
+  'autoDiscardable',
+  'openerTabId',
+  'attention',
+  'language'
+] as const satisfies readonly (keyof TabRecord)[];
+
+function sameTabFields(a: TabRecord, b: TabRecord): boolean {
+  for (const field of TAB_FIELDS) {
+    if (a[field] !== b[field]) return false;
+  }
+  return true;
+}
+
 export function mergeSnapshotTabs(
   prevTabs: readonly TabRecord[],
   incoming: readonly TabRecord[]
@@ -104,6 +136,9 @@ export function mergeSnapshotTabs(
     if (typeof prev.lastAccessed === 'number') {
       merged = { ...merged, lastAccessed: prev.lastAccessed };
     }
-    return merged;
+    // 引用保持：合并结果与上一帧逐字段相等时复用 prev 引用。
+    // 下游 memo 链（SectionCard / TabRow / RowItem）以 tab 引用稳定为前提跳过未变化行；
+    // 浏览器 query 每次返回全新对象，不做这一步，任何一个标签变化都会让整棵列表树 reconcile。
+    return sameTabFields(prev, merged) ? prev : merged;
   });
 }

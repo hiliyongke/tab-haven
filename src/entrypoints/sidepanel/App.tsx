@@ -77,7 +77,6 @@ export default function App() {
   const createNewTab = useTabStore((state) => state.createNewTab);
   const highlightedIds = useTabStore((state) => state.highlightedIds);
   const setHighlighted = useTabStore((state) => state.setHighlighted);
-  const setLanguage = useTabStore((state) => state.setLanguage);
   const renameGroup = useTabStore((state) => state.renameGroup);
   const recolorGroup = useTabStore((state) => state.recolorGroup);
   const moveGroup = useTabStore((state) => state.moveGroup);
@@ -264,7 +263,11 @@ export default function App() {
    * 监听只挂载一次，行为不变。
    */
   const locateActiveRef = useRef(handleLocateActive);
-  locateActiveRef.current = handleLocateActive;
+  // 提交后更新而非渲染期赋值：并发渲染下渲染可能不提交，渲染期写 ref 会把
+  // 未提交的中间值泄漏给事件监听（与 SectionList/VirtualRowList/FolderRow 的约定一致）。
+  useEffect(() => {
+    locateActiveRef.current = handleLocateActive;
+  }, [handleLocateActive]);
 
   /**
    * 执行挂起动作（搜索域名 / 定位激活）。
@@ -508,6 +511,11 @@ export default function App() {
   // memo 保持引用稳定：SectionList 是 memo 组件，新数组引用会击穿其浅比较。
   const pinnedSection = useMemo(() => allSections.find((s) => s.kind === 'pinned'), [allSections]);
   const restSections = useMemo(() => allSections.filter((s) => s.kind !== 'pinned'), [allSections]);
+  // dnd-kit items 同理：每次渲染新建数组会让 SortableContext value 变化、子节点无效重渲染。
+  const pinnedSortableIds = useMemo(
+    () => pinnedSection?.tabs.map((tab) => tab.id) ?? [],
+    [pinnedSection]
+  );
   // 拖拽分发（排序/投放/建文件夹/固定）独立为 hook，handler 引用稳定。
   const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers();
   const duplicateIndex = useMemo(() => DuplicateIndex.build(tabs), [tabs]);
@@ -518,20 +526,33 @@ export default function App() {
   // 与浏览器多选高亮同步（tabs.onHighlighted）。
   useEffect(() => onTabHighlighted(setHighlighted), [setHighlighted]);
 
-  // 按语言分组时，异步探测每个未分组标签的语言。
+  // 按语言分组时，异步探测未分组标签的语言。
+  // 批量探测 + 一次 set：逐条 setLanguage 会让 N 个标签产生 N 轮全量派生 + 整树重渲染；
+  // in-flight 登记防「探测未回期间来了新快照」对同一标签重复发起探测。
+  const langInFlightRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     if (settings.groupMode !== 'language') return;
+    const eligible = tabs.filter(
+      (tab) =>
+        !tab.pinned &&
+        tab.groupId === NO_GROUP &&
+        !tab.language &&
+        !langInFlightRef.current.has(tab.id)
+    );
+    if (eligible.length === 0) return;
     let cancelled = false;
-    const eligible = tabs.filter((tab) => !tab.pinned && tab.groupId === NO_GROUP && !tab.language);
-    for (const tab of eligible) {
-      void detectLanguage(tab.id).then((lang) => {
-        if (!cancelled) setLanguage(tab.id, lang);
-      });
-    }
+    for (const tab of eligible) langInFlightRef.current.add(tab.id);
+    void Promise.all(eligible.map((tab) => detectLanguage(tab.id))).then((langs) => {
+      for (const tab of eligible) langInFlightRef.current.delete(tab.id);
+      if (cancelled) return;
+      useTabStore
+        .getState()
+        .setLanguages(eligible.map((tab, index) => [tab.id, langs[index] ?? 'und']));
+    });
     return () => {
       cancelled = true;
     };
-  }, [settings.groupMode, tabs, setLanguage]);
+  }, [settings.groupMode, tabs]);
 
   const collapsedGroupIds = useMemo(
     () => new Set(groups.filter((group) => group.collapsed).map((group) => group.id)),
@@ -543,8 +564,9 @@ export default function App() {
   const displayCollapsedSites: ReadonlySet<string> | readonly string[] = isFiltering
     ? EMPTY_COLLAPSED_SITES
     : collapsedSites;
-  const collapsibleSections = restSections.filter(
-    (section) => section.kind === 'native' || section.kind === 'site'
+  const collapsibleSections = useMemo(
+    () => restSections.filter((section) => section.kind === 'native' || section.kind === 'site'),
+    [restSections]
   );
   const allSectionsCollapsed =
     collapsibleSections.length > 0 &&
@@ -553,7 +575,7 @@ export default function App() {
         ? displayCollapsedGroups.has(section.groupId)
         : displayCollapsedSites.includes(section.siteKey)
     );
-  const handleToggleAllSections = () => {
+  const handleToggleAllSections = useCallback(() => {
     const shouldCollapse = !allSectionsCollapsed;
     for (const section of collapsibleSections) {
       if (section.kind === 'native') {
@@ -562,7 +584,7 @@ export default function App() {
         void toggleSiteCollapsed(section.siteKey, shouldCollapse);
       }
     }
-  };
+  }, [allSectionsCollapsed, collapsibleSections, setGroupCollapsed, toggleSiteCollapsed]);
 
   const handleCloseTab = useCallback(
     (tab: TabRecord) => {
@@ -614,7 +636,7 @@ export default function App() {
     [discardTab, notify, t]
   );
   // 一键休眠全部非激活、未固定的标签（释放内存）。
-  const handleDiscardInactive = () => {
+  const handleDiscardInactive = useCallback(() => {
     void (async () => {
       const allInactive = useTabStore
         .getState()
@@ -641,7 +663,7 @@ export default function App() {
         notify(t('toast.discardSkippedMany', { count: allInactive.length }));
       }
     })();
-  };
+  }, [boundTabIds, discardTab, notify, t]);
   // 一键唤醒全部休眠标签（与批量休眠成对）。
   const handleWakeAll = useCallback(() => {
     const discardedIds = useTabStore
@@ -688,7 +710,7 @@ export default function App() {
 
   // 快速整理：完全重新初始化临时区分组 —— 打散现有临时区原生组（分组+未分组），
   // 按当前聚合方式重组全部非固定标签；固定区域（浏览器置顶/顶部固定磁贴/固定空间）不受影响。
-  const handleQuickRegroup = () => {
+  const handleQuickRegroup = useCallback(() => {
     if (quickRegrouping) return;
     const plan = planRegroup({
       tabs,
@@ -710,7 +732,15 @@ export default function App() {
       })
       .catch(() => notify(t('errors.operationFailed')))
       .finally(() => setQuickRegrouping(false));
-  };
+  }, [
+    quickRegrouping,
+    tabs,
+    fixedExcludedTabIds,
+    settings.groupMode,
+    settings.aggregationThreshold,
+    notify,
+    t
+  ]);
 
   // SectionList 为 memo 组件：callbacks 必须保持引用稳定（仅语言与 store 函数变化时重建），
   // 否则每次渲染都会导致整个列表树重渲染。所有 handler 均从 store getState 读取最新数据。
@@ -752,37 +782,50 @@ export default function App() {
     ]
   );
 
-  // 命令面板动作集合（⌘P）：复用既有 handler。命令面板仅在展开时挂载，
-  // 此处用普通对象即可，避免把不稳定的 handler 当作 useMemo 依赖触发告警。
-  const paletteActions: PaletteActions = {
-    onDiscardInactive: handleDiscardInactive,
-    onWakeAll: handleWakeAll,
-    onQuickRegroup: handleQuickRegroup,
-    onLocateActive: handleLocateActive,
-    onOpenHistory: () => setShowHistory(true),
-    onOpenSettings: openOptionsPage,
-    onToggleAllSections: handleToggleAllSections,
-    onSwitchTab: (tabId: number) => void smartActivate(tabId),
-    onOpenSnapshots: () => setShowSnapshots(true),
-    onSaveSnapshot: () =>
-      void useSnapshotStore
-        .getState()
-        .saveCurrentWindow()
-        .then(() => notify(t('snapshots.saved')))
-        .catch(() => notify(t('errors.operationFailed'))),
-    onSaveSpace: () =>
-      void useSnapshotStore
-        .getState()
-        .saveSpace(t('snapshots.space'))
-        .then(() => notify(t('snapshots.saved')))
-        .catch(() => notify(t('errors.operationFailed'))),
-    onArchiveWindow: () =>
-      void useSnapshotStore
-        .getState()
-        .archiveCurrentWindow()
-        .then((count) => notify(t('snapshots.archived', { count })))
-        .catch(() => notify(t('errors.operationFailed')))
-  };
+  // 命令面板动作集合（⌘P）：复用既有 handler。必须 memo 化：面板打开期间每次
+  // 标签快照都重建 actions 引用，会让 CommandPalette 的 commands 重算、索引钳制与
+  // scrollIntoView effect 反复执行。
+  const paletteActions: PaletteActions = useMemo(
+    () => ({
+      onDiscardInactive: handleDiscardInactive,
+      onWakeAll: handleWakeAll,
+      onQuickRegroup: handleQuickRegroup,
+      onLocateActive: handleLocateActive,
+      onOpenHistory: () => setShowHistory(true),
+      onOpenSettings: openOptionsPage,
+      onToggleAllSections: handleToggleAllSections,
+      onSwitchTab: (tabId: number) => void smartActivate(tabId),
+      onOpenSnapshots: () => setShowSnapshots(true),
+      onSaveSnapshot: () =>
+        void useSnapshotStore
+          .getState()
+          .saveCurrentWindow()
+          .then(() => notify(t('snapshots.saved')))
+          .catch(() => notify(t('errors.operationFailed'))),
+      onSaveSpace: () =>
+        void useSnapshotStore
+          .getState()
+          .saveSpace(t('snapshots.space'))
+          .then(() => notify(t('snapshots.saved')))
+          .catch(() => notify(t('errors.operationFailed'))),
+      onArchiveWindow: () =>
+        void useSnapshotStore
+          .getState()
+          .archiveCurrentWindow()
+          .then((count) => notify(t('snapshots.archived', { count })))
+          .catch(() => notify(t('errors.operationFailed')))
+    }),
+    [
+      handleDiscardInactive,
+      handleWakeAll,
+      handleQuickRegroup,
+      handleLocateActive,
+      handleToggleAllSections,
+      smartActivate,
+      notify,
+      t
+    ]
+  );
 
   return (
     <main className="app flex h-full flex-col">
@@ -843,10 +886,7 @@ export default function App() {
             className={'shrink-0 is-pinned size-' + settings.pinnedStripSize}
           >
             <div className="section-body">
-              <SortableContext
-                items={pinnedSection.tabs.map((tab) => tab.id)}
-                strategy={rectSortingStrategy}
-              >
+              <SortableContext items={pinnedSortableIds} strategy={rectSortingStrategy}>
                 <div className="pinned-grid">
                   {pinnedSection.tabs.map((tab) => (
                     <SortablePinnedTile

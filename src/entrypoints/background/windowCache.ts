@@ -13,7 +13,58 @@ let memWindowTabs: WindowTabsCache = {};
 let windowTabsFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const windowRefreshTimers = new Map<number, ReturnType<typeof setTimeout>>();
 /** 下一次关闭时跳过自动保存的窗口（归档流程已自行留档，防重复快照）。 */
-export const skipAutoSaveWindowIds = new Set<number>();
+const skipAutoSaveWindowIds = new Set<number>();
+
+/**
+ * 跳过标记的 session 镜像 key。
+ *
+ * 纯内存标记在「归档 sendMessage → 实际关窗」之间若 SW 被回收即丢失，
+ * 关窗会重复写入一条同内容 auto 快照；镜像到 session 后 SW 重启也能命中。
+ */
+const SKIP_AUTO_SAVE_KEY = 'tabs.skip-auto-save-once';
+/** 跳过标记 read-modify-write 串行链（多窗口连续归档时防交错丢标记）。 */
+let skipMarkerChain: Promise<void> = Promise.resolve();
+
+/** 标记「下一次关闭该窗口时跳过自动保存」（内存 + session 镜像双写）。 */
+export function markSkipAutoSave(windowId: number): Promise<void> {
+  const step = skipMarkerChain.then(async () => {
+    skipAutoSaveWindowIds.add(windowId);
+    const sessionArea = browser.storage?.session;
+    if (!sessionArea) return;
+    try {
+      const rec = await sessionArea.get(SKIP_AUTO_SAVE_KEY);
+      const raw: unknown = rec[SKIP_AUTO_SAVE_KEY];
+      const list = Array.isArray(raw) ? raw.filter((v): v is number => typeof v === 'number') : [];
+      if (!list.includes(windowId)) list.push(windowId);
+      await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list });
+    } catch {
+      // session 不可用时内存标记仍在：SW 不回收则语义不变
+    }
+  });
+  skipMarkerChain = step;
+  return step;
+}
+
+/** 消费「跳过自动保存」标记（内存优先，session 镜像兜底）；返回是否命中。 */
+async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
+  const inMem = skipAutoSaveWindowIds.delete(windowId);
+  let inSession = false;
+  const sessionArea = browser.storage?.session;
+  if (sessionArea) {
+    try {
+      const rec = await sessionArea.get(SKIP_AUTO_SAVE_KEY);
+      const raw: unknown = rec[SKIP_AUTO_SAVE_KEY];
+      const list = Array.isArray(raw) ? raw.filter((v): v is number => typeof v === 'number') : [];
+      if (list.includes(windowId)) {
+        inSession = true;
+        await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list.filter((id) => id !== windowId) });
+      }
+    } catch {
+      // 忽略：按未命中处理（与历史行为一致）
+    }
+  }
+  return inMem || inSession;
+}
 
 /**
  * 每窗口最近一次激活的标签 id（onActivated 维护）。
@@ -75,6 +126,13 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
     ]);
     const list = collectTabs(rawTabs, rawGroups.map(mapTabGroup));
     memWindowTabs[String(windowId)] = list;
+    // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置 =
+    // 激活标签之后」在第一次新建时拿不到锚点会静默失效；查询结果中的激活标签
+    // 即最近一次锚点（仅缺省时补种，之后由 onActivated 维护）。
+    if (!lastActiveTabIds.has(windowId)) {
+      const active = rawTabs.find((tab) => tab.active);
+      if (typeof active?.id === 'number') lastActiveTabIds.set(windowId, active.id);
+    }
     if (windowTabsFlushTimer) return;
     windowTabsFlushTimer = setTimeout(flushWindowTabs, 800);
   } catch (error) {
@@ -83,7 +141,13 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
   }
 }
 
-/** 重新扫描某窗口标签并写入缓存（防抖 600ms）。 */
+/**
+ * 重新扫描某窗口标签并写入缓存（防抖 250ms）。
+ *
+ * 防抖窗口是「关窗自动快照内容滞后」的主要来源之一：关窗瞬间读到的缓存
+ * 最多滞后「防抖 + 落盘防抖」，最后几百毫秒的开关标签会丢进/带进快照。
+ * 从 600ms 收紧到 250ms：事件合并收益仍在，滞后上限明显收窄。
+ */
 function scheduleWindowRefresh(windowId: number): void {
   const existing = windowRefreshTimers.get(windowId);
   if (existing) clearTimeout(existing);
@@ -92,7 +156,7 @@ function scheduleWindowRefresh(windowId: number): void {
     setTimeout(() => {
       windowRefreshTimers.delete(windowId);
       void refreshWindowTabs(windowId);
-    }, 600)
+    }, 250)
   );
 }
 
@@ -117,6 +181,13 @@ async function initWindowTabsCache(): Promise<void> {
 
 /** 窗口关闭：用缓存的标签自动存为快照（关窗自动保存）。 */
 async function handleWindowRemoved(windowId: number): Promise<void> {
+  // 取消该窗口挂起的防抖重查：窗口已不存在，查询必失败（只剩一条无效诊断噪音）。
+  const pendingTimer = windowRefreshTimers.get(windowId);
+  if (pendingTimer) {
+    clearTimeout(pendingTimer);
+    windowRefreshTimers.delete(windowId);
+  }
+  lastActiveTabIds.delete(windowId);
   const idKey = String(windowId);
   let tabs = memWindowTabs[idKey];
   if (!tabs) {
@@ -148,7 +219,7 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
     // 忽略
   }
   // 归档流程（archiveCurrentWindow）已自行留档并请求跳过本次自动保存。
-  if (skipAutoSaveWindowIds.delete(windowId)) return;
+  if (await consumeSkipAutoSave(windowId)) return;
   if (!tabs || tabs.length === 0) return;
   const settings = await settingsRepository.read();
   if (!settings.autoSaveSnapshots) return;

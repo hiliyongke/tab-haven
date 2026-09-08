@@ -1,4 +1,4 @@
-import { memo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { memo, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSortable } from '@dnd-kit/sortable';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
@@ -58,7 +58,131 @@ export const FolderItemRow = memo(function FolderItemRow({
     }
   });
   // 同 TabRow：键盘监听挂主按钮，指针监听挂整行（避免同一事件双重激活）。
-  const { onKeyDown: sortableKeyDown, ...sortablePointerListeners } = sortable.listeners ?? {};
+  // 全部 memo 化：解构/新建对象直接下传会击穿 RowItem 的 memo（与 TabRow 同一教训，
+  // 见 TabRow.tsx「行内派生元素一律 memo 化」）。
+  const sortableKeyDown = sortable.listeners?.onKeyDown as
+    ((event: ReactKeyboardEvent<HTMLButtonElement>) => void) | undefined;
+  const sortablePointerListeners = useMemo(() => {
+    const rest: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(sortable.listeners ?? {})) {
+      if (key !== 'onKeyDown') rest[key] = value;
+    }
+    return rest;
+  }, [sortable.listeners]);
+  const buttonListeners = useMemo(
+    () => (sortableKeyDown ? { onKeyDown: sortableKeyDown } : undefined),
+    [sortableKeyDown]
+  );
+
+  const handleOpen = useCallback(() => void openSavedItem(item), [openSavedItem, item]);
+
+  const titleNode = useMemo(
+    () => (
+      <span className={isOpen ? undefined : 'text-gray-500'}>{item.title || t('tabs.newTab')}</span>
+    ),
+    [isOpen, item.title, t]
+  );
+
+  const badges = useMemo(
+    () =>
+      runtimeTab ? (
+        <StatusBadges tab={runtimeTab} duplicateCount={1} isSplitCompanion={false} />
+      ) : null,
+    [runtimeTab]
+  );
+
+  const actions = useMemo(
+    () => (
+      <RowActions>
+        {runtimeTab && (runtimeTab.audible || runtimeTab.muted) && (
+          <button
+            type="button"
+            className="row-action"
+            title={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
+            aria-label={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
+            onClick={() => void toggleMute(runtimeTab)}
+          >
+            <Icon d={runtimeTab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {runtimeTab &&
+          !runtimeTab.discarded &&
+          !runtimeTab.active &&
+          canSafelyDiscardTab(runtimeTab) && (
+            <button
+              type="button"
+              className="row-action"
+              title={t('tabs.discard')}
+              aria-label={t('tabs.discard')}
+              onClick={() => void discardTab(runtimeTab.id)}
+            >
+              <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
+            </button>
+          )}
+        <button
+          type="button"
+          className="row-action is-danger"
+          title={t('fixed.itemClose')}
+          aria-label={t('fixed.itemClose')}
+          disabled={importing}
+          onClick={() => {
+            const allTabs = useTabStore.getState().tabs;
+            const targetTab =
+              item.pendingTabId !== undefined
+                ? allTabs.find((tab) => tab.id === item.pendingTabId)
+                : allTabs.find((tab) => itemUrlMatchesTab(item.url, tab));
+            if (targetTab) {
+              void useUndoStore.getState().closeWithUndo(allTabs, [targetTab.id]);
+            }
+            void removeFolderItem(folder.id, item.id);
+          }}
+        >
+          <Icon d={Icons.close} className="h-3.5 w-3.5" />
+        </button>
+      </RowActions>
+    ),
+    [runtimeTab, t, importing, toggleMute, discardTab, folder.id, item, removeFolderItem]
+  );
+
+  // container 依赖 useSortable 的返回值：其内部对象每次渲染都是新引用，
+  // 因此只取标量字段做依赖（同 TabRow 的做法）。
+  const transformX = sortable.transform?.x;
+  const transformY = sortable.transform?.y;
+  const {
+    transition: sortTransition,
+    isDragging,
+    setNodeRef,
+    setActivatorNodeRef,
+    attributes
+  } = sortable;
+  const container = useMemo(
+    () => ({
+      ref: setNodeRef,
+      listeners: sortablePointerListeners,
+      activatorRef: setActivatorNodeRef,
+      buttonAttributes: attributes,
+      buttonListeners,
+      style: {
+        transform:
+          transformX || transformY
+            ? `translate3d(${transformX ?? 0}px, ${transformY ?? 0}px, 0)`
+            : undefined,
+        transition: sortTransition
+      },
+      className: isDragging ? 'is-sorting' : undefined
+    }),
+    [
+      setNodeRef,
+      sortablePointerListeners,
+      setActivatorNodeRef,
+      attributes,
+      buttonListeners,
+      transformX,
+      transformY,
+      sortTransition,
+      isDragging
+    ]
+  );
 
   return (
     // 独立属性名：data-tabs-tab-id 保留给真实标签行（TabRow）。此前固定条目
@@ -79,86 +203,13 @@ export const FolderItemRow = memo(function FolderItemRow({
         isActive={isActive}
         isMediaPlaying={runtimeTab ? runtimeTab.audible && !runtimeTab.muted : false}
         isDropTarget={sortable.isOver}
-        onClick={() => void openSavedItem(item)}
+        onClick={handleOpen}
         buttonTitle={item.title || item.url}
-        title={
-          <span className={isOpen ? undefined : 'text-gray-500'}>
-            {item.title || t('tabs.newTab')}
-          </span>
-        }
-        badges={
-          runtimeTab ? (
-            <StatusBadges tab={runtimeTab} duplicateCount={1} isSplitCompanion={false} />
-          ) : null
-        }
-        actions={
-          <RowActions>
-            {runtimeTab && (runtimeTab.audible || runtimeTab.muted) && (
-              <button
-                type="button"
-                className="row-action"
-                title={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
-                aria-label={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
-                onClick={() => void toggleMute(runtimeTab)}
-              >
-                <Icon d={runtimeTab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {runtimeTab &&
-              !runtimeTab.discarded &&
-              !runtimeTab.active &&
-              canSafelyDiscardTab(runtimeTab) && (
-                <button
-                  type="button"
-                  className="row-action"
-                  title={t('tabs.discard')}
-                  aria-label={t('tabs.discard')}
-                  onClick={() => void discardTab(runtimeTab.id)}
-                >
-                  <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
-                </button>
-              )}
-            <button
-              type="button"
-              className="row-action is-danger"
-              title={t('fixed.itemClose')}
-              aria-label={t('fixed.itemClose')}
-              disabled={importing}
-              onClick={() => {
-                const allTabs = useTabStore.getState().tabs;
-                const targetTab =
-                  item.pendingTabId !== undefined
-                    ? allTabs.find((tab) => tab.id === item.pendingTabId)
-                    : allTabs.find((tab) => itemUrlMatchesTab(item.url, tab));
-                if (targetTab) {
-                  void useUndoStore.getState().closeWithUndo(allTabs, [targetTab.id]);
-                }
-                void removeFolderItem(folder.id, item.id);
-              }}
-            >
-              <Icon d={Icons.close} className="h-3.5 w-3.5" />
-            </button>
-          </RowActions>
-        }
+        title={titleNode}
+        badges={badges}
+        actions={actions}
         dragGripTitle={t('fixed.reorderItem')}
-        container={{
-          ref: sortable.setNodeRef,
-          listeners: sortablePointerListeners,
-          activatorRef: sortable.setActivatorNodeRef,
-          buttonAttributes: sortable.attributes,
-          buttonListeners: sortableKeyDown
-            ? {
-                onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void
-              }
-            : undefined,
-          style: {
-            transform: sortable.transform
-              ? `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)`
-              : undefined,
-            transition: sortable.transition
-          },
-          className: sortable.isDragging ? 'is-sorting' : undefined
-        }}
+        container={container}
       />
     </li>
   );

@@ -43,7 +43,10 @@ const RELEVANT_UPDATE_KEYS = [
   'groupId',
   'status',
   'audible',
-  'discarded'
+  'discarded',
+  // TabRecord 建模了这两个字段：拆分时下载完成提醒 / 自动休眠开关变化不同步会滞留旧状态。
+  'attention',
+  'autoDiscardable'
 ] as const;
 /** 连续失败时的退避倍数上限（40ms → 最长约 1.3s），避免失败场景下持续空转。 */
 const MAX_BACKOFF_FACTOR = 32;
@@ -80,10 +83,10 @@ export class TabSyncService {
     const run = async () => {
       querying = true;
       try {
-        const [tabs, groups] = await Promise.all([
-          queryCurrentWindowTabs(),
-          queryCurrentWindowGroups()
-        ]);
+        // 先查标签再带 windowId 查组：省掉 queryCurrentWindowGroups 内部那次
+        // 只为拿 windowId 的重复全窗口查询（每次刷新 3 次 API 调用降为 2 次）。
+        const tabs = await queryCurrentWindowTabs();
+        const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
         if (stopped) return;
         failures = 0;
         // 依据最新快照启停「发声校准轮询」（先于广播，让 onSnapshot 立即获得最新值）。
@@ -146,9 +149,11 @@ export class TabSyncService {
       browser.tabs.onActivated,
       browser.tabs.onMoved,
       browser.tabs.onAttached,
-      browser.tabs.onDetached,
-      browser.tabs.onReplaced
+      browser.tabs.onDetached
     ];
+    // onReplaced 并非全平台可用（Firefox 无此事件）：不加守卫直接 addListener
+    // 会抛错导致整个 start() 失败、同步完全失效。
+    if (browser.tabs.onReplaced) events.push(browser.tabs.onReplaced);
     // onUpdated 带 changeInfo，单独注册以便按字段过滤（见 RELEVANT_UPDATE_KEYS）。
     const onUpdated = (_tabId: number, changeInfo?: object): void => {
       // 拿不到 changeInfo 时按「可能需要刷新」处理：宁可多查一次，也不要漏更新。

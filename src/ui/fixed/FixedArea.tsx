@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -28,9 +28,14 @@ export function FixedArea() {
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const settings = useDataStore((state) => state.settings);
   const notify = useUndoStore((state) => state.notify);
-  const tabs = useTabStore((state) => state.tabs);
   const [creating, setCreating] = useState(false);
   const [dropRequest, setDropRequest] = useState<CreateFolderRequest | null>(null);
+  // 不订阅 tabs：它仅用于建文件夹弹窗确认时的一次性过滤，订阅会让每次标签快照
+  // 都重渲染整个固定区。事件期经 getState 读最新值即可（与其它 handler 同一约定）。
+  const folderSortableIds = useMemo(
+    () => folders.map((folder) => `folder:${folder.id}`),
+    [folders]
+  );
   const { isOver, setNodeRef } = useDroppable({
     id: FIXED_AREA_DROPPABLE,
     data: { type: 'fixed-area' }
@@ -51,7 +56,7 @@ export function FixedArea() {
     const request = dropRequest;
     setDropRequest(null);
     if (!request) return;
-    const targetTabs = tabs.filter((tab) => request.tabIds.includes(tab.id));
+    const targetTabs = useTabStore.getState().tabs.filter((tab) => request.tabIds.includes(tab.id));
     void (async () => {
       const folder = await createFolder(name);
       await addTabsToFolder(targetTabs, folder.id);
@@ -62,10 +67,7 @@ export function FixedArea() {
   };
 
   return (
-    <SortableContext
-      items={folders.map((folder) => `folder:${folder.id}`)}
-      strategy={verticalListSortingStrategy}
-    >
+    <SortableContext items={folderSortableIds} strategy={verticalListSortingStrategy}>
       <CategoryModule
         title={t('fixed.areaTitle')}
         count={folders.length}

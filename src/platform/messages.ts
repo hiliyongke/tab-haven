@@ -125,6 +125,23 @@ export function sendMessage(message: Message): void {
 }
 
 /**
+ * 发送一条需要 SW 应答的消息，返回是否被确认处理。
+ *
+ * 仅在「消息效果必须先于后续动作发生」时使用——如复用豁免发放必须先于
+ * tabs.create 完成，否则 SW 休眠唤醒慢于事件派发时，onCreated 先于豁免入账执行，
+ * 显式打开的标签会被复用引擎误合并。SW 不可达时返回 false（调用方按降级处理，
+ * 最坏退化为豁免失效，与历史行为一致）。
+ */
+export async function sendMessageWithAck(message: Message): Promise<boolean> {
+  try {
+    const response: unknown = await browser.runtime.sendMessage(message);
+    return (response as { ok?: boolean } | undefined)?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 注册消息监听，返回注销函数。
  *
  * 未经协议校验的消息直接丢弃，handler 只会收到合法消息。

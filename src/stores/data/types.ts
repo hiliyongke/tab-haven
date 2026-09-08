@@ -38,6 +38,8 @@ export interface DataContext {
   cancelWrites: () => Promise<void>;
   scheduleMirror: (state: MirrorState) => void;
   reportPersistenceFailure: (scope: string, message: string) => void;
+  /** 某分区写入成功：只清除它自己的降级记录（所有分区恢复后横幅才消失）。 */
+  clearDegraded: (scope: string) => void;
   /** 清空全部降级记账（整体清除数据后调用，历史失败不再有对应数据）。 */
   resetDegraded: () => void;
   applyBindings: (result: MutateSessionResult) => void;

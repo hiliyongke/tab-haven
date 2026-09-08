@@ -4,6 +4,7 @@ import type { UndoBatch } from '@/core/schema/models';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
+import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
 import { resolveRestoreWindowId } from '@/platform/tabs';
 import { logFailure } from '@/platform/diagnostics';
@@ -71,6 +72,24 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
  * 「恢复成功才出栈」是本 store 的核心不变量，失败项要能重新入栈供用户重试。
  */
 let undoInFlight = false;
+
+/**
+ * 撤销执行跨页互斥锁名。
+ *
+ * undoInFlight 只拦本页面：两个侧边栏窗口（各自独立上下文）可同时撤销同一批次，
+ * 同一批标签被恢复两次。执行体经 withCrossPageLock(UNDO_EXEC_LOCK) 串行化，
+ * 且锁内先按磁盘栈复核批次仍存在（他页可能已撤销），双重恢复由此根治。
+ */
+const UNDO_EXEC_LOCK = 'tabs.undo-exec';
+
+/**
+ * 在途 load 的共享 promise：并发/重入（StrictMode 双挂载、ready 前入栈等待）
+ * 共享同一次读取，避免两条 load 链各自读盘再以旧值覆盖新值。
+ * 完成后自动清空——再次 load 仍重新读盘（跨重启回读语义不变）。
+ */
+let loadInFlight: Promise<void> | null = null;
+/** 仓库 watcher 注册守卫（跨页撤销栈同步，只注册一次）。 */
+let undoWatcherStarted = false;
 
 /**
  * undoRepository 写盘串行链（追加顺序）。
@@ -178,6 +197,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
   /** 入栈并持久化（closeWithUndo 与 recordClosedBatch 共用）。 */
   const appendBatch = async (batch: UndoBatch): Promise<void> => {
+    // load 在途期间不得基于内存栈入栈：load 完成时会以旧磁盘值覆盖内存，
+    // 在途入栈的批次会被整批抹掉（面板秒开秒操作可确定性复现）。
+    if (!get().ready) await get().load();
     const settings = await settingsRepository.read();
     const next = pushBatch(get().batches, batch, settings.undoStackLimit);
     set({ batches: next });
@@ -193,10 +215,25 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     undoing: false,
 
     load: async () => {
-      const settings = await settingsRepository.read();
-      const batches = settings.persistUndo ? await undoRepository.read() : [];
-      if (!settings.persistUndo) await enqueueUndoPersist(() => [], { alwaysWrite: true });
-      set({ batches, ready: true });
+      loadInFlight ??= (async () => {
+        const settings = await settingsRepository.read();
+        const batches = settings.persistUndo ? await undoRepository.read() : [];
+        if (!settings.persistUndo) await enqueueUndoPersist(() => [], { alwaysWrite: true });
+        set({ batches, ready: true });
+        // 跨页同步：其它侧边栏窗口的入栈/出栈经 watcher 回流，
+        // 否则本页旧内存栈下次写盘时会整表覆盖对方改动（undoRepository 写是全量写）。
+        if (!undoWatcherStarted) {
+          undoWatcherStarted = true;
+          undoRepository.watch((value) => {
+            // 回显守卫：本页写入触发的回放内容相同，跳过 set。
+            if (JSON.stringify(value) === JSON.stringify(get().batches)) return;
+            set({ batches: value });
+          });
+        }
+      })().finally(() => {
+        loadInFlight = null;
+      });
+      await loadInFlight;
     },
 
     closeWithUndo: async (tabs, tabIds) => {
@@ -217,6 +254,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         return;
       }
 
+      // 组名必须在关闭前捕获：整组关闭后组已消失，TabSyncService 刷新一旦先落地，
+      // groups 快照里就查不到该组 → 撤销记录缺 groupName → 恢复时无法按名重建组。
+      const groups = useTabStore.getState().groups;
+      const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
+
       const closedIds = await useTabStore.getState().closeTabs(closing.map((tab) => tab.id));
       const closedIdSet = new Set(closedIds);
       const closed = closing.filter((tab) => closedIdSet.has(tab.id));
@@ -232,8 +274,6 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         return;
       }
 
-      const groups = useTabStore.getState().groups;
-      const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
       const batch = createUndoBatch(
         'close',
         closed.map((tab) => toUndoTabRecord(tab, groupNameById)),
@@ -263,11 +303,20 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       undoInFlight = true;
       set({ undoing: true });
       try {
-        await runUndo(latest, (current, retryBatch) => {
-          // 恢复已发生：此时才出栈（按 id 精确移除，不用 popBatch——恢复期间
-          // 可能有新批次入栈，栈尾未必还是本批）。失败项放回栈顶保留重试入口。
-          const remaining = current.filter((entry) => entry.id !== latest.id);
-          set({ batches: retryBatch ? [retryBatch, ...remaining] : remaining });
+        await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
+          // 跨页复核：另一窗口可能已撤销同一批次（内存栈经 watch 收敛存在延迟窗口）。
+          // persistUndo 开启时磁盘是跨页权威；关闭时各页内存互不可见，退化为页内语义。
+          const settings = await settingsRepository.read();
+          if (settings.persistUndo) {
+            const disk = await undoRepository.read();
+            if (!disk.some((entry) => entry.id === latest.id)) return;
+          }
+          await runUndo(latest, (current, retryBatch) => {
+            // 恢复已发生：此时才出栈（按 id 精确移除，不用 popBatch——恢复期间
+            // 可能有新批次入栈，栈尾未必还是本批）。失败项放回栈顶保留重试入口。
+            const remaining = current.filter((entry) => entry.id !== latest.id);
+            set({ batches: retryBatch ? [retryBatch, ...remaining] : remaining });
+          });
         });
       } finally {
         undoInFlight = false;
@@ -282,10 +331,17 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       undoInFlight = true;
       set({ undoing: true });
       try {
-        await runUndo(batch, (current, retryBatch) => {
-          const remaining = current.filter((entry) => entry.id !== batchId);
-          set({
-            batches: retryBatch ? [retryBatch, ...remaining] : remaining
+        await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
+          const settings = await settingsRepository.read();
+          if (settings.persistUndo) {
+            const disk = await undoRepository.read();
+            if (!disk.some((entry) => entry.id === batchId)) return;
+          }
+          await runUndo(batch, (current, retryBatch) => {
+            const remaining = current.filter((entry) => entry.id !== batchId);
+            set({
+              batches: retryBatch ? [retryBatch, ...remaining] : remaining
+            });
           });
         });
       } finally {

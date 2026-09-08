@@ -6,10 +6,10 @@ import { logDegraded } from '@/platform/diagnostics';
 
 let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** 刷新角标：按 badgeMode 计算当前窗口重复标签数（默认关 -> 不显示）。 */
+/** 刷新角标：按 badgeMode 计算当前窗口重复标签数。 */
 async function refreshBadge(): Promise<void> {
   if (!browser.action) return;
-  // 关模式：直接清空角标并跳过全量 tabs.query（badgeMode 默认 off，避免每次标签事件都查全量标签）。
+  // 关模式：直接清空角标并跳过全量 tabs.query（避免每次标签事件都查全量标签）。
   if (cachedSettings.badgeMode === 'off') {
     await browser.action.setBadgeText({ text: '' }).catch(() => {});
     return;

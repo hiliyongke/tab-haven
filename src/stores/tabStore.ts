@@ -15,7 +15,6 @@ import {
 } from '@/platform/tabs';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { webComparisonKey } from '@/core/url/UrlInspector';
-import { structuralSignature } from '@/core/util/signature';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { useDataStore } from '@/stores/dataStore';
 
@@ -59,6 +58,8 @@ interface TabState {
   setHighlighted: (tabIds: readonly number[]) => void;
   /** 记录单个标签探测到的语言。 */
   setLanguage: (tabId: number, lang: string) => void;
+  /** 批量记录语言探测结果（一次 set，避免 N 个标签触发 N 轮全量重渲染）。 */
+  setLanguages: (entries: readonly (readonly [number, string])[]) => void;
   /** 重命名原生组。 */
   renameGroup: (groupId: number, title: string) => Promise<void>;
   /** 改变原生组颜色。 */
@@ -128,6 +129,20 @@ export const useTabStore = create<TabState>()((set, get) => ({
     });
   },
 
+  setLanguages: (entries) => {
+    set((state) => {
+      const byId = new Map(entries);
+      let changed = false;
+      const tabs = state.tabs.map((tab) => {
+        const lang = byId.get(tab.id);
+        if (lang === undefined || tab.language === lang) return tab;
+        changed = true;
+        return { ...tab, language: lang };
+      });
+      return changed ? { tabs } : {};
+    });
+  },
+
   renameGroup: async (groupId, title) => {
     await renameGroupPlatform(groupId, title);
   },
@@ -186,8 +201,12 @@ export const useTabStore = create<TabState>()((set, get) => ({
     });
   },
 
-  startTabSync: () =>
-    tabSyncService.start((snapshot) => {
+  startTabSync: () => {
+    /** 本会话已应用的最新快照代数：乱序到达的旧快照直接丢弃（新鲜度守卫）。 */
+    let lastAppliedGeneration = 0;
+    return tabSyncService.start((snapshot) => {
+      if (snapshot.generation <= lastAppliedGeneration) return;
+      lastAppliedGeneration = snapshot.generation;
       set((state) => {
         // 镜像增量合并（细节见 mergeSnapshotTabs）：语言按 id 保留（URL 变化需重探测）；
         // lastAccessed 对既有标签冻结——浏览器每次激活都会刷新该时间戳，照单全收
@@ -195,12 +214,25 @@ export const useTabStore = create<TabState>()((set, get) => ({
         // （新 id 首次出现）时一次性纳入，其余操作零重排。
         const tabs = mergeSnapshotTabs(state.tabs, snapshot.tabs);
         // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
+        // mergeSnapshotTabs 对未变化标签保持原引用，此处 O(n) 指针比较即可——
+        // 不必再对全量 tabs 做两次 JSON.stringify（大标签量下是每次事件的固定热点）。
+        const sameTabs =
+          tabs.length === state.tabs.length && tabs.every((tab, i) => tab === state.tabs[i]);
+        const sameGroups =
+          snapshot.groups.length === state.groups.length &&
+          snapshot.groups.every((group, i) => {
+            const prev = state.groups[i];
+            return (
+              prev !== undefined &&
+              group.id === prev.id &&
+              group.title === prev.title &&
+              group.color === prev.color &&
+              group.collapsed === prev.collapsed
+            );
+          });
+        const sameContent = state.currentWindowId === snapshot.windowId && sameTabs && sameGroups;
         // 例外：首次成功快照即使内容与初始态相同（窗口真无标签）也必须落
         // tabSyncReady=true——下游协调据此区分「未同步」与「无标签」。
-        const sameContent =
-          state.currentWindowId === snapshot.windowId &&
-          structuralSignature(tabs) === structuralSignature(state.tabs) &&
-          structuralSignature(snapshot.groups) === structuralSignature(state.groups);
         if (sameContent && state.tabSyncReady) return {};
         return {
           tabs,
@@ -209,5 +241,6 @@ export const useTabStore = create<TabState>()((set, get) => ({
           tabSyncReady: true
         };
       });
-    })
+    });
+  }
 }));

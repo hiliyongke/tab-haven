@@ -12,6 +12,7 @@ import {
 import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
+import { tabSyncService } from '@/platform/sync/TabSyncService';
 import {
   DragType,
   FIXED_AREA_DROPPABLE,
@@ -76,8 +77,13 @@ export function useTabDragHandlers() {
     // 乐观更新：先让本地顺序立即生效，再写浏览器。真相源仍在浏览器——
     // 写失败或期间有并发变化时，下一次快照会把顺序校正回来（见 tabStore.applyReorder）。
     useTabStore.getState().applyReorder(sourceId, index);
-    // 拖拽过程中目标标签可能已被关闭：失败静默（下一帧快照自愈），不产生未捕获 rejection。
-    void moveTab(sourceId, index).catch(() => {});
+    // 失败矫正：move 失败（索引越界/并发变化，而非标签被关闭）不产生任何 tabs 事件，
+    // 快照不会自愈，本地顺序会与浏览器长期分叉 —— 必须主动刷新校正。
+    void moveTab(sourceId, index)
+      .then((ok) => {
+        if (!ok) tabSyncService.requestRefresh();
+      })
+      .catch(() => {});
   }, []);
 
   /** 键盘重排（Alt+↑/↓）：把标签向相邻展示位置移动。 */
@@ -163,7 +169,12 @@ export function useTabDragHandlers() {
           .catch(() => {});
         return;
       }
-      void moveTabs(sourceTabIds, index).catch(() => {});
+      // 与 handleReorder 同理：失败无事件、不自愈，需主动刷新校正。
+      void moveTabs(sourceTabIds, index)
+        .then((ok) => {
+          if (!ok) tabSyncService.requestRefresh();
+        })
+        .catch(() => {});
     },
     []
   );

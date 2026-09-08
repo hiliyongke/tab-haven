@@ -39,9 +39,14 @@ class SyncMirror {
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** 去抖窗口内最新的待写数据（后写覆盖先写，保证最终落盘的是最新状态）。 */
   private pendingPayload: MirrorData | undefined;
+  /** 写失败重试定时器与已试次数（sync 分钟级写配额需要时间恢复，必须退避）。 */
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryAttempts = 0;
+  private static readonly MAX_RETRY_ATTEMPTS = 5;
+  private unloadFlushBound = false;
 
   /**
-   * 丢弃去抖窗口内尚未落盘的镜像。
+   * 丢弃去抖窗口内尚未落盘的镜像与待重试任务。
    *
    * 必须在「关闭同步」「清除所有数据」前调用：否则清完 sync 之后 timer 触发，
    * 会把刚删掉的数据重新写回浏览器账号通道 —— 「关闭即删除已上传数据」的
@@ -52,12 +57,18 @@ class SyncMirror {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
+    if (this.retryTimer !== undefined) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
+    }
+    this.retryAttempts = 0;
     this.pendingPayload = undefined;
   }
 
   /** 调度一次镜像写入（合并高频写入，500ms 后落盘）。 */
   schedule(payload: MirrorData): void {
     this.pendingPayload = payload;
+    this.bindUnloadFlush();
     if (this.timer) return;
     this.timer = setTimeout(() => {
       this.timer = undefined;
@@ -65,6 +76,32 @@ class SyncMirror {
       this.pendingPayload = undefined;
       if (latest) void this.write(latest);
     }, 500);
+  }
+
+  /**
+   * 页面卸载时把去抖窗口内的待写镜像立即落盘（best-effort）。
+   * 否则面板在 500ms 去抖窗口内关闭时，这段镜像静默丢失（仅影响镜像新鲜度）。
+   */
+  private bindUnloadFlush(): void {
+    if (this.unloadFlushBound || typeof window === 'undefined') return;
+    this.unloadFlushBound = true;
+    window.addEventListener('pagehide', () => {
+      const latest = this.pendingPayload;
+      if (!latest) return;
+      this.cancelPending();
+      void this.write(latest);
+    });
+  }
+
+  /** 失败后指数退避重试（30s 起，×2 递增，上限 5 次）：立即重试只会持续撞分钟级写配额。 */
+  private scheduleRetry(payload: MirrorData): void {
+    if (this.retryAttempts >= SyncMirror.MAX_RETRY_ATTEMPTS) return;
+    this.retryAttempts += 1;
+    const delay = 30_000 * 2 ** (this.retryAttempts - 1);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      void this.write(payload);
+    }, delay);
   }
 
   /** 立即写入镜像（分块 + 清理过期块）。 */
@@ -98,10 +135,13 @@ class SyncMirror {
         }
       }
       await area.set(record);
+      // 成功后复位重试计数：配额抖动恢复后回到正常调度。
+      this.retryAttempts = 0;
     } catch (error) {
       // 超出同步配额或同步不可用：降级（仅丢失镜像，本地数据不受影响）。
       // 但必须可观测——否则「跨设备同步悄悄失效」对用户完全不可见。
       logDegraded('sync-mirror', '镜像写入失败，跨设备同步已降级（本地数据不受影响）', error);
+      this.scheduleRetry(payload);
     }
   }
 

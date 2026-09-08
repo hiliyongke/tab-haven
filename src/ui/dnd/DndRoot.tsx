@@ -177,12 +177,19 @@ function buildDragOverlay(data: DragData): ReactNode {
  * 观感上像"拖完卡住了"，也与「把手只在 hover 时出现」的预期不符。
  * 打上标记后把手先隐藏，指针一动就恢复（此时已是真正的重新悬停）。
  */
+/** 当前挂起的「刚放下」清理器：键盘拖拽（Space 放置）不产生指针移动，
+ *  监听器会残留到下一次指针移动才批量清——每次标记前先清掉前一次的。 */
+let pendingJustDroppedClear: (() => void) | null = null;
+
 function markJustDropped(): void {
+  pendingJustDroppedClear?.();
   document.body.classList.add('dnd-just-dropped');
   const clear = () => {
     document.body.classList.remove('dnd-just-dropped');
     window.removeEventListener('pointermove', clear);
+    if (pendingJustDroppedClear === clear) pendingJustDroppedClear = null;
   };
+  pendingJustDroppedClear = clear;
   window.addEventListener('pointermove', clear, { once: true });
 }
 

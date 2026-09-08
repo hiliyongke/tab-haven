@@ -72,6 +72,12 @@ function RowList({
   const { t } = useTranslation();
   // 分屏组竖线角色：同一 splitViewId 的「连续」标签段 → 组首/组中/组尾（单标签段也画线）。
   const splitGroupRoles = useMemo(() => computeSplitGroupRoles(tabs), [tabs]);
+  // SortableContext items 必须 memo 化：每次渲染新建数组会让 dnd-kit context value 变化，
+  // 子 sortable 节点多做一轮无效重渲染。
+  const sortableItemIds = useMemo(
+    () => (sortableItems ? [...sortableItems] : tabs.map((tab) => tab.id)),
+    [sortableItems, tabs]
+  );
 
   // 大列表虚拟滚动（零依赖窗口化），分两档是有意取舍：
   //  - 排序关闭时：超过 60 行即虚拟化（无排序负担，尽早省下 DOM）；
@@ -138,10 +144,7 @@ function RowList({
   }
 
   return (
-    <SortableContext
-      items={sortableItems ? [...sortableItems] : tabs.map((tab) => tab.id)}
-      strategy={verticalListSortingStrategy}
-    >
+    <SortableContext items={sortableItemIds} strategy={verticalListSortingStrategy}>
       <ul>
         {tabs.map((tab) => (
           <TabRow
@@ -386,19 +389,25 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
     }
   };
   // 展开态：site 多子域时按子域再分块（折叠子标题）；媒体定位模式只保留播放标签所在子域。
-  const subGroups: SiteSubGroup[] =
-    section.kind === 'site'
-      ? section.subgroups
-          .map((sub) => ({
-            ...sub,
-            tabs: playingOnly ? sub.tabs.filter((tab) => tab.id === playingTab?.id) : sub.tabs
-          }))
-          .filter((sub) => sub.tabs.length > 0)
-      : [];
+  const subGroups: SiteSubGroup[] = useMemo(
+    () =>
+      section.kind === 'site'
+        ? section.subgroups
+            .map((sub) => ({
+              ...sub,
+              tabs: playingOnly ? sub.tabs.filter((tab) => tab.id === playingTab?.id) : sub.tabs
+            }))
+            .filter((sub) => sub.tabs.length > 0)
+        : [],
+    [section, playingOnly, playingTab?.id]
+  );
 
   // 多子域分块时各块共享整个分区的排序全集（见 RowList.sortableItems）：
   // 否则跨块拖拽的 over 不在对方 items 里，dnd-kit 无法排序。
-  const subGroupTabIds = subGroups.flatMap((sub) => sub.tabs.map((tab) => tab.id));
+  const subGroupTabIds = useMemo(
+    () => subGroups.flatMap((sub) => sub.tabs.map((tab) => tab.id)),
+    [subGroups]
+  );
 
   const renderBody = () => (
     <>

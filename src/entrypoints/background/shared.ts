@@ -82,26 +82,34 @@ export function notifyUser(title: string, message: string): void {
 type PendingActionInput =
   { type: 'search-domain'; query: string } | { type: 'locate-active' } | { type: 'focus-search' };
 
+/** 挂起队列 read-modify-write 串行链：连续两个动作（快捷键连按）的 get→set
+ *  交错会静默丢掉先入队的那一条。 */
+let queueActionChain: Promise<void> = Promise.resolve();
+
 export async function queueAction(action: PendingActionInput): Promise<void> {
   // at 时间戳：面板经「即时消息 + session onChanged」双通道收到同一动作时按 at 去重，
   // 且面板消费后清除 session 列表，不会重放历史动作。
   const at = Date.now();
   const stamped = { ...action, at } as PendingAction;
-  try {
-    const sessionArea = browser.storage?.session;
-    if (sessionArea) {
-      const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
-      // 存的是外部数据，必须经 schema 校验：手写的 `as PendingAction[]` 断言
-      // 会把任何形状的垃圾都当成合法队列。
-      const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
-      const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
-      list.push(stamped);
-      await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
+  const step = queueActionChain.then(async () => {
+    try {
+      const sessionArea = browser.storage?.session;
+      if (sessionArea) {
+        const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
+        // 存的是外部数据，必须经 schema 校验：手写的 `as PendingAction[]` 断言
+        // 会把任何形状的垃圾都当成合法队列。
+        const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
+        const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
+        list.push(stamped);
+        await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
+      }
+    } catch (error) {
+      logDegraded('background', '共享上下文操作失败', error);
+      // session 存储不可用时仅即时广播
     }
-  } catch (error) {
-    logDegraded('background', '共享上下文操作失败', error);
-    // session 存储不可用时仅即时广播
-  }
+  });
+  queueActionChain = step;
+  await step;
   sendMessage(stamped as Message);
 }
 

@@ -26,6 +26,7 @@ import {
 } from '@/platform/tabs';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
+import { BINDINGS_SCOPE } from './context';
 import type { AddTabsToFolderResult, DataContext, DataState } from './types';
 
 /**
@@ -342,14 +343,15 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       if (structuralSignature(nextBoundTabIds) !== structuralSignature(ctx.get().boundTabIds)) {
         ctx.set({ boundTabIds: nextBoundTabIds });
       }
-      // reconcileWithTabs 是每次标签事件都会走的高频路径，此处只记录降级状态，
-      // 不做 set 之外的副作用，避免高频路径放大开销。
-      if (!result.persisted && !ctx.get().storageDegraded) {
-        ctx.set({ storageDegraded: true });
-        logDegraded('dataStore', '会话绑定未能持久化，面板重启后挂起条目绑定将丢失');
-      } else if (result.persisted && ctx.get().storageDegraded) {
-        // 会话绑定恢复持久化：清除降级告警（与「成功写即复位」原则一致）。
-        ctx.set({ storageDegraded: false });
+      // 降级状态按分区记账：不得直接复位全局 storageDegraded —— 其它分区
+      // （folders/pins）可能仍处降级，一次成功的绑定写不能把它们的告警连坐抹掉。
+      if (!result.persisted) {
+        ctx.reportPersistenceFailure(
+          BINDINGS_SCOPE,
+          '会话绑定未能持久化，面板重启后挂起条目绑定将丢失'
+        );
+      } else {
+        ctx.clearDegraded(BINDINGS_SCOPE);
       }
     }
   };

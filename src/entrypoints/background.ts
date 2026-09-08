@@ -47,13 +47,19 @@ import {
   scheduleWindowRefresh,
   initWindowTabsCache,
   handleWindowRemoved,
-  skipAutoSaveWindowIds,
+  markSkipAutoSave,
   refreshWindowTabs,
   recordActiveTab,
   getLastActiveTabId
 } from './background/windowCache';
 
 export default defineBackground(() => {
+  /**
+   * 窗口缓存关心的 onUpdated 字段（与 windowCache collectTabs 的采集口径一致：
+   * url/title/favIconUrl/pinned/muted/group）。
+   */
+  const WINDOW_CACHE_UPDATE_KEYS = ['url', 'title', 'favIconUrl', 'pinned', 'mutedInfo', 'groupId'];
+
   // 后台文案轨道：通知/自动快照默认名等 SW 侧文案按用户语言解析。
   // 异步初始化不阻塞消息注册；完成前的 t() 调用回退浏览器语言判定。
   void initHeadlessI18n();
@@ -127,7 +133,10 @@ export default defineBackground(() => {
     pinned?: boolean;
   }): Promise<void> {
     try {
-      if (cachedSettings.newTabPosition !== 'after-active') return;
+      // 读实时设置而非共享缓存：SW 刚唤醒时 cachedSettings 尚未就绪，
+      // 冷启动后的第一次新建会被按默认值 'end' 静默放过（与 actionClickMode 同口径）。
+      const settings = await settingsRepository.read();
+      if (settings.newTabPosition !== 'after-active') return;
       if (tab.id === undefined || tab.windowId === undefined) return;
       if (tab.pinned) return;
       const anchorId = getLastActiveTabId(tab.windowId);
@@ -173,7 +182,15 @@ export default defineBackground(() => {
     ) {
       refreshBadgeSoon();
     }
-    if (typeof tab.windowId === 'number') scheduleWindowRefresh(tab.windowId);
+    // 仅窗口缓存采集口径内的字段变化才刷新缓存：标题动画/计时器类站点的高频
+    // onUpdated 会让 SW 每 600ms 做一次全窗口 query + session 落盘，SW 永远无法
+    // 空闲回收（与 UI 侧 RELEVANT_UPDATE_KEYS 同一思路，两处口径各自匹配自家消费方）。
+    if (
+      typeof tab.windowId === 'number' &&
+      WINDOW_CACHE_UPDATE_KEYS.some((key) => key in changeInfo)
+    ) {
+      scheduleWindowRefresh(tab.windowId);
+    }
   });
   browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
     coordinator.handleRemoved(tabId);
@@ -226,9 +243,9 @@ export default defineBackground(() => {
         sendResponse({ ok: true });
         return;
       case 'skip-auto-save-once':
-        skipAutoSaveWindowIds.add(message.windowId);
-        sendResponse({ ok: true });
-        return;
+        // 标记镜像到 session 后才应答（SW 回收不丢标记），故走异步应答通道。
+        void markSkipAutoSave(message.windowId).then(() => sendResponse({ ok: true }));
+        return true;
       case 'allow-duplicate-once':
         coordinator.grantAllowance(message.windowId, message.url);
         sendResponse({ ok: true });

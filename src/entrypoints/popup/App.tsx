@@ -125,6 +125,16 @@ export default function App() {
     return useTabStore.getState().activateTab(tabId);
   };
 
+  /**
+   * 激活并关闭 popup：必须等激活链路完成再 close。
+   * 跨窗口激活是「await 聚焦窗口 → 再激活标签」，window.close() 若同步销毁
+   * popup 上下文，await 之后的 tabs.update 大概率不再执行 —— 表现为
+   * 「窗口聚焦了但标签没切」。
+   */
+  const activateAndClose = (tabId: number) => {
+    void smartActivate(tabId).finally(() => window.close());
+  };
+
   useEffect(() => {
     document.getElementById(`popup-hit-${selectedIndex}`)?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, renderableHits.length]);
@@ -148,8 +158,7 @@ export default function App() {
     } else if (event.key === 'Enter') {
       event.preventDefault();
       const hit = renderableHits[selectedIndex];
-      if (hit) void smartActivate(hit.tabId);
-      window.close();
+      if (hit) activateAndClose(hit.tabId);
     } else if (event.key === 'Escape') {
       window.close();
     }
@@ -208,10 +217,7 @@ export default function App() {
                     : ' border-transparent hover:bg-gray-50')
                 }
                 onMouseEnter={() => setSelectedIndex(index)}
-                onClick={() => {
-                  void smartActivate(hit.tabId);
-                  window.close();
-                }}
+                onClick={() => activateAndClose(hit.tabId)}
               >
                 <Favicon src={tab.favIconUrl} title={tab.title || ''} size={16} />
                 <span className="min-w-0 flex-1 truncate">

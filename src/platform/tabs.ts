@@ -78,12 +78,23 @@ export async function queryCurrentWindowTabs(): Promise<TabRecord[]> {
   return queriedTabs.map(mapTab).sort((a, b) => a.index - b.index);
 }
 
-/** 查询当前窗口全部原生标签组。 */
-export async function queryCurrentWindowGroups(): Promise<TabGroupRecord[]> {
-  const tabs = await browser.tabs.query({ currentWindow: true });
-  const windowId = tabs[0]?.windowId;
-  if (windowId === undefined) return [];
-  const groups = await browser.tabGroups.query({ windowId });
+/**
+ * 查询当前窗口全部原生标签组。
+ *
+ * 已知 windowId 时直接传入：否则内部要再跑一次全窗口 tabs.query 只为拿 windowId，
+ * 每次快照刷新就浪费一次全量查询（TabSyncService 高频路径）。
+ * tabGroups 能力检测：不支持该 API 的浏览器每次查询必抛错，会让调用方
+ * （TabSyncService）进入永久失败退避，面板停在首帧。
+ */
+export async function queryCurrentWindowGroups(windowId?: number): Promise<TabGroupRecord[]> {
+  if (!browser.tabGroups?.query) return [];
+  let targetWindowId = windowId;
+  if (targetWindowId === undefined) {
+    const tabs = await browser.tabs.query({ currentWindow: true });
+    targetWindowId = tabs[0]?.windowId;
+  }
+  if (targetWindowId === undefined) return [];
+  const groups = await browser.tabGroups.query({ windowId: targetWindowId });
   return groups.map(mapTabGroup);
 }
 

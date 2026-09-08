@@ -8,7 +8,17 @@ import {
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
+import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+
+/**
+ * 快照库 read-modify-write 跨页锁名。
+ *
+ * 快照的写入方不止面板：background SW（关窗自动保存 / 定时自动快照）也直写同一仓库。
+ * 裸 read → trim → write 在两个写入方交错时是 last-writer-wins（静默丢一条快照）；
+ * 删除/重命名同理。所有快照库 RMW 必须经本锁串行化。
+ */
+export const SNAPSHOTS_RMW_LOCK = 'tabs.snapshots-rmw';
 
 /** 生成快照 id（SW / 面板均可用的 crypto.randomUUID，退化路径相容）。 */
 function newSnapshotId(): string {
@@ -122,12 +132,16 @@ export function parseOneTab(text: string): SnapshotTab[] {
  * 静默丢失会被用户误认为已保存，必须由调用方提示。
  */
 export async function persistSnapshot(snapshot: Snapshot): Promise<Snapshot[]> {
-  const settings = await settingsRepository.read();
-  const existing = await snapshotsRepository.read();
-  const next = trimSnapshots([snapshot, ...existing], settings);
-  const ok = await snapshotsRepository.write(next);
-  if (!ok) throw new Error('persistSnapshot: storage write failed');
-  return next;
+  // 跨页串行化：面板（保存/归档/导入）与 background（关窗自动保存/定时快照）
+  // 可能并发走本函数，锁外交错会让后写覆盖先写（见 SNAPSHOTS_RMW_LOCK）。
+  return withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
+    const settings = await settingsRepository.read();
+    const existing = await snapshotsRepository.read();
+    const next = trimSnapshots([snapshot, ...existing], settings);
+    const ok = await snapshotsRepository.write(next);
+    if (!ok) throw new Error('persistSnapshot: storage write failed');
+    return next;
+  });
 }
 
 /**

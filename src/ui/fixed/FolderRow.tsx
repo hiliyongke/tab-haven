@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { FixedFolder } from '@/core/schema/models';
@@ -18,8 +18,42 @@ import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import { FolderItemRow } from './FolderItemRow';
 
+/**
+ * 全量标签 → 条目匹配索引（按 tabs 数组引用做模块级缓存）。
+ *
+ * N 个 FolderRow 各自建索引是 N×O(标签) 的重复劳动；索引内容只取决于 tabs
+ * 引用，缓存后每次快照全局只建一次（与 PinnedStrip 的 buildPinRuntimeIndex 同思路）。
+ */
+interface TabRuntimeIndex {
+  byKey: Map<string, TabRecord>;
+  byRawUrl: Map<string, TabRecord>;
+  byId: Map<number, TabRecord>;
+}
+let indexCacheTabs: readonly TabRecord[] | null = null;
+let indexCache: TabRuntimeIndex | null = null;
+function getTabRuntimeIndex(tabs: readonly TabRecord[]): TabRuntimeIndex {
+  if (indexCache && tabs === indexCacheTabs) return indexCache;
+  const byKey = new Map<string, TabRecord>();
+  const byRawUrl = new Map<string, TabRecord>();
+  const byId = new Map<number, TabRecord>();
+  for (const tab of tabs) {
+    if (tab.url) {
+      const key = webComparisonKey(tab.url, tab.pendingUrl);
+      if (key !== null) byKey.set(key, tab);
+      byRawUrl.set(tab.url, tab);
+    }
+    byId.set(tab.id, tab);
+  }
+  indexCacheTabs = tabs;
+  indexCache = { byKey, byRawUrl, byId };
+  return indexCache;
+}
+
+/** 未打开条目的运行时状态单例：内联 `{ isOpen: false }` 每次渲染都是新引用，会击穿 FolderItemRow 的 memo。 */
+const CLOSED_RUNTIME = { isOpen: false } as const;
+
 /** 固定文件夹：复用分组卡片（section-card + SectionHead）的视觉与交互。 */
-export function FolderRow({ folder }: { folder: FixedFolder }) {
+export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFolder }) {
   const { t } = useTranslation();
   const renameFolder = useDataStore((state) => state.renameFolder);
   const deleteFolder = useDataStore((state) => state.deleteFolder);
@@ -39,18 +73,8 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
    * 索引随 tabs / folder.items 变化重算；FolderItemRow 改为纯 memo 叶子，仅自身运行时变化时才重渲染。
    */
   const runtimeByItem = useMemo(() => {
-    // 建两套索引：比较键（覆盖 http(s)）+ 原样 URL（覆盖比较键无定义的内部页条目）。
-    const byKey = new Map<string, TabRecord>();
-    const byRawUrl = new Map<string, TabRecord>();
-    const byId = new Map<number, TabRecord>();
-    for (const tab of tabs) {
-      if (tab.url) {
-        const key = webComparisonKey(tab.url, tab.pendingUrl);
-        if (key !== null) byKey.set(key, tab);
-        byRawUrl.set(tab.url, tab);
-      }
-      byId.set(tab.id, tab);
-    }
+    // 索引全局共享（按 tabs 引用缓存），本层只做 O(条目) 的映射。
+    const { byKey, byRawUrl, byId } = getTabRuntimeIndex(tabs);
     const map = new Map<string, { isOpen: boolean; runtimeTab?: TabRecord }>();
     for (const item of folder.items) {
       if (item.pendingTabId !== undefined) {
@@ -116,6 +140,9 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
     folderId: folder.id,
     name: folder.name
   } as const;
+  // items 数组必须 memo 化：每次渲染新建数组会让 dnd-kit context value 变化，
+  // 子 sortable 节点多做一轮无效重渲染。
+  const itemSortableIds = useMemo(() => folder.items.map((item) => item.id), [folder.items]);
 
   // 头部操作：与原生组同款布局 [打开全部 / 存为书签 / 转原生组 / 编辑]，删除整合到 FolderEditDialog。
   const handleOpenAll = () => {
@@ -232,10 +259,7 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
         collapsed={folder.collapsed}
       >
         {!folder.collapsed && (
-          <SortableContext
-            items={folder.items.map((item) => item.id)}
-            strategy={verticalListSortingStrategy}
-          >
+          <SortableContext items={itemSortableIds} strategy={verticalListSortingStrategy}>
             <div className="section-body">
               <ul>
                 {folder.items.map((item) => (
@@ -243,7 +267,7 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
                     key={item.id}
                     folder={folder}
                     item={item}
-                    runtime={runtimeByItem.get(item.id) ?? { isOpen: false }}
+                    runtime={runtimeByItem.get(item.id) ?? CLOSED_RUNTIME}
                     importing={importing}
                   />
                 ))}
@@ -311,4 +335,4 @@ export function FolderRow({ folder }: { folder: FixedFolder }) {
       )}
     </>
   );
-}
+});
