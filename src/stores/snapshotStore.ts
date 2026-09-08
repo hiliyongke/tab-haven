@@ -41,7 +41,12 @@ interface SnapshotState {
   renameSnapshot: (id: string, name: string) => Promise<void>;
   /** 恢复指定快照（在当前窗口重新打开全部标签），返回打开的标签数。 */
   restore: (id: string) => Promise<number>;
+  /** 内存态重置（清除所有数据时调用：已删除的快照不应继续出现在列表里）。 */
+  reset: () => void;
 }
+
+/** 仓库 watcher 注册守卫（load 可重入，监听器只注册一次）。 */
+let watcherStarted = false;
 
 export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   snapshots: [],
@@ -50,6 +55,10 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   load: async () => {
     const snapshots = await snapshotsRepository.read();
     set({ snapshots, ready: true });
+    // 守卫：load 会被 StrictMode 与多入口重复调用，每次都注册会让同一次仓库变更
+    // 被回放 N 次（列表抖动 + 重复渲染）。
+    if (watcherStarted) return;
+    watcherStarted = true;
     // 关窗自动保存由 background SW 直写仓库：面板打开期间需实时同步列表/角标。
     // 回显守卫：本页面自身写入触发的回放内容相同，直接跳过。
     snapshotsRepository.watch((value) => {
@@ -187,5 +196,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const snap = get().snapshots.find((entry) => entry.id === id);
     if (!snap) return 0;
     return restoreSnapshot(snap);
-  }
+  },
+
+  reset: () => set({ snapshots: [], ready: false })
 }));

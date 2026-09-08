@@ -1,6 +1,19 @@
 import { browser } from 'wxt/browser';
+import { z } from 'zod';
 import { AllowanceLedger, type AllowanceSnapshot } from '@/platform/reuse/AllowanceLedger';
 import { logDegraded } from '@/platform/diagnostics';
+
+/**
+ * 镜像内容的校验 schema。
+ *
+ * storage.session 里的值同样属于「持久化数据」，按架构约定必须经 zod 校验；
+ * 此前只有一个 `typeof === 'object'` 判断加类型断言，坏数据会一路带到
+ * `AllowanceLedger.restore`（它内部虽有逐字段兜底，但那不该是唯一防线）。
+ */
+const AllowanceSnapshotSchema = z.record(
+  z.string(),
+  z.object({ tokens: z.number().finite(), expiresAt: z.number().finite() })
+);
 
 /**
  * 持久化豁免账本（MV3 SW 回收防护，R-A 修复）：
@@ -48,9 +61,19 @@ export function createPersistedAllowanceLedger(): PersistedAllowanceLedger {
     if (!sessionArea) return;
     try {
       const record = await sessionArea.get(ALLOWANCE_KEY);
-      const snapshot = record[ALLOWANCE_KEY];
-      if (snapshot && typeof snapshot === 'object') {
-        ledger.restore(snapshot as AllowanceSnapshot);
+      const parsed = AllowanceSnapshotSchema.safeParse(record[ALLOWANCE_KEY]);
+      if (parsed.success) {
+        ledger.restore(parsed.data);
+      } else if (record[ALLOWANCE_KEY] !== undefined) {
+        // 只记问题条数与 issue.code，**不传 error 对象**：本 schema 的 key 是
+        // `${windowId}:${url}`，而 zod 会把 path 序列化进 error.message —— 一旦进
+        // 诊断日志就等于把浏览过的 URL 写进可导出的诊断文件，违反「只记技术上下文、
+        // 不记录 URL」的承诺（见 platform/diagnostics.ts）。
+        const codes = parsed.error.issues.map((issue) => issue.code).join(',') || 'unknown';
+        logDegraded(
+          'reuse',
+          `复用账本镜像校验失败（${parsed.error.issues.length} 处：${codes}），已按空账本启动`
+        );
       }
     } catch (error) {
       logDegraded('reuse', '复用账本持久化读取失败', error);

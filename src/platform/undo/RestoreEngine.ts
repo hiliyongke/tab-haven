@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { UndoTabRecord } from '@/core/schema/models';
 import { NO_GROUP } from '@/core/tab-types';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 
 /**
@@ -16,10 +17,30 @@ import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 
 /** 恢复结果：成功条数 + 失败条目（失败项需保留在撤销栈中供用户重试）。 */
 export interface RestoreResult {
-  /** 实际新建的标签数。 */
+  /**
+   * 本次真正新建的标签数。
+   * 「目标窗口已打开同 URL」的按已恢复计入而不新建（用户意图是「这个页面要在」，
+   * 重复新建一个才是制造垃圾），但批次内的同 URL 记录一律照数恢复 —— 撤销要还回
+   * 用户实际关掉的数量。
+   */
   count: number;
   /** 本次未恢复成功的记录（与入参顺序无关，按恢复顺序追加）。 */
   failed: UndoTabRecord[];
+}
+
+/** 取窗口内已打开页面的比较键集合（去重判定的唯一口径）。 */
+async function openKeysInWindow(windowId: number): Promise<Set<string>> {
+  const keys = new Set<string>();
+  try {
+    const tabs = await browser.tabs.query({ windowId });
+    for (const tab of tabs) {
+      const key = webComparisonKey(tab.url ?? '', tab.pendingUrl ?? undefined);
+      if (key) keys.add(key);
+    }
+  } catch {
+    // 查询失败退化为「不去重」：宁可多开一个标签，也不能因为读不到状态而拒绝恢复。
+  }
+  return keys;
 }
 
 /**
@@ -33,6 +54,9 @@ export async function restoreTabRecordsDetailed(
   windowId: number
 ): Promise<RestoreResult> {
   const restored = [...records].sort((a, b) => a.index - b.index);
+  // 已打开去重：与快照恢复（snapshots.restoreSnapshot）同口径。
+  // 不做这一步的话，用户手动重开某页后再撤销，必定收获一个重复标签。
+  const openKeys = await openKeysInWindow(windowId);
   let count = 0;
   const failed: UndoTabRecord[] = [];
 
@@ -40,6 +64,13 @@ export async function restoreTabRecordsDetailed(
     // 无 URL 的记录无法恢复：计入失败明细，避免整批重试时反复静默跳过。
     if (!record.url) {
       failed.push(record);
+      continue;
+    }
+
+    const recordKey = webComparisonKey(record.url, undefined);
+    if (recordKey !== null && openKeys.has(recordKey)) {
+      // 目标窗口已有同 URL：视为已恢复，不再新建一个副本。
+      count += 1;
       continue;
     }
 
@@ -80,6 +111,9 @@ export async function restoreTabRecordsDetailed(
           }
         }
       }
+      // 刻意**不**把新恢复的 URL 加回 openKeys：撤销是「把关掉的还回来」，
+      // 同一批次里出现两条同 URL 是合法的（用户确实关了两个同 URL 标签）。
+      // 若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
       count += 1;
     } catch {
       // 单个标签恢复失败不影响同一批次中的其余标签；记录明细供调用方保留重试。

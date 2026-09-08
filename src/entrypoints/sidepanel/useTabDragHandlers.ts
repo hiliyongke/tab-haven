@@ -1,9 +1,14 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { browser } from 'wxt/browser';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { reorderBlockedReason } from '@/core/site/reorderCapability';
-import { computeGroupMoveIndex, computeReorderIndex, moveTab, moveTabs } from '@/platform/tabs';
+import {
+  computeGroupMoveIndex,
+  computeReorderIndex,
+  groupTabs,
+  moveTab,
+  moveTabs
+} from '@/platform/tabs';
 import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -15,7 +20,18 @@ import {
   type DragData,
   type SectionDragData
 } from '@/ui/dnd/types';
-import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/FixedArea';
+import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
+
+/** 落点是否属于固定空间（文件夹 / 固定条目 / 固定图标 / 两处空白投放区）。 */
+function isFixedSpaceTarget(overId: string | number, overData?: DragData): boolean {
+  return (
+    overId === FIXED_AREA_DROPPABLE ||
+    overId === PINNED_STRIP_DROPPABLE ||
+    overData?.type === DragType.Folder ||
+    overData?.type === DragType.FolderItem ||
+    overData?.type === DragType.Pin
+  );
+}
 
 /**
  * 拖拽分发 hook：把 dnd-kit 的 onDragEnd 按 DragData 类型分派到
@@ -162,6 +178,13 @@ export function useTabDragHandlers() {
       if (!activeData) return;
       const { notify } = useUndoStore.getState();
       const dataStore = useDataStore.getState();
+      // 导入事务进行中：固定空间（文件夹/固定图标）的写入会被有意丢弃，以防与事务的
+      // 串行写交错。此时投进固定空间只会「看起来没反应」，必须明确拒绝并说明原因，
+      // 而不是让用户以为扩展卡住或数据丢了。临时区排序不受影响，故只拦固定空间目标。
+      if (dataStore.importing && isFixedSpaceTarget(over.id, overData)) {
+        notify(t('fixed.importingBusy'));
+        return;
+      }
       // 列表内排序是否被阻断：统一判定，UI 与拖拽分发共用同一口径
       // （详见 core/site/reorderCapability）。
       const blocked = reorderBlockedReason({
@@ -190,10 +213,8 @@ export function useTabDragHandlers() {
               overTab.groupId >= 0 &&
               sourceTab.groupId !== overTab.groupId
             ) {
-              // 目标组可能刚被解散：失败静默（保持未分组），不产生未捕获 rejection。
-              void browser.tabs
-                .group({ tabIds: [sourceTab.id], groupId: overTab.groupId })
-                .catch(() => {});
+              // 目标组可能刚被解散：groupTabs 内部降级记录并保持未分组。
+              void groupTabs([sourceTab.id], overTab.groupId);
             }
           }
           return;
@@ -261,12 +282,12 @@ export function useTabDragHandlers() {
       // 固定条目：同文件夹排序 / 跨文件夹移动。
       if (activeData.type === DragType.FolderItem) {
         if (overData?.type === DragType.FolderItem && isSameContainer(activeData, overData)) {
-          void dataStore.reorderFolderItems(
-            activeData.folderId,
-            activeData.itemId,
-            overData.itemId,
-            isPlaceAfter(event)
-          );
+          void dataStore.reorderFolderItems({
+            folderId: activeData.folderId,
+            sourceId: activeData.itemId,
+            targetId: overData.itemId,
+            placeAfter: isPlaceAfter(event)
+          });
           return;
         }
         // 跨文件夹：拖到目标文件夹（或其条目）上时，把条目移入目标文件夹。

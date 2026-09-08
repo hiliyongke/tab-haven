@@ -8,8 +8,38 @@ import { AutoDiscardBatchSchema, DEFAULT_SETTINGS, SettingsSchema } from '@/core
  *  - AutoDiscardBatch 的 count 冗余字段必须与 tabIds.length 一致。
  */
 describe('SettingsSchema', () => {
+  it('空对象解析成功（任一字段漏写 .default() 即在此崩溃性失败）', () => {
+    expect(SettingsSchema.safeParse({}).success).toBe(true);
+  });
+
   it('空对象解析结果与 DEFAULT_SETTINGS 完全一致', () => {
     expect(SettingsSchema.parse({})).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('默认设置键集与空对象解析结果完全一致（未遗漏/多余的字段）', () => {
+    // 与 parse({}) 的键集比对：新增字段时两侧自动同步、测试自适应，不写死计数。
+    // 注意：可选且无输入的字段（如 language）解析后值恒为 undefined，zod 会将其从
+    // Object.keys 中剔除，故基准取「解析结果自身的键」而非 schema.shape（后者含 language）。
+    const parsed = SettingsSchema.parse({});
+    expect(Object.keys(DEFAULT_SETTINGS).sort()).toEqual(Object.keys(parsed).sort());
+  });
+
+  it('默认设置包含全部关键字段，且字段数符合预期规模', () => {
+    const keys = Object.keys(DEFAULT_SETTINGS);
+    // 关键字段必须存在（覆盖外观 / 同步开关 / 缓存 / 自动休眠等分组）。
+    for (const key of [
+      'themePreference',
+      'syncMirrorEnabled',
+      'noCachePatterns',
+      'discardWhitelist',
+      'autoSaveSnapshots',
+      'onboarded',
+      'conceptsSeen'
+    ]) {
+      expect(keys).toContain(key);
+    }
+    // 规模守护：新增设置项时此下限自然满足，防止 schema 被整体清空导致 DEFAULT_SETTINGS 塌缩。
+    expect(keys.length).toBeGreaterThanOrEqual(40);
   });
 
   it('部分字段缺失时补默认值，已存字段保留', () => {

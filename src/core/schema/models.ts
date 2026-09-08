@@ -33,6 +33,8 @@ export const DISCARD_WHITELIST_LIMIT = 500;
 export const HOST_MAX_LENGTH = 253;
 /** 单个撤销批次的标签条目上限。 */
 export const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
+/** 撤销栈默认深度（schema 与 core 共用同一来源，避免上限双定义）。 */
+export const DEFAULT_UNDO_STACK_LIMIT = 10;
 /** 单个快照的标签数上限。 */
 export const SNAPSHOT_TABS_LIMIT = 1_000;
 /** 快照族总条数上限（含归档与自动快照）。 */
@@ -126,7 +128,7 @@ export const SettingsSchema = z.object({
   /** 工具栏图标点击行为：panel 打开侧边栏（默认）/ regroup 后台整理临时区标签，不弹面板。 */
   actionClickMode: z.enum(['panel', 'regroup']).default('panel'),
   /** 撤销栈深度（FIFO 淘汰上限）。 */
-  undoStackLimit: z.number().int().min(5).max(50).default(10),
+  undoStackLimit: z.number().int().min(5).max(50).default(DEFAULT_UNDO_STACK_LIMIT),
   /**
    * 关窗自动保存：窗口关闭时自动存为快照（画像二生死线兜底）。
    * 默认关闭（PRD FR-D5.2 / 原则 8：自动化能力不默认接管用户数据）。
@@ -167,7 +169,8 @@ export const SettingsSchema = z.object({
   /** 工具栏角标模式：auto 有重复显重复数/否则显标签数 / count 恒显标签数 / dups 恒显重复组数 / off 关闭。 */
   badgeMode: z.enum(['auto', 'count', 'dups', 'off']).default('auto'),
   /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
-  contextMenusEnabled: z.boolean().default(true) /** 地址栏命令（th <关键词>）总开关。 */,
+  contextMenusEnabled: z.boolean().default(true),
+  /** 地址栏命令（th <关键词>）总开关。 */
   omniboxEnabled: z.boolean().default(true),
   /** 开发者：指定站点禁用前端缓存（DNR 响应头强制 no-store；需网站访问权限）。 */
   noCacheEnabled: z.boolean().default(false),
@@ -205,53 +208,19 @@ export const SettingsSchema = z.object({
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
-export const DEFAULT_SETTINGS: Settings = {
-  themePreference: 'system',
-  colorTheme: 'plain',
-  language: undefined,
-  aggregationThreshold: 2,
-  tabOrderSync: true,
-  showPinnedStrip: true,
-  pinnedStripSize: 'md',
-  density: 'cozy',
-  showUrl: false,
-  footerLabels: false,
-  showSplitBadges: true,
-  groupAccentStyle: 'auto',
-  autoScrollActive: true,
-  closeOnMiddleClick: true,
-  newTabPosition: 'end',
-  sortMode: 'browser',
-  autoDiscardEnabled: false,
-  autoDiscardMinutes: 30,
-  groupMode: 'site',
-  autoGroupNative: false,
-  actionClickMode: 'panel',
-  undoStackLimit: 10,
-  autoSaveSnapshots: false,
-  autoSnapshotIntervalMin: 30,
-  maxAutoSnapshots: 10,
-  snapshotLimit: 30,
-  toastDurationSec: 7,
-  rowActionsVisible: false,
-  pinyinSearch: true,
-  persistUndo: true,
-  uniqueUrlTabs: true,
-  discardWhitelist: [],
-  searchAllWindows: false,
-  discardNotifyEnabled: true,
-  reuseNotifyEnabled: true,
-  badgeMode: 'auto',
-  contextMenusEnabled: true,
-  omniboxEnabled: true,
-  noCacheEnabled: false,
-  noCachePatterns: [],
-  noCacheBannerEnabled: true,
-  onboarded: false,
-  tipSeen: false,
-  conceptsSeen: false,
-  syncMirrorEnabled: false
-};
+/**
+ * 默认设置：直接由 `SettingsSchema` 派生，不再手抄一份字段。
+ *
+ * 手抄的代价是「加设置忘了改默认值」——默认值散落两处，schema 校验通过但
+ * 「恢复默认设置」会把新字段写成 undefined，属静默数据损坏。
+ * 派生后 schema 是默认值的唯一来源，`language` 等可选字段也自动保持缺省语义。
+ *
+ * **约定（新增设置项必须遵守）**：`SettingsSchema` 中每个字段都必须带 `.default()`，
+ * 否则 `SettingsSchema.parse({})` 会在模块加载期抛错，使所有入口（popup / sidepanel /
+ * background）导入即崩溃。新增字段时务必补 `.default()`，并跑 `models.test.ts` 的
+ * 解析断言守住这条约束。
+ */
+export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
 
 /** 撤销栈条目（Phase 5 使用，先行定义以固定数据形态）。 */
 export const UndoTabRecordSchema = z.object({
@@ -269,6 +238,12 @@ export const UndoBatchSchema = z.object({
   id: z.string(),
   kind: z.string(),
   createdAt: z.number(),
+  /**
+   * 关闭发生时的窗口 id（旧批次缺省）。
+   * 撤销必须回到原窗口：只记录「关了什么」而不记录「从哪关的」，用户切到另一个
+   * 窗口再撤销时，标签会被恢复到错误的窗口。
+   */
+  windowId: z.number().int().optional(),
   entries: z.array(UndoTabRecordSchema).max(UNDO_BATCH_ENTRIES_LIMIT)
 });
 export type UndoBatch = z.infer<typeof UndoBatchSchema>;

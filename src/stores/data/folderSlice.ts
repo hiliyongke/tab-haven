@@ -1,0 +1,332 @@
+import { createFolder as createFolderModel, createFolderItem } from '@/core/fixed/FolderOps';
+import {
+  computeAddTabsToFolder,
+  computeMoveFolder,
+  computeMoveFolderItem,
+  computeRemoveFolder,
+  computeReorderFolderItems,
+  computeRenameFolder,
+  computeToggleFolderCollapsed,
+  fixedItemKey
+} from '@/core/commands/folderCommands';
+import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
+import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
+import { webComparisonKey } from '@/core/url/UrlInspector';
+import { structuralSignature } from '@/core/util/signature';
+import { logDegraded } from '@/platform/diagnostics';
+import { mutateSession, readSession } from '@/platform/storage/session';
+import {
+  activateTab as activateTabPlatform,
+  createNewTab as createNewTabPlatform,
+  groupTabs,
+  queryCurrentWindowTabs,
+  updateGroupMeta,
+  updateTabUrl
+} from '@/platform/tabs';
+import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+import type { AddTabsToFolderResult, DataContext, DataState } from './types';
+
+/**
+ * 文件夹切片：收藏夹的增删改/拖入/排序、固定条目打开与跨组移动、原生组 ↔ 固定文件夹转换、
+ * 以及每次标签事件后的挂起转正 + 绑定维护。
+ */
+export function createFolderSlice(ctx: DataContext): Partial<DataState> {
+  return {
+    createFolder: async (name) => {
+      const folder = createFolderModel(name);
+      await ctx.writeFolders([...ctx.get().folders, folder]);
+      return folder;
+    },
+
+    renameFolder: async (folderId, name) => {
+      await ctx.writeFolders(computeRenameFolder(ctx.get().folders, folderId, name));
+    },
+
+    deleteFolder: async (folderId) => {
+      const result = await mutateSession((session) => {
+        const bindings = { ...session.itemTabBindings };
+        for (const item of ctx.get().folders.find((f) => f.id === folderId)?.items ?? []) {
+          delete bindings[item.id];
+        }
+        return { itemTabBindings: bindings };
+      });
+      await ctx.writeFolders(computeRemoveFolder(ctx.get().folders, folderId));
+      ctx.applyBindings(result);
+    },
+
+    toggleFolderCollapsed: async (folderId) => {
+      await ctx.writeFolders(computeToggleFolderCollapsed(ctx.get().folders, folderId));
+    },
+
+    addTabsToFolder: async (tabs, folderId) => {
+      // 导入事务进行中：写 folders 会被丢弃，而下面的 mutateSession 却会照常执行 ——
+      // 结果是指向不存在条目的脏绑定。直接跳过整条路径，避免「提示成功但没变化」。
+      if (ctx.isImporting()) {
+        logDegraded('dataStore', '导入事务进行中，本次拖入固定空间已跳过');
+        return { added: 0, moved: 0, skipped: tabs.length } satisfies AddTabsToFolderResult;
+      }
+      const currentFolders = ctx.get().folders;
+      const candidates = new Map<string, { url: string; title: string; favIconUrl?: string }>();
+      for (const tab of tabs) {
+        const key = webComparisonKey(tab.url, tab.pendingUrl);
+        if (!key) continue;
+        candidates.set(key, {
+          url: key,
+          title: tab.title || key,
+          favIconUrl: tab.favIconUrl
+        });
+      }
+      const folderExists = currentFolders.some((folder) => folder.id === folderId);
+      if (candidates.size === 0 || !folderExists) {
+        return { added: 0, moved: 0, skipped: tabs.length };
+      }
+
+      // 纯计算：下一版 folders + 绑定所需中间量（与平台无关，可单测）。
+      const computed = computeAddTabsToFolder(currentFolders, candidates, folderId);
+
+      const result = await mutateSession((session) => {
+        const bindings = { ...session.itemTabBindings };
+        const boundTabIds = new Set(Object.values(bindings));
+        for (const folder of currentFolders) {
+          for (const item of folder.items) {
+            const key = fixedItemKey(item.url);
+            // 无 URL 条目判不出身份，不参与「被候选覆盖」的解绑判定。
+            if (key === null) continue;
+            const selected = computed.selectedExisting.get(key);
+            if (
+              computed.duplicateItemIds.has(item.id) ||
+              (computed.comparisonKeys.has(key) && selected?.id !== item.id)
+            ) {
+              const boundId = bindings[item.id];
+              delete bindings[item.id];
+              if (boundId !== undefined) boundTabIds.delete(boundId);
+            }
+          }
+        }
+        // 为新条目建立绑定：按 URL 匹配传入标签，未占用、未固定、非隐身的才绑定，
+        // 让刚拖入的标签立即从临时区排除（否则要等 reconcileWithTabs 才补绑）。
+        for (const newItem of computed.newItems) {
+          const key = fixedItemKey(newItem.url);
+          if (key === null) continue;
+          const tab = tabs.find((candidate) => {
+            return (
+              webComparisonKey(candidate.url, candidate.pendingUrl) === key &&
+              !candidate.pinned &&
+              !candidate.incognito &&
+              !boundTabIds.has(candidate.id)
+            );
+          });
+          if (tab) {
+            bindings[newItem.id] = tab.id;
+            boundTabIds.add(tab.id);
+          }
+        }
+        return { itemTabBindings: bindings };
+      });
+      await ctx.writeFolders(computed.next);
+      ctx.applyBindings(result);
+      return {
+        added: computed.newItems.length,
+        moved: computed.moved,
+        skipped: tabs.length - candidates.size + computed.targetDuplicates
+      } satisfies AddTabsToFolderResult;
+    },
+
+    removeFolderItem: async (folderId, itemId) => {
+      const result = await mutateSession((session) => {
+        const bindings = { ...session.itemTabBindings };
+        delete bindings[itemId];
+        return { itemTabBindings: bindings };
+      });
+      // 同步绑定标签 id，让被释放的标签立即回到临时区。
+      ctx.applyBindings(result);
+
+      await ctx.writeFolders(
+        ctx
+          .get()
+          .folders.map((folder) =>
+            folder.id === folderId
+              ? { ...folder, items: folder.items.filter((item) => item.id !== itemId) }
+              : folder
+          )
+      );
+    },
+
+    reorderFolderItems: async ({ folderId, sourceId, targetId, placeAfter }) => {
+      await ctx.writeFolders(
+        computeReorderFolderItems(ctx.get().folders, { folderId, sourceId, targetId, placeAfter })
+      );
+    },
+
+    moveFolder: async (sourceId, targetId, placeAfter) => {
+      await ctx.writeFolders(
+        computeMoveFolder(ctx.get().folders, { sourceId, targetId, placeAfter })
+      );
+    },
+
+    moveFolderItem: async (sourceFolderId, itemId, targetFolderId) => {
+      await ctx.writeFolders(
+        computeMoveFolderItem(ctx.get().folders, { sourceFolderId, itemId, targetFolderId })
+      );
+    },
+
+    openSavedItem: async (item) => {
+      const tabs = await queryCurrentWindowTabs();
+      const { itemTabBindings: bindings } = await readSession();
+      const windowId = tabs[0]?.windowId;
+
+      // 0) 挂起条目优先：激活其待导航标签（url 尚未转正时避免误匹配/重复新建）
+      if (item.pendingTabId !== undefined) {
+        const pendingTab = tabs.find((tab) => tab.id === item.pendingTabId);
+        if (pendingTab) {
+          await activateTabPlatform(pendingTab.id);
+          return;
+        }
+      }
+
+      // 1) 绑定标签优先
+      const boundTabId = bindings[item.id];
+      if (boundTabId !== undefined && tabs.some((tab) => tab.id === boundTabId)) {
+        await activateTabPlatform(boundTabId);
+        return;
+      }
+      // 2) 窗口内精确 URL 匹配（与 UI 侧判定同一口径，见 core/fixed/ItemMatch）
+      const exact = tabs.find((tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito);
+      if (exact) {
+        const result = await mutateSession((session) => ({
+          itemTabBindings: { ...session.itemTabBindings, [item.id]: exact.id }
+        }));
+        ctx.applyBindings(result);
+        await activateTabPlatform(exact.id);
+        return;
+      }
+      // 3) 新建并绑定
+      if (windowId === undefined) return;
+      const created = await createNewTabPlatform(windowId);
+      // 豁免复用：显式打开的固定项不允许被自动合并（与 RestoreEngine 一致）。
+      // 须在导航前发放（onUpdated 先到时令牌未就位会被合并），创建失败则不发放（避免令牌残留误豁免）。
+      if (item.url) {
+        await grantReuseAllowance(windowId, item.url);
+        await updateTabUrl(created.id, item.url);
+      }
+      const result = await mutateSession((session) => ({
+        itemTabBindings: { ...session.itemTabBindings, [item.id]: created.id }
+      }));
+      ctx.applyBindings(result);
+    },
+
+    createFolderFromNativeGroup: async (name, groupTabs) => {
+      // 导入事务进行中：写 folders 会被丢弃，而绑定变更会照常发生 —— 同 addTabsToFolder，
+      // 会留下指向不存在条目的脏绑定。整条路径跳过。
+      if (ctx.isImporting()) {
+        logDegraded('dataStore', '导入事务进行中，本次「保存为固定文件夹」已跳过');
+        return;
+      }
+      const savable = new Map<string, { url: string; title: string; favIconUrl?: string }>();
+      for (const tab of groupTabs) {
+        const key = webComparisonKey(tab.url, tab.pendingUrl);
+        if (key) {
+          savable.set(key, {
+            url: key,
+            title: tab.title || key,
+            favIconUrl: tab.favIconUrl
+          });
+        }
+      }
+      const folder = createFolderModel(name);
+      const items = [...savable.values()].map((entry) => createFolderItem(entry));
+      await ctx.writeFolders([...ctx.get().folders, { ...folder, items }]);
+
+      // 建立绑定：精确 URL 匹配（串行化内完成，防并发覆盖）
+      const result = await mutateSession((session) => {
+        const bindings = { ...session.itemTabBindings };
+        const boundTabIds = new Set(Object.values(bindings));
+        for (const item of items) {
+          const match = groupTabs.find(
+            (tab) =>
+              webComparisonKey(tab.url, tab.pendingUrl) === item.url &&
+              !tab.pinned &&
+              !boundTabIds.has(tab.id)
+          );
+          if (match) {
+            bindings[item.id] = match.id;
+            boundTabIds.add(match.id);
+          }
+        }
+        return { itemTabBindings: bindings };
+      });
+      ctx.applyBindings(result);
+    },
+
+    syncFolderToNativeGroup: async (folderId) => {
+      const folder = ctx.get().folders.find((f) => f.id === folderId);
+      if (!folder) return false;
+
+      const items = folder.items.filter((item) => item.url);
+      if (items.length === 0) return false;
+
+      // 先恢复已关闭的固定条目，确保转换不是“只处理当前碰巧打开的标签”。
+      // 窗口内标签集合在一次查询内复用（openSavedItem 新建的标签由末尾补查感知）。
+      const initialTabs = await queryCurrentWindowTabs();
+      for (const item of items) {
+        const alreadyOpen = initialTabs.some(
+          (tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito && !tab.pinned
+        );
+        if (!alreadyOpen) await ctx.get().openSavedItem(item);
+      }
+
+      const tabs = await queryCurrentWindowTabs();
+      const memberIds: number[] = [];
+      const seen = new Set<number>();
+      for (const item of items) {
+        const tab = tabs.find(
+          (candidate) =>
+            itemUrlMatchesTab(item.url, candidate) &&
+            !candidate.incognito &&
+            !candidate.pinned &&
+            !seen.has(candidate.id)
+        );
+        if (tab) {
+          memberIds.push(tab.id);
+          seen.add(tab.id);
+        }
+      }
+      if (memberIds.length === 0) return false;
+
+      const groupId = await groupTabs(memberIds);
+      if (groupId === undefined) return false;
+      await updateGroupMeta(groupId, folder.name);
+      await ctx.get().deleteFolder(folderId);
+      return true;
+    },
+
+    reconcileWithTabs: async (tabs) => {
+      // 挂起条目转正
+      const pending = reconcilePendingItems(ctx.get().folders, tabs);
+      if (pending.changed) {
+        await ctx.writeFolders(pending.folders);
+      }
+
+      // 绑定维护（串行化内 read-modify-write，防与用户操作竞态）
+      const result = await mutateSession((session) => {
+        const bindingResult = reconcileBindings(pending.folders, tabs, session.itemTabBindings);
+        if (!bindingResult.changed) return {};
+        return { itemTabBindings: bindingResult.bindings };
+      });
+      const nextBoundTabIds = Object.values(result.data.itemTabBindings);
+      // 仅当绑定集合实际变化时才更新 store，避免每次标签事件（如仅标题更新）都触发全量重渲染。
+      if (structuralSignature(nextBoundTabIds) !== structuralSignature(ctx.get().boundTabIds)) {
+        ctx.set({ boundTabIds: nextBoundTabIds });
+      }
+      // reconcileWithTabs 是每次标签事件都会走的高频路径，此处只记录降级状态，
+      // 不做 set 之外的副作用，避免高频路径放大开销。
+      if (!result.persisted && !ctx.get().storageDegraded) {
+        ctx.set({ storageDegraded: true });
+        logDegraded('dataStore', '会话绑定未能持久化，面板重启后挂起条目绑定将丢失');
+      } else if (result.persisted && ctx.get().storageDegraded) {
+        // 会话绑定恢复持久化：清除降级告警（与「成功写即复位」原则一致）。
+        ctx.set({ storageDegraded: false });
+      }
+    }
+  };
+}

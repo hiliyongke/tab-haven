@@ -4,7 +4,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
-import { snapshotsRepository } from '@/platform/storage/repositories';
+import { pinsRepository, snapshotsRepository } from '@/platform/storage/repositories';
 import { readSession } from '@/platform/storage/session';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -208,6 +208,47 @@ describe('dataStore 固定空间事务', () => {
     expect(stored['tabs.snapshots.v1']![0]!.id).toBe('new');
   });
 
+  it('导入事务期间拖入固定空间被跳过（不产生指向不存在条目的脏绑定）', async () => {
+    // 回归：importData 期间 writeFolders 会丢弃写入，但 mutateSession 照常执行 ——
+    // 会给「根本没进文件夹」的条目建立绑定，且 UI 提示「新增 N 个」而列表毫无变化。
+    const folder = await useDataStore.getState().createFolder('F');
+
+    // 让 importData 挂在第一次落盘上，制造「事务进行中」窗口。
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.local, 'set')
+      .mockImplementation((() => gate.then(() => undefined)) as never);
+
+    const importing = useDataStore.getState().importData({
+      format: 'tabs.export',
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS,
+      snapshots: []
+    });
+
+    const result = await useDataStore
+      .getState()
+      .addTabsToFolder([makeTab({ id: 1, url: 'https://a.com/', title: 'A' })], folder.id);
+
+    // 事务状态必须对 UI 可见：拖拽入口据此拒绝投放并提示，而不是「拖了没反应」。
+    expect(useDataStore.getState().importing).toBe(true);
+    expect(result).toEqual({ added: 0, moved: 0, skipped: 1 });
+    const session = await readSession();
+    expect(Object.keys(session.itemTabBindings)).toHaveLength(0);
+
+    setSpy.mockRestore();
+    release?.();
+    await importing;
+    // 事务结束后必须复位，否则固定空间会被永久拒绝投放。
+    expect(useDataStore.getState().importing).toBe(false);
+  });
+
   it('updateSettings：落盘失败时不切换到新值并置起降级标志', async () => {
     const setSpy = vi
       .spyOn(fakeBrowser.storage.local, 'set')
@@ -220,6 +261,23 @@ describe('dataStore 固定空间事务', () => {
     expect(useDataStore.getState().settings.density).toBe('cozy');
     expect(useDataStore.getState().storageDegraded).toBe(true);
     setSpy.mockRestore();
+  });
+
+  it('降级标志按分区记账：其他分区写成功不得掩盖设置未保存', async () => {
+    // 回归：storageDegraded 曾是一个全局布尔，任一分区写成功就整体复位 ——
+    // 设置写失败（用户改的设置压根没存）会被随后一次拖拽写成功悄悄抹掉。
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.local, 'set')
+      .mockImplementation(() => Promise.reject(new Error('quota')) as never);
+    await expect(useDataStore.getState().updateSettings({ density: 'compact' })).rejects.toThrow();
+    setSpy.mockRestore();
+    expect(useDataStore.getState().storageDegraded).toBe(true);
+
+    // 固定文件夹写入恢复正常
+    await useDataStore.getState().createFolder('F');
+
+    expect(useDataStore.getState().folders).toHaveLength(1);
+    expect(useDataStore.getState().storageDegraded).toBe(true);
   });
 
   it('toggleSiteCollapsed：幂等写入', async () => {
@@ -262,6 +320,21 @@ describe('dataStore 固定空间事务', () => {
     expect(useDataStore.getState().collapsedSites).toEqual([]);
   });
 
+  it('clearAllData：重置降级记账（清空后不再提示「可能未保存」）', async () => {
+    // 回归：清空数据后存储已恢复正常，若沿用此前的降级记账，
+    // 「数据可能未保存」横幅会在用户刚清干净的状态下永久驻留。
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.local, 'set')
+      .mockImplementation(() => Promise.reject(new Error('quota')) as never);
+    await expect(useDataStore.getState().updateSettings({ density: 'compact' })).rejects.toThrow();
+    setSpy.mockRestore();
+    expect(useDataStore.getState().storageDegraded).toBe(true);
+
+    await useDataStore.getState().clearAllData();
+
+    expect(useDataStore.getState().storageDegraded).toBe(false);
+  });
+
   it('reconcileWithTabs：挂起条目导航转正 + 自动建立绑定', async () => {
     useDataStore.setState({
       folders: [
@@ -286,6 +359,23 @@ describe('dataStore 固定空间事务', () => {
     const session = await readSession();
     expect(session.itemTabBindings['i1']).toBe(10);
     expect(useDataStore.getState().boundTabIds).toContain(10);
+  });
+
+  it('initialize：磁盘含同身份重复固定图标时按首个去重（防重复磁贴回归）', async () => {
+    // 回归：initialize 曾直接用仓库原值，磁盘/镜像里的重复身份会渲染成两块磁贴
+    // （而 watcher 路径是会去重的，表现为「启动时重复、任一外部写入后恢复正常」）。
+    await fakeBrowser.storage.local.set({
+      [pinsRepository.keyName]: [
+        { id: 'p1', identity: 'a.com', url: 'https://a.com/1', title: 'A1' },
+        { id: 'p2', identity: 'a.com', url: 'https://a.com/2', title: 'A2' },
+        { id: 'p3', identity: 'b.com', url: 'https://b.com/', title: 'B' }
+      ]
+    });
+
+    await useDataStore.getState().initialize();
+
+    const pins = useDataStore.getState().pins;
+    expect(pins.map((pin) => pin.id)).toEqual(['p1', 'p3']);
   });
 
   it('reconcileWithTabs：挂起标签已关闭则条目移除', async () => {

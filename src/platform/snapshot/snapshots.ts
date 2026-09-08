@@ -1,5 +1,10 @@
 import { browser } from 'wxt/browser';
-import type { Settings, Snapshot, SnapshotTab } from '@/core/schema/models';
+import {
+  SNAPSHOT_TABS_LIMIT,
+  type Settings,
+  type Snapshot,
+  type SnapshotTab
+} from '@/core/schema/models';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
@@ -68,6 +73,9 @@ export function trimSnapshots(list: readonly Snapshot[], settings: Settings): Sn
   return merged.slice(0, limit);
 }
 
+/** OneTab 导入文本的体积上限（1MB，远超正常使用规模）。 */
+const ONE_TAB_INPUT_LIMIT = 1024 * 1024;
+
 /**
  * 解析 OneTab 导出文本为快照条目。
  * 兼容格式：每行一个条目，可为裸 URL、或 "URL - Title"、"[URL] Title"。
@@ -75,7 +83,12 @@ export function trimSnapshots(list: readonly Snapshot[], settings: Settings): Sn
  */
 export function parseOneTab(text: string): SnapshotTab[] {
   const out: SnapshotTab[] = [];
+  // 输入体积与输出条数都要设上限：粘贴内容是用户可控输入，
+  // 超大文本会先构造出巨大数组，超条数则只在写盘时才被 schema 拒绝 ——
+  // 用户只会看到一个泛化的「操作失败」。提前截断并给出确定性结果。
+  if (text.length > ONE_TAB_INPUT_LIMIT) return out;
   for (const raw of text.split(/\r?\n/)) {
+    if (out.length >= SNAPSHOT_TABS_LIMIT) break;
     const line = raw.trim();
     if (!line || line.startsWith('//')) continue;
     let url: string;

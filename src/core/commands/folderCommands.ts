@@ -9,10 +9,15 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 固定条目的身份键：web 页取完整比较键（查询串与锚点参与身份），
- * 非 web 页降级为原样 URL，空 URL 为空串。
+ * 非 web 页降级为原样 URL。
+ *
+ * 无 URL（挂起条目）时返回 null 而非空串：空串会让所有无 URL 条目撞成同一个键，
+ * 于是「第二个挂起条目」会被判为重复项、从**全部文件夹**里静默删除。
+ * `FixedFolderItemSchema.url` 是可选的 —— 导入的备份文件可以合法地不含它。
+ * 返回 null 让去重逻辑显式跳过这些条目（无法判身份就不参与身份去重）。
  */
-export function fixedItemKey(url: string | undefined): string {
-  if (!url) return '';
+export function fixedItemKey(url: string | undefined): string | null {
+  if (!url) return null;
   return webComparisonKey(url, undefined) ?? url;
 }
 
@@ -56,7 +61,13 @@ export function computeMoveFolder(
   return reorderFolders(folders, op.sourceId, op.targetId, op.placeAfter);
 }
 
-/** 跨文件夹移动条目（URL 全局唯一：目标已存在同 URL 时不重复插入，纯）。 */
+/**
+ * 跨文件夹移动条目（纯）。
+ *
+ * URL 全局唯一约束下的语义：目标文件夹已存在同 URL 条目时，源条目被**丢弃**
+ * （保留目标那份），而不是「不插入也不删除」——后者会让同一 URL 长期存在两份副本，
+ * 与固定空间的唯一性不变量冲突。
+ */
 export function computeMoveFolderItem(
   folders: FixedFolder[],
   op: { sourceFolderId: string; itemId: string; targetFolderId: string }
@@ -67,9 +78,10 @@ export function computeMoveFolderItem(
   const targetFolder = folders.find((folder) => folder.id === op.targetFolderId);
   const item = sourceFolder?.items.find((entry) => entry.id === op.itemId);
   if (!item || !targetFolder) return folders;
-  const targetHasDuplicate = targetFolder.items.some(
-    (entry) => fixedItemKey(entry.url) === fixedItemKey(item.url)
-  );
+  const itemKey = fixedItemKey(item.url);
+  // 无 URL 条目无法判定身份，不参与唯一性去重，直接移动。
+  const targetHasDuplicate =
+    itemKey !== null && targetFolder.items.some((entry) => fixedItemKey(entry.url) === itemKey);
   return folders.map((folder) => {
     if (folder.id === op.sourceFolderId) {
       return { ...folder, items: folder.items.filter((entry) => entry.id !== op.itemId) };
@@ -123,6 +135,9 @@ export function computeAddTabsToFolder(
   for (const folder of currentFolders) {
     for (const item of folder.items) {
       const key = fixedItemKey(item.url);
+      // 无 URL 条目（挂起条目 / 导入数据）判不出身份：既不登记为已存在，也不参与去重。
+      // 否则它们会共享同一个空键，第二个及之后的条目被当成重复项删除。
+      if (key === null) continue;
       if (existingByKey.has(key)) {
         duplicateItemIds.add(item.id);
       } else {
@@ -146,8 +161,10 @@ export function computeAddTabsToFolder(
   const foldersWithoutCandidates = currentFolders.map((folder) => ({
     ...folder,
     items: folder.items.filter((item) => {
-      const key = fixedItemKey(item.url);
       if (duplicateItemIds.has(item.id)) return false;
+      const key = fixedItemKey(item.url);
+      // 无身份条目原样保留：它们不可能是任何候选的重复项。
+      if (key === null) return true;
       if (!comparisonKeys.has(key)) return true;
       // 同文件夹内已存在的条目保持原位（重复拖入同文件夹不应把它移到末尾）。
       return folder.id === folderId && selectedExisting.get(key)?.id === item.id;

@@ -5,6 +5,7 @@ import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
+import { resolveRestoreWindowId } from '@/platform/tabs';
 import { logFailure } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -32,6 +33,8 @@ interface UndoState {
   batches: UndoBatch[];
   toast: ToastState | null;
   ready: boolean;
+  /** 撤销进行中：UI 据此禁用入口，避免并发撤销。 */
+  undoing: boolean;
 
   load: () => Promise<void>;
   /** 统一关闭入口：记录 + 执行 + 提示。 */
@@ -57,6 +60,17 @@ interface UndoState {
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * 撤销执行互斥。
+ *
+ * 恢复一个批次要为每个标签走一次 `tabs.create`（几十~几百 ms）。若期间允许再次撤销，
+ * 第二次调用读到的仍是「未出栈」的同一批，同一批标签会被恢复两次 —— 撤销从安全网
+ * 变成制造重复标签的来源。
+ *
+ * 锁在 `await` 之前同步置起，因此出栈是否提前都安全；出栈刻意**不**提前到恢复之前：
+ * 「恢复成功才出栈」是本 store 的核心不变量，失败项要能重新入栈供用户重试。
+ */
+let undoInFlight = false;
 
 export const useUndoStore = create<UndoState>()((set, get) => {
   const scheduleToastClear = (): void => {
@@ -69,26 +83,50 @@ export const useUndoStore = create<UndoState>()((set, get) => {
   };
 
   /**
-   * 撤销执行体（undo / undoBatch 共用）：出栈结果由调用方算好传入。
+   * 撤销执行体（undo / undoBatch 共用）。
    *
-   * 关键语义：恢复成功才提交。旧实现先出栈再恢复，一旦部分或全部恢复失败，
+   * 关键语义：恢复成功才出栈。旧实现先出栈再恢复，一旦部分或全部恢复失败，
    * 该批次的撤销记录已经消失，用户既没拿回标签也失去了重试入口。
    * 现在：先恢复 → 按结果决定整批移除还是保留失败项（失败项重新入栈，可再次撤销）。
+   *
+   * 因此出栈由调用方经 `onCommitted` 回调执行，而**不是**在调用前乐观出栈：
+   * 提前出栈会在「拿不到目标窗口」这类早退路径上把批次永久丢掉。
    */
-  const runUndo = async (batch: UndoBatch, remaining: UndoBatch[]): Promise<void> => {
-    const windowId = useTabStore.getState().currentWindowId;
-    if (windowId === undefined) return;
+  const runUndo = async (
+    batch: UndoBatch,
+    /**
+     * 提交回调：恢复已发生后调用，参数为此刻的栈与需重试的批次。
+     * 由调用方决定「如何移除该批次」，本函数只保证调用时机在恢复之后。
+     */
+    onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void
+  ): Promise<void> => {
+    // 回到当初关掉它的窗口；原窗口已关闭时退回当前聚焦窗口（归档场景常见）。
+    const windowId = await resolveRestoreWindowId(batch.windowId);
+    if (windowId === undefined) {
+      // 无可用窗口时必须让用户知情：静默 return 会让「点了撤销什么都没发生」。
+      // 注意：这里刻意不提交出栈——批次必须留在栈里，否则用户再也拿不回来。
+      set({
+        toast: {
+          message: i18n.t('errors.operationFailed'),
+          canUndo: false,
+          batchId: undefined
+        }
+      });
+      scheduleToastClear();
+      return;
+    }
     clearTimeout(toastTimer);
     set({ toast: null });
 
     const result = await restoreTabRecordsDetailed(batch.entries, windowId);
     const failedCount = result.failed.length;
-
     // 失败项保留为一个新批次（放回栈顶，位置最靠前，便于立刻重试）。
-    const nextBatches =
-      failedCount > 0 ? [{ ...batch, entries: result.failed }, ...remaining] : remaining;
+    const retryBatch = failedCount > 0 ? { ...batch, entries: result.failed } : undefined;
+    // 出栈基于「此刻的栈」而非入口快照：恢复期间可能有新批次入栈（如同步关闭），
+    // 用入口快照会把它们整批抹掉。
+    onCommitted(get().batches, retryBatch);
 
-    set({ batches: nextBatches });
+    const nextBatches = get().batches;
     const settings = await settingsRepository.read();
     if (settings.persistUndo) {
       const ok = await undoRepository.write(nextBatches);
@@ -124,6 +162,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     batches: [],
     toast: null,
     ready: false,
+    undoing: false,
 
     load: async () => {
       const settings = await settingsRepository.read();
@@ -169,7 +208,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
       const batch = createUndoBatch(
         'close',
-        closed.map((tab) => toUndoTabRecord(tab, groupNameById))
+        closed.map((tab) => toUndoTabRecord(tab, groupNameById)),
+        { windowId: closed[0]?.windowId ?? useTabStore.getState().currentWindowId }
       );
 
       await appendBatch(batch);
@@ -189,25 +229,49 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     },
 
     undo: async () => {
-      const [latest, remaining] = popBatch(get().batches);
+      if (undoInFlight) return;
+      const [latest] = popBatch(get().batches);
       if (!latest) return;
-      await runUndo(latest, remaining);
+      undoInFlight = true;
+      set({ undoing: true });
+      try {
+        await runUndo(latest, (current, retryBatch) => {
+          // 恢复已发生：此时才出栈（按 id 精确移除，不用 popBatch——恢复期间
+          // 可能有新批次入栈，栈尾未必还是本批）。失败项放回栈顶保留重试入口。
+          const remaining = current.filter((entry) => entry.id !== latest.id);
+          set({ batches: retryBatch ? [retryBatch, ...remaining] : remaining });
+        });
+      } finally {
+        undoInFlight = false;
+        set({ undoing: false });
+      }
     },
 
     undoBatch: async (batchId) => {
+      if (undoInFlight) return;
       const batch = get().batches.find((entry) => entry.id === batchId);
       if (!batch) return;
-      await runUndo(
-        batch,
-        get().batches.filter((entry) => entry.id !== batchId)
-      );
+      undoInFlight = true;
+      set({ undoing: true });
+      try {
+        await runUndo(batch, (current, retryBatch) => {
+          const remaining = current.filter((entry) => entry.id !== batchId);
+          set({
+            batches: retryBatch ? [retryBatch, ...remaining] : remaining
+          });
+        });
+      } finally {
+        undoInFlight = false;
+        set({ undoing: false });
+      }
     },
 
     recordClosedBatch: async (tabs, kind, groupNameById) => {
       if (tabs.length === 0) return;
       const batch = createUndoBatch(
         kind,
-        tabs.map((tab) => toUndoTabRecord(tab, groupNameById ?? new Map()))
+        tabs.map((tab) => toUndoTabRecord(tab, groupNameById ?? new Map())),
+        { windowId: tabs[0]?.windowId }
       );
       await appendBatch(batch);
     },

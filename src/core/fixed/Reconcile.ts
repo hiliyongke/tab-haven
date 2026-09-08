@@ -21,13 +21,18 @@ export function reconcilePendingItems(
 ): ReconcileResult {
   let changed = false;
   const seenUrls = new Set<string>();
+  // 预建标签索引：原先在「文件夹 × 条目」的内层循环里 tabs.find(...)，
+  // 复杂度 O(条目数 × 标签数)。该函数每次标签事件都会跑（上限 200 文件夹 × 500 条目），
+  // 是全应用最值得消除的一处热点。
+  const tabById = new Map<number, TabRecord>();
+  for (const tab of tabs) tabById.set(tab.id, tab);
 
   const next = folders.map((folder) => {
     const items: FixedFolderItem[] = [];
     for (const item of folder.items) {
       let current = item;
       if (current.pendingTabId !== undefined) {
-        const tab = tabs.find((candidate) => candidate.id === current.pendingTabId);
+        const tab = tabById.get(current.pendingTabId);
         if (tab) {
           const key = webComparisonKey(tab.url, tab.pendingUrl);
           if (key) {
@@ -61,12 +66,15 @@ export function reconcilePendingItems(
       }
 
       if (!current.pendingTabId && current.url) {
-        if (seenUrls.has(current.url)) {
+        // 与固定空间其余去重路径同口径（webComparisonKey）：裸字符串比较会让
+        // 大小写/默认端口不同的同一 URL 判成两个，唯一性约束形同虚设。
+        const key = webComparisonKey(current.url, undefined) ?? current.url;
+        if (seenUrls.has(key)) {
           // 全局唯一：重复条目移除
           changed = true;
           continue;
         }
-        seenUrls.add(current.url);
+        seenUrls.add(key);
       }
       items.push(current);
     }
@@ -99,15 +107,28 @@ export function reconcileBindings(
     }
   }
 
+  // 可绑定标签按比较键索引：原先在双层循环里 tabs.find(...)，复杂度 O(条目 × 标签)。
+  const candidatesByKey = new Map<string, TabRecord[]>();
+  for (const tab of tabs) {
+    if (tab.pinned || tab.incognito) continue;
+    const key = webComparisonKey(tab.url, tab.pendingUrl);
+    if (key === null) continue;
+    const list = candidatesByKey.get(key);
+    if (list) list.push(tab);
+    else candidatesByKey.set(key, [tab]);
+  }
+
   // 为未绑定且非挂起的条目寻找精确 URL 匹配的未占用标签
   for (const folder of folders) {
     for (const item of folder.items) {
       if (item.pendingTabId !== undefined) continue;
-      if (next[item.id]) continue;
+      // 必须用 !== undefined：tabId 为 0 时真值判断会误判为「未绑定」，
+      // 导致同一标签被重复绑定，破坏「一个 tab 只服务一个条目」不变量。
+      if (next[item.id] !== undefined) continue;
       if (!item.url) continue;
-      const match = tabs.find(
-        (tab) => tab.url === item.url && !tab.pinned && !boundTabIds.has(tab.id) && !tab.incognito
-      );
+      const key = webComparisonKey(item.url, undefined);
+      if (key === null) continue;
+      const match = candidatesByKey.get(key)?.find((tab) => !boundTabIds.has(tab.id));
       if (match) {
         next[item.id] = match.id;
         boundTabIds.add(match.id);

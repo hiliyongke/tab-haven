@@ -18,7 +18,7 @@ function item(id: string, url: string): FixedFolderItem {
  * 直接拿原始 URL 当键，会与条目侧 fixedItemKey 归出来的键对不上。
  */
 function candidates(...urls: string[]): Map<string, { url: string; title: string }> {
-  return new Map(urls.map((url) => [fixedItemKey(url), { url, title: url }]));
+  return new Map(urls.map((url) => [fixedItemKey(url) ?? url, { url, title: url }] as const));
 }
 function folder(
   id: string,
@@ -117,9 +117,30 @@ describe('folderCommands 纯计算', () => {
     // 归一化匹配（忽略跟踪参数/锚点）属 FR-D8.2（V1.2）范围，届时再扩展本用例。
     expect(fixedItemKey('https://x.com/?a=1')).not.toBe(fixedItemKey('https://x.com/?b=2'));
     expect(fixedItemKey('https://x.com/?a=1')).toBe(fixedItemKey('https://x.com/?a=1'));
-    // 空 URL（挂起待定条目）降级为空串，不参与唯一性判定
-    expect(fixedItemKey(undefined)).toBe('');
+    // 无 URL（挂起 / 导入数据）返回 null：判不出身份就不给身份键。
+    // 历史上这里返回空串，导致所有无 URL 条目撞成同一个键、互相判为重复而被删除。
+    expect(fixedItemKey(undefined)).toBeNull();
     // 非 web 页（内部页）降级原样返回
     expect(fixedItemKey('chrome://newtab')).toBe('chrome://newtab');
+  });
+
+  it('多个无 URL 条目不会互相判为重复（防静默删除回归）', () => {
+    // 回归：fixedItemKey 曾对无 url 条目返回 ''，使第二个及之后的条目被
+    // 归入 duplicateItemIds，从**全部文件夹**里移除 —— 一次导入即丢数据。
+    const folders = [
+      folder('a', 'A', {
+        items: [
+          { id: 'p1', title: '待定1', createdAt: 1 },
+          { id: 'p2', title: '待定2', createdAt: 2 }
+        ]
+      }),
+      folder('b', 'B', { items: [{ id: 'p3', title: '待定3', createdAt: 3 }] })
+    ];
+    const res = computeAddTabsToFolder(folders, candidates('https://new.com'), 'a');
+    const ids = res.next.flatMap((f) => f.items.map((i) => i.id));
+    expect(ids).toContain('p1');
+    expect(ids).toContain('p2');
+    expect(ids).toContain('p3');
+    expect(res.duplicateItemIds.size).toBe(0);
   });
 });

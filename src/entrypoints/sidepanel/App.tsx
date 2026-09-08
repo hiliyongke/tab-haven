@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { browser } from 'wxt/browser';
 import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
 import { matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
@@ -10,14 +9,20 @@ import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
 import {
   onRuntimeMessage,
-  PENDING_ACTIONS_KEY,
-  PendingActionSchema,
+  watchPendingActions,
   type Message,
   type PendingAction
 } from '@/platform/messages';
-import { activateTabAcrossWindows, detectLanguage, reloadTabs } from '@/platform/tabs';
+import {
+  activateTabAcrossWindows,
+  detectLanguage,
+  onTabHighlighted,
+  reloadTabs
+} from '@/platform/tabs';
+import { openOptionsPage } from '@/platform/navigation';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
 import { syncAutoGroups, disbandAutoGroups, regroupTempArea } from '@/platform/group/AutoGroupSync';
+import i18n from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -77,6 +82,8 @@ export default function App() {
   const folders = useDataStore((state) => state.folders);
   const settings = useDataStore((state) => state.settings);
   const collapsedSites = useDataStore((state) => state.collapsedSites);
+  // 落盘失败必须被看见：否则界面显示成功、重启即丢，是信任事故。
+  const storageDegraded = useDataStore((state) => state.storageDegraded);
   const toggleSiteCollapsed = useDataStore((state) => state.toggleSiteCollapsed);
   const reconcileWithTabs = useDataStore((state) => state.reconcileWithTabs);
   const loadUndo = useUndoStore((state) => state.load);
@@ -150,9 +157,31 @@ export default function App() {
       ),
     [effectiveTabs, t, settings.pinyinSearch]
   );
+  /**
+   * 拼音目标是异步补齐的（词典按需动态加载），补齐本身不改变任何 React 状态。
+   * 没有这个信号，拼音命中会一直不出现：既不会在首次输入时自愈，也会在
+   * 「标签事件 → 重建引擎」后把已有的拼音结果瞬间清空。
+   */
+  const [pinyinReady, setPinyinReady] = useState(() => engine.pinyinReady);
+  useEffect(() => {
+    if (engine.pinyinReady) {
+      setPinyinReady(true);
+      return;
+    }
+    let cancelled = false;
+    void engine.ensurePinyin().then(() => {
+      if (!cancelled) setPinyinReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [engine]);
   const searchHits = useMemo(
     () => engine.search(query, Math.max(effectiveTabs.length, 50)),
-    [engine, query, effectiveTabs.length]
+    // pinyinReady 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
+    // lint 规则看不见它在回调里的用途，故显式豁免。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, query, effectiveTabs.length, pinyinReady]
   );
   const filteredTabs = useMemo(() => {
     if (!query.trim()) return effectiveTabs;
@@ -206,11 +235,18 @@ export default function App() {
     }
   };
   const activeTabId = tabs.find((tab) => tab.active)?.id;
+  /**
+   * 必须 memo 化：`useLocateActive` 把 clearQuery 列进了内部 useCallback 依赖，
+   * 这里每渲染一个新箭头函数 → handleLocateActive → handlePendingAction 全部换新引用
+   * → 键盘监听、runtime 消息监听、挂起动作监听每次渲染都解绑重绑（本文件大量重渲染）。
+   * 副作用还包括：挂起队列监听每次订阅都会异步读一次 session，多个在途读取可能在
+   * 队列清除前重复读到同一条动作，导致重复执行。
+   */
+  const clearQuery = useCallback(() => setQuery(''), [setQuery]);
   const handleLocateActive = useLocateActive({
     activeTabId,
     notify,
-    clearQuery: useCallback(() => setQuery(''), [setQuery]),
-    t
+    clearQuery
   });
 
   /**
@@ -243,41 +279,66 @@ export default function App() {
     [handleLocateActive]
   );
 
-  /** 自动休眠撤销提示：toast + 「全部唤醒」动作（唤醒后清台账）。 */
+  /**
+   * 自动休眠撤销提示：toast + 「全部唤醒」动作（唤醒后清台账）。
+   *
+   * 文案走 `i18n.t` 而非 `t`：本回调是「面板打开时补提示」effect 的依赖，
+   * 用 `t` 会让切换语言重放该 effect —— 表现为重复弹出休眠提示。
+   */
   const showDiscardUndoToast = useCallback(
     (batch: { tabIds: number[]; count: number }) => {
-      notify(t('discard.autoDiscarded', { count: batch.count }), {
-        label: t('discard.wakeAll'),
+      notify(i18n.t('discard.autoDiscarded', { count: batch.count }), {
+        label: i18n.t('discard.wakeAll'),
         run: async () => {
           const woken = (await reloadTabs(batch.tabIds)).length;
           await autoDiscardRepository.write(null);
-          useUndoStore.getState().notify(t('discard.woken', { count: woken }));
+          useUndoStore.getState().notify(i18n.t('discard.woken', { count: woken }));
         }
       });
     },
-    [notify, t]
+    [notify]
   );
 
-  // 同步服务：事件 → 快照 → store 订阅自动重渲染
+  // 同步服务：事件 → 快照 → store 订阅自动重渲染。
+  // 依赖里刻意不含 `t`：语言切换会导致 t 引用变化，进而重放整个数据层初始化
+  // （重读全部仓库 + 重新订阅标签事件），切换一次语言等于重启一次面板。
   useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | undefined;
     // 初始化失败时 toast 并自动重试一次（dataStore 已回滚 initialized 守卫，允许重入），
     // 避免面板永久停在 Loading 骨架屏。
     void initializeData().catch(() => {
-      notify(t('errors.dataLoadFailed'));
-      setTimeout(() => {
-        void initializeData().catch(() => {});
+      if (cancelled) return;
+      notify(i18n.t('errors.dataLoadFailed'));
+      retryTimer = window.setTimeout(() => {
+        void initializeData().catch(() => undefined);
       }, 1000);
     });
     void loadUndo();
     void useSnapshotStore.getState().load();
-    return startTabSync();
-  }, [initializeData, loadUndo, startTabSync, notify, t]);
+    const stopSync = startTabSync();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      stopSync();
+    };
+  }, [initializeData, loadUndo, startTabSync, notify]);
 
   // 快照联动：挂起转正 + 绑定维护（固定空间一致性，由入口层编排，
   // 避免 tabStore ↔ dataStore 相互依赖）。
   useEffect(() => {
     void reconcileWithTabs(tabs);
   }, [tabs, reconcileWithTabs]);
+
+  /**
+   * 定位回调的最新值。
+   *
+   * 它依赖 `activeTabId`，每次切换激活标签都会换新引用。若直接进 effect 依赖，
+   * 键盘监听与消息监听会在每次切换标签时解绑/重绑一遍；用 ref 取最新值可让
+   * 监听只挂载一次，行为不变。
+   */
+  const locateActiveRef = useRef(handleLocateActive);
+  locateActiveRef.current = handleLocateActive;
 
   // ⌘J / Ctrl+J 定位激活标签；⌘K / Ctrl+K 打开搜索
   useEffect(() => {
@@ -289,7 +350,7 @@ export default function App() {
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j') {
         event.preventDefault();
-        handleLocateActive();
+        locateActiveRef.current();
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -311,7 +372,7 @@ export default function App() {
           handlePendingAction(message);
           return;
         case 'duplicate-reused':
-          notify(t('duplicates.reused'));
+          notify(i18n.t('duplicates.reused'));
           return;
         case 'auto-discarded':
           showDiscardUndoToast(message);
@@ -331,7 +392,7 @@ export default function App() {
       document.removeEventListener('keydown', onKeyDown);
       offMessage();
     };
-  }, [handleLocateActive, handlePendingAction, notify, showDiscardUndoToast, t]);
+  }, [handlePendingAction, notify, showDiscardUndoToast]);
 
   // 自动休眠台账：面板打开时若有未撤销批次，提示可一键唤醒
   useEffect(() => {
@@ -344,39 +405,7 @@ export default function App() {
   }, [showDiscardUndoToast]);
 
   // 面板未开时挂起的动作（搜索域名 / 定位激活）：打开面板后消费
-  useEffect(() => {
-    const sessionArea = browser.storage?.session;
-    /** 消费并清除 session 队列：执行即清，杜绝历史动作随下次写入重放。 */
-    const consume = (list: unknown[]) => {
-      for (const action of list) {
-        // 队列里的每一项都可能是任意形状，统一走挂起动作 schema 校验，
-        // 不再为三种类型各写一条 parse 链（此前是第三条手写分发链）。
-        const parsed = PendingActionSchema.safeParse(action);
-        if (parsed.success) handlePendingAction(parsed.data);
-      }
-      void sessionArea?.remove(PENDING_ACTIONS_KEY).catch(() => {});
-    };
-    if (sessionArea) {
-      void sessionArea
-        .get(PENDING_ACTIONS_KEY)
-        .then((record) => {
-          const list = record[PENDING_ACTIONS_KEY];
-          if (Array.isArray(list) && list.length > 0) consume(list);
-        })
-        .catch(() => {});
-    }
-    const onStorageChanged = (
-      changes: Record<string, { newValue?: unknown }>,
-      areaName: string
-    ) => {
-      if (areaName !== 'session' || !changes[PENDING_ACTIONS_KEY]) return;
-      const list = changes[PENDING_ACTIONS_KEY]?.newValue;
-      // 即时消息通道已按 at 去重，此处仅执行新动作并立即消费清除。
-      if (Array.isArray(list) && list.length > 0) consume(list);
-    };
-    browser.storage?.onChanged?.addListener(onStorageChanged);
-    return () => browser.storage?.onChanged?.removeListener(onStorageChanged);
-  }, [handlePendingAction]);
+  useEffect(() => watchPendingActions(handlePendingAction), [handlePendingAction]);
 
   // 固定空间排除集：挂起条目标签 + 绑定标签
   const fixedExcludedTabIds = useMemo(() => {
@@ -389,11 +418,18 @@ export default function App() {
     return excluded;
   }, [boundTabIds, folders]);
 
-  // 自动原生分组（设置开启时）：把聚合结果落成浏览器 tabGroups。
-  // 幂等：创建成功后标签获得 groupId，下一轮快照不再产出 plan。
-  useEffect(() => {
-    if (!settings.autoGroupNative || settings.groupMode === 'opener') return;
-    const sections = deriveSections({
+  /**
+   * 未过滤态的分区基线。
+   *
+   * deriveSections 是全量分区计算（排序 + 站点聚合 + opener 树）。原先「自动分组
+   * effect」与「展示用 allSections」各自调用一次，非搜索时两者入参完全相同 ——
+   * 每次标签快照都白算一遍。这里算一次，两处共用。
+   */
+  const baseSections = useMemo(() => {
+    // deriveSections 接收 translate（来自 useTranslation 的 t）：切换语言时 t 重新生成，
+    // 分区标题随之重算。t 本身即为 memo 键（i18n.language 变化 → t 引用变化），
+    // 无需再额外读 i18n.language —— 两者等价，保留一份避免双重触发。
+    return deriveSections({
       tabs,
       groups,
       excludedTabIds: fixedExcludedTabIds,
@@ -402,20 +438,25 @@ export default function App() {
       threshold: settings.aggregationThreshold,
       translate: t
     });
-    const plans = planAutoGroups(sections);
-    // syncAutoGroups 幂等（只为尚无 groupId 的标签建组），因此 t 变化带来的
-    // 重跑是安全的：语言切换后分区标题随之重算，不会重复建组。
-    if (plans.length > 0) void syncAutoGroups(plans);
   }, [
     tabs,
     groups,
     fixedExcludedTabIds,
-    settings.autoGroupNative,
-    settings.groupMode,
     settings.sortMode,
+    settings.groupMode,
     settings.aggregationThreshold,
     t
   ]);
+
+  // 自动原生分组（设置开启时）：把聚合结果落成浏览器 tabGroups。
+  // 幂等：创建成功后标签获得 groupId，下一轮快照不再产出 plan。
+  useEffect(() => {
+    if (!settings.autoGroupNative || settings.groupMode === 'opener') return;
+    const plans = planAutoGroups(baseSections);
+    // syncAutoGroups 幂等（只为尚无 groupId 的标签建组），语言切换后分区标题
+    // 随之重算是安全的，不会重复建组。
+    if (plans.length > 0) void syncAutoGroups(plans);
+  }, [baseSections, settings.autoGroupNative, settings.groupMode]);
 
   // 关闭自动分组时：解散本功能创建的组（标签回到未分组，记录清空）。
   useEffect(() => {
@@ -424,9 +465,8 @@ export default function App() {
   }, [settings.autoGroupNative]);
 
   const allSections = useMemo(() => {
-    // deriveSections 接收 translate（来自 useTranslation 的 t）：切换语言时 t 重新生成，
-    // 分区标题随之重算。t 本身即为 memo 键（i18n.language 变化 → t 引用变化），
-    // 无需再额外读 i18n.language —— 两者等价，保留一份避免双重触发。
+    // 非过滤态下 filteredTabs 与 tabs 等价，直接复用基线结果。
+    if (!isFiltering) return baseSections;
     return deriveSections({
       tabs: filteredTabs,
       groups,
@@ -437,6 +477,8 @@ export default function App() {
       translate: t
     });
   }, [
+    isFiltering,
+    baseSections,
     filteredTabs,
     groups,
     fixedExcludedTabIds,
@@ -458,11 +500,7 @@ export default function App() {
   const partners = useMemo(() => splitPartnerIds(tabs, activeTabId), [tabs, activeTabId]);
 
   // 与浏览器多选高亮同步（tabs.onHighlighted）。
-  useEffect(() => {
-    const listener = (info: { tabIds: number[] }) => setHighlighted(info.tabIds);
-    browser.tabs.onHighlighted.addListener(listener);
-    return () => browser.tabs.onHighlighted.removeListener(listener);
-  }, [setHighlighted]);
+  useEffect(() => onTabHighlighted(setHighlighted), [setHighlighted]);
 
   // 按语言分组时，异步探测每个未分组标签的语言。
   useEffect(() => {
@@ -483,6 +521,12 @@ export default function App() {
     () => new Set(groups.filter((group) => group.collapsed).map((group) => group.id)),
     [groups]
   );
+  // 搜索时强制展开所有折叠分组/站点，确保命中标签可见。
+  // 仅覆盖「展示用」折叠集合，不改动已存储的折叠偏好；清空搜索即原样还原。
+  const displayCollapsedGroups = isFiltering ? new Set<number>() : collapsedGroupIds;
+  const displayCollapsedSites: ReadonlySet<string> | readonly string[] = isFiltering
+    ? []
+    : collapsedSites;
   const collapsibleSections = restSections.filter(
     (section) => section.kind === 'native' || section.kind === 'site'
   );
@@ -490,8 +534,8 @@ export default function App() {
     collapsibleSections.length > 0 &&
     collapsibleSections.every((section) =>
       section.kind === 'native'
-        ? collapsedGroupIds.has(section.groupId)
-        : collapsedSites.includes(section.siteKey)
+        ? displayCollapsedGroups.has(section.groupId)
+        : displayCollapsedSites.includes(section.siteKey)
     );
   const handleToggleAllSections = () => {
     const shouldCollapse = !allSectionsCollapsed;
@@ -672,7 +716,7 @@ export default function App() {
     onQuickRegroup: handleQuickRegroup,
     onLocateActive: handleLocateActive,
     onOpenHistory: () => setShowHistory(true),
-    onOpenSettings: () => void browser.runtime.openOptionsPage(),
+    onOpenSettings: openOptionsPage,
     onToggleAllSections: handleToggleAllSections,
     onSwitchTab: (tabId: number) => void smartActivate(tabId),
     onOpenSnapshots: () => setShowSnapshots(true),
@@ -710,6 +754,20 @@ export default function App() {
         <output className="sr-only" aria-live="polite">
           {isFiltering ? t('search.hits', { count: filteredTabs.length }) : ''}
         </output>
+        {/* 落盘失败横幅：由「最近一次持久化是否成功」驱动（成功写会复位标志），
+            因此它表达的是「此刻存储可能不可写」，而非「历史上有过失败」。
+            宁可多提示一次，也不能让「界面显示成功、重启即丢」静默发生。 */}
+        {storageDegraded && (
+          <div
+            role="alert"
+            className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-3 py-2"
+          >
+            <Icon d={Icons.infoAlert} className="mt-0.5 h-4 w-4 shrink-0 text-warn-600" />
+            <p className="min-w-0 flex-1 text-3xs leading-relaxed text-warn-700">
+              {t('errors.storageDegraded')}
+            </p>
+          </div>
+        )}
         {/* 一次性「能力发现」Tip：仅首次展示。刻意排在搜索框之后——搜索是本面板最高频入口，
             教学性内容不得把它挤出首屏顶部。 */}
         {!settings.tipSeen && (
@@ -788,8 +846,8 @@ export default function App() {
           ) : (
             <SectionList
               sections={restSections}
-              collapsedGroups={collapsedGroupIds}
-              collapsedSites={collapsedSites}
+              collapsedGroups={displayCollapsedGroups}
+              collapsedSites={displayCollapsedSites}
               duplicateCounts={duplicateCounts}
               activeTabId={activeTabId}
               splitPartners={partners}
@@ -829,7 +887,7 @@ export default function App() {
           onQuickRegroup={handleQuickRegroup}
           onLocateActive={handleLocateActive}
           onOpenHistory={() => setShowHistory(true)}
-          onOpenSettings={() => void browser.runtime.openOptionsPage()}
+          onOpenSettings={openOptionsPage}
           onOpenSnapshots={() => setShowSnapshots(true)}
           undoBatchCount={undoBatchCount}
           snapshotCount={snapshotCount}

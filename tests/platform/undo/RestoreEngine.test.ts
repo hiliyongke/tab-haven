@@ -15,7 +15,9 @@ import { restoreTabRecords, restoreTabRecordsDetailed } from '@/platform/undo/Re
  * 的既有范式注入最小实现。
  */
 
-const WINDOW_ID = 1;
+// fake-browser 的窗口 id 恒为 0（tabs.create 不接受自定义 windowId），
+// 与本文件所有 query({ windowId }) 断言保持一致。
+const WINDOW_ID = 0;
 
 function record(partial: Partial<UndoTabRecord> = {}): UndoTabRecord {
   return {
@@ -111,6 +113,34 @@ describe('restoreTabRecordsDetailed', () => {
       WINDOW_ID
     );
     expect(group).not.toHaveBeenCalled();
+  });
+
+  it('批次内同 URL 的记录照数恢复（撤销必须还回用户实际关掉的数量）', async () => {
+    // 回归：此前会把新建的 URL 加回去重集合，导致「多选关闭 3 个同 URL 标签」后
+    // 撤销只还回 1 个，而 toast 仍报「已恢复 3 个」。
+    const result = await restoreTabRecordsDetailed(
+      [
+        record({ url: 'https://same.com/', index: 0 }),
+        record({ url: 'https://same.com/', index: 1 }),
+        record({ url: 'https://same.com/', index: 2 })
+      ],
+      WINDOW_ID
+    );
+    expect(result.count).toBe(3);
+    expect(result.failed).toHaveLength(0);
+  });
+
+  it('目标窗口已打开同 URL 时按已恢复计，不新建副本', async () => {
+    await fakeBrowser.tabs.create({ url: 'https://open.com/', windowId: WINDOW_ID });
+    const result = await restoreTabRecordsDetailed(
+      [record({ url: 'https://open.com/', index: 0 })],
+      WINDOW_ID
+    );
+    expect(result.count).toBe(1);
+    const opened = (await fakeBrowser.tabs.query({})).filter(
+      (tab) => tab.url === 'https://open.com/'
+    );
+    expect(opened).toHaveLength(1);
   });
 
   it('无 URL 的记录计入失败明细（而非静默跳过）', async () => {

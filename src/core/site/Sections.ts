@@ -309,13 +309,17 @@ export function deriveSections({
   }
 
   // 原生标签组：组内标签按排序规则，排除绑定到固定空间的标签与固定标签。
+  // 先按 groupId 单次分桶再排序：原先在 groups.map 内对每个组 filter 全量标签，
+  // 复杂度 O(组数 × 标签数)（200 组 × 1000 标签 = 20 万次比较 + 200 次数组分配）。
+  const tabsByGroup = new Map<number, TabRecord[]>();
+  for (const tab of tabs) {
+    if (tab.pinned || tab.groupId === NO_GROUP || excluded.has(tab.id)) continue;
+    const list = tabsByGroup.get(tab.groupId);
+    if (list) list.push(tab);
+    else tabsByGroup.set(tab.groupId, [tab]);
+  }
   const groupsByFirstTab = groups
-    .map((group) => ({
-      group,
-      groupTabs: tabs
-        .filter((tab) => !tab.pinned && tab.groupId === group.id && !excluded.has(tab.id))
-        .sort(sortCmp)
-    }))
+    .map((group) => ({ group, groupTabs: (tabsByGroup.get(group.id) ?? []).sort(sortCmp) }))
     .filter(({ groupTabs }) => groupTabs.length > 0)
     .sort((a, b) => sortCmp(a.groupTabs[0], b.groupTabs[0]));
 

@@ -138,11 +138,49 @@ describe('TabSyncService', () => {
     // 连续触发 10 个事件，应在节流窗口内被合并为少量查询（而非 10 次）
     for (let i = 0; i < 10; i += 1) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (fakeBrowser.tabs.onUpdated as any).trigger({});
+      (fakeBrowser.tabs.onUpdated as any).trigger(1, { title: `t${i}` });
     }
     await new Promise((r) => setTimeout(r, 150));
     // 合并生效后，查询次数应远小于事件数：首帧 + trailing 若干，远小于 10
     expect(queryCalls).toBeLessThan(8);
+
+    stop();
+  });
+
+  it('onUpdated：只含 favicon 等无关字段的变化不触发查询', async () => {
+    stubEvents();
+    const service = new TabSyncService();
+    let queryCalls = 0;
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(async () => {
+      queryCalls += 1;
+      return [makeTab({ id: 1 })];
+    });
+    vi.spyOn(fakeBrowser.tabGroups, 'query').mockImplementation(() =>
+      Promise.resolve([] as TabGroupRecord[])
+    );
+
+    const stop = service.start(() => {});
+    await vi.waitFor(() => expect(queryCalls).toBeGreaterThanOrEqual(1));
+
+    const baseline = queryCalls;
+    for (let i = 0; i < 5; i += 1) {
+      (fakeBrowser.tabs.onUpdated as unknown as { trigger: (...args: unknown[]) => void }).trigger(
+        1,
+        { favIconUrl: `https://a/${i}.png` }
+      );
+    }
+    await new Promise((r) => setTimeout(r, 150));
+    // 直播/计时器类站点会高频改标题与 favicon；不过滤会让扩展持续空转。
+    expect(queryCalls).toBe(baseline);
+
+    // 相关字段仍然要触发
+    (fakeBrowser.tabs.onUpdated as unknown as { trigger: (...args: unknown[]) => void }).trigger(
+      1,
+      {
+        title: 'changed'
+      }
+    );
+    await vi.waitFor(() => expect(queryCalls).toBeGreaterThan(baseline));
 
     stop();
   });

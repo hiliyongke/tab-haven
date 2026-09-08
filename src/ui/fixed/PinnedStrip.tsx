@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
@@ -8,7 +9,8 @@ import { PINNED_STRIP_DROPPABLE } from '@/ui/dnd/types';
 import {
   SortablePinnedTile,
   makePinMiddleClickHandler,
-  resolvePinRuntime
+  buildPinRuntimeIndex,
+  CLOSED_PIN_RUNTIME
 } from '@/ui/tabs/SortablePinnedTile';
 
 /**
@@ -31,6 +33,10 @@ export function PinnedStrip() {
     data: { type: 'pinned-strip' }
   });
 
+  // 一次建索引取代「每个磁贴各扫一遍全量标签」。
+  // 注意 hook 必须在早退之前调用：pins 为空时组件仍要返回 null，但 hooks 顺序不能变。
+  const runtimeIndex = useMemo(() => buildPinRuntimeIndex(tabs), [tabs]);
+
   if (pins.length === 0) return null;
 
   const handleMiddleClick = makePinMiddleClickHandler(closeTabs);
@@ -45,7 +51,7 @@ export function PinnedStrip() {
         data-drop-label={t('fixed.dragToPin')}
       >
         {pins.map((pin: PersistentPin) => {
-          const runtime = resolvePinRuntime(pin, tabs);
+          const runtime = runtimeIndex.get(pin.identity) ?? CLOSED_PIN_RUNTIME;
           return (
             <SortablePinnedTile
               key={pin.id}

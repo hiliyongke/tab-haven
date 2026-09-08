@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import i18n from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { logFailure } from '@/platform/diagnostics';
 
@@ -6,6 +7,9 @@ import { logFailure } from '@/platform/diagnostics';
  * 错误边界：捕获渲染期异常，降级为可重试的错误页而非白屏。
  *
  * 事件处理器与异步回调中的错误不在其捕获范围内，由各处的 logDegraded / logFailure 记录。
+ *
+ * 文案走 `i18n.t` 而非 `useTranslation`：类组件拿不到 hooks，而这里是**崩溃兜底页** ——
+ * 硬编码中文会让英文用户在最需要看懂说明的时刻读到看不懂的文字。
  */
 
 interface ErrorBoundaryProps {
@@ -43,19 +47,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-xs font-medium text-gray-600">出了点意外</p>
+        <p className="text-xs font-medium text-gray-600">{i18n.t('errors.boundaryTitle')}</p>
         <p className="max-w-52 text-3xs leading-relaxed text-gray-600">
-          界面遇到了无法自行恢复的错误。你的数据仍保存在本地，可以重试或重载页面。
+          {i18n.t('errors.boundaryBody')}
         </p>
         <pre className="max-h-24 w-full overflow-auto rounded bg-gray-100 p-2 text-left text-3xs leading-snug text-gray-500">
           {error.message}
         </pre>
         <div className="flex items-center gap-1.5">
           <Button variant="primary" size="sm" onClick={this.handleRetry}>
-            重试
+            {i18n.t('errors.boundaryRetry')}
           </Button>
           <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
-            重载
+            {i18n.t('errors.boundaryReload')}
           </Button>
         </div>
       </div>

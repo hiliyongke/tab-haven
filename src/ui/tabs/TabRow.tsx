@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
@@ -102,7 +102,22 @@ export const TabRow = memo(function TabRow({
 
   // 键盘拖拽与指针拖拽分流：键盘监听挂主按钮（KeyboardSensor 要求 keydown 目标即 activator），
   // 指针监听挂整行（PointerSensor 无目标限制），两者不会为同一事件重复激活。
-  const { onKeyDown: sortableKeyDown, ...sortablePointerListeners } = sortable.listeners ?? {};
+  //
+  // 必须 memo 化：解构 `sortable.listeners` 每次渲染都会产生全新对象，直接下传会让
+  // RowItem 的 memo 100% 失效 —— 大列表父级重渲染时全部行都要走一遍 reconcile。
+  const sortableKeyDown = sortable.listeners?.onKeyDown as
+    ((event: ReactKeyboardEvent<HTMLButtonElement>) => void) | undefined;
+  const sortablePointerListeners = useMemo(() => {
+    const rest: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(sortable.listeners ?? {})) {
+      if (key !== 'onKeyDown') rest[key] = value;
+    }
+    return rest;
+  }, [sortable.listeners]);
+  const buttonListeners = useMemo(
+    () => (sortableKeyDown ? { onKeyDown: sortableKeyDown } : undefined),
+    [sortableKeyDown]
+  );
 
   // 当前激活标签变化时，将其滚动进可视区（仅在不完全可见时滚动）。
   useEffect(() => {
@@ -118,60 +133,136 @@ export const TabRow = memo(function TabRow({
     }
   }, [isSearchActive]);
 
-  const tabActions = (
-    <RowActions forceVisible={rowActionsVisible}>
-      {(tab.audible || tab.muted) && (
+  // 行内派生元素一律 memo 化：它们作为 props 下传给 RowItem，每次新建对象
+  // 都会击穿其 memo（详见 RowItem 注释）。
+  const tabActions = useMemo(
+    () => (
+      <RowActions forceVisible={rowActionsVisible}>
+        {(tab.audible || tab.muted) && (
+          <button
+            type="button"
+            className="row-action"
+            title={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
+            aria-label={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
+            onClick={() => onToggleMute(tab)}
+          >
+            <Icon d={tab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           className="row-action"
-          title={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
-          aria-label={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
-          onClick={() => onToggleMute(tab)}
+          title={tab.pinned ? t('tabs.unpin') : t('tabs.pin')}
+          aria-label={tab.pinned ? t('tabs.unpin') : t('tabs.pin')}
+          onClick={() => onTogglePin(tab)}
         >
-          <Icon d={tab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
+          <Icon d={Icons.pin} className={'h-3.5 w-3.5' + (tab.pinned ? ' text-accent-500' : '')} />
         </button>
-      )}
-      <button
-        type="button"
-        className="row-action"
-        title={tab.pinned ? t('tabs.unpin') : t('tabs.pin')}
-        aria-label={tab.pinned ? t('tabs.unpin') : t('tabs.pin')}
-        onClick={() => onTogglePin(tab)}
-      >
-        <Icon d={Icons.pin} className={'h-3.5 w-3.5' + (tab.pinned ? ' text-accent-500' : '')} />
-      </button>
-      {onDuplicate && (
+        {onDuplicate && (
+          <button
+            type="button"
+            className="row-action"
+            title={t('tabs.duplicate')}
+            aria-label={t('tabs.duplicate')}
+            onClick={() => onDuplicate(tab)}
+          >
+            <Icon d={Icons.copy} className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onDiscard && !tab.discarded && !tab.active && (
+          <button
+            type="button"
+            className="row-action"
+            title={t('tabs.discard')}
+            aria-label={t('tabs.discard')}
+            onClick={() => onDiscard(tab)}
+          >
+            <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
-          className="row-action"
-          title={t('tabs.duplicate')}
-          aria-label={t('tabs.duplicate')}
-          onClick={() => onDuplicate(tab)}
+          className="row-action is-danger"
+          title={t('tabs.closeTab')}
+          aria-label={t('tabs.closeTab')}
+          onClick={() => onClose(tab)}
         >
-          <Icon d={Icons.copy} className="h-3.5 w-3.5" />
+          <Icon d={Icons.close} className="h-3.5 w-3.5" />
         </button>
-      )}
-      {onDiscard && !tab.discarded && !tab.active && (
-        <button
-          type="button"
-          className="row-action"
-          title={t('tabs.discard')}
-          aria-label={t('tabs.discard')}
-          onClick={() => onDiscard(tab)}
-        >
-          <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
-        </button>
-      )}
-      <button
-        type="button"
-        className="row-action is-danger"
-        title={t('tabs.closeTab')}
-        aria-label={t('tabs.closeTab')}
-        onClick={() => onClose(tab)}
-      >
-        <Icon d={Icons.close} className="h-3.5 w-3.5" />
-      </button>
-    </RowActions>
+      </RowActions>
+    ),
+    [tab, onToggleMute, onTogglePin, onDuplicate, onDiscard, onClose, t, rowActionsVisible]
+  );
+
+  const secondary = useMemo(
+    () =>
+      showUrl && tab.url ? (
+        <span className="tab-url truncate text-2xs leading-tight text-gray-500">{tab.url}</span>
+      ) : null,
+    [showUrl, tab.url]
+  );
+  const trailing = useMemo(
+    () =>
+      tab.pinned ? (
+        <Icon
+          d={Icons.pin}
+          className="h-3 w-3 shrink-0 text-accent-500"
+          aria-label={t('tabs.pinned')}
+        />
+      ) : null,
+    [tab.pinned, t]
+  );
+  const badges = useMemo(
+    () => (
+      <StatusBadges
+        tab={tab}
+        duplicateCount={duplicateCount}
+        isSplitCompanion={isSplitCompanion}
+        showSplitBadges={showSplitBadges}
+        noCache={noCache}
+      />
+    ),
+    [tab, duplicateCount, isSplitCompanion, showSplitBadges, noCache]
+  );
+
+  // container 依赖 useSortable 的返回值：其内部对象每次渲染都是新引用，
+  // 因此只取标量字段做依赖，让 container 在「排序状态未变」时保持稳定。
+  const transformX = sortable.transform?.x;
+  const transformY = sortable.transform?.y;
+  const {
+    transition: sortTransition,
+    isDragging,
+    setNodeRef,
+    setActivatorNodeRef,
+    attributes
+  } = sortable;
+  const rowContainer = useMemo(
+    () => ({
+      ref: setNodeRef,
+      activatorRef: setActivatorNodeRef,
+      buttonAttributes: attributes,
+      listeners: sortablePointerListeners,
+      buttonListeners,
+      style: {
+        transform:
+          transformX || transformY
+            ? `translate3d(${transformX ?? 0}px, ${transformY ?? 0}px, 0)`
+            : undefined,
+        transition: sortTransition
+      },
+      className: isDragging ? 'is-sorting' : undefined
+    }),
+    [
+      setNodeRef,
+      setActivatorNodeRef,
+      attributes,
+      sortablePointerListeners,
+      buttonListeners,
+      transformX,
+      transformY,
+      sortTransition,
+      isDragging
+    ]
   );
 
   return (
@@ -205,48 +296,11 @@ export const TabRow = memo(function TabRow({
         }}
         buttonTitle={t('tabs.switchTo', { title: tab.title || '' })}
         title={tab.title || t('tabs.untitled')}
-        secondary={
-          showUrl && tab.url ? (
-            <span className="tab-url truncate text-2xs leading-tight text-gray-500">{tab.url}</span>
-          ) : null
-        }
-        trailing={
-          tab.pinned ? (
-            <Icon
-              d={Icons.pin}
-              className="h-3 w-3 shrink-0 text-accent-500"
-              aria-label={t('tabs.pinned')}
-            />
-          ) : null
-        }
-        badges={
-          <StatusBadges
-            tab={tab}
-            duplicateCount={duplicateCount}
-            isSplitCompanion={isSplitCompanion}
-            showSplitBadges={showSplitBadges}
-            noCache={noCache}
-          />
-        }
+        secondary={secondary}
+        trailing={trailing}
+        badges={badges}
         actions={tabActions}
-        container={{
-          ref: sortable.setNodeRef,
-          listeners: sortablePointerListeners,
-          activatorRef: sortable.setActivatorNodeRef,
-          buttonAttributes: sortable.attributes,
-          buttonListeners: sortableKeyDown
-            ? {
-                onKeyDown: sortableKeyDown as (event: ReactKeyboardEvent<HTMLButtonElement>) => void
-              }
-            : undefined,
-          style: {
-            transform: sortable.transform
-              ? `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)`
-              : undefined,
-            transition: sortable.transition
-          },
-          className: sortable.isDragging ? 'is-sorting' : undefined
-        }}
+        container={rowContainer}
       />
     </li>
   );

@@ -1,6 +1,7 @@
 import { getDomain } from 'tldts';
 import { classifyHost } from '@/core/site/HostRules';
 import { domainToUnicode } from '@/core/url/punycode';
+import { normalizeHostname } from '@/core/url/hostname';
 import type { SiteKey } from '@/core/site/SiteKey';
 
 /**
@@ -40,10 +41,7 @@ export class SiteResolver {
       const url = new URL(rawUrl);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
 
-      const hostname = url.hostname
-        .toLowerCase()
-        .replace(/^www\./, '')
-        .replace(/\.$/, '');
+      const hostname = normalizeHostname(url.hostname);
       if (!hostname) return null;
 
       const classification = classifyHost(hostname);

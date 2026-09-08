@@ -34,8 +34,11 @@ interface RowItemContainer {
  *
  * memo 化的意义：RowItem 是数量最多的叶子（每个标签一行），父级任一次重渲染都会
  * 波及全部行。memo 让「props 未变的行」直接跳过 reconcile。
- * 前提是由调用方保证 props 引用稳定——TabRow / FixedArea 均已通过
- * 稳定 handler（useCallback + store.getState()）与 memo 化派生数据满足该前提。
+ *
+ * 生效前提（调用方必须满足，否则 memo 100% 失效）：
+ *  1. `badges` / `actions` / `secondary` / `trailing` 等 ReactNode 必须 memo 化；
+ *  2. `container` 必须 memo 化 —— dnd-kit 的 useSortable 每次渲染都返回全新对象，
+ *     直接透传会让每一行都无法命中 memo（历史问题，已在 TabRow 内用标量依赖修正）。
  */
 export const RowItem = memo(
   forwardRef<
@@ -103,7 +106,7 @@ export const RowItem = memo(
     ref
   ) {
     const className =
-      'group relative flex items-center gap-1 rounded pl-1.5 pr-1.5 py-[2px] text-xs transition-base hover:bg-gray-50 row-item' +
+      'group relative flex items-center gap-1 rounded pl-1.5 pr-1.5 py-[2px] text-xs transition-base row-item' +
       (density === 'cozy' ? ' density-cozy' : '') +
       (isActive ? ' is-active' : '') +
       (isMediaPlaying ? ' is-media-playing' : '') +

@@ -5,7 +5,7 @@ import { useUndoStore } from '@/stores/undoStore';
 import { DialogShell } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
-import { formatTime } from '@/ui/common/format';
+import { SnapshotRow } from '@/ui/common/SnapshotRow';
 
 /**
  * 会话快照面板：命名快照、归档中心与 OneTab 导入。
@@ -32,19 +32,6 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
   const [importName, setImportName] = useState('');
   /** 当前展开查看标签清单的快照 id（再次点击收起）。 */
   const [detailId, setDetailId] = useState<string | null>(null);
-
-  const originBadge = (origin: string): { label: string; className: string } => {
-    switch (origin) {
-      case 'auto':
-        return { label: t('snapshots.auto'), className: 'bg-gray-100 text-gray-500' };
-      case 'archive':
-        return { label: t('snapshots.archive'), className: 'bg-warn-100 text-warn-700' };
-      case 'space':
-        return { label: t('snapshots.space'), className: 'bg-accent-100 text-accent-700' };
-      default:
-        return { label: t('snapshots.manual'), className: 'bg-accent-50 text-accent-600' };
-    }
-  };
 
   const ordered = useMemo(
     () => [...snapshots].sort((a, b) => b.createdAt - a.createdAt),
@@ -109,7 +96,10 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     try {
       const count = await importOneTab(importText, importName.trim() || undefined);
       if (count === 0) {
-        notify(t('snapshots.empty'));
+        // 区分「用户没粘贴内容」与「粘贴了但解析不出条目」：后者可能是因为
+        // 超 1MB 被直接拒收，或整段都不是 http(s) 网址。笼统提示「快照为空」
+        // 会让用户以为导入成功却得到一个空快照，无从排查。
+        notify(importText.trim() ? t('snapshots.importUnparsed') : t('snapshots.empty'));
         return;
       }
       notify(t('snapshots.imported', { count }));
@@ -310,119 +300,23 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
                   )}
                   <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
                     {group.items.map((snap) => (
-                      <li key={snap.id} className="px-2.5 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="min-w-0 flex-1">
-                            {editingId === snap.id ? (
-                              <TextField
-                                size="sm"
-                                value={editingName}
-                                ariaLabel={t('snapshots.rename')}
-                                onChange={setEditingName}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') void commitRename();
-                                  if (event.key === 'Escape') {
-                                    setEditingId(null);
-                                    setEditingName('');
-                                  }
-                                }}
-                                onBlur={() => void commitRename()}
-                              />
-                            ) : (
-                              <span className="block truncate text-xs font-medium text-gray-700">
-                                {snap.name}
-                              </span>
-                            )}
-                            <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
-                              <span
-                                className={
-                                  'rounded px-1 py-px text-2xs leading-none ' +
-                                  originBadge(snap.origin).className
-                                }
-                              >
-                                {originBadge(snap.origin).label}
-                              </span>
-                              <span>
-                                {snap.tabCount} {t('tabs.tabCountUnit')} ·{' '}
-                                {formatTime(snap.createdAt)}
-                              </span>
-                            </span>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-0.5">
-                            {/* 查看详情：展开快照内的标签清单（恢复前可确认内容） */}
-                            <button
-                              type="button"
-                              title={t('snapshots.detail')}
-                              aria-expanded={detailId === snap.id}
-                              className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                              onClick={() => setDetailId(detailId === snap.id ? null : snap.id)}
-                            >
-                              <Icon
-                                d={Icons.chevron}
-                                className={
-                                  'h-4 w-4 transition-transform' +
-                                  (detailId === snap.id ? ' rotate-90' : '')
-                                }
-                              />
-                            </button>
-                            <button
-                              type="button"
-                              title={t('snapshots.restore')}
-                              className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600"
-                              onClick={() => void handleRestore(snap.id, snap.tabCount)}
-                            >
-                              <Icon d={Icons.openAll} className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title={t('snapshots.rename')}
-                              className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                              onClick={() => beginRename(snap.id, snap.name)}
-                            >
-                              <Icon d={Icons.pencil} className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title={t('snapshots.delete')}
-                              className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
-                              onClick={() => void handleDelete(snap.id)}
-                            >
-                              <Icon d={Icons.trash} className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                        {detailId === snap.id && (
-                          <div className="mt-1.5 max-h-44 overflow-y-auto rounded-md border border-gray-100 bg-gray-50/70 px-2 py-1">
-                            {snap.tabs.length === 0 ? (
-                              <p className="py-2 text-center text-2xs text-gray-500">
-                                {t('snapshots.empty')}
-                              </p>
-                            ) : (
-                              <ul className="divide-y divide-gray-100">
-                                {snap.tabs.map((tab, index) => (
-                                  <li
-                                    key={`${index}-${tab.url}`}
-                                    className="flex min-w-0 items-center gap-1.5 py-1"
-                                  >
-                                    {tab.pinned && (
-                                      <Icon
-                                        d={Icons.pin}
-                                        className="h-3 w-3 shrink-0 text-gray-400"
-                                      />
-                                    )}
-                                    <span className="min-w-0 flex-1 truncate text-2xs text-gray-700">
-                                      {tab.title || tab.url}
-                                    </span>
-                                    <span className="max-w-[45%] truncate text-3xs text-gray-400">
-                                      {tab.url}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        )}
-                      </li>
+                      <SnapshotRow
+                        key={snap.id}
+                        snap={snap}
+                        isEditing={editingId === snap.id}
+                        editingName={editingName}
+                        isDetailOpen={detailId === snap.id}
+                        onEditingNameChange={setEditingName}
+                        onBeginRename={beginRename}
+                        onCommitRename={commitRename}
+                        onCancelRename={() => {
+                          setEditingId(null);
+                          setEditingName('');
+                        }}
+                        onToggleDetail={(id) => setDetailId(detailId === id ? null : id)}
+                        onRestore={handleRestore}
+                        onDelete={handleDelete}
+                      />
                     ))}
                   </ul>
                 </div>

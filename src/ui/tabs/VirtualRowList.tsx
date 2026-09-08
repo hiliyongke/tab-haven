@@ -83,15 +83,18 @@ export function VirtualRowList({
   const end = Math.min(total, Math.ceil((scrollTop + viewport) / effectiveItemSize) + OVERSCAN);
   const visible = tabs.slice(start, end);
 
-  // rAF 节流：滚动事件每帧最多触发一次 setState，避免高频滚动时整树反复重渲染
+  // rAF 节流：滚动事件每帧最多触发一次 setState，避免高频滚动时整树反复重渲染。
+  // 必须记录「最新值」再在帧里提交：帧内有 pending 时直接丢弃，会让停止滚动时
+  // 最后一帧的 scrollTop 丢失，窗口停在旧位置（表现为列表底部一小段滚不出来）。
   const scrollRafRef = useRef(0);
+  const pendingTopRef = useRef(0);
   useEffect(() => () => cancelAnimationFrame(scrollRafRef.current), []);
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    const top = event.currentTarget.scrollTop;
+    pendingTopRef.current = event.currentTarget.scrollTop;
     if (scrollRafRef.current) return;
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = 0;
-      setScrollTop(top);
+      setScrollTop(pendingTopRef.current);
     });
   };
 

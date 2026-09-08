@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { browser } from 'wxt/browser';
+import { openOptionsPage } from '@/platform/navigation';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import type { TabRecord } from '@/core/tab-types';
 import { activateTabAcrossWindows } from '@/platform/tabs';
@@ -66,7 +66,30 @@ export default function App() {
     [effectiveTabs, t, settings.pinyinSearch]
   );
 
-  const hits = useMemo(() => engine.search(query, 20), [engine, query]);
+  // 拼音词典按需动态加载：就绪后必须重算一次命中，否则首次输入的拼音查询
+  // 永远等不到结果（补齐拼音不改变任何 React 状态，本信号是唯一的重算入口）。
+  const [pinyinReady, setPinyinReady] = useState(() => engine.pinyinReady);
+  useEffect(() => {
+    if (engine.pinyinReady) {
+      setPinyinReady(true);
+      return;
+    }
+    let cancelled = false;
+    void engine.ensurePinyin().then(() => {
+      if (!cancelled) setPinyinReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [engine]);
+
+  const hits = useMemo(
+    () => engine.search(query, 20),
+    // pinyinReady 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
+    // lint 规则看不见它在回调里的用途，故显式豁免。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, query, pinyinReady]
+  );
 
   /**
    * 命中项 → 标签记录的查找表。
@@ -168,7 +191,7 @@ export default function App() {
                 className={
                   'flex w-full cursor-pointer items-center gap-2 rounded border-l-2 px-2 py-1.5 text-left text-sm' +
                   (index === selectedIndex
-                    ? ' border-accent-500 bg-accent-50'
+                    ? ' border-accent-500 bg-accent-50 font-semibold'
                     : ' border-transparent hover:bg-gray-50')
                 }
                 onMouseEnter={() => setSelectedIndex(index)}
@@ -203,7 +226,7 @@ export default function App() {
           box="md"
           tone="accent"
           onClick={() => {
-            void browser.runtime.openOptionsPage();
+            openOptionsPage();
             window.close();
           }}
         />

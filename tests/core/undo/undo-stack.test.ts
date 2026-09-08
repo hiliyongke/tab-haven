@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createUndoBatch,
-  popBatch,
-  pushBatch,
-  toUndoTabRecord,
-  DEFAULT_UNDO_STACK_LIMIT
-} from '@/core/undo/UndoStack';
+import { createUndoBatch, popBatch, pushBatch, toUndoTabRecord } from '@/core/undo/UndoStack';
+import { DEFAULT_UNDO_STACK_LIMIT } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {

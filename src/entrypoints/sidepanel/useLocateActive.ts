@@ -1,7 +1,8 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import i18n from '@/i18n';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
-import { LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
+import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
 
 /**
  * 「定位激活标签」hook：滚动到当前激活标签所在行并高亮。
@@ -13,6 +14,9 @@ import { LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
  * 递归重试的必要性：虚拟列表下目标行可能不在渲染窗口内（DOM 不存在）。
  * 流程是「先发滚动事件让虚拟列表滚到目标 index → 行挂载后 querySelector 才能命中」，
  * 命中即止，最多重试 12 次（约 600ms），期间有新的定位请求则本次作废（requestId 守卫）。
+ *
+ * 文案走 `i18n.t` 而非 `useTranslation()` 的 `t`：`t` 的引用随语言切换变化，
+ * 会让本 hook 的回调在切换语言时重建，进而让依赖它的键盘监听 effect 重新挂载。
  */
 export function useLocateActive(params: {
   /** 当前激活标签 id；undefined（无标签窗口）时提示后直接返回。 */
@@ -21,19 +25,36 @@ export function useLocateActive(params: {
   notify: (message: string) => void;
   /** 定位前清空搜索词：否则过滤态下目标行根本不在列表里。 */
   clearQuery: () => void;
-  t: (key: string) => string;
 }): () => void {
-  const { activeTabId, notify, clearQuery, t } = params;
+  const { activeTabId, notify, clearQuery } = params;
   /** 请求序号：新请求会让旧请求的重试链失效，避免两次定位互相打架。 */
   const locateRequestRef = useRef(0);
+  /** 在途定时器：卸载时统一清理，避免对已卸载组件继续操作 DOM。 */
+  const timersRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
 
   return useCallback(() => {
     if (activeTabId === undefined) {
-      notify(t('toast.activeTabNotFound'));
+      notify(i18n.t('toast.activeTabNotFound'));
       return;
     }
     const requestId = ++locateRequestRef.current;
     clearQuery();
+
+    const schedule = (fn: () => void, delay: number): void => {
+      const id = window.setTimeout(() => {
+        timersRef.current.delete(id);
+        fn();
+      }, delay);
+      timersRef.current.add(id);
+    };
 
     const locateTarget = (): boolean => {
       const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${activeTabId}"]`);
@@ -45,7 +66,7 @@ export function useLocateActive(params: {
       row.classList.remove('is-located');
       void row.offsetWidth;
       row.classList.add('is-located');
-      window.setTimeout(() => row.classList.remove('is-located'), 1200);
+      schedule(() => row.classList.remove('is-located'), 1200);
       return true;
     };
 
@@ -65,8 +86,8 @@ export function useLocateActive(params: {
       dispatchLocateEvents();
       if (locateTarget()) return;
       attempts += 1;
-      if (attempts < 12) window.setTimeout(retryLocate, 50);
+      if (attempts < 12) schedule(retryLocate, 50);
     };
-    window.setTimeout(retryLocate, 0);
-  }, [activeTabId, notify, clearQuery, t]);
+    schedule(retryLocate, 0);
+  }, [activeTabId, notify, clearQuery]);
 }

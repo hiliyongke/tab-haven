@@ -48,7 +48,13 @@ export function normalizeNoCachePattern(input: string): string | null {
     if (!/^https?:\/\//i.test(trimmed)) return null;
     try {
       const url = new URL(trimmed);
+      // 带 userinfo 的 URL 直接拒绝：`url.host` 不含凭据，照原逻辑归一化会把
+      // `https://u:p@example.com` 变成 `https://example.com`，一条针对特定站点的
+      // 规则被静默放大到全站。宁可拒绝，也不能生成超出用户意图的规则。
+      if (url.username || url.password) return null;
       // scheme + host(含端口) 小写化（域名大小写不敏感），路径/查询保留用户原样。
+      // 注意：这里刻意不复用 normalizeHostname——禁缓存 pattern 是用户手填的匹配式，
+      // 「去 www」会改变用户意图（填 www.a.com 与 a.com 应当是两个不同的规则）。
       const rest = trimmed.slice(trimmed.indexOf('://') + 3).replace(/^[^/?#]*/, '');
       // rest 是未解析的用户原样字符串，再用 REST_PATTERN 白名单兜一层：
       // 放行 `?`/`#` 及其内容（前缀匹配的合法组成），

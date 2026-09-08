@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import i18n from '@/i18n';
 import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
-import { LOCATE_TAB_EVENT } from '@/ui/fixed/FixedArea';
+import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
 
 // jsdom 未实现滚动 API，定位链路会调用 target.scrollIntoView
 beforeAll(() => {
@@ -34,12 +35,11 @@ function mountTarget(tabId: number): HTMLElement {
 function setup(activeTabId: number | undefined) {
   const notify = vi.fn();
   const clearQuery = vi.fn();
-  const t = (key: string) => key;
   const dispatched: string[] = [];
   const listener = (event: Event) => dispatched.push(event.type);
   for (const type of EVENT_TYPES) window.addEventListener(type, listener);
 
-  const { result } = renderHook(() => useLocateActive({ activeTabId, notify, clearQuery, t }));
+  const { result } = renderHook(() => useLocateActive({ activeTabId, notify, clearQuery }));
   return {
     locate: () => act(() => void result.current()),
     notify,
@@ -61,7 +61,8 @@ describe('useLocateActive', () => {
   it('无激活标签：提示后直接返回，不发任何事件', () => {
     const ctx = setup(undefined);
     ctx.locate();
-    expect(ctx.notify).toHaveBeenCalledWith('toast.activeTabNotFound');
+    // hook 内部走 i18n.t（而非 useTranslation 的 t），避免语言切换重建回调。
+    expect(ctx.notify).toHaveBeenCalledWith(i18n.t('toast.activeTabNotFound'));
     expect(ctx.dispatched).toEqual([]);
   });
 

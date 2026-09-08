@@ -11,7 +11,7 @@
     "build": "wxt build",
     "build:compat": "cross-env TABS_VARIANT=compat wxt build",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --coverage",
@@ -19,10 +19,13 @@
     "check:ui": "vitest run tests/ui/design-tokens.test.ts",
     "check:privacy": "node scripts/privacy-check.mjs",
     "check:i18n": "node scripts/i18n-dead-keys.mjs",
-    "check": "npm run typecheck && npm run lint && npm run check:i18n && npm run test && npm run build && npm run check:privacy",
+    "check": "npm run typecheck && npm run lint && npm run check:i18n && npm run check:ui && npm run test && npm run build && npm run check:privacy",
     "zip": "wxt zip"
   },
   "packageManager": "pnpm@11.1.3",
+  "engines": {
+    "node": ">=22"
+  },
   "lint-staged": {
     "*.{ts,tsx}": [
       "eslint --fix",

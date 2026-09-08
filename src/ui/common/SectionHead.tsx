@@ -87,7 +87,11 @@ export function SectionHead({
       )}
       <span className="count-pill">{count}</span>
       {mediaIndicator}
-      {action}
+      {action && (
+        <span className="section-head-actions" onPointerDown={(event) => event.stopPropagation()}>
+          {action}
+        </span>
+      )}
       {onClose && (
         <button
           type="button"

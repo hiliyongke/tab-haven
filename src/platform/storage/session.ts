@@ -1,10 +1,25 @@
 import { browser } from 'wxt/browser';
+import { z } from 'zod';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 会话级数据（chrome.storage.session）：面板/浏览器重启即失效。
  * 用于固定条目与真实标签的会话绑定（挂起条目追踪）。
+ *
+ * 与其余持久化数据一致，读写都必须经 zod 校验（架构约定）：
+ * storage.session 的内容同样可能来自异常写入或旧版本残留，
+ * 裸 `as` 断言会让下游拿到非 number 的 tabId 并静默错绑。
  */
+
+/** 单窗口标签规模上限（远超正常使用，只拦异常数据）。 */
+const SESSION_TAB_IDS_LIMIT = 2_000;
+
+const SessionDataSchema = z.object({
+  /** 固定条目 id → 真实标签 id。 */
+  itemTabBindings: z.record(z.string(), z.number().int()).default({}),
+  /** 手动移出网站聚合的标签 id。 */
+  manualStandaloneTabIds: z.array(z.number().int()).max(SESSION_TAB_IDS_LIMIT).default([])
+});
 
 interface SessionData {
   /** 固定条目 id → 真实标签 id。 */
@@ -20,13 +35,15 @@ const EMPTY_SESSION: SessionData = { itemTabBindings: {}, manualStandaloneTabIds
 export async function readSession(): Promise<SessionData> {
   try {
     const stored = await browser.storage.session.get(SESSION_KEY);
-    const raw = stored[SESSION_KEY] as Partial<SessionData> | undefined;
-    return {
-      itemTabBindings: raw?.itemTabBindings ?? {},
-      manualStandaloneTabIds: Array.isArray(raw?.manualStandaloneTabIds)
-        ? raw.manualStandaloneTabIds
-        : []
-    };
+    const parsed = SessionDataSchema.safeParse(stored[SESSION_KEY]);
+    if (!parsed.success) {
+      // 坏数据不扩散：丢弃并留痕，而不是把非 number 的 tabId 交给下游。
+      if (stored[SESSION_KEY] !== undefined) {
+        logDegraded('session', '会话数据校验失败，已按空会话处理', parsed.error);
+      }
+      return { ...EMPTY_SESSION, itemTabBindings: {}, manualStandaloneTabIds: [] };
+    }
+    return parsed.data;
   } catch (error) {
     // 读取失败会让调用方以为「当前没有任何绑定」，进而错误地重建绑定。
     // 必须可观测（无遥测产品无服务端日志可查），故收口到统一诊断。

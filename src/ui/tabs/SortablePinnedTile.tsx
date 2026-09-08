@@ -15,16 +15,37 @@ export interface PinRuntime {
   isDiscarded: boolean;
 }
 
-/** 合并当前窗口内匹配该 pin 的标签状态（与 openPin 激活逻辑一致：优先激活标签）。 */
-export function resolvePinRuntime(pin: PersistentPin, tabs: readonly TabRecord[]): PinRuntime {
-  const matches = tabs.filter((tab) => tab.url && pinIdentity(tab.url) === pin.identity);
-  const openTab = matches.find((tab) => tab.active) ?? matches[0];
-  return {
-    openTab,
-    isActive: openTab?.active ?? false,
-    isAudible: openTab?.audible ?? false,
-    isDiscarded: openTab?.discarded ?? false
-  };
+/** 无匹配标签时的运行时（模块级常量：避免每次渲染新建对象击穿下游 memo）。 */
+export const CLOSED_PIN_RUNTIME: PinRuntime = Object.freeze({
+  isActive: false,
+  isAudible: false,
+  isDiscarded: false
+});
+
+/**
+ * 批量解析：一次遍历建「身份 → 运行时」索引。
+ *
+ * 逐个解析的复杂度是 O(磁贴数 × 标签数)，且每个标签的 pinIdentity 会被重复计算。
+ * 顶部磁贴条在每次标签快照都重算一遍，是这个量级下最该消除的浪费。
+ * 建索引后为 O(磁贴数 + 标签数)。
+ */
+export function buildPinRuntimeIndex(tabs: readonly TabRecord[]): Map<string, PinRuntime> {
+  const byIdentity = new Map<string, PinRuntime>();
+  for (const tab of tabs) {
+    if (!tab.url) continue;
+    const identity = pinIdentity(tab.url);
+    if (identity === null) continue;
+    const existing = byIdentity.get(identity);
+    // 激活标签优先（与 openPin 激活逻辑一致），否则保留首个。
+    if (existing && (existing.isActive || !tab.active)) continue;
+    byIdentity.set(identity, {
+      openTab: tab,
+      isActive: tab.active ?? false,
+      isAudible: tab.audible ?? false,
+      isDiscarded: tab.discarded ?? false
+    });
+  }
+  return byIdentity;
 }
 
 /**

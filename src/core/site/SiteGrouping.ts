@@ -89,7 +89,10 @@ export function aggregateBySite(
     const bucket =
       regBuckets.get(key.value) ??
       ({
-        registrableDomain: key.value,
+        // 必须是 registrableDomain 而非 value：本地/IP 站点的 value 带端口
+        // （"localhost:3000"），用 value 当注册域会让聚合结果与 siteResolver 的
+        // 输出永远不等，同站点归并对该类站点静默失效。
+        registrableDomain: key.registrableDomain,
         subdomainToTabs: new Map<string, TabRecord[]>()
       } as RegBucket);
     const sub = key.subdomain;

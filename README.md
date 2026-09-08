@@ -39,7 +39,7 @@ pnpm build:compat     # 兼容版（旧内核 Chromium，降级为弹窗形态�
 pnpm zip
 
 # 5. 质量门禁
-pnpm check            # 一条命令跑全部：typecheck → lint → check:i18n → test → check:privacy
+pnpm check            # 一条命令跑全部：typecheck → lint → check:i18n → check:ui → test → build → check:privacy
 ```
 
 各门禁也可单独执行（完整脚本表见下方「脚本一览」）：
@@ -135,15 +135,15 @@ src/
 
 ### 脚本一览
 
-| 命令                                                             | 作用                                                           |
-| ---------------------------------------------------------------- | -------------------------------------------------------------- |
-| `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                      |
-| `pnpm build` / `pnpm build:compat`                               | 生产构建（标准版 / 兼容版）                                    |
-| `pnpm zip`                                                       | 打包为上架用 ZIP                                               |
-| `pnpm check`                                                     | 聚合门禁：typecheck → lint → check:i18n → test → check:privacy |
-| `pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm test:watch` | 类型 / 规范 / 测试                                             |
-| `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案键 / 隐私回归                                   |
-| `pnpm format`                                                    | Prettier 格式化                                                |
+| 命令                                                             | 作用                                                                              |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                                         |
+| `pnpm build` / `pnpm build:compat`                               | 生产构建（标准版 / 兼容版）                                                       |
+| `pnpm zip`                                                       | 打包为上架用 ZIP                                                                  |
+| `pnpm check`                                                     | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
+| `pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm test:watch` | 类型 / 规范 / 测试                                                                |
+| `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案键 / 隐私回归                                                      |
+| `pnpm format`                                                    | Prettier 格式化                                                                   |
 
 ---
 
@@ -173,10 +173,11 @@ Tabs 采用 [MIT 许可证](./LICENSE) 开源。
 
 ## 参与贡献
 
-提交前请跑通聚合门禁（等价于 CI）：
+提交前请跑通聚合门禁（CI 的本地等价物；CI 另跑 `format:check` 与 `pnpm audit`）：
 
 ```bash
-pnpm check    # typecheck → lint → check:i18n → test → build → check:privacy
+pnpm check    # typecheck → lint → check:i18n → check:ui → test → build → check:privacy
+pnpm format:check
 ```
 
 改动还须满足以下约定：

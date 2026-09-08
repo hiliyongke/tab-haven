@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { type Settings } from '@/core/schema/models';
 import { buildNoCacheDnrRules, type NoCacheDnrRule } from '@/platform/nocache/noCacheRules';
 import { settingsRepository } from '@/platform/storage/repositories';
+import { hasPermissions } from '@/platform/permissions';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -22,13 +23,8 @@ type DnrApiRule = NonNullable<
 const ALL_URLS_PERMISSION = { origins: ['<all_urls>'] };
 
 /** 是否已持有 optional 的全站 host 权限（未授权时 DNR modifyHeaders 不生效）。 */
-async function hasSiteAccessPermission(): Promise<boolean> {
-  try {
-    return await browser.permissions.contains(ALL_URLS_PERMISSION);
-  } catch (error) {
-    logDegraded('no-cache', '禁缓存权限检测失败', error);
-    return false;
-  }
+function hasSiteAccessPermission(): Promise<boolean> {
+  return hasPermissions(ALL_URLS_PERMISSION);
 }
 
 /** 纯逻辑规则 → DNR API 规则（resourceTypes 为字符串字面量集合，是 ResourceType 枚举值的子集）。 */
@@ -56,7 +52,8 @@ export async function syncNoCacheRules(settings: Settings): Promise<void> {
       await dnr.updateDynamicRules({ removeRuleIds, addRules });
     }
   } catch (error) {
-    console.warn('[Tabs] no-cache rule sync failed:', error);
+    // 必须进诊断导出：DNR 同步失败时禁缓存能力静默失效，用户完全无从察觉。
+    logDegraded('no-cache', '禁缓存规则同步失败', error);
   }
 }
 

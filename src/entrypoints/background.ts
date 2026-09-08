@@ -3,6 +3,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
 import { mapTab } from '@/platform/tabs';
 import { logDegraded } from '@/platform/diagnostics';
+import { openOptionsPage } from '@/platform/navigation';
 import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
 import {
   foldersRepository,
@@ -355,7 +356,7 @@ export default defineBackground(() => {
         void discardInactiveTabs();
         break;
       case MENU_IDS.actionSettings:
-        void browser.runtime.openOptionsPage();
+        openOptionsPage();
         break;
     }
   });

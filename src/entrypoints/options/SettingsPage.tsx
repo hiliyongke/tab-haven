@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { browser } from 'wxt/browser';
 import { useDataStore } from '@/stores/dataStore';
 import { useUndoStore } from '@/stores/undoStore';
+import { useSnapshotStore } from '@/stores/snapshotStore';
 import type { Settings } from '@/core/schema/models';
 import { Button } from '@/ui/common/Button';
-import { ConfirmDialog, DialogShell } from '@/ui/dialog/Dialog';
+import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
 import { clearDiagnostics, exportDiagnostics, readDiagnostics } from '@/platform/diagnostics';
+import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
+import { openUrlInTab } from '@/platform/navigation';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
 import { CapabilitiesGuide, PresetsPanel } from '@/entrypoints/options/settingPresets';
+import { ShortcutsSection } from '@/entrypoints/options/ShortcutsSection';
+import { ClearDataDialog } from '@/entrypoints/options/ClearDataDialog';
 
 /**
  * 设置页**编排层**：状态、写盘通道与弹窗流转。
@@ -25,22 +29,14 @@ import { CapabilitiesGuide, PresetsPanel } from '@/entrypoints/options/settingPr
  *  - 本文件 —— 只做状态编排与 JSX 组装，不再承载任何配置体。
  */
 
-type SidePanelSide = 'left' | 'right' | 'unknown';
-type SidePanelLayoutApi = { getLayout?: () => Promise<{ side: 'left' | 'right' }> };
-
 /** 导入文件体积上限（5MB）：备份为纯 JSON，此上限已远超正常使用规模。 */
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
-
-/**
- * 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl+Shift。
- * 模块顶层常量：navigator.platform 每次渲染求值且该 API 已废弃，
- * 结果在会话内不会变化，无理由反复读取。
- */
-const IS_MAC = /mac/i.test(globalThis.navigator?.platform ?? '');
 
 export function SettingsPage() {
   const { t } = useTranslation();
   const settings = useDataStore((state) => state.settings);
+  /** 导入事务进行中：期间禁用导入入口（并发导入会被拒绝，不如直接不让点）。 */
+  const importing = useDataStore((state) => state.importing);
   const ready = useDataStore((state) => state.ready);
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const resetSettings = useDataStore((state) => state.resetSettings);
@@ -63,11 +59,8 @@ export function SettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const sidePanel = browser.sidePanel as SidePanelLayoutApi | undefined;
-    if (!sidePanel?.getLayout) return;
-    void sidePanel
-      .getLayout()
-      .then(({ side }) => {
+    void getSidePanelSide()
+      .then((side) => {
         if (!cancelled) setSidePanelSide(side);
       })
       .catch(() => {
@@ -147,7 +140,7 @@ export function SettingsPage() {
 
   /** 打开浏览器「扩展快捷键」设置页。 */
   const openShortcutSettings = () => {
-    void browser.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {});
+    void openUrlInTab('chrome://extensions/shortcuts');
   };
 
   /**
@@ -180,11 +173,17 @@ export function SettingsPage() {
     setConfirmingReset(false);
   };
 
-  /** 清除所有数据：store 清仓库/会话/镜像，撤销栈由 UI 层同步清空（被清除的数据不参与撤销）。 */
+  /**
+   * 清除所有数据：store 清仓库/会话/镜像。
+   *
+   * 跨 store 的内存态必须在这一层一并重置：dataStore 不持有撤销栈与快照列表，
+   * 只清自己会让侧边栏继续显示已删除的快照、并允许撤销已被清除的批次。
+   */
   const handleClearData = () => {
     void clearAllData()
       .then(() => {
         void useUndoStore.getState().clearBatches();
+        useSnapshotStore.getState().reset();
         setTransferStatus(t('settings.clearDataDone'));
       })
       .catch(() => setTransferStatus(t('settings.clearDataFailed')));
@@ -274,35 +273,7 @@ export function SettingsPage() {
         );
       })}
 
-      <Section title={t('settings.shortcuts')}>
-        {/* 浏览器命令快捷键按平台渲染修饰键：mac 显示 ⌃⇧ 符号，Windows/Linux 显示 Ctrl+Shift 文案 */}
-        {(
-          [
-            ['F', t('settings.shortcutFocusSearch')],
-            ['O', t('settings.shortcutOpenPanel')],
-            ['L', t('settings.shortcutLocateActive')],
-            ['U', t('settings.shortcutDiscardInactive')]
-          ] as const
-        ).map(([key, hint]) => (
-          <Row key={key} label={IS_MAC ? `⌃⇧${key}` : `Ctrl+Shift+${key}`} hint={hint}>
-            <span className="text-2xs text-gray-500">{t('settings.shortcutBrowser')}</span>
-          </Row>
-        ))}
-        <Row label="⌘K / Ctrl+K" hint={t('settings.shortcutPanelSearch')}>
-          <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
-        </Row>
-        <Row label="⌘P / Ctrl+P" hint={t('settings.shortcutPalette')}>
-          <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
-        </Row>
-        <Row label="⌘J / Ctrl+J" hint={t('settings.shortcutLocatePanel')}>
-          <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
-        </Row>
-        <Row label={t('settings.shortcutCustomize')} hint={t('settings.shortcutCustomizeHint')}>
-          <Button variant="secondary" onClick={openShortcutSettings}>
-            {t('settings.shortcutCustomizeAction')}
-          </Button>
-        </Row>
-      </Section>
+      <ShortcutsSection onOpenShortcutSettings={openShortcutSettings} />
 
       <Section title={t('settings.data')}>
         <Row label={t('settings.exportData')} hint={t('settings.exportDataHint')}>
@@ -317,9 +288,16 @@ export function SettingsPage() {
               type="file"
               accept="application/json,.json"
               className="hidden"
+              disabled={importing}
               onChange={(event) => void handleImport(event)}
             />
-            <Button variant="secondary" onClick={() => importInputRef.current?.click()}>
+            {/* 事务进行中禁用入口：并发导入会被 importData 拒绝（只能看到一个泛化的
+                「操作失败」），不如直接让用户点不动。 */}
+            <Button
+              variant="secondary"
+              disabled={importing}
+              onClick={() => importInputRef.current?.click()}
+            >
               {t('settings.import')}
             </Button>
           </>
@@ -377,63 +355,17 @@ export function SettingsPage() {
         />
       )}
 
-      {confirmingClear && (
-        <DialogShell
-          title={t('settings.clearDataTitle')}
-          onClose={() => {
-            setConfirmingClear(false);
-            setClearAck(false);
-          }}
-        >
-          <div className="flex flex-col gap-3">
-            <p className="text-3xs leading-relaxed text-gray-600">{t('settings.clearDataDesc')}</p>
-            <ul className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2 text-2xs text-gray-700">
-              <li>· {t('settings.clearDataItemFolders')}</li>
-              <li>· {t('settings.clearDataItemSnapshots')}</li>
-              <li>· {t('settings.clearDataItemUndo')}</li>
-              <li>· {t('settings.clearDataItemSettings')}</li>
-              <li>· {t('settings.clearDataItemSync')}</li>
-            </ul>
-            <p className="text-2xs font-medium text-warn-700">
-              {t('settings.clearDataIrreversible')}
-            </p>
-            <label className="flex cursor-pointer items-start gap-2 text-2xs text-gray-700">
-              <input
-                type="checkbox"
-                checked={clearAck}
-                onChange={(event) => setClearAck(event.target.checked)}
-                className="mt-px"
-              />
-              <span>{t('settings.clearDataAck')}</span>
-            </label>
-            <div className="flex items-center justify-between gap-2 pt-1">
-              <Button variant="secondary" size="sm" onClick={handleExport}>
-                {t('settings.exportBackupFirst')}
-              </Button>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setConfirmingClear(false);
-                    setClearAck(false);
-                  }}
-                >
-                  {t('dialog.cancel')}
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  disabled={!clearAck}
-                  onClick={() => void handleClearData()}
-                >
-                  {t('settings.clearDataAction')}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogShell>
-      )}
+      <ClearDataDialog
+        open={confirmingClear}
+        onClose={() => {
+          setConfirmingClear(false);
+          setClearAck(false);
+        }}
+        onConfirm={handleClearData}
+        ack={clearAck}
+        onAckChange={setClearAck}
+        onExportBackup={() => void handleExport()}
+      />
     </div>
   );
 }

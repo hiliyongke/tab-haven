@@ -1,5 +1,9 @@
 import { browser } from 'wxt/browser';
 import { z, type ZodType } from 'zod';
+import { logDegraded } from '@/platform/diagnostics';
+
+/** 隔离区单条原始数据的体积上限（超出只留摘要，避免撑爆 local 配额）。 */
+const QUARANTINE_ENTRY_LIMIT = 32 * 1024;
 
 /**
  * 数据仓库：单 key 的读写 + 校验 + 变更订阅（chrome.storage.local 通道）。
@@ -59,7 +63,7 @@ export class DataRepository<T> {
       await this.isolateCorrupted(raw);
       return this.defaultValue;
     } catch (error) {
-      console.error(`[DataRepository] read failed for ${this.key}`, error);
+      logDegraded('storage', `数据读取失败（${this.key}）`, error);
       this.options.onUnavailable?.();
       return this.defaultValue;
     }
@@ -76,7 +80,7 @@ export class DataRepository<T> {
       await area.set({ [this.key]: this.schema.parse(value) });
       return true;
     } catch (error) {
-      console.error(`[DataRepository] write failed for ${this.key}`, error);
+      logDegraded('storage', `数据写入失败（${this.key}）`, error);
       this.options.onUnavailable?.();
       return false;
     }
@@ -93,7 +97,12 @@ export class DataRepository<T> {
         return;
       }
       const parsed = this.schema.safeParse(change.newValue);
-      if (parsed.success) onChange(parsed.data);
+      if (!parsed.success) {
+        // 校验失败必须留痕：静默跳过会让订阅方停在旧值，与磁盘不一致且无从排查。
+        logDegraded('storage', `订阅数据校验失败（${this.key}），已跳过本次回放`, parsed.error);
+        return;
+      }
+      onChange(parsed.data);
     };
     browser.storage?.onChanged?.addListener(listener);
     return () => browser.storage?.onChanged?.removeListener(listener);
@@ -103,15 +112,34 @@ export class DataRepository<T> {
     return this.key;
   }
 
+  /**
+   * 坏数据隔离：不扩散、可诊断。
+   *
+   * 单条体积必须设上限：坏数据可能是一整份 MB 级快照数组，原样塞进隔离区会
+   * 把 storage.local 撑到 QUOTA_BYTES 上限，导致**后续所有**写入连带失败 ——
+   * 隔离本意是兜底，反而制造了更大的故障。超限只保留可诊断的摘要。
+   */
   private async isolateCorrupted(raw: unknown): Promise<void> {
     try {
+      const serialized = JSON.stringify(raw) ?? '';
+      const entry: Record<string, unknown> = {
+        key: this.key,
+        at: new Date().toISOString(),
+        size: serialized.length
+      };
+      if (serialized.length <= QUARANTINE_ENTRY_LIMIT) {
+        entry.raw = raw;
+      } else {
+        entry.truncated = true;
+        entry.head = serialized.slice(0, 512);
+      }
       const quarantine = await browser.storage.local.get('tabs.quarantine');
       const list = (quarantine['tabs.quarantine'] as unknown[]) || [];
-      list.push({ key: this.key, raw, at: new Date().toISOString() });
+      list.push(entry);
       await browser.storage.local.set({ 'tabs.quarantine': list.slice(-20) });
     } catch (error) {
       // 隔离失败不影响主流程
-      console.warn(`[DataRepository] quarantine failed for ${this.key}`, error);
+      logDegraded('storage', `坏数据隔离失败（${this.key}）`, error);
     }
   }
 }

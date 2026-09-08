@@ -13,8 +13,9 @@ import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 /**
  * P0-1 回归规格：虚拟滚动必须在默认配置（tabOrderSync=true）下生效。
  * 历史坑：useVirtual = !reorderEnabled && length > 60，而 reorderEnabled
- * 默认恒为 true → 虚拟化永不生效，性能保护恰好在标签囤积场景（200+ 标签）失效。
- * B6 方案 A：>200 强制虚拟化并暂停分区排序，同时给出可见说明。
+ * 默认恒为 true → 该分支永不生效，性能保护恰好在标签囤积场景（200+ 标签）失效。
+ * 现行分档：排序关闭 > 60 行即虚拟化；排序开启时 > 120 行强制虚拟化并暂停分区
+ * 排序，同时给出可见说明（阈值从 200 下调，缩小「既不虚拟化又全量挂载」的区间）。
  */
 
 function tabsOf(count: number): TabRecord[] {
@@ -108,10 +109,21 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
     expect(view.container.textContent).toContain(i18n.t('tabs.largeListNotice'));
   });
 
-  it('150 标签且排序开启：不进入虚拟化（全量挂载，拖拽排序不受影响）', async () => {
-    const view = renderSectionList(150, true);
-    await waitFor(() => expect(mountedRows(view)).toHaveLength(150));
+  it('100 标签且排序开启：不进入虚拟化（全量挂载，拖拽排序不受影响）', async () => {
+    // 排序开启时的强制阈值是 120（高于排序关闭时的 60）：排序是默认开启的高频
+    // 能力，过早虚拟化会大面积剥夺它，因此让排序优先，直到行数大到必须让步。
+    const view = renderSectionList(100, true);
+    await waitFor(() => expect(mountedRows(view)).toHaveLength(100));
     expect(view.container.textContent).not.toContain(i18n.t('tabs.largeListNotice'));
+  });
+
+  it('150 标签且排序开启：越过强制阈值，虚拟化并提示排序已暂停', async () => {
+    const view = renderSectionList(150, true);
+    await waitFor(() => {
+      expect(mountedRows(view).length).toBeGreaterThan(0);
+      expect(mountedRows(view).length).toBeLessThan(40);
+    });
+    expect(view.container.textContent).toContain(i18n.t('tabs.largeListNotice'));
   });
 
   it('排序关闭 + 超过 60 标签：虚拟化但不显示排序暂停提示（用户自己的选择）', async () => {

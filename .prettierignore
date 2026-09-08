@@ -1,0 +1,8 @@
+# 锁文件由包管理器生成，格式化它会污染 diff 且与 `pnpm install --frozen-lockfile`
+# 的校验无益（此前 `format:check` 一直把它判为不合规却从没人提交格式化结果）。
+pnpm-lock.yaml
+
+# 构建产物与覆盖率报告（测试自动生成，不进版本库）
+.output/
+.wxt/
+coverage/

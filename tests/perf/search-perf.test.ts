@@ -9,8 +9,9 @@ import { SearchEngine } from '@/core/search/SearchEngine';
  *    单独设阈值防回归。
  *
  * 阈值口径与防 flaky：
- *  - **预热**：首个查询要承担 fuzzysort + pinyin-pro 的首次加载与 JIT 编译，
+ *  - **预热**：首个查询要承担 fuzzysort 的首次加载与 JIT 编译，
  *    直接计时会把一次性成本算进「单次查询」，在 CI 冷机上足以翻几十倍。
+ *    （拼音词典 pinyin-pro 已改为按需动态加载，不在查询路径与本次度量范围内。）
  *  - **取中位数**而非最大值：单次毛刺（GC、调度抢占）不应判死刑；
  *    中位数仍能稳定捕获数量级回归，这才是本测试要守的东西。
  *  - **阈值按规模分档**：500 标签与 150 标签用同一阈值并不合理，
@@ -58,7 +59,7 @@ function buildTabs(
   });
 }
 
-/** 预热：让 fuzzysort / pinyin-pro 完成首次加载与 JIT，避免一次性成本计入测量。 */
+/** 预热：让 fuzzysort 完成首次加载与 JIT，避免一次性成本计入测量。 */
 function warmUp(engine: SearchEngine): void {
   for (const query of ['git', '文档', 'wk', 'release']) engine.search(query);
 }

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { browser } from 'wxt/browser';
+import { openSidePanelInCurrentWindow } from '@/platform/sidePanel';
 import { useDataStore } from '@/stores/dataStore';
 import type { Settings } from '@/core/schema/models';
 import { Button } from '@/ui/common/Button';
@@ -149,16 +149,7 @@ export function CapabilitiesGuide() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => {
-                void (async () => {
-                  try {
-                    const win = await browser.windows.getCurrent();
-                    if (win.id !== undefined) await browser.sidePanel.open({ windowId: win.id });
-                  } catch {
-                    /* 侧边栏打开失败不阻断设置页 */
-                  }
-                })();
-              }}
+              onClick={() => void openSidePanelInCurrentWindow()}
             >
               {t('settings.capTry')}
             </Button>

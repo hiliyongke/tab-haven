@@ -43,6 +43,11 @@ jobs:
       - name: 文案键一致性
         run: pnpm check:i18n
 
+      # 设计令牌守卫（未受控调色板 / 字号 / 对比度）。
+      # 此前只作为本地脚本存在，从未在 CI 执行 —— 守卫建了等于没建。
+      - name: UI 设计令牌
+        run: pnpm check:ui
+
       - name: 测试
         run: pnpm test
 

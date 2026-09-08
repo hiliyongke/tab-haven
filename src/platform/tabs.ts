@@ -133,7 +133,7 @@ export async function setGroupCollapsed(groupId: number, collapsed: boolean): Pr
   try {
     await browser.tabGroups.update(groupId, { collapsed });
   } catch (error) {
-    logDegraded('tabs', '切换固定失败', error);
+    logDegraded('tabs', '切换分组折叠失败', error);
     // 标签组可能已解散
   }
 }
@@ -142,6 +142,14 @@ export async function setGroupCollapsed(groupId: number, collapsed: boolean): Pr
  * 在当前窗口新建标签，返回领域记录。
  * position：end 窗口末尾（默认）/ after-active 当前激活标签之后。
  */
+/**
+ * 新建空白标签（空态「新建标签页」入口）。
+ * 不指定 windowId —— 浏览器默认在当前窗口打开，正是该入口的语义。
+ */
+export async function createPlainNewTab(): Promise<TabRecord> {
+  return mapTab(await browser.tabs.create({}));
+}
+
 export async function createNewTab(
   windowId: number | undefined,
   position: 'end' | 'after-active' = 'end'
@@ -284,14 +292,22 @@ export async function duplicateTab(tabId: number): Promise<void> {
 
 /**
  * 将若干标签归入一个原生组（固定文件夹 → 原生组桥接用）。
- * 返回新建组的 id。
+ *
+ * 传入 `groupId` 表示加入既有组（拖拽跨组投放用），缺省表示新建组。
+ * 返回组 id；失败返回 undefined。
  */
-export async function groupTabs(tabIds: readonly number[]): Promise<number | undefined> {
+export async function groupTabs(
+  tabIds: readonly number[],
+  groupId?: number
+): Promise<number | undefined> {
   if (tabIds.length === 0) return undefined;
+  const ids = [...tabIds] as [number, ...number[]];
   try {
-    return await browser.tabs.group({ tabIds: [...tabIds] as [number, ...number[]] });
+    return await browser.tabs.group(
+      groupId === undefined ? { tabIds: ids } : { tabIds: ids, groupId }
+    );
   } catch (error) {
-    logDegraded('tabs', '创建原生标签组失败', error);
+    logDegraded('tabs', groupId === undefined ? '创建原生标签组失败' : '加入原生标签组失败', error);
     return undefined;
   }
 }
@@ -421,6 +437,37 @@ export async function activateTabAcrossWindows(tab: {
     // 窗口可能已关闭，忽略
   }
   await activateTab(tab.id);
+}
+
+/**
+ * 监听浏览器多选高亮变化，返回注销函数。
+ *
+ * 收敛到 platform 的原因与其余 chrome API 一致：入口层直连 `browser.tabs.*`
+ * 会让「platform 是唯一触碰浏览器的层」这条约定出现例外，且注销逻辑散落各处。
+ */
+export function onTabHighlighted(handler: (tabIds: readonly number[]) => void): () => void {
+  const listener = (info: { tabIds: number[] }): void => handler(info.tabIds);
+  browser.tabs.onHighlighted.addListener(listener);
+  return () => browser.tabs.onHighlighted.removeListener(listener);
+}
+
+/**
+ * 解析「恢复」类操作的目标窗口：优先回到记录中的原窗口，原窗口已关闭则退回当前聚焦窗口。
+ *
+ * 撤销/快照恢复必须回到当初关掉标签的那个窗口。只记录「关了什么」而不记录
+ * 「从哪关的」，用户切到另一个窗口再撤销时标签会被恢复到错误的窗口里。
+ */
+export async function resolveRestoreWindowId(preferred?: number): Promise<number | undefined> {
+  if (preferred !== undefined) {
+    const win = await browser.windows.get(preferred).catch(() => undefined);
+    if (win?.id !== undefined) return win.id;
+  }
+  const focused = await browser.windows.getLastFocused().catch(() => undefined);
+  if (focused?.id !== undefined) return focused.id;
+  // 两个查询都拿不到结果（窗口 API 不可用）时，只能相信记录值。
+  // 此时若窗口确实已不存在，标签创建会失败并进入 failed 明细（用户可见、可重试），
+  // 不会退化成「点了撤销什么都没发生」的静默失败。
+  return preferred;
 }
 
 /** 查询全部窗口的普通标签（跨窗口搜索数据源）。 */

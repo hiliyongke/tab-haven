@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { browser } from 'wxt/browser';
 import type { Settings } from '@/core/schema/models';
 import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/core/nocache/noCachePattern';
+import { hasPermissions, requestPermissions, type PermissionQuery } from '@/platform/permissions';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
@@ -16,6 +16,9 @@ import { Toggle } from '@/ui/common/Toggle';
  * 引用编辑器组件，若两者同文件，配置层与渲染层会互相依赖成环。
  * 本文件是叶子，不依赖任何配置层模块。
  */
+
+/** 禁缓存能力所需的全站 host 权限（optional_host_permissions 申请单元）。 */
+const SITE_ACCESS: PermissionQuery = { origins: ['<all_urls>'] };
 
 export function SectionCount({ count }: { count?: number }) {
   if (count === undefined) return null;
@@ -266,8 +269,7 @@ export function NoCacheToggle({
       return;
     }
     let cancelled = false;
-    void browser.permissions
-      .contains({ origins: ['<all_urls>'] })
+    void hasPermissions(SITE_ACCESS)
       .then((has) => {
         if (!cancelled) setPermissionLost(!has);
       })
@@ -279,8 +281,7 @@ export function NoCacheToggle({
     };
   }, [settings.noCacheEnabled]);
 
-  const requestSiteAccess = () =>
-    browser.permissions.request({ origins: ['<all_urls>'] }).catch(() => false);
+  const requestSiteAccess = () => requestPermissions(SITE_ACCESS);
 
   const handleToggle = async (enabled: boolean) => {
     if (enabled) {

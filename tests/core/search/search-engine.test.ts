@@ -31,10 +31,48 @@ describe('SearchEngine', () => {
     expect(hits.some((hit) => hit.tabId === 4)).toBe(true);
   });
 
-  it('拼音首字母命中中文标题（frb 命中"今日热榜"）', () => {
+  it('拼音首字母命中中文标题（jrrb 命中"今日热榜"）', async () => {
     const engine = new SearchEngine(tabs);
+    // 拼音词典改为动态加载：构造后需先 await 就绪，再搜索才有拼音匹配。
+    await engine.ensurePinyin();
     const hits = engine.search('jrrb');
     expect(hits.some((hit) => hit.tabId === 3)).toBe(true);
+  }, 20000); // 首次动态 import('pinyin-pro')（约 1MB）在沙箱内偶发 2–6s，放宽以防偶发超时（非逻辑回归）。
+
+  it('拼音全拼命中中文标题（jinribang 命中"今日热榜"）', async () => {
+    const engine = new SearchEngine(tabs);
+    await engine.ensurePinyin();
+    const hits = engine.search('jinribang');
+    expect(hits.some((hit) => hit.tabId === 3)).toBe(true);
+    // 全拼与首字母互不冲突：首字母仍应命中
+    expect(engine.search('jrrb').some((hit) => hit.tabId === 3)).toBe(true);
+  }, 20000);
+
+  it('拼音全拼命中含英文的混合标题（github 命中"腾讯云...GitHub"无关；验证"我的GitHub"式拼接）', async () => {
+    const engine = new SearchEngine([
+      { id: 5, title: '我的GitHub主页', url: 'https://github.com/me', active: false }
+    ]);
+    await engine.ensurePinyin();
+    expect(engine.search('wodegithub').some((hit) => hit.tabId === 5)).toBe(true);
+    expect(engine.search('github').some((hit) => hit.tabId === 5)).toBe(true);
+  }, 20000);
+
+  it('词典就绪后新建的引擎同步具备拼音能力（无异步空窗，防结果闪回）', async () => {
+    // 先让模块级词典加载完成
+    const warmup = new SearchEngine(tabs);
+    await warmup.ensurePinyin();
+    // 侧边栏每次标签快照都会重建引擎：若词典就绪后仍要等一拍，拼音命中会在
+    // 重建瞬间全部消失，直到用户再次按键才回来。
+    const rebuilt = new SearchEngine(tabs);
+    expect(rebuilt.pinyinReady).toBe(true);
+    expect(rebuilt.search('jrrb').some((hit) => hit.tabId === 3)).toBe(true);
+  }, 20000);
+
+  it('关闭拼音搜索时 pinyinReady 恒为 true（没有待补的目标）', () => {
+    const engine = new SearchEngine(tabs, { pinyin: false });
+    expect(engine.pinyinReady).toBe(true);
+    // 且不应因为拼音目标缺失而误命中
+    expect(engine.search('jrrb').some((hit) => hit.tabId === 3)).toBe(false);
   });
 
   it('命中分段标记（hit=true 覆盖匹配子串，且可还原原始标题）', () => {

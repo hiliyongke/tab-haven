@@ -75,6 +75,7 @@
     "emptyHint": "Click + to create a collection, or drop a tab/group here directly",
     "dismissConcepts": "Dismiss",
     "dropResult": "Added {{added}}, moved {{moved}}, skipped {{skipped}} duplicate or unsupported tabs",
+    "importingBusy": "A backup import is running; changes to collections are ignored until it finishes",
     "openAll": "Open all items in collection",
     "allOpen": "All collection items are already open",
     "openedAll": "Opened {{count}} items",
@@ -300,7 +301,7 @@
     "rowActionsVisible": "Always show row actions",
     "rowActionsVisibleHint": "When off, row actions (mute/pin/duplicate etc.) appear on hover or focus",
     "pinyinSearch": "Search with pinyin",
-    "pinyinSearchHint": "Match Chinese tab titles by pinyin initials (e.g. \"gh\" hits Chinese titles before \"GitHub\")",
+    "pinyinSearchHint": "Match Chinese tab titles by pinyin initials or full pinyin (e.g. \"tb\" or \"taobao\" both hit \"淘宝\")",
     "persistUndo": "Persist undo records across restarts",
     "persistUndoHint": "When off, undo records last only for the current session",
     "uniqueUrlTabs": "Keep one tab per URL",
@@ -360,7 +361,12 @@
   },
   "errors": {
     "dataLoadFailed": "Failed to load data. Check extension permissions.",
-    "operationFailed": "Operation failed. Please try again."
+    "operationFailed": "Operation failed. Please try again.",
+    "storageDegraded": "Some changes may not have been saved. Check storage space or extension permissions.",
+    "boundaryTitle": "Something went wrong",
+    "boundaryBody": "The interface hit an error it cannot recover from. Your data is still saved locally — retry or reload the panel.",
+    "boundaryRetry": "Retry",
+    "boundaryReload": "Reload"
   },
   "onboarding": {
     "stepLabel": "Step {{current}} of {{total}}",
@@ -441,6 +447,7 @@
     "importOneTabHint": "Paste the text exported from OneTab; we parse the URLs and save them as one snapshot",
     "importOneTabPlaceholder": "https://example.com - Page title",
     "imported": "Imported {{count}} tabs",
+    "importUnparsed": "No URL found: make sure you pasted OneTab export text (one http/https URL per line) and it is under 1MB",
     "defaultName": "Snapshot",
     "defaultAutoName": "Auto snapshot",
     "defaultSpaceName": "Workspace snapshot",

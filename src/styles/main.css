@@ -479,16 +479,6 @@ body {
   background: color-mix(in srgb, var(--c-brand-500) 5%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
 }
-/* 固定条目列表：与分组标签列表同款紧凑排列 */
-.section-body-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 0;
-  padding: 0 1px 2px;
-  list-style: none;
-}
-
 /* 统一动效曲线：快入慢出（frontend-design-pro 推荐 cubic-bezier） */
 :root {
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -887,13 +877,15 @@ body {
    首屏必现的内容（固定空间为空时）。
    字号取 --text-3xs(11px) 而非 2xs(10px)：本文是需要阅读的正文说明，
    遵守本文件顶部自订的「正文说明一律 ≥ 11px」。
-   padding-left 8px 与 .section-head 对齐，与上方分区标题同一起始线。 */
+   左缩进 6px 与标签行 pl-1.5 对齐（列表内容统一从 6px 起），不再跟随
+   section-head 的 8px，避免与下方主列表行缩进不一致。
+   颜色用 gray-400：暗色下比 gray-500 更淡，空态文字不抢眼。 */
 .fixed-area-empty {
   margin: 2px 0 0;
-  padding: 0 8px;
-  color: var(--c-gray-500);
+  padding: 0 12px;
+  color: var(--c-gray-400);
   font-size: var(--text-3xs);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .fixed-item-pending {
@@ -1289,6 +1281,7 @@ body.dnd-dragging .row-item .row-actions {
    仍优先于灰底，浮层渐变始终与真实行底色一致。 */
 .row-item {
   --row-bg: var(--canvas);
+  background: var(--row-bg);
 }
 .row-item:hover {
   --row-bg: var(--c-gray-50);
@@ -1447,7 +1440,12 @@ body.dnd-dragging .row-item .row-actions {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.section-head:hover {
+  background: var(--c-gray-50);
 }
 /* 头部前导（色条 + chevron）：拖拽手柄浮现时淡出交换 */
 .section-head .head-leading {
@@ -1457,9 +1455,10 @@ body.dnd-dragging .row-item .row-actions {
   flex: none;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-/* 仅存在拖拽手柄的头才做前导交换（无手柄的头悬停不淡出） */
-.section-head:has(.section-drag-handle):hover .head-leading,
-.section-head:has(.section-drag-handle):focus-within .head-leading {
+/* 仅存在拖拽手柄的头才做前导交换（无手柄的头悬停不淡出）。
+   仅 hover 触发：点击 toggle 会让其获得焦点，若用 :focus-within 会持续显示手柄，
+   鼠标移开后仍不消失。键盘场景由手柄自身 :focus-visible 承担（见下方）。 */
+.section-head:has(.section-drag-handle):hover .head-leading {
   opacity: 0;
 }
 .section-head .toggle {
@@ -1474,10 +1473,6 @@ body.dnd-dragging .row-item .row-actions {
   border-radius: 6px;
   padding: 1px 3px;
   margin: -1px -3px;
-  transition: background var(--dur-fast) var(--ease-out);
-}
-.section-head button.toggle:hover {
-  background: var(--c-gray-100);
 }
 /* 分组头键盘拖拽手柄：整头鼠标可拖（指针），手柄承担键盘拖拽（Space + 方向键）。
    绝对定位覆盖头部前导（色条/chevron 原位），零布局占位；
@@ -1493,7 +1488,6 @@ body.dnd-dragging .row-item .row-actions {
   transition: opacity var(--dur-fast) var(--ease-out);
 }
 .section-head:hover .section-drag-handle,
-.section-head:focus-within .section-drag-handle,
 .section-drag-handle:focus-visible {
   opacity: 1;
 }
@@ -1559,14 +1553,16 @@ body.dnd-dragging .row-item .row-actions {
   font-size: 10px;
   font-weight: 600;
 }
-/* 整张卡片 hover（覆盖色条、标题、count-pill 周围、row-action 透明区域之间） */
-.section-card:hover {
-  background: var(--c-gray-50);
-}
-/* 行内按钮自身 hover 时升级为品牌色背景，specificity 高于 .section-card:hover */
+/* 行内按钮自身 hover 时升级为品牌色背景 */
 .section-card:hover .row-action:hover {
   background: var(--c-brand-100);
   color: var(--c-brand-700);
+}
+/* 头部操作按钮容器：display:contents 让按钮重新成为 .section-head 的 flex 子项
+   （保留既有 gap 与对齐），同时在此拦截 pointerdown，避免点击操作按钮时
+   冒泡到 dnd-kit 拖拽手柄而误触发排序拖拽/吞掉点击。 */
+.section-head-actions {
+  display: contents;
 }
 .section-body {
   /* 左右 8px 与 .section-head 对齐，让色条与标签行 favicon 左边缘对齐 */

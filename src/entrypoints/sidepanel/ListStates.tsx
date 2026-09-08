@@ -1,5 +1,5 @@
-import { browser } from 'wxt/browser';
 import { useTranslation } from 'react-i18next';
+import { createPlainNewTab } from '@/platform/tabs';
 import { EmptyState } from '@/ui/common/EmptyState';
 import { Icon, Icons } from '@/ui/common/Icon';
 
@@ -41,7 +41,7 @@ export function EmptyTabs() {
         <button
           type="button"
           className="mt-1 rounded-lg border border-accent-300 bg-accent-50 px-3 py-1.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
-          onClick={() => void browser.tabs.create({})}
+          onClick={() => void createPlainNewTab()}
         >
           {t('empty.openNewTab')}
         </button>

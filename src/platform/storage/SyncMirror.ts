@@ -40,6 +40,21 @@ class SyncMirror {
   /** 去抖窗口内最新的待写数据（后写覆盖先写，保证最终落盘的是最新状态）。 */
   private pendingPayload: MirrorData | undefined;
 
+  /**
+   * 丢弃去抖窗口内尚未落盘的镜像。
+   *
+   * 必须在「关闭同步」「清除所有数据」前调用：否则清完 sync 之后 timer 触发，
+   * 会把刚删掉的数据重新写回浏览器账号通道 —— 「关闭即删除已上传数据」的
+   * 承诺会被一次 500ms 竞态击穿。
+   */
+  cancelPending(): void {
+    if (this.timer !== undefined) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.pendingPayload = undefined;
+  }
+
   /** 调度一次镜像写入（合并高频写入，500ms 后落盘）。 */
   schedule(payload: MirrorData): void {
     this.pendingPayload = payload;
@@ -90,8 +105,10 @@ class SyncMirror {
     }
   }
 
-  /** 清除全部镜像（「清除所有数据」时调用：防止下次初始化时旧镜像回灌本地）。 */
+  /** 清除全部镜像（「关闭同步」「清除所有数据」时调用：防止下次初始化时旧镜像回灌本地）。 */
   async clearAll(): Promise<void> {
+    // 先撤销待写：顺序颠倒会让去抖窗口内的旧数据在清除之后落盘，云端数据复活。
+    this.cancelPending();
     const area = browser.storage?.sync;
     if (!area) return;
     try {
