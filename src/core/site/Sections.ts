@@ -33,7 +33,7 @@ export type TemporarySection =
       title: string;
       tabs: TabRecord[];
       siteKey: string;
-      /** 多子域时的折叠子分组；单子域时为长度 0。 */
+      /** 折叠模式已移除，恒为空（分区即单一子域站点）；保留字段兼容归并与渲染路径。 */
       subgroups: SiteSubGroup[];
       /**
        * 因同站点归并而吸收进本分区的原生组 id（见 collectSiteMergeCandidates）。
@@ -229,7 +229,7 @@ interface SitePlan {
 
 /**
  * 站点聚合 + 同站点归并：先按未分组标签聚合，再把候选原生组成员追加进
- * 对应站点分区（必须有同 (注册域, 子域) 的分区/子分组才吸收——不改变聚合阈值
+ * 对应站点分区（必须有同 (注册域, 子域) 的分区才吸收——不改变聚合阈值
  * 与 singles 判定，避免把原生组标签挤进「未分组」）。
  */
 function buildSitePlan({
@@ -246,22 +246,15 @@ function buildSitePlan({
   const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold });
   const absorbedGroupIds = new Set<number>();
   for (const candidate of candidates) {
-    const target = siteGroups.find((group) => {
-      if (group.key.registrableDomain !== candidate.registrableDomain) return false;
-      // 折叠模式按子分组匹配；单子域/自动展开模式整个分区即该子域。
-      return group.subgroups.length > 0
-        ? group.subgroups.some((sub) => sub.subdomain === candidate.subdomain)
-        : group.key.subdomain === candidate.subdomain;
-    });
+    // 平铺模式下分区即单一子域站点，直接按 (注册域, 子域) 精确匹配。
+    const target = siteGroups.find(
+      (group) =>
+        group.key.registrableDomain === candidate.registrableDomain &&
+        group.key.subdomain === candidate.subdomain
+    );
     if (!target) continue;
     absorbedGroupIds.add(candidate.groupId);
-    if (target.subgroups.length > 0) {
-      const sub = target.subgroups.find((s) => s.subdomain === candidate.subdomain)!;
-      sub.tabs = [...sub.tabs, ...candidate.memberTabs].sort(sortCmp);
-      target.tabs = target.subgroups.flatMap((s) => s.tabs);
-    } else {
-      target.tabs = [...target.tabs, ...candidate.memberTabs].sort(sortCmp);
-    }
+    target.tabs = [...target.tabs, ...candidate.memberTabs].sort(sortCmp);
   }
   const sections = siteGroups.map((group) => ({
     kind: 'site' as const,

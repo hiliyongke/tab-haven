@@ -10,9 +10,10 @@ import {
   pinsRepository,
   settingsRepository
 } from '@/platform/storage/repositories';
-import { initHeadlessI18n } from '@/i18n/headless';
+import { initHeadlessI18n, t } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 import { MessageSchema, sendMessage } from '@/platform/messages';
+import { PINS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import {
   cachedSettings,
   syncCachedSettings,
@@ -316,7 +317,7 @@ export default defineBackground(() => {
             url: info.linkUrl,
             title: info.selectionText || info.linkUrl
           }).then((added) => {
-            if (!added) notifyUser('Tabs', 'Already in a folder (deduped).');
+            if (!added) notifyUser('Tabs', t('bg.alreadyInFolder'));
           });
         }
       } else if (tab?.url) {
@@ -325,7 +326,7 @@ export default defineBackground(() => {
           title: tab.title || tab.url,
           favIconUrl: tab.favIconUrl
         }).then((added) => {
-          if (!added) notifyUser('Tabs', 'Already in a folder (deduped).');
+          if (!added) notifyUser('Tabs', t('bg.alreadyInFolder'));
         });
       }
       return;
@@ -348,10 +349,14 @@ export default defineBackground(() => {
           });
           if (pin) {
             void (async () => {
-              const pins = await pinsRepository.read();
-              await pinsRepository.write(
-                dedupePins([...pins.filter((p) => p.identity !== pin.identity), pin])
-              );
+              // 跨页锁内重读再合并：与面板 coalesced 写共用 PINS_RMW_LOCK，
+              // 避免末值落盘覆盖右键新增的固定图标。
+              await withCrossPageLock(PINS_RMW_LOCK, async () => {
+                const pins = await pinsRepository.read();
+                await pinsRepository.write(
+                  dedupePins([...pins.filter((p) => p.identity !== pin.identity), pin])
+                );
+              });
               if (!targetTab.pinned && targetTab.id !== undefined) {
                 await browser.tabs.update(targetTab.id, { pinned: true }).catch(() => {});
               }

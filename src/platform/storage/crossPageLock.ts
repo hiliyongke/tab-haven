@@ -14,3 +14,17 @@ export async function withCrossPageLock<T>(name: string, fn: () => Promise<T>): 
   if (!locks || typeof locks.request !== 'function') return fn();
   return locks.request(name, fn) as Promise<T>;
 }
+
+/**
+ * folders/pins/autoGroups 分区的 RMW 锁（快照库锁见 snapshots.ts 的 SNAPSHOTS_RMW_LOCK）。
+ *
+ * 这些分区有两个独立写入方：面板（coalesced「末值落盘」）与 background
+ * （右键菜单加条目/固定页面、自动分组记账）。锁外 read-modify-write 交错时
+ * 后写覆盖先写，右键新增的条目/组记录会被静默抹掉。双方必须共用同一把锁。
+ */
+export const FOLDERS_RMW_LOCK = 'tabs.folders-rmw';
+export const PINS_RMW_LOCK = 'tabs.pins-rmw';
+export const AUTO_GROUPS_RMW_LOCK = 'tabs.auto-groups-rmw';
+/** settings 分区：options / sidepanel / popup 各有独立 dataStore，
+ *  整对象写必须以「锁内重读 → 合并 → 写」执行，否则并发页互丢字段级更新。 */
+export const SETTINGS_RMW_LOCK = 'tabs.settings-rmw';

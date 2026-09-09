@@ -3,6 +3,8 @@ import { createFolderItem, createFolder as createFolderModel } from '@/core/fixe
 import { EXPORT_FILE_VERSION, parseExportFile, type Settings } from '@/core/schema/models';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { logFailure } from '@/platform/diagnostics';
+import { SNAPSHOTS_RMW_LOCK } from '@/platform/snapshot/snapshots';
+import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { isExportableUrl, readBookmarkBar } from '@/platform/bookmarks';
 import type { DataContext, DataState } from './types';
@@ -105,10 +107,18 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
             rollback: () => ctx.repos.settings.write(before.settings)
           },
           // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
+          // 快照分区必须走 SNAPSHOTS_RMW_LOCK：导入事务持续数百 ms，期间 background
+          // 的关窗自动保存/定时快照在锁内 RMW，锁外整表写会把它们覆盖丢失（反之亦然）。
           {
             name: 'snapshots',
-            write: () => ctx.repos.snapshots.write(data.snapshots),
-            rollback: () => ctx.repos.snapshots.write(before.snapshots)
+            write: () =>
+              withCrossPageLock(SNAPSHOTS_RMW_LOCK, () =>
+                ctx.repos.snapshots.write(data.snapshots)
+              ),
+            rollback: () =>
+              withCrossPageLock(SNAPSHOTS_RMW_LOCK, () =>
+                ctx.repos.snapshots.write(before.snapshots)
+              )
           }
         ];
 
@@ -150,65 +160,72 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
 
     importBookmarksFromBar: async () => {
       const bar = await readBookmarkBar();
-      const { folders } = ctx.get();
-      const seen = new Set<string>();
-      for (const folder of folders) {
-        for (const item of folder.items) {
-          seen.add(webComparisonKey(item.url ?? '', undefined) ?? item.url ?? '');
-        }
-      }
-      const uniqueLeaves = (
-        leaves: { url: string; title: string }[]
-      ): { url: string; title: string }[] => {
-        const next: { url: string; title: string }[] = [];
-        for (const leaf of leaves) {
-          const key = webComparisonKey(leaf.url, undefined) ?? leaf.url;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          next.push(leaf);
-        }
-        return next;
-      };
       let foldersCreated = 0;
       let itemsImported = 0;
-      let next = folders;
-      for (const spec of bar.folders) {
-        // 只导入 http(s) 条目：书签栏可能含 javascript:/data: 等书签，
-        // 落为固定项后点击即在标签上下文执行脚本（与导出侧白名单同一原则）。
-        const leaves = uniqueLeaves(spec.leaves.filter((leaf) => isExportableUrl(leaf.url)));
-        if (leaves.length === 0) continue;
-        const items = leaves.map((leaf) => createFolderItem({ url: leaf.url, title: leaf.title }));
-        const existing = next.find((folder) => folder.name === spec.name);
-        if (existing) {
-          next = next.map((folder) =>
-            folder.id === existing.id ? { ...folder, items: [...folder.items, ...items] } : folder
-          );
-        } else {
-          next = [...next, { ...createFolderModel(spec.name), items }];
-          foldersCreated += 1;
+      // updater：readBookmarkBar 的 await 期间基线可能已变（并发文件夹操作），
+      // 合并必须以写前一刻的最新 folders 重放，否则整表回写会覆盖那些变更。
+      await ctx.writeFolders((current) => {
+        const seen = new Set<string>();
+        for (const folder of current) {
+          for (const item of folder.items) {
+            seen.add(webComparisonKey(item.url ?? '', undefined) ?? item.url ?? '');
+          }
         }
-        itemsImported += items.length;
-      }
-      if (bar.looseLeaves.length > 0) {
-        const leaves = uniqueLeaves(bar.looseLeaves.filter((leaf) => isExportableUrl(leaf.url)));
-        if (leaves.length > 0) {
-          const name = i18n.t('fixed.bookmarksImportName');
+        const uniqueLeaves = (
+          leaves: { url: string; title: string }[]
+        ): { url: string; title: string }[] => {
+          const next: { url: string; title: string }[] = [];
+          for (const leaf of leaves) {
+            const key = webComparisonKey(leaf.url, undefined) ?? leaf.url;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            next.push(leaf);
+          }
+          return next;
+        };
+        let next = current;
+        for (const spec of bar.folders) {
+          // 只导入 http(s) 条目：书签栏可能含 javascript:/data: 等书签，
+          // 落为固定项后点击即在标签上下文执行脚本（与导出侧白名单同一原则）。
+          const leaves = uniqueLeaves(spec.leaves.filter((leaf) => isExportableUrl(leaf.url)));
+          if (leaves.length === 0) continue;
           const items = leaves.map((leaf) =>
             createFolderItem({ url: leaf.url, title: leaf.title })
           );
-          const existing = next.find((folder) => folder.name === name);
+          const existing = next.find((folder) => folder.name === spec.name);
           if (existing) {
             next = next.map((folder) =>
               folder.id === existing.id ? { ...folder, items: [...folder.items, ...items] } : folder
             );
           } else {
-            next = [...next, { ...createFolderModel(name), items }];
+            next = [...next, { ...createFolderModel(spec.name), items }];
             foldersCreated += 1;
           }
           itemsImported += items.length;
         }
-      }
-      if (next !== folders) await ctx.writeFolders(next);
+        if (bar.looseLeaves.length > 0) {
+          const leaves = uniqueLeaves(bar.looseLeaves.filter((leaf) => isExportableUrl(leaf.url)));
+          if (leaves.length > 0) {
+            const name = i18n.t('fixed.bookmarksImportName');
+            const items = leaves.map((leaf) =>
+              createFolderItem({ url: leaf.url, title: leaf.title })
+            );
+            const existing = next.find((folder) => folder.name === name);
+            if (existing) {
+              next = next.map((folder) =>
+                folder.id === existing.id
+                  ? { ...folder, items: [...folder.items, ...items] }
+                  : folder
+              );
+            } else {
+              next = [...next, { ...createFolderModel(name), items }];
+              foldersCreated += 1;
+            }
+            itemsImported += items.length;
+          }
+        }
+        return next;
+      });
       return { foldersCreated, itemsImported };
     }
   };

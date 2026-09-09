@@ -82,7 +82,6 @@ export function SortablePinnedTile({
   onOpen,
   onMiddleClick,
   onUnpin,
-  onDuplicate,
   unpinTitle
 }: {
   id: string | number;
@@ -99,7 +98,6 @@ export function SortablePinnedTile({
   onOpen: () => void;
   onMiddleClick: () => void;
   onUnpin: () => void;
-  onDuplicate?: () => void;
   unpinTitle: string;
 }) {
   const sortable = useSortable({
@@ -120,7 +118,6 @@ export function SortablePinnedTile({
       onClick={onOpen}
       onMiddleClick={onMiddleClick}
       onUnpin={onUnpin}
-      onDuplicate={onDuplicate}
       unpinTitle={unpinTitle}
       sortable={{
         setNodeRef: sortable.setNodeRef,

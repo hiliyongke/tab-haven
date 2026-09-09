@@ -59,7 +59,9 @@ export class ReuseCoordinator {
     this.deps = deps;
     this.allowances = options.allowances ?? new AllowanceLedger();
     this.policy = options.policy ?? new ReusePolicy();
-    this.enabled = options.enabled ?? true;
+    // fail-closed：缺省禁用。SW 冷启动时设置尚未读回（调用方异步同步），
+    // 若默认开启，用户已关闭「同 URL 唯一化」仍会在该窗口期内被合并标签。
+    this.enabled = options.enabled ?? false;
     this.allowancesReady = options.allowancesReady;
   }
 
@@ -98,7 +100,10 @@ export class ReuseCoordinator {
 
   /** 为指定窗口/网址发放豁免授权（显式复制/撤销恢复场景）。 */
   grantAllowance(windowId: number, url: string): void {
-    this.allowances.grant(windowId, url);
+    // 归一化后再入账：消费侧（inspect）永远用 comparisonKey（主机小写/剥离默认端口），
+    // 发放侧若直接存原始 URL（导入备份里的 `HTTPS://A.COM`、无尾斜杠写法等），
+    // 令牌会失配残留，显式恢复的标签反被合并。非 web URL 归一化返回 null，原样入账兜底。
+    this.allowances.grant(windowId, webComparisonKey(url, undefined) ?? url);
   }
 
   private requestDrain(): void {
@@ -126,7 +131,10 @@ export class ReuseCoordinator {
       task.dirty = false;
       try {
         const outcome = await this.inspect(task.latest);
-        if (outcome !== 'wait') this.tasks.delete(tabId);
+        // 结算删除要看 dirty：inspect 内含 await（scanWindow），期间到达的更新
+        // 会把 dirty 重新置位（见头部并发模型注释「处理期间到达的更新在下轮
+        // 循环读取最新快照」）——不看 dirty 会把这些更新随任务一起丢弃。
+        if (outcome !== 'wait' && !task.dirty) this.tasks.delete(tabId);
       } catch (error) {
         // 单任务异常（典型：扫描与结算之间标签被用户关闭）不得中断整个调度循环，
         // 否则队列中其余脏任务会被永久滞留。按结算处理；若处理期间又收到更新则保留任务。

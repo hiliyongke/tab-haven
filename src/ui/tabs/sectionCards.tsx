@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
-import type { SiteSubGroup, TemporarySection } from '@/core/site/Sections';
+import type { TemporarySection } from '@/core/site/Sections';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TabRow } from '@/ui/tabs/TabRow';
@@ -120,7 +120,10 @@ function RowList({
               reorderEnabled={false}
               showUrl={showUrl}
               rowActionsVisible={rowActionsVisible}
-              autoScrollActive={autoScrollActive}
+              /* 虚拟化分支的激活行滚动由 VirtualRowList 按 index 单点承担；
+                 行级 scrollIntoView 必须关闭，否则激活行落在 overscan 缓冲区
+                 （已挂载但不可见）时两路 smooth 滚动并发、目标口径不同而抖动。 */
+              autoScrollActive={false}
               closeOnMiddleClick={closeOnMiddleClick}
               density={density}
               showSplitBadges={showSplitBadges}
@@ -388,54 +391,16 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
       rowProps.callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
     }
   };
-  // 展开态：site 多子域时按子域再分块（折叠子标题）；媒体定位模式只保留播放标签所在子域。
-  const subGroups: SiteSubGroup[] = useMemo(
-    () =>
-      section.kind === 'site'
-        ? section.subgroups
-            .map((sub) => ({
-              ...sub,
-              tabs: playingOnly ? sub.tabs.filter((tab) => tab.id === playingTab?.id) : sub.tabs
-            }))
-            .filter((sub) => sub.tabs.length > 0)
-        : [],
-    [section, playingOnly, playingTab?.id]
-  );
-
-  // 多子域分块时各块共享整个分区的排序全集（见 RowList.sortableItems）：
-  // 否则跨块拖拽的 over 不在对方 items 里，dnd-kit 无法排序。
-  const subGroupTabIds = useMemo(
-    () => subGroups.flatMap((sub) => sub.tabs.map((tab) => tab.id)),
-    [subGroups]
-  );
-
+  // 展开态：站点分区永远平铺渲染（子域折叠已移除，subgroups 恒为空）。
   const renderBody = () => (
-    <>
-      <div className="section-body">
-        {subGroups.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            {subGroups.map((sub) => (
-              <div key={sub.subdomain || 'root'}>
-                <div className="px-1.5 py-0 text-3xs leading-tight text-gray-600">{sub.label}</div>
-                <SectionRows
-                  tabs={sub.tabs}
-                  containerKey={section.key}
-                  sortableItems={subGroupTabIds}
-                  {...rowProps}
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <SectionRows
-            tabs={visibleTabs}
-            depths={section.depths}
-            containerKey={section.key}
-            {...rowProps}
-          />
-        )}
-      </div>
-    </>
+    <div className="section-body">
+      <SectionRows
+        tabs={visibleTabs}
+        depths={section.depths}
+        containerKey={section.key}
+        {...rowProps}
+      />
+    </div>
   );
 
   return (

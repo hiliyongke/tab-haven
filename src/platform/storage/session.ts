@@ -72,6 +72,13 @@ async function writeSession(data: SessionData): Promise<boolean> {
 let chain: Promise<void> = Promise.resolve();
 
 /**
+ * 本上下文上一次真实写入的持久化结果（无变更跳过写盘时沿用）。
+ * 语义为「当前内存值是否已安全落盘」：上次写失败后，一次无变更调用
+ * 不得报告 persisted: true。跨上下文无法共享该标志（MV3 固有限定）。
+ */
+let lastPersisted = true;
+
+/**
  * 会话变更结果：数据 + 持久化是否成功。
  *
  * `persisted === false` 表示本次变更未能落盘，调用方可据此提示用户。
@@ -106,19 +113,21 @@ export function mutateSession(
       const next: SessionData = { ...current, ...partial };
 
       // updater 无变更（空 partial）时跳过写盘，消除高频路径（如 reconcileWithTabs）的写放大。
-      // 此时沿用队列内上一次写入的持久化结果。
+      // 沿用本上下文上一次真实写入的持久化结果（非本次调用的初始值）。
       if (Object.keys(partial).length === 0) {
-        result = { data: next, persisted: result.persisted };
+        result = { data: next, persisted: lastPersisted };
         return;
       }
 
       const persisted = await writeSession(next);
+      lastPersisted = persisted;
       result = { data: next, persisted };
     } catch (error) {
       // 异常必须就地消化。链上任何一环抛出，chain 都会变成 rejected promise，
       // 此后每个 mutateSession 的 `.then` 回调全部被跳过 —— 会话写入永久静默失效，
       // 而调用方拿到的仍是一个「成功」的 Promise。updater 是调用方闭包，不可信任。
       logDegraded('session', '会话数据变更失败，已保留当前内存值', error);
+      lastPersisted = false;
       result = { data: result.data, persisted: false };
     }
   };
@@ -132,5 +141,7 @@ export function mutateSession(
 
 /** 增量更新会话数据（队列内 read-modify-write，串行化防竞态）。 */
 export function updateSession(partial: Partial<SessionData>): Promise<boolean> {
-  return mutateSession((current) => ({ ...current, ...partial })).then((r) => r.persisted);
+  // 直接透传 partial：此前包装为 `{ ...current, ...partial }` 恒含全部 key，
+  // mutateSession 的「空变更跳过写盘」判定永远不成立，每次都全量写盘。
+  return mutateSession(() => partial).then((r) => r.persisted);
 }

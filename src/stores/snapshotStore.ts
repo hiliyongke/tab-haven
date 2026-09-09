@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import i18n from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
-import { sendMessage } from '@/platform/messages';
+import { sendMessageWithAck } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import { logFailure } from '@/platform/diagnostics';
 import { useUndoStore } from '@/stores/undoStore';
@@ -67,7 +67,15 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
         set({ snapshots: value });
       });
     }
+    const before = get().snapshots;
     const snapshots = await snapshotsRepository.read();
+    // 反向窗口：read 在途期间 background 写入（关窗自动保存），watcher 回放
+    // 已把新值放进内存（引用变化）——此时以 watcher 交付为准，read 到的
+    // 启动时刻旧值不得回写覆盖，只补 ready 标记。
+    if (get().snapshots !== before) {
+      set({ ready: true });
+      return;
+    }
     set({ snapshots, ready: true });
   },
 
@@ -133,7 +141,9 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     // 若关闭后窗口将随之关闭（全部标签都已留档），提前请求跳过本次关窗自动保存，
     // 避免 background 再写一条同内容的 auto 快照。
     if (windowId !== undefined && closableIds.length > 0 && closableIds.length === tabs.length) {
-      sendMessage({ type: 'skip-auto-save-once', windowId });
+      // 必须 ack：SW 休眠唤醒慢于 tabs.remove 的事件派发时，fire-and-forget 会让
+      // 关窗事件先于标记落账执行，auto 快照照写（同一批标签出现 archive+auto 两条）。
+      await sendMessageWithAck({ type: 'skip-auto-save-once', windowId });
     }
     if (closableIds.length > 0) {
       // 先登记撤销再关闭：归档也是一次「关闭动作」，关闭后必须存在可撤销入口，

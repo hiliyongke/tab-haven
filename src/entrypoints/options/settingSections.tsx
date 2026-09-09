@@ -266,17 +266,6 @@ export function buildSections(
         },
         {
           kind: 'select',
-          key: 'pinnedStripSize',
-          labelKey: 'settings.pinnedStripSize',
-          hintKey: 'settings.pinnedStripSizeHint',
-          options: [
-            { value: 'sm', label: t('settings.pinnedStripSizeSm') },
-            { value: 'md', label: t('settings.pinnedStripSizeMd') },
-            { value: 'lg', label: t('settings.pinnedStripSizeLg') }
-          ]
-        },
-        {
-          kind: 'select',
           key: 'groupAccentStyle',
           labelKey: 'settings.groupAccentStyle',
           hintKey: 'settings.groupAccentStyleHint',

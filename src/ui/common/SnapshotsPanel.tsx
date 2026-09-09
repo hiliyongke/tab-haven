@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -75,7 +75,12 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     [ordered, t]
   );
 
+  /** 保存进行中标尺：await 期间输入框仍在，Enter 连击/双击会并发提交出重复快照。 */
+  const saveInFlight = useRef(false);
+
   const handleSave = async () => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     try {
       await saveCurrentWindow(name.trim() || undefined);
       setName('');
@@ -83,6 +88,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     } catch {
       notify(t('errors.operationFailed'));
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };

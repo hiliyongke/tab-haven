@@ -34,7 +34,8 @@ describe('matchesNoCachePattern', () => {
       ['https://example.com/app/detail?id=1', true],
       ['https://example.com/apples', true], // 前缀语义（与 DNR urlFilter 一致）
       ['https://example.com/', false],
-      ['https://www.example.com/app', false], // 裸 host 精确匹配，不含子域
+      ['https://www.example.com/app', true], // DNR `||` 主机锚定含子域，页面侧同口径
+      ['https://a.b.example.com/app/detail', true], // 任意深度子域
       ['https://evil.com/.example.com/app', false]
     ])('%s → %s', (url, expected) => {
       expect(matchesNoCachePattern(url, 'example.com/app')).toBe(expected);

@@ -1,4 +1,9 @@
 import { createCoalescedWriter } from '@/platform/storage/coalescedWriter';
+import {
+  FOLDERS_RMW_LOCK,
+  PINS_RMW_LOCK,
+  withCrossPageLock
+} from '@/platform/storage/crossPageLock';
 import { syncMirror } from '@/platform/storage/SyncMirror';
 import { logDegraded } from '@/platform/diagnostics';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
@@ -37,8 +42,14 @@ export function buildDataContext(
 ): DataContext {
   // 写入工具：闭包内定义，用 set/get 访问 store，避免模块级声明顺序依赖（no-use-before-define）。
   // 写合并保留 DataRepository.write 的 boolean 语义，便于写失败时上报降级。
-  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[], boolean>(repos.folders);
-  const writePinsCoalesced = createCoalescedWriter<PersistentPin[], boolean>(repos.pins);
+  // 落盘经跨页锁：background 右键菜单对同一分区的 RMW（锁内重读再合并）
+  // 与面板「末值落盘」交错时会互相覆盖（静默丢条目），双方共用一把锁串行化。
+  const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[], boolean>({
+    write: (value) => withCrossPageLock(FOLDERS_RMW_LOCK, () => repos.folders.write(value))
+  });
+  const writePinsCoalesced = createCoalescedWriter<PersistentPin[], boolean>({
+    write: (value) => withCrossPageLock(PINS_RMW_LOCK, () => repos.pins.write(value))
+  });
 
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
   const scheduleMirror = (state: MirrorState): void => {
@@ -83,7 +94,9 @@ export function buildDataContext(
     if (get().storageDegraded) set({ storageDegraded: false });
   }
 
-  async function writeFolders(folders: FixedFolder[]): Promise<void> {
+  async function writeFolders(
+    arg: FixedFolder[] | ((current: FixedFolder[]) => FixedFolder[])
+  ): Promise<void> {
     // 导入事务进行中：高频拖拽写入挂起，避免与导入的串行写交错、把导入结果覆盖回旧值。
     // 内存态由 importData 统一提交，此处直接放弃落盘与镜像。
     if (importing) {
@@ -91,6 +104,9 @@ export function buildDataContext(
       logDegraded('dataStore', '导入事务进行中，本次固定空间写入已丢弃（内存态不更新）');
       return;
     }
+    // updater 形态在执行这一刻取最新基线重算：get→算→set 无 await 间隙（单线程），
+    // 入口基线过期互覆的窗口归零；跨页交错由落盘通道的 FOLDERS_RMW_LOCK 串行化。
+    const folders = typeof arg === 'function' ? arg(get().folders) : arg;
     // 先更新内存态（UI 即时响应），storage 落盘合并为最终值。
     set({ folders });
     const ok = await writeFoldersCoalesced(folders);
@@ -116,12 +132,15 @@ export function buildDataContext(
     }
   }
 
-  async function writePins(pins: PersistentPin[]): Promise<void> {
+  async function writePins(
+    arg: PersistentPin[] | ((current: PersistentPin[]) => PersistentPin[])
+  ): Promise<void> {
     // 导入事务进行中：挂起落盘与镜像，内存态由 importData 统一提交。
     if (importing) {
       logDegraded('dataStore', '导入事务进行中，本次固定图标写入已丢弃（内存态不更新）');
       return;
     }
+    const pins = typeof arg === 'function' ? arg(get().pins) : arg;
     set({ pins });
     const ok = await writePinsCoalesced(pins);
     if (ok === false) {

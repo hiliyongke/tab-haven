@@ -208,7 +208,7 @@
     "exportFailed": "Export failed: local data could not be read",
     "exportDiagnostics": "Export diagnostics",
     "exportDiagnosticsHint": "Save a local report of degraded operations (timestamps and error descriptions only, no page titles or URLs) to attach to a bug report",
-    "diagnosticsEmpty": "No issues recorded in this session",
+    "diagnosticsEmpty": "No issues recorded",
     "saveFailed": "Setting not saved: storage unavailable, please retry",
     "importConfirm": "Importing will replace current fixed data, settings, and snapshots. Continue?",
     "importSuccess": "Backup imported",
@@ -237,11 +237,6 @@
     "sortModeHint": "\"Most recent\" settles newly opened pages once (newest on top); switching tabs never reshuffles the list",
     "sortBrowser": "Browser order",
     "sortRecency": "Most recent",
-    "pinnedStripSize": "Always-on tile size",
-    "pinnedStripSizeHint": "Size of always-on tile icons (applies to both the fixed-space strip and native pinned tabs)",
-    "pinnedStripSizeSm": "Compact",
-    "pinnedStripSizeMd": "Standard",
-    "pinnedStripSizeLg": "Large",
     "groupAccentStyle": "Group accent color",
     "groupAccentStyleHint": "Site group accent: auto color by domain, or a uniform neutral",
     "groupAccentAuto": "Auto",
@@ -486,7 +481,8 @@
     "autoDiscarded": "Discarded {{count}} tabs (wake them all from the panel)",
     "badgeTitle": "{{total}} tabs · {{dups}} dup groups · {{discarded}} discarded",
     "discardNotSafe": "This tab can't be discarded right now.",
-    "discardDone": "Tab discarded."
+    "discardDone": "Tab discarded.",
+    "alreadyInFolder": "Already in a folder (deduped)."
   },
   "popup": {
     "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close"

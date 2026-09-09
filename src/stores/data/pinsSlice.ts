@@ -18,8 +18,9 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
       if (!tab.url) return;
       const pin = pinFromTab({ url: tab.url, title: tab.title || '', favIconUrl: tab.favIconUrl });
       if (!pin) return;
-      const next = dedupePins([...ctx.get().pins.filter((p) => p.identity !== pin.identity), pin]);
-      await ctx.writePins(next);
+      await ctx.writePins((current) =>
+        dedupePins([...current.filter((p) => p.identity !== pin.identity), pin])
+      );
       // 同步把真实标签置为 Chrome 固定。
       // togglePinned 为翻转语义：传入「当前未固定 false」→ 翻转为固定。
       if (!tab.pinned) await togglePinnedPlatform(tab.id, false);
@@ -29,7 +30,7 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
     },
 
     removePin: async (pin) => {
-      await ctx.writePins(ctx.get().pins.filter((p) => p.id !== pin.id));
+      await ctx.writePins((current) => current.filter((p) => p.id !== pin.id));
       // 取消窗口内同身份标签的 Chrome 固定
       const tabs = await queryCurrentWindowTabs();
       for (const tab of tabs) {
@@ -44,9 +45,13 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
     },
 
     reorderPins: async (sourceId, targetId, placeAfter) => {
-      const next = reorderPinsModel(ctx.get().pins, { sourceId, targetId, placeAfter });
-      if (next === ctx.get().pins) return;
-      await ctx.writePins(next);
+      // 预算跳过无变化写（避免多余落盘与镜像调度）；updater 内以最新基线重算。
+      if (reorderPinsModel(ctx.get().pins, { sourceId, targetId, placeAfter }) === ctx.get().pins) {
+        return;
+      }
+      await ctx.writePins((current) =>
+        reorderPinsModel(current, { sourceId, targetId, placeAfter })
+      );
     },
 
     openPin: async (pin) => {

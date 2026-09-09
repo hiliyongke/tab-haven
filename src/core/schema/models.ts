@@ -93,8 +93,6 @@ export const SettingsSchema = z.object({
   // —— 外观 appearance ——
   /** 顶部固定磁贴条（固定空间）显示开关。 */
   showPinnedStrip: z.boolean().default(true),
-  /** 顶部固定磁贴尺寸：sm 紧凑 / md 标准 / lg 大磁贴。 */
-  pinnedStripSize: z.enum(['sm', 'md', 'lg']).default('md'),
   /** 列表密度：compact 紧凑 / cozy 宽松。 */
   density: z.enum(['compact', 'cozy']).default('cozy'),
   /** 标签行标题下方显示完整网址。 */

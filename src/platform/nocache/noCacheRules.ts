@@ -124,8 +124,12 @@ export function matchesNoCachePattern(url: string, pattern: string): boolean {
     return host === pattern || host.endsWith(`.${pattern}`);
   }
 
-  // 形态 3：域名 + 路径前缀 → host 精确相等且路径前缀匹配。
+  // 形态 3：域名 + 路径前缀 → 裸域或任意深度子域 + 路径前缀匹配。
+  // DNR 侧是 `urlFilter: '||domain/path'`：`||` 为主机锚定且含子域，
+  // 此前页面侧要求 host 精确相等——DNR 已改写子域请求的响应头，
+  // 警示条却不显示（语义分叉）。与形态 2 同口径对齐 DNR。
   const host = parsed.hostname.toLowerCase();
+  const base = pattern.slice(0, slashIndex);
   const path = pattern.slice(slashIndex);
-  return host === pattern.slice(0, slashIndex) && parsed.pathname.startsWith(path);
+  return (host === base || host.endsWith(`.${base}`)) && parsed.pathname.startsWith(path);
 }

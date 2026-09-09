@@ -22,7 +22,7 @@ function makeTab(id: number, url: string, partial: Partial<TabRecord> = {}): Tab
 /**
  * 截图碎片化场景：同站点标签被拆到「域名命名的原生组」与「站点聚合组」两处。
  * yehe.woa.com 的文智缰在原生组 7 里（建组后打开的 CDN 标签未入组），
- * 未分组的 yehe/tcb 标签被站点聚合为 woa.com 大组。
+ * 未分组的 yehe/tcb 标签经站点聚合平铺为两个子域分区。
  */
 const FRAGMENT_TABS: TabRecord[] = [
   makeTab(1, 'https://yehe.woa.com/console', { groupId: 7, index: 1 }),
@@ -38,17 +38,15 @@ describe('deriveSections 同站点归并', () => {
 
     // 原生组 7 不再单独成区
     expect(sections.filter((s) => s.kind === 'native')).toHaveLength(0);
-    // woa.com 站点分区吸收全部 4 个标签并携带归并来源
-    const site = sections.find((s) => s.kind === 'site' && s.siteKey === 'woa.com');
-    expect(site).toBeDefined();
-    if (site?.kind !== 'site') return;
-    expect(site.tabs.map((tab) => tab.id).sort()).toEqual([1, 2, 3, 4]);
-    expect(site.mergedGroupIds).toEqual([7]);
-    // 子分组：yehe = 组内成员 + 同子域未分组标签；tcb 不受影响
-    const yehe = site.subgroups.find((sub) => sub.subdomain === 'yehe');
-    const tcb = site.subgroups.find((sub) => sub.subdomain === 'tcb');
-    expect(yehe?.tabs.map((tab) => tab.id).sort()).toEqual([1, 2]);
-    expect(tcb?.tabs.map((tab) => tab.id).sort()).toEqual([3, 4]);
+    // 平铺模式：yehe/tcb 各自独立站点分区；yehe 分区吸收原生组 7 并携带归并来源
+    const yehe = sections.find((s) => s.kind === 'site' && s.siteKey === 'yehe.woa.com');
+    expect(yehe).toBeDefined();
+    if (yehe?.kind !== 'site') return;
+    expect(yehe.tabs.map((tab) => tab.id).sort()).toEqual([1, 2]);
+    expect(yehe.mergedGroupIds).toEqual([7]);
+    // tcb 分区不受影响
+    const tcb = sections.find((s) => s.kind === 'site' && s.siteKey === 'tcb.woa.com');
+    expect(tcb?.kind === 'site' ? tcb.tabs.map((tab) => tab.id) : []).toEqual([3, 4]);
   });
 
   it('用户自定义命名的原生组绝不归并', () => {
@@ -119,7 +117,7 @@ describe('deriveSections 同站点归并', () => {
 });
 
 describe('planAutoGroups 同站点吸收', () => {
-  it('归并分区：同子域未分组标签产出吸收计划，异子域标签不动', () => {
+  it('归并分区：同子域未分组标签产出吸收计划；异子域分区照常独立建组（平铺）', () => {
     const sections = deriveSections({
       tabs: FRAGMENT_TABS,
       groups: FRAGMENT_GROUPS,
@@ -127,12 +125,12 @@ describe('planAutoGroups 同站点吸收', () => {
     });
     const plans = planAutoGroups(sections);
 
-    expect(plans).toHaveLength(1);
-    expect(plans[0]).toMatchObject({
-      title: 'yehe.woa.com',
-      tabIds: [2],
-      absorbIntoGroupId: 7
-    });
+    // 平铺后 yehe/tcb 是两个独立分区：yehe 产出吸收计划，tcb 直接产出建组计划。
+    expect(plans).toHaveLength(2);
+    const absorb = plans.find((plan) => plan.absorbIntoGroupId === 7);
+    expect(absorb).toMatchObject({ title: 'yehe.woa.com', tabIds: [2] });
+    const fresh = plans.find((plan) => plan.absorbIntoGroupId === undefined);
+    expect(fresh).toMatchObject({ title: 'tcb.woa.com', tabIds: [3, 4] });
   });
 
   it('多个原生组混入归并分区时保守跳过（不建新组也不吸收）', () => {

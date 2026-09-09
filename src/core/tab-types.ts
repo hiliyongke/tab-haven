@@ -114,6 +114,14 @@ const TAB_FIELDS = [
   'language'
 ] as const satisfies readonly (keyof TabRecord)[];
 
+// 完备性断言：satisfies 只保证「列出的都是合法字段」，不能保证「全部字段都已列出」。
+// TabRecord 新增字段而未登记时这里编译失败——否则 sameTabFields 漏比该字段，
+// 引用保持逻辑会把变更后的对象误判为不变，UI 静默不刷新。
+type TabFieldsMustCoverAll =
+  Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> extends never ? true : never;
+const tabFieldsCoverAll: TabFieldsMustCoverAll = true;
+void tabFieldsCoverAll;
+
 function sameTabFields(a: TabRecord, b: TabRecord): boolean {
   for (const field of TAB_FIELDS) {
     if (a[field] !== b[field]) return false;

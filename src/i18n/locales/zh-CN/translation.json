@@ -207,8 +207,8 @@
     "exportSuccess": "备份已导出",
     "exportFailed": "导出失败：本地数据读取未完成",
     "exportDiagnostics": "导出诊断信息",
-    "exportDiagnosticsHint": "把本次会话记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带",
-    "diagnosticsEmpty": "本次会话暂无异常记录",
+    "exportDiagnosticsHint": "把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带",
+    "diagnosticsEmpty": "暂无异常记录",
     "saveFailed": "设置未保存：存储不可用，请重试",
     "importConfirm": "导入会覆盖当前固定数据、设置与快照，是否继续？",
     "importSuccess": "备份已导入",
@@ -237,11 +237,6 @@
     "sortModeHint": "「最近访问」在新页面打开时一次性就位（新页面靠前），切换标签不再重排列表",
     "sortBrowser": "浏览器顺序",
     "sortRecency": "最近访问",
-    "pinnedStripSize": "常驻磁贴尺寸",
-    "pinnedStripSizeHint": "常驻磁贴图标的大小（同时作用于固定空间磁贴条与浏览器固定标签区）",
-    "pinnedStripSizeSm": "紧凑",
-    "pinnedStripSizeMd": "标准",
-    "pinnedStripSizeLg": "大",
     "groupAccentStyle": "分组配色",
     "groupAccentStyleHint": "站点组强调色：按域名自动配色，或统一中性色",
     "groupAccentAuto": "自动配色",
@@ -487,7 +482,8 @@
     "autoDiscarded": "已休眠 {{count}} 个标签（可在面板一键唤醒）",
     "badgeTitle": "共 {{total}} 个标签 · {{dups}} 组重复 · {{discarded}} 个已休眠",
     "discardNotSafe": "该标签当前无法休眠。",
-    "discardDone": "标签已休眠。"
+    "discardDone": "标签已休眠。",
+    "alreadyInFolder": "该网址已在固定文件夹中（已去重）。"
   },
   "popup": {
     "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭"

@@ -37,7 +37,10 @@ function getTabRuntimeIndex(tabs: readonly TabRecord[]): TabRuntimeIndex {
   const byRawUrl = new Map<string, TabRecord>();
   const byId = new Map<number, TabRecord>();
   for (const tab of tabs) {
-    if (tab.url) {
+    // URL 索引排除隐身标签：与 handleOpenAll / openSavedItem 的匹配口径一致
+    // （均含 !tab.incognito）。否则隐身窗口里打开的条目会显示「已打开」，
+    // 而「打开全部」仍判其缺失再次打开。byId 保留全量（pendingTabId 是显式绑定）。
+    if (tab.url && !tab.incognito) {
       const key = webComparisonKey(tab.url, tab.pendingUrl);
       if (key !== null) byKey.set(key, tab);
       byRawUrl.set(tab.url, tab);

@@ -20,6 +20,7 @@ import {
   reloadTabs
 } from '@/platform/tabs';
 import { openOptionsPage } from '@/platform/navigation';
+import { logDegraded } from '@/platform/diagnostics';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
 import { syncAutoGroups, disbandAutoGroups, regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
@@ -175,9 +176,16 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    void engine.ensurePinyin().then(() => {
-      if (!cancelled) setPinyinReady(true);
-    });
+    void engine
+      .ensurePinyin()
+      .then(() => {
+        if (!cancelled) setPinyinReady(true);
+      })
+      // 词典加载失败（动态 import 网络/解析错误）：保持非拼音搜索可用，
+      // 不产生 unhandled rejection。
+      .catch((error: unknown) => {
+        logDegraded('search', '拼音词典加载失败，本轮拼音搜索不可用', error);
+      });
     return () => {
       cancelled = true;
     };
@@ -883,7 +891,7 @@ export default function App() {
           <CategoryModule
             title={pinnedSection.title}
             count={pinnedSection.tabs.length}
-            className={'shrink-0 is-pinned size-' + settings.pinnedStripSize}
+            className="shrink-0 is-pinned"
           >
             <div className="section-body">
               <SortableContext items={pinnedSortableIds} strategy={rectSortingStrategy}>
@@ -904,7 +912,6 @@ export default function App() {
                       // 与行内取消固定同一入口：裸 togglePinned 无任何反馈，当
                       // showPinnedStrip 关闭或置顶区滚出视野时用户无从确认生效。
                       onUnpin={() => handleTogglePin(tab)}
-                      onDuplicate={() => handleDuplicateTab(tab)}
                       unpinTitle={t('tabs.unpin')}
                     />
                   ))}

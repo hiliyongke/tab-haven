@@ -10,7 +10,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
-import { clearDiagnostics, exportDiagnostics, readDiagnostics } from '@/platform/diagnostics';
+import { clearDiagnostics, exportDiagnostics, readAllDiagnostics } from '@/platform/diagnostics';
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
 import { openUrlInTab } from '@/platform/navigation';
 import { Row, Section } from '@/entrypoints/options/settingControls';
@@ -150,19 +150,28 @@ export function SettingsPage() {
    * 这份本地报告是唯一的排查凭据；内容刻意不含页面标题与网址，
    * 所以「导出诊断」这一用户主动行为依然不泄露浏览内容。
    */
-  const handleExportDiagnostics = () => {
-    if (readDiagnostics().length === 0) {
-      setTransferStatus(t('settings.diagnosticsEmpty'));
-      return;
+  const handleExportDiagnostics = async () => {
+    try {
+      // 跨上下文全量读取：诊断环形缓冲落在 storage.local，
+      // background SW / sidepanel 的降级记录都在其中（纯内存缓冲会漏掉主故障现场）。
+      const entries = await readAllDiagnostics();
+      if (entries.length === 0) {
+        setTransferStatus(t('settings.diagnosticsEmpty'));
+        return;
+      }
+      const url = URL.createObjectURL(
+        new Blob([exportDiagnostics(entries)], { type: 'application/json' })
+      );
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `tabs-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      await clearDiagnostics();
+      setTransferStatus(t('settings.exportSuccess'));
+    } catch {
+      setTransferStatus(t('settings.exportFailed'));
     }
-    const url = URL.createObjectURL(new Blob([exportDiagnostics()], { type: 'application/json' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `tabs-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    clearDiagnostics();
-    setTransferStatus(t('settings.exportSuccess'));
   };
 
   /** 恢复全部设置为默认值（带确认弹窗）。 */
@@ -315,7 +324,7 @@ export function SettingsPage() {
           />
         </Row>
         <Row label={t('settings.exportDiagnostics')} hint={t('settings.exportDiagnosticsHint')}>
-          <Button variant="secondary" onClick={handleExportDiagnostics}>
+          <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
             {t('settings.export')}
           </Button>
         </Row>

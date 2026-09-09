@@ -16,8 +16,11 @@ interface PinnedTileSortable {
 
 /**
  * 固定标签磁贴（浏览器原生固定区 / 顶部永久固定区共用）：
- * 主按钮（单击激活、中键关闭）+ 悬停取消固定 / 复制。
+ * 主按钮（单击激活、中键关闭）+ 悬停取消固定。
  * 传 `sortable` 时参与 dnd-kit 排序。
+ *
+ * 不提供「复制」：固定标签的语义是单例常驻入口，复制会产生非固定副本，
+ * 与「同 URL 唯一化」的去重主轴相悖；复制普通标签在临时区行内已有入口。
  */
 export function PinnedTile({
   title,
@@ -29,7 +32,6 @@ export function PinnedTile({
   onClick,
   onMiddleClick,
   onUnpin,
-  onDuplicate,
   unpinTitle,
   sortable
 }: {
@@ -43,7 +45,6 @@ export function PinnedTile({
   /** 中键关闭（仅关闭页面，固定入口保留）。 */
   onMiddleClick?: () => void;
   onUnpin?: () => void;
-  onDuplicate?: () => void;
   /** 移除按钮文案（默认「取消固定」，永久固定区传「移除固定入口」）。 */
   unpinTitle?: string;
   sortable?: PinnedTileSortable;
@@ -98,17 +99,6 @@ export function PinnedTile({
           onClick={onUnpin}
         >
           <Icon d={Icons.close} className="h-3 w-3" />
-        </button>
-      )}
-      {onDuplicate && (
-        <button
-          type="button"
-          className="row-action pinned-duplicate"
-          title={t('tabs.duplicate')}
-          aria-label={t('tabs.duplicate')}
-          onClick={onDuplicate}
-        >
-          <Icon d={Icons.copy} className="h-3 w-3" />
         </button>
       )}
     </article>

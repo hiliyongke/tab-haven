@@ -1,6 +1,7 @@
 import {
   forwardRef,
   memo,
+  useCallback,
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
@@ -126,11 +127,18 @@ export const RowItem = memo(
     const { t } = useTranslation();
 
     // 同时支持两种 ref 来源：外部传入的 ref（forwardRef）和 dnd-kit 的 setNodeRef。
-    const setRef = (node: HTMLDivElement | null) => {
-      if (typeof ref === 'function') ref(node);
-      else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
-      container?.ref?.(node);
-    };
+    // 必须 useCallback 固定引用：callback ref 引用变化时 React 每轮渲染都先
+    // ref(null) 再 ref(node)，会把 dnd-kit 的 setNodeRef 反复拆装
+    // （MeasuringStrategy.Always 下拖拽中的行重渲染触发额外重测）。
+    const containerRef = container?.ref;
+    const setRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        if (typeof ref === 'function') ref(node);
+        else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        containerRef?.(node);
+      },
+      [ref, containerRef]
+    );
 
     return (
       <div

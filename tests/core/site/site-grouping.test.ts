@@ -24,16 +24,30 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
  *  - 临时区派生：固定标签与原生组标签不入临时区。
  */
 describe('aggregateBySite', () => {
-  it('同站点达到默认阈值成组，单标签归独立', () => {
+  it('同子域站点达到默认阈值成组，单标签站点归独立', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://cloud.tencent.com/a' }),
-      makeTab({ id: 2, index: 1, url: 'https://news.tencent.com/b' }),
+      makeTab({ id: 2, index: 1, url: 'https://cloud.tencent.com/b' }),
       makeTab({ id: 3, index: 2, url: 'https://example.com/c' })
     ];
     const { groups, singles } = aggregateBySite(tabs);
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.key.value).toBe('tencent.com');
+    expect(groups[0]?.key.value).toBe('cloud.tencent.com');
     expect(groups[0]?.tabs).toHaveLength(2);
+    expect(singles.map((tab) => tab.id)).toEqual([3]);
+  });
+
+  it('永远平铺：同注册域不同子域各自成组/归独立，无折叠父组', () => {
+    // 截图场景：woa.com 下 yehe(2) + tapd(1)。旧折叠模式产出 woa.com 父组嵌套
+    // 两个子域亚组；平铺规则下 yehe 独立成组、tapd 单标签归 singles，无 woa.com 父组。
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://yehe.woa.com/1' }),
+      makeTab({ id: 2, index: 1, url: 'https://yehe.woa.com/2' }),
+      makeTab({ id: 3, index: 2, url: 'https://tapd.woa.com/' })
+    ];
+    const { groups, singles } = aggregateBySite(tabs);
+    expect(groups.map((group) => group.key.value)).toEqual(['yehe.woa.com']);
+    expect(groups.find((group) => group.key.value === 'woa.com')).toBeUndefined();
     expect(singles.map((tab) => tab.id)).toEqual([3]);
   });
 
@@ -75,7 +89,7 @@ describe('aggregateBySite', () => {
 
   it('同注册域多子域但均未达阈值：全部进 singles，不成任何组', () => {
     // qq.com 下 4 子域各 1 标签：每个子域 1 个标签，未达默认阈值 2，
-    // 自动展开分支要求子域 ≥2 标签才成组，因此没有任何组产出。
+    // 平铺规则下没有注册域大组兜底，全部标签以单标签平铺。
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/' }),
       makeTab({ id: 2, index: 1, url: 'https://docs.qq.com/' }),
@@ -89,7 +103,7 @@ describe('aggregateBySite', () => {
     expect(singles.map((t) => t.id)).toEqual([1, 2, 3, 4]);
   });
 
-  it('子域密度自动展开：同子域 ≥ 阈值才入组，单标签子域进 singles', () => {
+  it('平铺成组：同子域 ≥ 阈值才入组，单标签子域进 singles', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/1' }),
       makeTab({ id: 2, index: 1, url: 'https://mail.qq.com/2' }),
@@ -116,14 +130,14 @@ describe('aggregateBySite', () => {
     expect(groups.map((g) => g.key.value).sort()).toEqual(['pair.com', 'single-site.com']);
   });
 
-  it('阈值 1 + 子域自动展开：单标签子域也各自成组', () => {
+  it('阈值 1：单标签子域也各自成组（平铺无折叠）', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://mail.qq.com/' }),
       makeTab({ id: 2, index: 1, url: 'https://v.qq.com/' }),
       makeTab({ id: 3, index: 2, url: 'https://docs.qq.com/' })
     ];
     const { groups, singles } = aggregateBySite(tabs, { threshold: 1 });
-    // 3 个不同子域 → 自动展开为 3 个独立组（阈值 1 下无 singles）。
+    // 3 个不同子域 → 3 个独立组（阈值 1 下无 singles）。
     expect(singles).toHaveLength(0);
     expect(groups.map((g) => g.key.value).sort()).toEqual([
       'docs.qq.com',
@@ -153,7 +167,7 @@ describe('deriveSections', () => {
     expect(sections[2]?.tabs.map((tab) => tab.id)).toEqual([1]);
   });
 
-  it('多级子域名智能分组：同注册域多子域折叠为子分组（FR-D3.1 层级）', () => {
+  it('多级子域名平铺分组：同注册域多子域各自独立成区（无嵌套）', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://mail.google.com/1' }),
       makeTab({ id: 2, index: 1, url: 'https://mail.google.com/2' }),
@@ -161,24 +175,24 @@ describe('deriveSections', () => {
       makeTab({ id: 4, index: 3, url: 'https://drive.google.com/2' })
     ];
     const sections = deriveSections({ tabs, groups: [] });
-    const site = sections.find((s) => s.kind === 'site');
-    expect(site?.kind).toBe('site');
-    // 标题用注册域（子域折叠展示）
-    expect(site && site.kind === 'site' && site.title).toBe('google.com');
-    expect(site && site.kind === 'site' && site.subgroups).toHaveLength(2);
-    const mail =
-      site && site.kind === 'site' ? site.subgroups.find((g) => g.subdomain === 'mail') : undefined;
+    const sites = sections.filter((s) => s.kind === 'site');
+    expect(sites.map((s) => s.title)).toEqual(['mail.google.com', 'drive.google.com']);
+    for (const site of sites) {
+      if (site.kind === 'site') expect(site.subgroups).toHaveLength(0);
+    }
+    const mail = sites.find((s) => s.title === 'mail.google.com');
     expect(mail?.tabs.map((tab) => tab.id)).toEqual([1, 2]);
   });
 
-  it('多级子域名智能识别：a.b.example.com 与 example.com 同属注册域归组', () => {
+  it('多级子域名是独立站点：app.staging.example.com 单独成组，不并入注册域', () => {
     const tabs = [
       makeTab({ id: 1, index: 0, url: 'https://app.staging.example.com/1' }),
-      makeTab({ id: 2, index: 1, url: 'https://example.com/2' })
+      makeTab({ id: 2, index: 1, url: 'https://app.staging.example.com/2' }),
+      makeTab({ id: 3, index: 2, url: 'https://example.com/3' })
     ];
-    const { groups } = aggregateBySite(tabs);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.key.value).toBe('example.com');
+    const { groups, singles } = aggregateBySite(tabs);
+    expect(groups.map((g) => g.key.value)).toEqual(['app.staging.example.com']);
+    expect(singles.map((t) => t.id)).toEqual([3]);
   });
 
   it('原生组按组内首标签位置排序', () => {

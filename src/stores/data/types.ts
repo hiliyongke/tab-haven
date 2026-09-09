@@ -32,8 +32,19 @@ export interface DataContext {
   set: (partial: Partial<DataState>) => void;
   get: () => DataState;
   repos: Repositories;
-  writeFolders: (folders: FixedFolder[]) => Promise<void>;
-  writePins: (pins: PersistentPin[]) => Promise<void>;
+  /**
+   * 写入 folders 分区。直写值或 updater：
+   * updater 在写前一刻以最新内存态重算（get→算→set 之间无 await），
+   * 消除「入口取基线 → 中途 await → 旧基线整表回写」的并发互覆窗口。
+   * 复合操作（读-算-写）必须用 updater 形态。
+   */
+  writeFolders: (
+    folders: FixedFolder[] | ((current: FixedFolder[]) => FixedFolder[])
+  ) => Promise<void>;
+  /** 同 writeFolders 的 updater 双形态（见上）。 */
+  writePins: (
+    pins: PersistentPin[] | ((current: PersistentPin[]) => PersistentPin[])
+  ) => Promise<void>;
   /** 丢弃排队的合并写入并等待在途批次结束；返回后写入器空闲，供清空/导入前防旧值回写。 */
   cancelWrites: () => Promise<void>;
   scheduleMirror: (state: MirrorState) => void;

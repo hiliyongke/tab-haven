@@ -699,7 +699,7 @@ body {
   content: '';
 }
 /* 磁贴角标只有 16px：再扩一圈到 24px 命中 */
-.pinned-tile :is(.pinned-unpin, .pinned-duplicate)::after {
+.pinned-tile .pinned-unpin::after {
   inset: -4px;
 }
 
@@ -955,12 +955,14 @@ body {
 }
 
 .pinned-tile.is-active {
-  border-color: color-mix(in srgb, var(--tile-accent, var(--c-brand-500)) 65%, var(--canvas));
-  background: color-mix(in srgb, var(--tile-accent, var(--c-brand-500)) 18%, transparent);
-  /* 底部 2px 强调条（同色调）+ 微阴影，更清晰的激活指示 */
+  /* 克制的激活态：实色面从条带底色中浮出 + 底部 2px 强调短杠。
+     小尺寸磁贴上叠加彩色描边/光晕/位移会让整条磁贴带显得嘈杂，
+     激活指示收敛为「面 + 杠」两个元素，由 --tile-accent 承载语义色。 */
+  border-color: color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 35%, transparent);
+  background: var(--canvas);
   box-shadow:
     inset 0 -2px 0 var(--tile-accent, var(--c-brand-500)),
-    0 1px 3px rgb(var(--shadow-tint) / 8%);
+    0 1px 2px rgb(var(--shadow-tint) / 10%);
 }
 
 .pinned-tile.is-discarded .pinned-favicon-wrap {
@@ -1016,48 +1018,6 @@ body {
   background: transparent !important;
 }
 
-/* 固定磁贴尺寸变体（设置 pinnedStripSize）：
-   同时作用于「固定空间磁贴条」（.pinned-strip）与「浏览器原生固定标签区」（.is-pinned），
-   避免用户改了设置但看到的固定磁贴毫无变化。 */
-.pinned-strip.size-sm .pinned-tile,
-.is-pinned.size-sm .pinned-tile {
-  width: 28px;
-  border-radius: 6px;
-}
-.pinned-strip.size-sm .pinned-main,
-.is-pinned.size-sm .pinned-main {
-  width: 28px;
-  height: 28px;
-}
-.pinned-strip.size-sm .pinned-favicon-wrap,
-.is-pinned.size-sm .pinned-favicon-wrap {
-  width: 20px;
-  height: 20px;
-}
-.pinned-strip.size-lg .pinned-tile,
-.is-pinned.size-lg .pinned-tile {
-  width: 44px;
-  border-radius: 12px;
-}
-.pinned-strip.size-lg .pinned-main,
-.is-pinned.size-lg .pinned-main {
-  width: 40px;
-  height: 40px;
-}
-.pinned-strip.size-lg .pinned-favicon-wrap,
-.is-pinned.size-lg .pinned-favicon-wrap {
-  width: 34px;
-  height: 34px;
-}
-.pinned-strip.size-lg .pinned-favicon-wrap img,
-.pinned-strip.size-lg .pinned-favicon-wrap span,
-.is-pinned.size-lg .pinned-favicon-wrap img,
-.is-pinned.size-lg .pinned-favicon-wrap span {
-  width: 24px;
-  height: 24px;
-  font-size: 13px;
-}
-
 .pinned-tile.is-audible::after {
   position: absolute;
   right: 2px;
@@ -1105,34 +1065,6 @@ body {
   border-color: var(--c-red-200);
   color: var(--c-red-600);
 }
-.pinned-tile .pinned-duplicate {
-  position: absolute;
-  bottom: -5px;
-  right: -5px;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--c-gray-500);
-  opacity: 0;
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-.pinned-tile:hover .pinned-duplicate,
-.pinned-tile .pinned-duplicate:focus-visible {
-  opacity: 1;
-}
-.pinned-tile .pinned-duplicate:hover {
-  background: var(--c-brand-50);
-  border-color: var(--c-brand-200);
-  color: var(--c-brand-600);
-}
-
 :root[data-theme='dark'] .pinned-tile.is-audible::after {
   border-color: var(--surface);
   background: var(--c-brand-400);
@@ -1235,8 +1167,7 @@ body.dnd-dragging .row-item .row-actions {
 
 /* 无悬停设备（触屏）：常显悬停态操作，否则无法呼出；同时隐藏行尾徽标避免重叠 */
 @media (hover: none) {
-  .pinned-tile .pinned-unpin,
-  .pinned-tile .pinned-duplicate {
+  .pinned-tile .pinned-unpin {
     opacity: 1;
   }
   .row-item .row-actions {

@@ -124,7 +124,11 @@ export async function closeTabs(tabIds: readonly number[]): Promise<number[]> {
 
 export async function toggleMute(tabId: number, currentlyMuted: boolean): Promise<void> {
   try {
-    await browser.tabs.update(tabId, { muted: !currentlyMuted });
+    // 翻转基准以浏览器实时值为准：调用方传入的是渲染快照（40ms 节流 +
+    // 事件回灌延迟），用户在浏览器原生界面刚改过状态时快照过期会翻转错方向。
+    const live = await browser.tabs.get(tabId).catch(() => undefined);
+    const base = live?.mutedInfo?.muted ?? currentlyMuted;
+    await browser.tabs.update(tabId, { muted: !base });
   } catch (error) {
     logDegraded('tabs', '切换静音失败', error);
     // 标签可能已关闭
@@ -138,7 +142,10 @@ export async function toggleMute(tabId: number, currentlyMuted: boolean): Promis
  */
 export async function togglePinned(tabId: number, currentlyPinned: boolean): Promise<boolean> {
   try {
-    await browser.tabs.update(tabId, { pinned: !currentlyPinned });
+    // 同 toggleMute：翻转基准取浏览器实时值，渲染快照可能过期。
+    const live = await browser.tabs.get(tabId).catch(() => undefined);
+    const base = live?.pinned ?? currentlyPinned;
+    await browser.tabs.update(tabId, { pinned: !base });
     return true;
   } catch (error) {
     logDegraded('tabs', '切换固定失败', error);

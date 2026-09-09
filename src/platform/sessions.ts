@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 浏览器最近关闭桥接：
@@ -44,7 +45,10 @@ export async function getRecentlyClosed(): Promise<RecentClosedEntry[]> {
       }
     }
     return entries.filter((entry) => entry.sessionId);
-  } catch {
+  } catch (error) {
+    // 静默降级必须可观测（本模块族纪律）：返回空列表会让撤销历史面板
+    // 「最近关闭」分区看起来是空的，实际可能是 sessions API 失败。
+    logDegraded('sessions', '读取最近关闭列表失败，本轮按空列表处理', error);
     return [];
   }
 }
@@ -56,7 +60,10 @@ export async function restoreRecentClosed(sessionId: string): Promise<boolean> {
   try {
     await sessions.restore(sessionId);
     return true;
-  } catch {
+  } catch (error) {
+    // sessionId 失效（浏览器会话记录滚动淘汰）是预期分支，但其它失败
+    // （权限/内部错误）需要留痕，否则「点了恢复没反应」无从排查。
+    logDegraded('sessions', '恢复最近关闭条目失败', error);
     return false;
   }
 }

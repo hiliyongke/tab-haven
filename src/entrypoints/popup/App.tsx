@@ -4,6 +4,7 @@ import { openOptionsPage } from '@/platform/navigation';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import type { TabRecord } from '@/core/tab-types';
 import { activateTabAcrossWindows } from '@/platform/tabs';
+import { logDegraded } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { EmptyState } from '@/ui/common/EmptyState';
@@ -32,7 +33,11 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    void initializeData();
+    // 初始化失败不能成为 unhandled rejection；popup 无 toast 通道且失焦即销毁，
+    // 侧边栏的「toast + 1s 重试」在此无意义，收口到诊断日志（数据层已回滚守卫）。
+    void initializeData().catch((error: unknown) => {
+      logDegraded('popup', '数据初始化失败', error);
+    });
     return startTabSync();
   }, [initializeData, startTabSync]);
 
@@ -80,9 +85,16 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    void engine.ensurePinyin().then(() => {
-      if (!cancelled) setPinyinReady(true);
-    });
+    void engine
+      .ensurePinyin()
+      .then(() => {
+        if (!cancelled) setPinyinReady(true);
+      })
+      // 词典加载失败（动态 import 网络/解析错误）：保持非拼音搜索可用，
+      // 不产生 unhandled rejection。
+      .catch((error: unknown) => {
+        logDegraded('search', '拼音词典加载失败，本轮拼音搜索不可用', error);
+      });
     return () => {
       cancelled = true;
     };

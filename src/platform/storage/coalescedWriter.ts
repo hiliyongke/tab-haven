@@ -34,18 +34,24 @@ export function createCoalescedWriter<T, R>(repo: {
     queued = value;
     hasQueued = true;
     if (inflight) return inflight;
+    // inflight 的清空必须在 IIFE 的 finally 内同步完成：
+    // 旧写法 `void inflight.finally(...)` 派生新 promise——循环结束到 finally
+    // 执行之间存在微任务间隙，间隙内调用 writer 会命中「已结束但未清空」的
+    // inflight 直接返回，queued 值再无循环消费（调用方误以为已落盘）；
+    // 且派生 promise 的 rejection 无人处理（void 不抑制 unhandled rejection）。
     inflight = (async () => {
-      let last!: R;
-      while (hasQueued) {
-        hasQueued = false;
-        const target = queued as T;
-        last = await repo.write(target);
+      try {
+        let last!: R;
+        while (hasQueued) {
+          hasQueued = false;
+          const target = queued as T;
+          last = await repo.write(target);
+        }
+        return last;
+      } finally {
+        inflight = null;
       }
-      return last;
     })();
-    void inflight.finally(() => {
-      inflight = null;
-    });
     return inflight;
   };
 

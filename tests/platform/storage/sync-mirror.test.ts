@@ -42,4 +42,41 @@ describe('SyncMirror', () => {
     const mirror = await syncMirror.pull();
     expect(mirror?.folders[0]).toMatchObject({ id: 'second' });
   });
+
+  it('CJK 大数据按 UTF-8 字节分块：单块不超 8KB 配额且可完整回读', async () => {
+    // 中文每字符 3 字节：4000 个汉字 ≈ 36KB，旧实现按字符切会产出 ~18KB 单块（必超配额）。
+    const big = '汉'.repeat(4000);
+    syncMirror.schedule({
+      folders: [{ id: 'cjk', name: big, collapsed: false, createdAt: 1, items: [] }],
+      pins: [],
+      settings: DEFAULT_SETTINGS
+    });
+    await vi.advanceTimersByTimeAsync(600);
+
+    const all = await fakeBrowser.storage.sync.get(null);
+    const encoder = new TextEncoder();
+    for (const [key, value] of Object.entries(all)) {
+      expect(encoder.encode(String(value)).length, key).toBeLessThanOrEqual(8192);
+    }
+    const mirror = await syncMirror.pull();
+    expect((mirror?.folders[0] as { name?: string })?.name).toBe(big);
+  });
+
+  it('新数据写成功后，旧 payload 的重试不得复活旧镜像', async () => {
+    const sync = fakeBrowser.storage.sync;
+    // 第一次落盘失败 → 排定 30s 重试（携带旧 payload）。
+    const setSpy = vi.spyOn(sync, 'set').mockRejectedValueOnce(new Error('quota'));
+    syncMirror.schedule(payload('old'));
+    await vi.advanceTimersByTimeAsync(600);
+    setSpy.mockRestore();
+
+    // 窗口内新数据写成功：必须撤销旧重试。
+    syncMirror.schedule(payload('new'));
+    await vi.advanceTimersByTimeAsync(600);
+
+    // 越过全部重试退避（30s+60s+…）后，镜像仍须是新数据。
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    const mirror = await syncMirror.pull();
+    expect(mirror?.folders[0]).toMatchObject({ id: 'new' });
+  });
 });

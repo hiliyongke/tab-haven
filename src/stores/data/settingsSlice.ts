@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { syncMirror } from '@/platform/storage/SyncMirror';
+import { SETTINGS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { DEFAULT_SETTINGS, SettingsSchema } from '@/core/schema/models';
 import type { DataContext, DataState } from './types';
@@ -36,25 +37,31 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
       }),
 
     updateSettings: (partial) =>
-      serialize(async () => {
-        const parsed = SettingsSchema.safeParse({ ...ctx.get().settings, ...partial });
-        if (!parsed.success) throw new Error('invalid-settings');
-        const ok = await ctx.repos.settings.write(parsed.data);
-        // 设置是跨会话行为契约：落盘失败时必须报错，不能让界面停留在未保存的新值上。
-        if (!ok) {
-          ctx.reportPersistenceFailure('dataStore', '设置写入失败，本次修改未保存');
-          throw new Error('settings-write-failed');
-        }
-        const wasMirrorEnabled = ctx.get().settings.syncMirrorEnabled;
-        ctx.set({ settings: parsed.data });
-        ctx.scheduleMirror(ctx.get());
-        ctx.broadcastSettingsSynced();
-        // 关闭镜像时必须清掉已上传的块：否则浏览器账号通道里那份会一直留着，
-        // 用户以为「关了同步」，数据其实仍在厂商侧，且下次开启会被回灌。
-        if (partial.syncMirrorEnabled === false && wasMirrorEnabled) {
-          void syncMirror.clearAll();
-        }
-      }),
+      serialize(async () =>
+        // 跨页锁内「重读 → 合并 → 写」：各页面 dataStore 实例独立，以本页内存为
+        // 基线整对象写会覆盖其他页面刚写入的字段（watcher 回放收敛到胜方，
+        // 败方修改静默消失）。磁盘基线保证并发页的字段级更新互存。
+        withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
+          const disk = await ctx.repos.settings.read();
+          const parsed = SettingsSchema.safeParse({ ...disk, ...partial });
+          if (!parsed.success) throw new Error('invalid-settings');
+          const ok = await ctx.repos.settings.write(parsed.data);
+          // 设置是跨会话行为契约：落盘失败时必须报错，不能让界面停留在未保存的新值上。
+          if (!ok) {
+            ctx.reportPersistenceFailure('dataStore', '设置写入失败，本次修改未保存');
+            throw new Error('settings-write-failed');
+          }
+          const wasMirrorEnabled = disk.syncMirrorEnabled;
+          ctx.set({ settings: parsed.data });
+          ctx.scheduleMirror(ctx.get());
+          ctx.broadcastSettingsSynced();
+          // 关闭镜像时必须清掉已上传的块：否则浏览器账号通道里那份会一直留着，
+          // 用户以为「关了同步」，数据其实仍在厂商侧，且下次开启会被回灌。
+          if (partial.syncMirrorEnabled === false && wasMirrorEnabled) {
+            void syncMirror.clearAll();
+          }
+        })
+      ),
 
     tryUpdateSettings: async (partial) => {
       try {
@@ -66,24 +73,27 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
     },
 
     resetSettings: () =>
-      serialize(async () => {
-        // 默认值里同步是关闭的：若当前开着，恢复默认等同于「关闭同步」，
-        // 必须一并按 updateSettings 的口径清掉已上传镜像，否则用户以为关了、
-        // 数据其实还在浏览器账号通道里。
-        const wasMirrorEnabled = ctx.get().settings.syncMirrorEnabled;
-        const ok = await ctx.repos.settings.write(DEFAULT_SETTINGS);
-        if (!ok) {
-          ctx.reportPersistenceFailure('dataStore', '恢复默认设置失败，设置未变更');
-          throw new Error('settings-write-failed');
-        }
-        if (wasMirrorEnabled && !DEFAULT_SETTINGS.syncMirrorEnabled) {
-          await syncMirror.clearAll();
-        }
-        ctx.set({ settings: DEFAULT_SETTINGS });
-        applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
-        ctx.scheduleMirror(ctx.get());
-        ctx.broadcastSettingsSynced();
-      }),
+      serialize(async () =>
+        // 与 updateSettings 同锁：整对象覆盖写在并发页面前同样需要串行化。
+        withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
+          // 默认值里同步是关闭的：若当前开着，恢复默认等同于「关闭同步」，
+          // 必须一并按 updateSettings 的口径清掉已上传镜像，否则用户以为关了、
+          // 数据其实还在浏览器账号通道里。读取磁盘现值（并发页可能刚改过）。
+          const wasMirrorEnabled = (await ctx.repos.settings.read()).syncMirrorEnabled;
+          const ok = await ctx.repos.settings.write(DEFAULT_SETTINGS);
+          if (!ok) {
+            ctx.reportPersistenceFailure('dataStore', '恢复默认设置失败，设置未变更');
+            throw new Error('settings-write-failed');
+          }
+          if (wasMirrorEnabled && !DEFAULT_SETTINGS.syncMirrorEnabled) {
+            await syncMirror.clearAll();
+          }
+          ctx.set({ settings: DEFAULT_SETTINGS });
+          applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
+          ctx.scheduleMirror(ctx.get());
+          ctx.broadcastSettingsSynced();
+        })
+      ),
 
     /**
      * 清除所有本地数据（不可恢复）：本地仓库 + 会话存储 + 跨设备镜像，内存态重置为默认。

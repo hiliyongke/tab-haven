@@ -23,7 +23,6 @@ import {
 export function PinnedStrip() {
   const { t } = useTranslation();
   const pins = useDataStore((state) => state.pins);
-  const pinnedStripSize = useDataStore((state) => state.settings.pinnedStripSize);
   const openPin = useDataStore((state) => state.openPin);
   const removePin = useDataStore((state) => state.removePin);
   const closeTabs = useTabStore((state) => state.closeTabs);
@@ -36,6 +35,10 @@ export function PinnedStrip() {
   // 一次建索引取代「每个磁贴各扫一遍全量标签」。
   // 注意 hook 必须在早退之前调用：pins 为空时组件仍要返回 null，但 hooks 顺序不能变。
   const runtimeIndex = useMemo(() => buildPinRuntimeIndex(tabs), [tabs]);
+  // SortableContext items 必须 memo（同 FolderRow/SectionList 约定）：
+  // 内联新数组会让 context value 每轮变更，全部磁贴强制重渲染。
+  // 注意 hook 必须在早退之前调用。
+  const pinIds = useMemo(() => pins.map((pin) => pin.id), [pins]);
 
   if (pins.length === 0) return null;
 
@@ -43,10 +46,10 @@ export function PinnedStrip() {
   const unpinTitle = t('fixed.removePin');
 
   return (
-    <SortableContext items={pins.map((pin) => pin.id)} strategy={rectSortingStrategy}>
+    <SortableContext items={pinIds} strategy={rectSortingStrategy}>
       <section
         ref={setNodeRef}
-        className={'pinned-strip size-' + pinnedStripSize + (isOver ? ' is-drop-target' : '')}
+        className={'pinned-strip' + (isOver ? ' is-drop-target' : '')}
         aria-label={t('sections.pinned')}
         data-drop-label={t('fixed.dragToPin')}
       >

@@ -5,6 +5,7 @@ import { canSafelyDiscardTab } from '@/core/tab-types';
 import { createFolderItem } from '@/core/fixed/FolderOps';
 import { mapTab } from '@/platform/tabs';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
+import { FOLDERS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { t } from '@/i18n/headless';
 import { notifyUser } from './shared';
 
@@ -143,25 +144,29 @@ export async function addEntryToFolder(
   folderId: string,
   entry: { url: string; title: string; favIconUrl?: string }
 ): Promise<boolean> {
-  const folders = await foldersRepository.read();
-  const target = folders.find((folder) => folder.id === folderId);
-  if (!target) return false;
-  // 非 http(s) 一律拒绝，不回落到原始字符串：右键的 linkUrl 由被点击页面提供，
-  // 页面可控；javascript: / data: 等一旦落库，用户点一下固定图标即执行。
-  const key = webComparisonKey(entry.url, undefined);
-  if (key === null) return false;
-  const exists = folders.some((folder) =>
-    folder.items.some((item) => webComparisonKey(item.url, undefined) === key)
-  );
-  if (exists) return false;
-  const item = createFolderItem({ url: key, title: entry.title, favIconUrl: entry.favIconUrl });
-  const next = folders.map((folder) =>
-    folder.id === folderId
-      ? { ...folder, collapsed: false, items: [...folder.items, item] }
-      : folder
-  );
-  await foldersRepository.write(next);
-  return true;
+  // 跨页锁内重读再合并：面板 coalesced「末值落盘」在途时，锁外的
+  // read-modify-write 会被后写覆盖（新增条目静默丢失）。与面板共用 FOLDERS_RMW_LOCK。
+  return withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
+    const folders = await foldersRepository.read();
+    const target = folders.find((folder) => folder.id === folderId);
+    if (!target) return false;
+    // 非 http(s) 一律拒绝，不回落到原始字符串：右键的 linkUrl 由被点击页面提供，
+    // 页面可控；javascript: / data: 等一旦落库，用户点一下固定图标即执行。
+    const key = webComparisonKey(entry.url, undefined);
+    if (key === null) return false;
+    const exists = folders.some((folder) =>
+      folder.items.some((item) => webComparisonKey(item.url, undefined) === key)
+    );
+    if (exists) return false;
+    const item = createFolderItem({ url: key, title: entry.title, favIconUrl: entry.favIconUrl });
+    const next = folders.map((folder) =>
+      folder.id === folderId
+        ? { ...folder, collapsed: false, items: [...folder.items, item] }
+        : folder
+    );
+    await foldersRepository.write(next);
+    return true;
+  });
 }
 
 /** 休眠单个标签（带安全判定与结果通知）。 */

@@ -16,8 +16,9 @@ import { logDegraded } from '@/platform/diagnostics';
 
 const CHUNK_PREFIX = 'tabs.sync.v1.';
 const CHUNK_META_KEY = `${CHUNK_PREFIX}meta`;
-/** 单块安全字符数（chrome.storage.sync 单 key 配额 8KB）。 */
-const CHUNK_SIZE = 6000;
+/** 单块安全字节数（chrome.storage.sync 单 key 配额 8KB，按 UTF-8 字节计——
+    中文标题/URL 每字符 3 字节，按字符数切分必超配额）。 */
+const CHUNK_BYTES = 6000;
 const MIRROR_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 镜像 30 天无更新视为过期
 
 /** 镜像内容 schema（不校验设置细节，交给 SettingsSchema 在读取端校验）。 */
@@ -97,6 +98,9 @@ class SyncMirror {
   private scheduleRetry(payload: MirrorData): void {
     if (this.retryAttempts >= SyncMirror.MAX_RETRY_ATTEMPTS) return;
     this.retryAttempts += 1;
+    // 已有待重试任务时以最新 payload 替换（与 pendingPayload 的末值语义一致），
+    // 否则旧数据会在新数据写入成功后复活，镜像回滚。
+    if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
     const delay = 30_000 * 2 ** (this.retryAttempts - 1);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
@@ -115,10 +119,23 @@ class SyncMirror {
         pins: payload.pins,
         settings: payload.settings
       } satisfies MirrorPayload);
+      // 按 UTF-8 字节数切分（sync 配额按字节计）；for..of 按码点迭代，
+      // 不会切断代理对，块内任意位置 decode 均安全。
+      const encoder = new TextEncoder();
       const chunks: string[] = [];
-      for (let i = 0; i < json.length; i += CHUNK_SIZE) {
-        chunks.push(json.slice(i, i + CHUNK_SIZE));
+      let current = '';
+      let currentBytes = 0;
+      for (const char of json) {
+        const charBytes = encoder.encode(char).length;
+        if (currentBytes + charBytes > CHUNK_BYTES && current) {
+          chunks.push(current);
+          current = '';
+          currentBytes = 0;
+        }
+        current += char;
+        currentBytes += charBytes;
       }
+      if (current) chunks.push(current);
       const record: Record<string, string> = {
         [CHUNK_META_KEY]: JSON.stringify({ count: chunks.length })
       };
@@ -127,16 +144,21 @@ class SyncMirror {
         if (chunk === undefined) break;
         record[`${CHUNK_PREFIX}${i}`] = chunk;
       }
-      // 清理上次残留的更多块（分块数只减不增时无残留，此处兜底）
+      // 清理上次残留的更多块（分块数只减不增时无残留，此处兜底）。
+      // 批量 remove：逐个 remove 每次都计一次 sync 分钟级写配额（120 次/分）。
       const all = await area.get(null);
-      for (const key of Object.keys(all)) {
-        if (key.startsWith(CHUNK_PREFIX) && !(key in record)) {
-          await area.remove(key);
-        }
-      }
+      const staleKeys = Object.keys(all).filter(
+        (key) => key.startsWith(CHUNK_PREFIX) && !(key in record)
+      );
+      if (staleKeys.length > 0) await area.remove(staleKeys);
       await area.set(record);
-      // 成功后复位重试计数：配额抖动恢复后回到正常调度。
+      // 成功后复位重试计数并撤销待重试任务：否则旧 payload 的重试定时器
+      // 会在本次新数据落盘后再次触发，把镜像回滚为旧数据。
       this.retryAttempts = 0;
+      if (this.retryTimer !== undefined) {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = undefined;
+      }
     } catch (error) {
       // 超出同步配额或同步不可用：降级（仅丢失镜像，本地数据不受影响）。
       // 但必须可观测——否则「跨设备同步悄悄失效」对用户完全不可见。

@@ -13,7 +13,9 @@ export function useAllWindowTabs(enabled: boolean, query: string): TabRecord[] {
 
   useEffect(() => {
     if (!enabled || !query.trim()) {
-      setOtherTabs([]);
+      // 保持空态引用稳定：搜索框每击键都会重跑本 effect，
+      // 恒新 [] 会让下游 useMemo/渲染每击键白跑一次。
+      setOtherTabs((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     let cancelled = false;

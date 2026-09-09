@@ -1,5 +1,6 @@
 import type { FixedFolder, FixedFolderItem, PersistentPin } from '@/core/schema/models';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 固定空间纯函数集：不触碰 chrome API，只做数据变换。
@@ -7,9 +8,16 @@ import { pinIdentity } from '@/core/fixed/PinIdentity';
 
 /** 从全部文件夹中移除与 URL 相同的条目（URL 全局唯一约束，行为规格 C-3）。 */
 export function removeItemsWithUrl(folders: FixedFolder[], url: string): FixedFolder[] {
+  // 与全局去重同一归一化口径：裸字符串比较会把 `HTTPS://A.COM` 与
+  // `https://a.com` 判成两个 URL，唯一性约束（C-3）静默失效。
+  const key = webComparisonKey(url, undefined);
   return folders.map((folder) => ({
     ...folder,
-    items: folder.items.filter((item) => item.url !== url)
+    items: folder.items.filter((item) => {
+      if (key === null) return item.url !== url;
+      const itemKey = item.url === undefined ? null : webComparisonKey(item.url, undefined);
+      return itemKey !== key;
+    })
   }));
 }
 

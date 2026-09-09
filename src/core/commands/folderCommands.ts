@@ -130,6 +130,21 @@ export function computeAddTabsToFolder(
   folderId: string
 ): ComputeAddTabsToFolderResult {
   const comparisonKeys = new Set(candidates.keys());
+  // 不变量自检：目标文件夹不存在时整单放弃。否则候选/跨文件夹条目会被从
+  // 源文件夹移除后无处追加（下方追加只在 folder.id === folderId 分支发生），
+  // 表现为「条目被删了但没加到任何地方」的静默丢数据。
+  if (!currentFolders.some((folder) => folder.id === folderId)) {
+    return {
+      next: currentFolders,
+      newItems: [],
+      movedItems: [],
+      duplicateItemIds: new Set(),
+      selectedExisting: new Map(),
+      comparisonKeys,
+      moved: 0,
+      targetDuplicates: 0
+    };
+  }
   const existingByKey = new Map<string, { folderId: string; item: FixedFolderItem }>();
   const duplicateItemIds = new Set<string>();
   for (const folder of currentFolders) {

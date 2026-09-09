@@ -12,8 +12,33 @@ type WindowTabsCache = Record<string, SnapshotTab[]>;
 let memWindowTabs: WindowTabsCache = {};
 let windowTabsFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const windowRefreshTimers = new Map<number, ReturnType<typeof setTimeout>>();
-/** 下一次关闭时跳过自动保存的窗口（归档流程已自行留档，防重复快照）。 */
-const skipAutoSaveWindowIds = new Set<number>();
+/** 下一次关闭时跳过自动保存的窗口（归档流程已自行留档，防重复快照）。值为发放时间戳。 */
+const skipAutoSaveWindowIds = new Map<number, number>();
+
+/**
+ * 跳过标记有效期。归档 → 关窗正常在秒级完成；若窗口未随归档关闭
+ * （tabs.remove 部分失败），标记不得残留到该窗口未来的手动关闭，
+ * 否则误跳过一次正当的关窗自动保存。
+ */
+const SKIP_AUTO_SAVE_TTL_MS = 30_000;
+
+/** session 镜像中的标记记录（带发放时间戳；过期即作废并在读写时随手清理）。 */
+interface SkipMarkerRecord {
+  id: number;
+  at: number;
+}
+
+function parseSkipMarkers(raw: unknown, now: number): SkipMarkerRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (v): v is SkipMarkerRecord =>
+      typeof v === 'object' &&
+      v !== null &&
+      typeof (v as SkipMarkerRecord).id === 'number' &&
+      typeof (v as SkipMarkerRecord).at === 'number' &&
+      now - (v as SkipMarkerRecord).at <= SKIP_AUTO_SAVE_TTL_MS
+  );
+}
 
 /**
  * 跳过标记的 session 镜像 key。
@@ -25,17 +50,18 @@ const SKIP_AUTO_SAVE_KEY = 'tabs.skip-auto-save-once';
 /** 跳过标记 read-modify-write 串行链（多窗口连续归档时防交错丢标记）。 */
 let skipMarkerChain: Promise<void> = Promise.resolve();
 
-/** 标记「下一次关闭该窗口时跳过自动保存」（内存 + session 镜像双写）。 */
+/** 标记「下一次关闭该窗口时跳过自动保存」（内存 + session 镜像双写，带 TTL）。 */
 export function markSkipAutoSave(windowId: number): Promise<void> {
   const step = skipMarkerChain.then(async () => {
-    skipAutoSaveWindowIds.add(windowId);
+    const now = Date.now();
+    skipAutoSaveWindowIds.set(windowId, now);
     const sessionArea = browser.storage?.session;
     if (!sessionArea) return;
     try {
       const rec = await sessionArea.get(SKIP_AUTO_SAVE_KEY);
-      const raw: unknown = rec[SKIP_AUTO_SAVE_KEY];
-      const list = Array.isArray(raw) ? raw.filter((v): v is number => typeof v === 'number') : [];
-      if (!list.includes(windowId)) list.push(windowId);
+      // 读写时随手清理过期项（含历史遗留的旧格式 number 条目，自然淘汰）。
+      const list = parseSkipMarkers(rec[SKIP_AUTO_SAVE_KEY], now);
+      if (!list.some((m) => m.id === windowId)) list.push({ id: windowId, at: now });
       await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list });
     } catch {
       // session 不可用时内存标记仍在：SW 不回收则语义不变
@@ -45,20 +71,22 @@ export function markSkipAutoSave(windowId: number): Promise<void> {
   return step;
 }
 
-/** 消费「跳过自动保存」标记（内存优先，session 镜像兜底）；返回是否命中。 */
+/** 消费「跳过自动保存」标记（内存优先，session 镜像兜底）；仅未过期才命中。 */
 async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
-  const inMem = skipAutoSaveWindowIds.delete(windowId);
+  const now = Date.now();
+  const memAt = skipAutoSaveWindowIds.get(windowId);
+  skipAutoSaveWindowIds.delete(windowId);
+  const inMem = memAt !== undefined && now - memAt <= SKIP_AUTO_SAVE_TTL_MS;
   let inSession = false;
   const sessionArea = browser.storage?.session;
   if (sessionArea) {
     try {
       const rec = await sessionArea.get(SKIP_AUTO_SAVE_KEY);
-      const raw: unknown = rec[SKIP_AUTO_SAVE_KEY];
-      const list = Array.isArray(raw) ? raw.filter((v): v is number => typeof v === 'number') : [];
-      if (list.includes(windowId)) {
-        inSession = true;
-        await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list.filter((id) => id !== windowId) });
-      }
+      const list = parseSkipMarkers(rec[SKIP_AUTO_SAVE_KEY], now);
+      const hit = list.some((m) => m.id === windowId);
+      // 无论是否命中都回写一次：顺带清掉过期项与被消费的标记。
+      await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list.filter((m) => m.id !== windowId) });
+      inSession = hit;
     } catch {
       // 忽略：按未命中处理（与历史行为一致）
     }

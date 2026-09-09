@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
 import { removeGroup, updateGroupMeta } from '@/platform/tabs';
 import { autoGroupsRepository } from '@/platform/storage/repositories';
+import { AUTO_GROUPS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -38,8 +39,12 @@ export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<n
     }
   }
   if (createdIds.length > 0) {
-    const existing = await autoGroupsRepository.read();
-    await autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
+    // 跨页锁内 RMW：两个窗口的侧边栏可并发 syncAutoGroups，
+    // 锁外交错丢 id → 关闭开关时 disbandAutoGroups 漏解散（孤儿组）。
+    await withCrossPageLock(AUTO_GROUPS_RMW_LOCK, async () => {
+      const existing = await autoGroupsRepository.read();
+      await autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
+    });
   }
   return createdIds.length;
 }
@@ -84,21 +89,31 @@ export async function regroupTempArea(
  * 返回实际解散的组数。
  */
 export async function disbandAutoGroups(): Promise<number> {
-  const ids = await autoGroupsRepository.read();
-  if (ids.length === 0) return 0;
-  let count = 0;
-  const failed: number[] = [];
-  for (const groupId of ids) {
-    // removeGroup 以返回值区分「已解散 / 已不存在 / 真实失败」，不再依赖抛异常：
-    const outcome = await removeGroup(groupId);
-    if (outcome === 'failed') {
-      // 真实失败：保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组。
-      failed.push(groupId);
-    } else {
-      // 'removed' 与 'missing' 均表示目标已达成，清理记录（missing 不再重试）。
-      count += 1;
+  // 与 syncAutoGroups 的记账写同锁：解散进行中若并发创建了新组，
+  // 锁外 read→write 会把新 id 覆盖丢失（组已建、记录没了 → 孤儿组）。
+  return withCrossPageLock(AUTO_GROUPS_RMW_LOCK, async () => {
+    const ids = await autoGroupsRepository.read();
+    if (ids.length === 0) return 0;
+    let count = 0;
+    const failed: number[] = [];
+    for (const groupId of ids) {
+      // removeGroup 以返回值区分「已解散 / 已不存在 / 真实失败」，不再依赖抛异常：
+      const outcome = await removeGroup(groupId);
+      if (outcome === 'failed') {
+        // 真实失败：保留 id 供下次重试，避免「组未解散、记录已清」的孤儿组。
+        failed.push(groupId);
+      } else {
+        // 'removed' 与 'missing' 均表示目标已达成，清理记录（missing 不再重试）。
+        count += 1;
+      }
     }
-  }
-  await autoGroupsRepository.write(failed);
-  return count;
+    const ok = await autoGroupsRepository.write(failed);
+    if (ok === false) {
+      // 落盘失败时按「未解散」上报：磁盘上仍记录全部 id，下次关闭开关时会重试，
+      // 否则内存认知（已解散 count 个）与磁盘记录分叉。
+      logDegraded('auto-group', 'disbandAutoGroups 记录回写失败，本次解散结果未持久化');
+      return 0;
+    }
+    return count;
+  });
 }

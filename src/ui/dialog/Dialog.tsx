@@ -22,6 +22,14 @@ const FOCUSABLE_SELECTOR =
   'input, button, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
 
 /**
+ * 弹窗栈（挂载序即层级序）：嵌套弹窗（如快照面板内嵌删除确认框）时，
+ * 各级都在 document capture 阶段监听 keydown，同节点监听器按注册序执行，
+ * stopPropagation 拦不住同级——外层会先响应 Esc 连内层一起关掉，
+ * Tab 陷阱也会互相抢焦。只有栈顶（最后挂载）实例有权响应键盘。
+ */
+const modalStack: symbol[] = [];
+
+/**
  * 弹窗行为契约 hook：打开聚焦首项、Tab 焦点陷阱、Esc 关闭、关闭后焦点恢复。
  * DialogShell / CommandPalette / OnboardingTour 共用，保证所有浮层行为一致。
  * onClose 用 ref 持有最新值：effect 只在挂载/卸载执行一次，避免父组件因后台
@@ -40,12 +48,27 @@ export function useModalA11y(
 
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
-    const focusable = shellRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-    focusable?.focus();
+    // 初始聚焦推迟到微任务：原生 <dialog> 场景（CommandPalette/OnboardingTour）
+    // 的 showModal() 注册在本 effect 之后，同一批 passive effect 同步执行完才轮到
+    // 微任务，此时 dialog 已打开、子树可聚焦。否则 focus() 打在 display:none 的
+    // 子树上静默失效，焦点落在 dialog 元素自身（键盘漫游整体不可用）。
+    queueMicrotask(() => {
+      const focusable = shellRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      focusable?.focus();
+    });
+
+    const self = Symbol('modal');
+    modalStack.push(self);
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // 仅栈顶弹窗响应（嵌套场景下非栈顶实例的监听器直接放行）。
+      if (modalStack[modalStack.length - 1] !== self) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
+        // preventDefault：原生 <dialog> 场景的默认行为会再派发 cancel 事件，
+        // onCancel 与这里各调一次 onClose（引导弹窗的 onDone 副作用执行两次）。
+        // 统一由本路径出口；dialog 的关闭由组件卸载时的 cleanup（panel.close()）承担。
+        event.preventDefault();
         onCloseRef.current();
         return;
       }
@@ -74,6 +97,8 @@ export function useModalA11y(
     document.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
+      const index = modalStack.indexOf(self);
+      if (index !== -1) modalStack.splice(index, 1);
       trigger?.focus?.();
     };
     // eslint 依赖提示：onClose 已通过 ref 持有，effect 仅需挂载/卸载各执行一次。

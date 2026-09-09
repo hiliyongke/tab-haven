@@ -59,7 +59,13 @@ function createRepositories(): Repositories {
     ),
     settings: new DataRepository<Settings>('tabs.settings.v1', SettingsSchema, DEFAULT_SETTINGS),
     undo: new DataRepository<UndoBatch[]>('tabs.undo-stack.v1', UndoBatchSchema.array(), []),
-    autoGroups: new DataRepository<number[]>('tabs.auto-groups.v1', z.array(z.number()), []),
+    // 自动组 id 记录只增靠 disband 清理，但上限仍须显式（全项目集合的既定原则）：
+    // 无界数组是唯一不受限的存储放大面。500 远超真实规模（组数 ≤ 标签数）。
+    autoGroups: new DataRepository<number[]>(
+      'tabs.auto-groups.v1',
+      z.array(z.number()).max(500),
+      []
+    ),
     autoDiscard: new DataRepository<AutoDiscardBatch | null>(
       'tabs.auto-discard-batch.v1',
       AutoDiscardBatchSchema.nullable(),

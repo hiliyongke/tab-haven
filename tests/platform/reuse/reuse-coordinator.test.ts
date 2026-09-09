@@ -42,7 +42,8 @@ function createHarness(options: { allowances?: AllowanceLedger } = {}): Harness 
         calls.notifications += 1;
       }
     },
-    options
+    // 行为用例默认开启（构造器本体已改为 fail-closed 缺省禁用，由单独用例覆盖）。
+    { enabled: true, ...options }
   );
 
   // 事件驱动路径为微任务调度；测试以 flush 等待 drain 完成。
@@ -182,17 +183,20 @@ describe('ReuseCoordinator', () => {
       makeTab({ id: 1, index: 0, url: 'https://a.com/' }),
       makeTab({ id: 2, index: 1, url: 'https://b.com/' })
     ];
-    const coordinator = new ReuseCoordinator({
-      scanWindow: async () => windowTabs,
-      activate: async (tabId) => {
-        calls.activate.push(tabId);
+    const coordinator = new ReuseCoordinator(
+      {
+        scanWindow: async () => windowTabs,
+        activate: async (tabId) => {
+          calls.activate.push(tabId);
+        },
+        close: async (tabId) => {
+          calls.close.push(tabId);
+          if (tabId === 10) throw new Error('tab already closed');
+        },
+        notifyReuse: () => {}
       },
-      close: async (tabId) => {
-        calls.close.push(tabId);
-        if (tabId === 10) throw new Error('tab already closed');
-      },
-      notifyReuse: () => {}
-    });
+      { enabled: true }
+    );
 
     coordinator.handleCreated(
       makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' })
@@ -205,5 +209,23 @@ describe('ReuseCoordinator', () => {
     // 任务 10 的 close 抛错不影响任务 11 照常激活与关闭
     expect(calls.activate).toEqual([1, 2]);
     expect(calls.close).toEqual([10, 11]);
+  });
+
+  it('缺省 fail-closed：未显式 enabled 时不追踪任何标签（SW 冷启动窗口期保护）', async () => {
+    const h = createHarness();
+    const strict = new ReuseCoordinator({
+      scanWindow: async () => h.windowTabs,
+      activate: async (tabId) => {
+        h.calls.activate.push(tabId);
+      },
+      close: async (tabId) => {
+        h.calls.close.push(tabId);
+      },
+      notifyReuse: () => {}
+    });
+    strict.handleCreated(makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' }));
+    await h.flush();
+    expect(h.calls.activate).toEqual([]);
+    expect(h.calls.close).toEqual([]);
   });
 });

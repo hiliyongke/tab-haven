@@ -1,4 +1,5 @@
 import { createFolder as createFolderModel, createFolderItem } from '@/core/fixed/FolderOps';
+import type { FixedFolder } from '@/core/schema/models';
 import {
   computeAddTabsToFolder,
   computeMoveFolder,
@@ -37,12 +38,12 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
   return {
     createFolder: async (name) => {
       const folder = createFolderModel(name);
-      await ctx.writeFolders([...ctx.get().folders, folder]);
+      await ctx.writeFolders((current) => [...current, folder]);
       return folder;
     },
 
     renameFolder: async (folderId, name) => {
-      await ctx.writeFolders(computeRenameFolder(ctx.get().folders, folderId, name));
+      await ctx.writeFolders((current) => computeRenameFolder(current, folderId, name));
     },
 
     deleteFolder: async (folderId) => {
@@ -53,7 +54,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
         }
         return { itemTabBindings: bindings };
       });
-      await ctx.writeFolders(computeRemoveFolder(ctx.get().folders, folderId));
+      await ctx.writeFolders((current) => computeRemoveFolder(current, folderId));
       ctx.applyBindings(result);
       // 删除文件夹后其打开标签的绑定被释放：主动刷新快照让它们立即回到临时区
       // （站点分组/未分组），避免依赖下一次标签事件。
@@ -61,7 +62,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
     },
 
     toggleFolderCollapsed: async (folderId) => {
-      await ctx.writeFolders(computeToggleFolderCollapsed(ctx.get().folders, folderId));
+      await ctx.writeFolders((current) => computeToggleFolderCollapsed(current, folderId));
     },
 
     addTabsToFolder: async (tabs, folderId) => {
@@ -71,7 +72,6 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
         logDegraded('dataStore', '导入事务进行中，本次拖入固定空间已跳过');
         return { added: 0, moved: 0, skipped: tabs.length } satisfies AddTabsToFolderResult;
       }
-      const currentFolders = ctx.get().folders;
       const candidates = new Map<string, { url: string; title: string; favIconUrl?: string }>();
       for (const tab of tabs) {
         const key = webComparisonKey(tab.url, tab.pendingUrl);
@@ -82,26 +82,43 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
           favIconUrl: tab.favIconUrl
         });
       }
-      const folderExists = currentFolders.some((folder) => folder.id === folderId);
-      if (candidates.size === 0 || !folderExists) {
+      if (candidates.size === 0) {
         return { added: 0, moved: 0, skipped: tabs.length };
       }
 
-      // 纯计算：下一版 folders + 绑定所需中间量（与平台无关，可单测）。
-      const computed = computeAddTabsToFolder(currentFolders, candidates, folderId);
+      // 纯计算推迟到写入前一刻，以最新基线重算（updater 内 get→算→set 无间隙）。
+      // 旧顺序（入口取基线 → await mutateSession → 旧基线整表回写）在并发间隙会
+      // 覆盖期间发生的其他 folders 变更（重命名被回滚、另一次拖入丢失）。
+      // 绑定建边顺序随之调整为「先写 folders、后建绑定」：绑定引用已写入的条目 id，
+      // 两分区无法真原子，残留窗口由 reconcileWithTabs 最终一致兜底。
+      let computed: ReturnType<typeof computeAddTabsToFolder> | null = null;
+      let baseline: FixedFolder[] = [];
+      await ctx.writeFolders((current) => {
+        // 目标文件夹在并发间隙被删除时整单放弃：core 纯函数对不存在的 folderId
+        // 会把条目静默丢弃（先移除后无处追加），切片层必须兜底。
+        if (!current.some((folder) => folder.id === folderId)) return current;
+        computed = computeAddTabsToFolder(current, candidates, folderId);
+        baseline = current;
+        return computed.next;
+      });
+      if (computed === null) {
+        return { added: 0, moved: 0, skipped: tabs.length } satisfies AddTabsToFolderResult;
+      }
+      // updater 已执行完毕，此处收窄为非空（闭包赋值不被控制流追踪）。
+      const settled: ReturnType<typeof computeAddTabsToFolder> = computed;
 
       const result = await mutateSession((session) => {
         const bindings = { ...session.itemTabBindings };
         const boundTabIds = new Set(Object.values(bindings));
-        for (const folder of currentFolders) {
+        for (const folder of baseline) {
           for (const item of folder.items) {
             const key = fixedItemKey(item.url);
             // 无 URL 条目判不出身份，不参与「被候选覆盖」的解绑判定。
             if (key === null) continue;
-            const selected = computed.selectedExisting.get(key);
+            const selected = settled.selectedExisting.get(key);
             if (
-              computed.duplicateItemIds.has(item.id) ||
-              (computed.comparisonKeys.has(key) && selected?.id !== item.id)
+              settled.duplicateItemIds.has(item.id) ||
+              (settled.comparisonKeys.has(key) && selected?.id !== item.id)
             ) {
               const boundId = bindings[item.id];
               delete bindings[item.id];
@@ -111,7 +128,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
         }
         // 为新条目建立绑定：按 URL 匹配传入标签，未占用、未固定、非隐身的才绑定，
         // 让刚拖入的标签立即从临时区排除（否则要等 reconcileWithTabs 才补绑）。
-        for (const newItem of computed.newItems) {
+        for (const newItem of settled.newItems) {
           const key = fixedItemKey(newItem.url);
           if (key === null) continue;
           const tab = tabs.find((candidate) => {
@@ -129,12 +146,11 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
         }
         return { itemTabBindings: bindings };
       });
-      await ctx.writeFolders(computed.next);
       ctx.applyBindings(result);
       return {
-        added: computed.newItems.length,
-        moved: computed.moved,
-        skipped: tabs.length - candidates.size + computed.targetDuplicates
+        added: settled.newItems.length,
+        moved: settled.moved,
+        skipped: tabs.length - candidates.size + settled.targetDuplicates
       } satisfies AddTabsToFolderResult;
     },
 
@@ -147,14 +163,12 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       // 同步绑定标签 id，让被释放的标签立即回到临时区。
       ctx.applyBindings(result);
 
-      await ctx.writeFolders(
-        ctx
-          .get()
-          .folders.map((folder) =>
-            folder.id === folderId
-              ? { ...folder, items: folder.items.filter((item) => item.id !== itemId) }
-              : folder
-          )
+      await ctx.writeFolders((current) =>
+        current.map((folder) =>
+          folder.id === folderId
+            ? { ...folder, items: folder.items.filter((item) => item.id !== itemId) }
+            : folder
+        )
       );
       // 主动刷新快照：被释放的标签可能带原生组/固定等浏览器侧状态，UI 分组要按
       // 其最新 groupId/pinned 立刻归类（站点分组等），不能等下一次事件驱动刷新。
@@ -162,20 +176,20 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
     },
 
     reorderFolderItems: async ({ folderId, sourceId, targetId, placeAfter }) => {
-      await ctx.writeFolders(
-        computeReorderFolderItems(ctx.get().folders, { folderId, sourceId, targetId, placeAfter })
+      await ctx.writeFolders((current) =>
+        computeReorderFolderItems(current, { folderId, sourceId, targetId, placeAfter })
       );
     },
 
     moveFolder: async (sourceId, targetId, placeAfter) => {
-      await ctx.writeFolders(
-        computeMoveFolder(ctx.get().folders, { sourceId, targetId, placeAfter })
+      await ctx.writeFolders((current) =>
+        computeMoveFolder(current, { sourceId, targetId, placeAfter })
       );
     },
 
     moveFolderItem: async (sourceFolderId, itemId, targetFolderId) => {
-      await ctx.writeFolders(
-        computeMoveFolderItem(ctx.get().folders, { sourceFolderId, itemId, targetFolderId })
+      await ctx.writeFolders((current) =>
+        computeMoveFolderItem(current, { sourceFolderId, itemId, targetFolderId })
       );
     },
 
@@ -247,7 +261,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       // 说明 —— 否则固定空间凭空多一个空夹、界面还提示「已保存」，看似丢数据。
       if (items.length === 0) return false;
       const folder = createFolderModel(name);
-      await ctx.writeFolders([...ctx.get().folders, { ...folder, items }]);
+      await ctx.writeFolders((current) => [...current, { ...folder, items }]);
 
       // 建立绑定：精确 URL 匹配（串行化内完成，防并发覆盖）
       const result = await mutateSession((session) => {

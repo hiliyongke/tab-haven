@@ -55,11 +55,22 @@ export function UndoHistoryPanel({
   }, []);
 
   const handleRestoreRecent = (entry: RecentClosedEntry) => {
+    // 恢复互斥：并发点击不同行会互相覆盖 restoringId，
+    // 先完成的回调把另一行提前解禁。
+    if (restoringId !== null) return;
     setRestoringId(entry.sessionId);
-    void restoreRecentClosed(entry.sessionId).then((ok) => {
-      setRestoringId(null);
-      notify(ok ? t('undo.recentRestored') : t('errors.operationFailed'));
-    });
+    void restoreRecentClosed(entry.sessionId)
+      .then((ok) => {
+        notify(ok ? t('undo.recentRestored') : t('errors.operationFailed'));
+      })
+      .catch(() => {
+        // sessions.restore 抛错（sessionId 失效等）：必须经 finally 复位，
+        // 否则该按钮永久 disabled 卡死。
+        notify(t('errors.operationFailed'));
+      })
+      .finally(() => {
+        setRestoringId(null);
+      });
   };
 
   const hasAny = batches.length > 0 || (recent !== null && recent.length > 0);
@@ -129,7 +140,7 @@ export function UndoHistoryPanel({
                     type="button"
                     className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-gray-50"
                     onClick={() => handleRestoreRecent(entry)}
-                    disabled={restoringId === entry.sessionId}
+                    disabled={restoringId !== null}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-gray-700">

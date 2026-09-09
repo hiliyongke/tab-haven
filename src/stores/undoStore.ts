@@ -216,12 +216,10 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
     load: async () => {
       loadInFlight ??= (async () => {
-        const settings = await settingsRepository.read();
-        const batches = settings.persistUndo ? await undoRepository.read() : [];
-        if (!settings.persistUndo) await enqueueUndoPersist(() => [], { alwaysWrite: true });
-        set({ batches, ready: true });
         // 跨页同步：其它侧边栏窗口的入栈/出栈经 watcher 回流，
         // 否则本页旧内存栈下次写盘时会整表覆盖对方改动（undoRepository 写是全量写）。
+        // watcher 必须先于 read 注册：读完成到注册之间的跨页入栈若无人接收，
+        // 本页下次全量写盘会把对方批次从磁盘抹掉。
         if (!undoWatcherStarted) {
           undoWatcherStarted = true;
           undoRepository.watch((value) => {
@@ -230,6 +228,16 @@ export const useUndoStore = create<UndoState>()((set, get) => {
             set({ batches: value });
           });
         }
+        const before = get().batches;
+        const settings = await settingsRepository.read();
+        const batches = settings.persistUndo ? await undoRepository.read() : [];
+        if (!settings.persistUndo) await enqueueUndoPersist(() => [], { alwaysWrite: true });
+        // read 在途期间 watcher 已回放更新的值（引用变化）时以其为准，只补 ready。
+        if (get().batches !== before) {
+          set({ ready: true });
+          return;
+        }
+        set({ batches, ready: true });
       })().finally(() => {
         loadInFlight = null;
       });

@@ -100,9 +100,12 @@ function SectionListImpl({
   // 分区头排序（dnd-kit）：原生组与虚拟分区（站点组 / 语言组）都可拖动排序，
   // 排序逻辑由全局 DndContext 的 onDragEnd 处理。
   // 置顶区独立渲染、未分组区是兜底容器，两者不参与分区排序。
-  const sortableSectionKeys = sections
-    .filter((s) => s.kind === 'native' || s.kind === 'site')
-    .map((s) => s.key);
+  // items 必须 memo：SortableContext 以 items 引用计算 context value，
+  // 每次渲染新建数组会击穿下游所有 useSortable 分组头的 memo（同 FolderRow 约定）。
+  const sortableSectionKeys = useMemo(
+    () => sections.filter((s) => s.kind === 'native' || s.kind === 'site').map((s) => s.key),
+    [sections]
+  );
 
   const nativeSiteSections = sections.filter((s) => s.kind === 'native' || s.kind === 'site');
   const ungroupedSection = sections.find((s) => s.kind === 'ungrouped');

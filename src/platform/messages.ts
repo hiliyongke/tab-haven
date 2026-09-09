@@ -19,8 +19,10 @@ import { z } from 'zod';
  * 这些值会被当作键持久化（url 进豁免账本并镜像到 storage.session）或送进搜索管线。
  * 消息协议虽然是本扩展内部通道，但一旦将来开放 externally_connectable，
  * 无上限的字符串就是最直接的内存/存储放大面。上限取远超真实 URL 的值，只拦异常。
+ * 注：2048 会误伤超长合法 URL（长分享链接、带大 state 的 OAuth 回跳），
+ * 导致其豁免消息校验失败被静默丢弃；8192 仍远小于存储放大面。
  */
-const MESSAGE_URL_MAX = 2048;
+const MESSAGE_URL_MAX = 8192;
 const MESSAGE_QUERY_MAX = 512;
 
 /** UI → SW：为下一次同 URL 创建申请复用豁免（显式复制/撤销恢复场景）。 */
