@@ -313,6 +313,8 @@
     "hoursUnit": "{{count}} h",
     "maxAutoSnapshots": "Auto-snapshot retention",
     "maxAutoSnapshotsHint": "Keep only the latest N auto snapshots (both interval and window-close); older ones are evicted beyond this",
+    "snapshotLimit": "Total snapshot retention",
+    "snapshotLimitHint": "Combined limit across named, archived and space snapshots; the oldest records are evicted beyond this",
     "capabilitiesGuide": "What you can do",
     "capTry": "Try in sidebar"
   },

@@ -6,8 +6,12 @@ import { SettingsPage } from '@/entrypoints/options/SettingsPage';
 import { useDataStore } from '@/stores/dataStore';
 import { ErrorBoundary } from '@/ui/common/ErrorBoundary';
 import { SettingsSync } from '@/ui/common/SettingsSync';
+import { installGlobalErrorHandlers } from '@/platform/diagnostics';
 import '../../i18n';
 import '../../styles/main.css';
+
+// 全局异常兜底（同 sidepanel：ErrorBoundary 不覆盖事件处理器与异步回调）
+installGlobalErrorHandlers();
 
 function OptionsRoot() {
   const initialize = useDataStore((state) => state.initialize);

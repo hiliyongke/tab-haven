@@ -6,3 +6,7 @@ pnpm-lock.yaml
 .output/
 .wxt/
 coverage/
+
+# 审计/评审报告（由工具生成的长文归档，非源码）。
+# CI 对全仓跑 `format:check`，把生成的报告纳入格式化检查会让报告写作与构建互相牵制。
+deliverables/

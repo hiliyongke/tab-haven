@@ -187,8 +187,6 @@ export const SettingsSchema = z.object({
     .transform((patterns) =>
       patterns.map(normalizeNoCachePattern).filter((pattern): pattern is string => pattern !== null)
     ),
-  /** 命中禁缓存站点时在页面顶部显示醒目警示条。 */
-  noCacheBannerEnabled: z.boolean().default(true),
   /** 首启引导是否已看过（仅首次展示交互式引导）。 */
   onboarded: z.boolean().default(false),
   /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */

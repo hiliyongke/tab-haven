@@ -313,6 +313,8 @@
     "hoursUnit": "{{count}} 小时",
     "maxAutoSnapshots": "自动快照保留数",
     "maxAutoSnapshotsHint": "仅保留最新的 N 条自动快照（含定时与关窗两种），超出自动淘汰最旧记录",
+    "snapshotLimit": "快照总数上限",
+    "snapshotLimitHint": "命名快照、归档与轻量空间的合计保留上限，超出自动淘汰最旧记录",
     "capabilitiesGuide": "你能做什么",
     "capTry": "在侧边栏试用"
   },

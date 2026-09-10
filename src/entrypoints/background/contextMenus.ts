@@ -6,6 +6,7 @@ import { createFolderItem } from '@/core/fixed/FolderOps';
 import { mapTab } from '@/platform/tabs';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
 import { FOLDERS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { logDegraded } from '@/platform/diagnostics';
 import { t } from '@/i18n/headless';
 import { notifyUser } from './shared';
 
@@ -46,7 +47,9 @@ let menuWriteChain: Promise<void> = Promise.resolve();
 
 function enqueueMenuWrite(task: () => Promise<void>): void {
   menuWriteChain = menuWriteChain.then(() =>
-    task().catch((error) => console.warn('[contextMenus] write failed', error))
+    // 走诊断管道而非 console.warn：本模块运行在 SW 上下文，那里 console 的输出
+    // 无法被 readAllDiagnostics / 「导出诊断」读到（同 ReuseCoordinator 的纪律）。
+    task().catch((error) => logDegraded('contextMenus', '右键菜单写入失败', error))
   );
 }
 

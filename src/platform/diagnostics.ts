@@ -117,6 +117,36 @@ export function readDiagnostics(): DiagnosticEntry[] {
   return [...buffer];
 }
 
+/**
+ * 安装全局异常兜底，返回卸载函数。
+ *
+ * 为什么需要：`ErrorBoundary` 只覆盖 React **渲染期**异常；事件处理器与异步回调里
+ * 漏网的 rejection 不会进入诊断环形缓冲 —— 对一个「无遥测、无服务端日志」的产品，
+ * 那等于这类故障完全没有排查线索。这是最后一道兜底，**不替代**各处的显式 catch：
+ * 走到这里的都应该是「我们没预料到」的路径。
+ *
+ * 不在 `/background` 安装：SW 无 `window`，且其全局监听需另一套事件类型；
+ * 由调用方按上下文决定是否安装（本函数在无 window 时安全空转）。
+ */
+export function installGlobalErrorHandlers(): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  const onRejection = (event: PromiseRejectionEvent): void => {
+    logFailure('global', '未处理的 Promise rejection（未被任何 catch 覆盖）', event.reason);
+  };
+  const onError = (event: ErrorEvent): void => {
+    // 资源加载失败（img / script / link）同样会派发 error，此时 event.error 为 null。
+    // 这类噪声量级大且无排查价值（favicon 抓取失败也在其中），只记真正的运行时异常。
+    if (event.error === null || event.error === undefined) return;
+    logFailure('global', '未捕获的运行时异常', event.error);
+  };
+  window.addEventListener('unhandledrejection', onRejection);
+  window.addEventListener('error', onError);
+  return () => {
+    window.removeEventListener('unhandledrejection', onRejection);
+    window.removeEventListener('error', onError);
+  };
+}
+
 /** 跨上下文全量读取：先冲刷本上下文待写增量，再读共享环形缓冲。 */
 export async function readAllDiagnostics(): Promise<DiagnosticEntry[]> {
   await flushDiagnostics();

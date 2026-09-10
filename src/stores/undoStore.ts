@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createUndoBatch, popBatch, pushBatch, toUndoTabRecord } from '@/core/undo/UndoStack';
 import type { UndoBatch } from '@/core/schema/models';
+import { structuralSignature } from '@/core/util/signature';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
@@ -224,7 +225,10 @@ export const useUndoStore = create<UndoState>()((set, get) => {
           undoWatcherStarted = true;
           undoRepository.watch((value) => {
             // 回显守卫：本页写入触发的回放内容相同，跳过 set。
-            if (JSON.stringify(value) === JSON.stringify(get().batches)) return;
+            // 与 snapshotStore / dataStore 统一用 structuralSignature 做结构比较：
+            // 撤销栈上限不确定地增长（createUndoBatch 逐批累积），裸 JSON.stringify
+            // 每次 storage 变更都全量序列化两遍，属可避免的固定开销。
+            if (structuralSignature(value) === structuralSignature(get().batches)) return;
             set({ batches: value });
           });
         }

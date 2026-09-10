@@ -580,6 +580,23 @@ export function buildSections(
             { value: '30', label: '30' },
             { value: '50', label: '50' }
           ]
+        },
+        {
+          // snapshotLimit 早已在 trimSnapshots 中真实生效（总快照数上限，含命名/归档/轻量空间），
+          // 但此前无任何 UI 入口，用户只能接受默认 30 —— 与相邻的 maxAutoSnapshots 不一致。
+          // 不设 visible：它约束的是「全部快照」，与 autoSaveSnapshots 开关无关。
+          kind: 'select',
+          key: 'snapshotLimit',
+          labelKey: 'settings.snapshotLimit',
+          hintKey: 'settings.snapshotLimitHint',
+          parse: (v) => Number(v),
+          options: [
+            { value: '10', label: '10' },
+            { value: '20', label: '20' },
+            { value: '30', label: '30' },
+            { value: '50', label: '50' },
+            { value: '100', label: '100' }
+          ]
         }
       ]
     }

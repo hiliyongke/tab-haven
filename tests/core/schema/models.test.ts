@@ -62,6 +62,20 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.parse({ language: 'zh-CN' }).language).toBe('zh-CN');
     expect(SettingsSchema.safeParse({ language: 'x' }).success).toBe(false);
   });
+
+  it('已移除的旧字段不会导致解析失败（未知键被剥离而非报错）', () => {
+    // noCacheBannerEnabled 已随「页面内横幅」能力下线而移除（横幅改由侧边栏角标呈现）。
+    // 旧安装的存储值与旧备份文件里仍可能带该键：这里必须**解析成功**并把该键剥离，
+    // 否则用户升级后整块设置会被 DataRepository 判为坏数据隔离，回退成默认值。
+    const legacy = { ...DEFAULT_SETTINGS, noCacheBannerEnabled: false };
+    const parsed = SettingsSchema.safeParse(legacy);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect('noCacheBannerEnabled' in parsed.data).toBe(false);
+      expect(parsed.data.themePreference).toBe(DEFAULT_SETTINGS.themePreference);
+      expect(parsed.data.noCachePatterns).toEqual(DEFAULT_SETTINGS.noCachePatterns);
+    }
+  });
 });
 
 describe('AutoDiscardBatchSchema', () => {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import i18n from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
+import { structuralSignature } from '@/core/util/signature';
 import { closeTabs, queryCurrentWindowTabs, queryCurrentWindowGroups } from '@/platform/tabs';
 import { sendMessageWithAck } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
@@ -60,8 +61,17 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     if (!watcherStarted) {
       watcherStarted = true;
       // 回显守卫：本页面自身写入触发的回放内容相同，直接跳过。
+      //
+      // 用 structuralSignature 而非裸 JSON.stringify：快照族上限为
+      // SNAPSHOTS_LIMIT(200) × SNAPSHOT_TABS_LIMIT(1000)，且每条标签自带
+      // favIconUrl（大量站点是 base64 data URL，占单条数据绝大部分体积）。
+      // 裸 stringify 会在**每次** storage 变更（关窗自动保存 / 定时快照）对
+      // 整族做两次全量序列化——即 tabStore 判定过的「大标签量下每次事件的固定热点」。
+      // structuralSignature 会跳过 favIconUrl，代价是「仅 favicon 变化」时延迟
+      // 一次刷新（见 core/util/signature 的模块注释），下次真实变更即自愈。
+      // 该守卫只影响内存回放的时机，不参与任何写盘，跳过不会造成数据丢失。
       snapshotsRepository.watch((value) => {
-        if (JSON.stringify(value) === JSON.stringify(get().snapshots)) return;
+        if (structuralSignature(value) === structuralSignature(get().snapshots)) return;
         set({ snapshots: value });
       });
     }

@@ -166,8 +166,9 @@ export function buildDataContext(
         set({ settings: next });
       applyTheme(next.themePreference, next.colorTheme);
     } catch (error) {
-      // 读取失败保持当前状态
-      console.warn('[dataStore] settings replay read failed; keeping current settings', error);
+      // 读取失败保持当前状态。必须走诊断管道而非 console.warn：后者无法被
+      // 「导出诊断」读到，设置回读失败会变成不可观测的静默降级。
+      logDegraded('dataStore', '设置回读失败，保持当前设置', error);
     }
   };
   const broadcastSettingsSynced = (): void => {
