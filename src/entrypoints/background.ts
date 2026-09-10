@@ -247,7 +247,11 @@ export default defineBackground(() => {
     // 来源校验：当前版本没有 externally_connectable / content_scripts /
     // web_accessible_resources，外部网页无法投递消息；但端点一旦放开就会立刻暴露
     // （如 allow-duplicate-once 能改变去重行为），故在此前置拦截。
-    if (sender.id !== undefined && sender.id !== browser.runtime.id) return;
+    //
+    // 用 `sender?.id` 而非 `sender.id`：宿主一定会传 sender，但任何单参数调用
+    // （测试桩 / polyfill）会在读 sender.id 时抛 TypeError，而异常发生在监听器内
+    // 会直接吞掉整条消息通道（与 platform/messages.ts 的 onRuntimeMessage 同款防护）。
+    if (sender?.id !== undefined && sender.id !== browser.runtime.id) return;
 
     const parsed = MessageSchema.safeParse(raw);
     if (!parsed.success) return;

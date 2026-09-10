@@ -66,8 +66,12 @@ const AUTO_SCROLL_CONFIG = { enabled: false } as const;
  * 拖拽碰撞检测：优先取指针实际所在的最深层投放目标（解决拖分组头/标签到固定空间时
  * closestCenter 可能误判为最近 section 的问题）；指针不在任何投放目标内时回退最近中心
  * （同列表排序仍按中心距离计算插入位）。
+ *
+ * 导出供测试直接驱动：这是纯函数式的落点判定，决定了「拖到哪算哪」，
+ * 但它藏在 DndContext 内部、无法从组件外部触发，不导出就没有任何回归保护。
+ * 拖拽是本应用最核心的交互，落点算错是最容易被用户感知为「坏了」的问题。
  */
-function dragCollisionDetection(args: Parameters<CollisionDetection>[0]): Collision[] {
+export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]): Collision[] {
   const activeData = args.active.data.current as DragData | undefined;
   const activeType = activeData?.type;
 
@@ -136,8 +140,8 @@ function dragCollisionDetection(args: Parameters<CollisionDetection>[0]): Collis
   return closestCenter({ ...args, droppableContainers: anyRow });
 }
 
-/** 根据拖拽数据生成 DragOverlay 的轻量跟随内容。 */
-function buildDragOverlay(data: DragData): ReactNode {
+/** 根据拖拽数据生成 DragOverlay 的轻量跟随内容（导出理由同 dragCollisionDetection）。 */
+export function buildDragOverlay(data: DragData): ReactNode {
   switch (data.type) {
     case DragType.Tab:
     case DragType.FolderItem:
@@ -181,7 +185,8 @@ function buildDragOverlay(data: DragData): ReactNode {
  *  监听器会残留到下一次指针移动才批量清——每次标记前先清掉前一次的。 */
 let pendingJustDroppedClear: (() => void) | null = null;
 
-function markJustDropped(): void {
+/** 导出供测试驱动（清理器残留是一类只在键盘拖拽下才出现的缺陷）。 */
+export function markJustDropped(): void {
   pendingJustDroppedClear?.();
   document.body.classList.add('dnd-just-dropped');
   const clear = () => {

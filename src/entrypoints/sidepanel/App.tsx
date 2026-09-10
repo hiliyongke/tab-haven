@@ -1,18 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
-import { matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
-import { planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
-import { SearchEngine } from '@/core/search/SearchEngine';
-import { deriveSections } from '@/core/site/Sections';
+import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
-import {
-  onRuntimeMessage,
-  watchPendingActions,
-  type Message,
-  type PendingAction
-} from '@/platform/messages';
 import {
   activateTabAcrossWindows,
   detectLanguage,
@@ -20,9 +11,8 @@ import {
   reloadTabs
 } from '@/platform/tabs';
 import { openOptionsPage } from '@/platform/navigation';
-import { logDegraded } from '@/platform/diagnostics';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
-import { syncAutoGroups, disbandAutoGroups, regroupTempArea } from '@/platform/group/AutoGroupSync';
+import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import i18n from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
@@ -43,24 +33,16 @@ import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
+import { useAutoGroupSync } from '@/entrypoints/sidepanel/hooks/useAutoGroupSync';
+import { useSearchController } from '@/entrypoints/sidepanel/hooks/useSearchController';
+import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
+import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
+import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
 import { EmptyTabs, LoadingSkeleton, NoSearchResults } from '@/entrypoints/sidepanel/ListStates';
 import { useTabDragHandlers } from '@/entrypoints/sidepanel/useTabDragHandlers';
-import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
-
-/**
- * 禁缓存规则未启用时返回的空 Set 单例。
- * 必须是模块级常量：useMemo 的空依赖不保证引用稳定，而本值是下游 noCacheTabIds
- * 的依赖项，引用变动会引发整条派生链重算。
- */
-const EMPTY_NO_CACHE_SET: ReadonlySet<number> = new Set();
-/** 搜索态下「展示用」折叠集合的空集单例（见 displayCollapsed*）：模块级常量，
- *  避免每次渲染重建新 Set/数组 —— 新引用会把 memo(SectionList) 的浅比较击穿，
- *  过滤态每键击都让整棵列表派生树重算（SectionList 只对 props 引用变化有感知）。 */
-const EMPTY_COLLAPSED_GROUPS: ReadonlySet<number> = new Set();
-const EMPTY_COLLAPSED_SITES: readonly string[] = [];
 
 export default function App() {
   const { t } = useTranslation();
@@ -99,13 +81,10 @@ export default function App() {
   const undoBatchCount = useUndoStore((state) => state.batches.length);
   const snapshotCount = useSnapshotStore((state) => state.snapshots.length);
 
-  const [query, setQuery] = useState('');
-  const [searchIndex, setSearchIndex] = useState(0);
   const [quickRegrouping, setQuickRegrouping] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   /**
    * 用户主动滚动后的一段静默期（防"抢滚"）：静默中不自动跟随激活标签滚动。
    *
@@ -122,88 +101,6 @@ export default function App() {
   }, []);
   // 卸载时清理定时器，避免对已卸载组件 setState。
   useEffect(() => () => window.clearTimeout(userScrollTimerRef.current), []);
-  /** 已处理的挂起动作时间戳（即时消息 + session onChanged 双通道去重）。 */
-  const handledActionsRef = useRef<Set<number>>(new Set());
-  // 不订阅 currentWindowId：唯一的消费方 smartActivate 改为 store.getState() 实时读取，
-  // 少一个订阅即少一类「窗口切换导致全树重渲染」。
-  // 全窗口搜索数据源（设置开启且输入非空时，异步补充其他窗口标签；默认仅当前窗口）
-  const otherTabs = useAllWindowTabs(settings.searchAllWindows, query);
-
-  const isFiltering = query.trim().length > 0;
-  // 搜索用标签集：开启全窗口搜索且输入中时并入其他窗口标签（其余场景恒等于当前窗口）
-  const effectiveTabs = useMemo(
-    () =>
-      isFiltering && settings.searchAllWindows ? [...tabs, ...otherTabs] : (tabs as TabRecord[]),
-    [tabs, otherTabs, isFiltering, settings.searchAllWindows]
-  );
-  // 命中「开发者禁缓存」规则的标签 id 集合（侧边栏 TabRow 角标用；空规则时返回空集，省去下游 has() 判空）
-  const noCacheTabIds = useMemo(() => {
-    const patterns = settings.noCacheEnabled ? settings.noCachePatterns : [];
-    if (patterns.length === 0) return EMPTY_NO_CACHE_SET;
-    const matched = new Set<number>();
-    for (const tab of effectiveTabs) {
-      const url = tab.url;
-      if (!url) continue;
-      if (patterns.some((pattern) => matchesNoCachePattern(url, pattern))) matched.add(tab.id);
-    }
-    return matched;
-    // EMPTY_NO_CACHE_SET 是模块级常量，非响应式值，不进依赖数组。
-  }, [settings.noCacheEnabled, settings.noCachePatterns, effectiveTabs]);
-
-  // 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）
-  const engine = useMemo(
-    () =>
-      new SearchEngine(
-        effectiveTabs.map((tab) => ({
-          id: tab.id,
-          title: tab.title || t('tabs.untitled'),
-          url: tab.url || '',
-          active: tab.active
-        })),
-        { pinyin: settings.pinyinSearch }
-      ),
-    [effectiveTabs, t, settings.pinyinSearch]
-  );
-  /**
-   * 拼音目标是异步补齐的（词典按需动态加载），补齐本身不改变任何 React 状态。
-   * 没有这个信号，拼音命中会一直不出现：既不会在首次输入时自愈，也会在
-   * 「标签事件 → 重建引擎」后把已有的拼音结果瞬间清空。
-   *
-   * 用递增 tick 而非布尔：engine 重建后 state 可能已是 true（旧引擎恒 true），
-   * 新引擎异步补齐完成时 set(true) 被 React 丢弃（值未变），拼音命中照样不出现。
-   * tick 每次 +1 保证触发重算。
-   */
-  const [pinyinTick, setPinyinTick] = useState(0);
-  useEffect(() => {
-    if (engine.pinyinReady) return;
-    let cancelled = false;
-    void engine
-      .ensurePinyin()
-      .then(() => {
-        if (!cancelled) setPinyinTick((tick) => tick + 1);
-      })
-      // 词典加载失败（动态 import 网络/解析错误）：保持非拼音搜索可用，
-      // 不产生 unhandled rejection。
-      .catch((error: unknown) => {
-        logDegraded('search', '拼音词典加载失败，本轮拼音搜索不可用', error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [engine]);
-  const searchHits = useMemo(
-    () => engine.search(query, Math.max(effectiveTabs.length, 50)),
-    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
-    // lint 规则看不见它在回调里的用途，故显式豁免。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, query, effectiveTabs.length, pinyinTick]
-  );
-  const filteredTabs = useMemo(() => {
-    if (!query.trim()) return effectiveTabs;
-    const hitIds = new Set(searchHits.map((hit) => hit.tabId));
-    return effectiveTabs.filter((tab) => hitIds.has(tab.id));
-  }, [query, searchHits, effectiveTabs]);
-  const selectedSearchTabId = searchHits[searchIndex]?.tabId;
 
   /**
    * 智能激活：目标标签在其他窗口时先聚焦窗口再激活（全窗口搜索用）。
@@ -224,47 +121,37 @@ export default function App() {
     [activateTab]
   );
 
-  useEffect(() => {
-    setSearchIndex(0);
-  }, [query]);
-  // 搜索期间标签被关闭使 searchHits 收缩时，选中索引必须钳制回界内：
-  // 越界的 selectedSearchTabId 为 undefined，高亮消失且 Enter 无动作。
-  useEffect(() => {
-    setSearchIndex((current) =>
-      searchHits.length === 0 ? 0 : Math.min(current, searchHits.length - 1)
-    );
-  }, [searchHits.length]);
+  // 常驻搜索：查询状态 / 引擎 / 命中 / 键盘导航 / 禁缓存角标集。
+  // onActivate 注入 smartActivate（跨窗口命中需先聚焦窗口），hook 内部经 ref 取值，
+  // 因此这里不需要额外稳定引用。
+  const {
+    query,
+    setQuery,
+    clearQuery,
+    isFiltering,
+    searchInputRef,
+    filteredTabs,
+    selectedSearchTabId,
+    noCacheTabIds,
+    handleSearchKeyDown
+  } = useSearchController({
+    tabs,
+    t,
+    searchAllWindows: settings.searchAllWindows,
+    pinyinSearch: settings.pinyinSearch,
+    noCacheEnabled: settings.noCacheEnabled,
+    noCachePatterns: settings.noCachePatterns,
+    onActivate: smartActivate
+  });
 
-  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      if (searchHits.length === 0) return;
-      event.preventDefault();
-      const delta = event.key === 'ArrowDown' ? 1 : -1;
-      setSearchIndex((current) => (current + delta + searchHits.length) % searchHits.length);
-      return;
-    }
-    if (event.key === 'Enter') {
-      const tabId = selectedSearchTabId;
-      if (tabId === undefined) return;
-      event.preventDefault();
-      void smartActivate(tabId);
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setQuery('');
-      searchInputRef.current?.blur();
-    }
-  };
   const activeTabId = tabs.find((tab) => tab.active)?.id;
   /**
    * 必须 memo 化：`useLocateActive` 把 clearQuery 列进了内部 useCallback 依赖，
-   * 这里每渲染一个新箭头函数 → handleLocateActive → handlePendingAction 全部换新引用
+   * 这里每渲染一个新箭头函数 → handleLocateActive → 定位/挂起动作链路全部换新引用
    * → 键盘监听、runtime 消息监听、挂起动作监听每次渲染都解绑重绑（本文件大量重渲染）。
    * 副作用还包括：挂起队列监听每次订阅都会异步读一次 session，多个在途读取可能在
    * 队列清除前重复读到同一条动作，导致重复执行。
    */
-  const clearQuery = useCallback(() => setQuery(''), [setQuery]);
   const handleLocateActive = useLocateActive({
     activeTabId,
     notify,
@@ -286,41 +173,6 @@ export default function App() {
   }, [handleLocateActive]);
 
   /**
-   * 执行挂起动作（搜索域名 / 定位激活）。
-   * 同一动作可能经「即时消息」与「session onChanged」双通道到达：按 at 时间戳去重，
-   * 无 at 的旧数据（面板未开时写入、启动消费）直接执行。
-   *
-   * 引用必须稳定：内部经 locateActiveRef 调用定位（同键盘路径），不再依赖
-   * handleLocateActive —— 此前 handlePendingAction 随激活标签变化重建，使
-   * runtime 消息监听与 watchPendingActions 每次切标签都解绑重挂（挂起队列
-   * 重挂还会异步重读一次 session）。
-   */
-  const handlePendingAction = useCallback(
-    (action: PendingAction) => {
-      if (action.at !== undefined) {
-        const seen = handledActionsRef.current;
-        if (seen.has(action.at)) return;
-        seen.add(action.at);
-        // 防膨胀：仅保留最近一小批。
-        if (seen.size > 32) {
-          const oldest = seen.values().next().value;
-          if (oldest !== undefined) seen.delete(oldest);
-        }
-      }
-      if (action.type === 'search-domain' && typeof action.query === 'string') {
-        setQuery(action.query);
-        searchInputRef.current?.focus();
-      } else if (action.type === 'locate-active') {
-        locateActiveRef.current();
-      } else if (action.type === 'focus-search') {
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
-    },
-    [setQuery]
-  );
-
-  /**
    * 自动休眠撤销提示：toast + 「全部唤醒」动作（唤醒后清台账）。
    *
    * 文案走 `i18n.t` 而非 `t`：本回调是「面板打开时补提示」effect 的依赖，
@@ -339,6 +191,44 @@ export default function App() {
     },
     [notify]
   );
+
+  /** 聚焦并全选搜索框（⌘K 与 focus-search 动作共用同一行为）。 */
+  const focusSearchInput = useCallback(() => {
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+    // searchInputRef 是 ref 对象（引用恒定），显式列入依赖无行为差异，仅为满足 lint
+  }, [searchInputRef]);
+  /** 把域名填入搜索框并聚焦（右键「搜索此域名」经挂起队列到达）。 */
+  const searchDomainInPanel = useCallback(
+    (next: string) => {
+      setQuery(next);
+      searchInputRef.current?.focus();
+    },
+    [setQuery, searchInputRef]
+  );
+  /** 定位激活标签（快捷键、挂起动作、命令面板共用）。 */
+  const locateActiveViaRef = useCallback(() => locateActiveRef.current(), []);
+  /** 重复标签复用提示。 */
+  const notifyDuplicateReused = useCallback(() => notify(i18n.t('duplicates.reused')), [notify]);
+  /** 打开命令面板。 */
+  const openPalette = useCallback(() => setShowPalette(true), []);
+
+  // 挂起动作（面板未开时）与 runtime 消息消费：双通道按 at 去重、回调经 ref 取值，
+  // 使 runtime 监听与 session 挂起队列监听只在挂载时注册一次（细则见该 hook 注释）。
+  usePendingActions({
+    focusSearch: focusSearchInput,
+    searchDomain: searchDomainInPanel,
+    locateActive: locateActiveViaRef,
+    duplicateReused: notifyDuplicateReused,
+    discardBatch: showDiscardUndoToast
+  });
+
+  // 面板全局快捷键：⌘/Ctrl + P 命令面板、+ J 定位激活标签、+ K 搜索。
+  useGlobalHotkeys({
+    openPalette,
+    locateActive: locateActiveViaRef,
+    focusSearch: focusSearchInput
+  });
 
   // 同步服务：事件 → 快照 → store 订阅自动重渲染。
   // 依赖里刻意不含 `t`：语言切换会导致 t 引用变化，进而重放整个数据层初始化
@@ -375,59 +265,9 @@ export default function App() {
     void reconcileWithTabs(tabs);
   }, [tabs, reconcileWithTabs, dataReady, tabSyncReady]);
 
-  // ⌘J / Ctrl+J 定位激活标签；⌘K / Ctrl+K 打开搜索
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
-        event.preventDefault();
-        setShowPalette(true);
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j') {
-        event.preventDefault();
-        locateActiveRef.current();
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-        return;
-      }
-    };
-    // 单一协议入口：未经 MessageSchema 校验的消息已被 onMessage 丢弃，
-    // 这里只按 type 分发。新增消息类型时在本 switch 补分支。
-    const onMessage = (message: Message) => {
-      switch (message.type) {
-        // 挂起动作经 handlePendingAction 统一处理：即时消息与 session 挂起
-        // 双通道按 at 去重，避免同一次快捷键触发被消费两次（表现为搜索框内容被全选两次）。
-        case 'focus-search':
-        case 'search-domain':
-        case 'locate-active':
-          handlePendingAction(message);
-          return;
-        case 'duplicate-reused':
-          notify(i18n.t('duplicates.reused'));
-          return;
-        case 'auto-discarded':
-          showDiscardUndoToast(message);
-          return;
-        case 'settings-synced':
-          // 设置落盘通知（storage.onChanged 之外的兜底同步）。
-          void useDataStore.getState().refreshSettings();
-          return;
-        default:
-          // UI → SW 方向的消息由 SW 处理，UI 无需响应。
-          return;
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    const offMessage = onRuntimeMessage(onMessage);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      offMessage();
-    };
-  }, [handlePendingAction, notify, showDiscardUndoToast]);
+  // 快捷键（useGlobalHotkeys）与 runtime 消息分发（usePendingActions）已各自抽为独立
+  // hook：原先两者挤在同一个 effect 里，依赖数组含消息侧回调，导致切标签 / 语言变化时
+  // 快捷键监听被连带解绑重绑。拆开后语义不变而重挂次数下降。
 
   // 自动休眠台账：面板打开时若有未撤销批次，提示可一键唤醒
   useEffect(() => {
@@ -439,8 +279,7 @@ export default function App() {
       .catch(() => {});
   }, [showDiscardUndoToast]);
 
-  // 面板未开时挂起的动作（搜索域名 / 定位激活）：打开面板后消费
-  useEffect(() => watchPendingActions(handlePendingAction), [handlePendingAction]);
+  // 面板未开时挂起的动作由 usePendingActions 内部订阅（初始 get + session.onChanged）。
 
   // 固定空间排除集：挂起条目标签 + 绑定标签
   const fixedExcludedTabIds = useMemo(() => {
@@ -453,85 +292,39 @@ export default function App() {
     return excluded;
   }, [boundTabIds, folders]);
 
-  /**
-   * 未过滤态的分区基线。
-   *
-   * deriveSections 是全量分区计算（排序 + 站点聚合 + opener 树）。原先「自动分组
-   * effect」与「展示用 allSections」各自调用一次，非搜索时两者入参完全相同 ——
-   * 每次标签快照都白算一遍。这里算一次，两处共用。
-   */
-  const baseSections = useMemo(() => {
-    // deriveSections 接收 translate（来自 useTranslation 的 t）：切换语言时 t 重新生成，
-    // 分区标题随之重算。t 本身即为 memo 键（i18n.language 变化 → t 引用变化），
-    // 无需再额外读 i18n.language —— 两者等价，保留一份避免双重触发。
-    return deriveSections({
-      tabs,
-      groups,
-      excludedTabIds: fixedExcludedTabIds,
-      sortMode: settings.sortMode,
-      groupMode: settings.groupMode,
-      threshold: settings.aggregationThreshold,
-      translate: t
-    });
-  }, [
+  // 分区派生与折叠态展示（含复用基线的性能约定，见该 hook 注释）。
+  const {
+    baseSections,
+    pinnedSection,
+    restSections,
+    pinnedSortableIds,
+    displayCollapsedGroups,
+    displayCollapsedSites,
+    collapsibleSections,
+    allSectionsCollapsed,
+    handleToggleAllSections
+  } = useSectionDerivation({
     tabs,
     groups,
-    fixedExcludedTabIds,
-    settings.sortMode,
-    settings.groupMode,
-    settings.aggregationThreshold,
-    t
-  ]);
-
-  // 自动原生分组（设置开启时）：把聚合结果落成浏览器 tabGroups。
-  // 幂等：创建成功后标签获得 groupId，下一轮快照不再产出 plan。
-  useEffect(() => {
-    if (!settings.autoGroupNative || settings.groupMode === 'opener') return;
-    const plans = planAutoGroups(baseSections);
-    // syncAutoGroups 幂等（只为尚无 groupId 的标签建组），语言切换后分区标题
-    // 随之重算是安全的，不会重复建组。
-    if (plans.length > 0) void syncAutoGroups(plans);
-  }, [baseSections, settings.autoGroupNative, settings.groupMode]);
-
-  // 关闭自动分组时：解散本功能创建的组（标签回到未分组，记录清空）。
-  useEffect(() => {
-    if (settings.autoGroupNative) return;
-    void disbandAutoGroups();
-  }, [settings.autoGroupNative]);
-
-  const allSections = useMemo(() => {
-    // 非过滤态下 filteredTabs 与 tabs 等价，直接复用基线结果。
-    if (!isFiltering) return baseSections;
-    return deriveSections({
-      tabs: filteredTabs,
-      groups,
-      excludedTabIds: fixedExcludedTabIds,
-      sortMode: settings.sortMode,
-      groupMode: settings.groupMode,
-      threshold: settings.aggregationThreshold,
-      translate: t
-    });
-  }, [
-    isFiltering,
-    baseSections,
     filteredTabs,
-    groups,
-    fixedExcludedTabIds,
-    settings.sortMode,
-    settings.groupMode,
-    settings.aggregationThreshold,
-    t
-  ]);
+    isFiltering,
+    excludedTabIds: fixedExcludedTabIds,
+    sortMode: settings.sortMode,
+    groupMode: settings.groupMode,
+    aggregationThreshold: settings.aggregationThreshold,
+    t,
+    collapsedSites,
+    setGroupCollapsed,
+    toggleSiteCollapsed
+  });
 
-  /** 浏览器原生固定标签单独提取，渲染在搜索栏正下方 */
-  // memo 保持引用稳定：SectionList 是 memo 组件，新数组引用会击穿其浅比较。
-  const pinnedSection = useMemo(() => allSections.find((s) => s.kind === 'pinned'), [allSections]);
-  const restSections = useMemo(() => allSections.filter((s) => s.kind !== 'pinned'), [allSections]);
-  // dnd-kit items 同理：每次渲染新建数组会让 SortableContext value 变化、子节点无效重渲染。
-  const pinnedSortableIds = useMemo(
-    () => pinnedSection?.tabs.map((tab) => tab.id) ?? [],
-    [pinnedSection]
-  );
+  // 自动原生分组：把聚合结果落成浏览器 tabGroups / 关闭时解散（细则见该 hook 注释）。
+  useAutoGroupSync({
+    sections: baseSections,
+    autoGroupNative: settings.autoGroupNative,
+    groupMode: settings.groupMode
+  });
+
   // 拖拽分发（排序/投放/建文件夹/固定）独立为 hook，handler 引用稳定。
   const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers();
   const duplicateIndex = useMemo(() => DuplicateIndex.build(tabs), [tabs]);
@@ -576,38 +369,6 @@ export default function App() {
       cancelled = true;
     };
   }, [settings.groupMode, tabs]);
-
-  const collapsedGroupIds = useMemo(
-    () => new Set(groups.filter((group) => group.collapsed).map((group) => group.id)),
-    [groups]
-  );
-  // 搜索时强制展开所有折叠分组/站点，确保命中标签可见。
-  // 仅覆盖「展示用」折叠集合，不改动已存储的折叠偏好；清空搜索即原样还原。
-  const displayCollapsedGroups = isFiltering ? EMPTY_COLLAPSED_GROUPS : collapsedGroupIds;
-  const displayCollapsedSites: ReadonlySet<string> | readonly string[] = isFiltering
-    ? EMPTY_COLLAPSED_SITES
-    : collapsedSites;
-  const collapsibleSections = useMemo(
-    () => restSections.filter((section) => section.kind === 'native' || section.kind === 'site'),
-    [restSections]
-  );
-  const allSectionsCollapsed =
-    collapsibleSections.length > 0 &&
-    collapsibleSections.every((section) =>
-      section.kind === 'native'
-        ? displayCollapsedGroups.has(section.groupId)
-        : displayCollapsedSites.includes(section.siteKey)
-    );
-  const handleToggleAllSections = useCallback(() => {
-    const shouldCollapse = !allSectionsCollapsed;
-    for (const section of collapsibleSections) {
-      if (section.kind === 'native') {
-        void setGroupCollapsed(section.groupId, shouldCollapse);
-      } else {
-        void toggleSiteCollapsed(section.siteKey, shouldCollapse);
-      }
-    }
-  }, [allSectionsCollapsed, collapsibleSections, setGroupCollapsed, toggleSiteCollapsed]);
 
   const handleCloseTab = useCallback(
     (tab: TabRecord) => {

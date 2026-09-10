@@ -200,7 +200,12 @@ export function CommandPalette({
       setIndex((i) => (commands.length === 0 ? 0 : (i - 1 + commands.length) % commands.length));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      commands[index]?.run();
+      const command = commands[index];
+      // 无命中 / 索引越界时提前返回，**不关闭面板**：与 SearchBar 的 Enter 分支
+      // 口径一致（`selectedSearchTabId === undefined` 时直接 return）。
+      // 否则用户在「什么都没选中」的状态下按回车会莫名关闭面板，只能重新唤起再输入。
+      if (!command) return;
+      command.run();
       onClose();
     }
     // Esc 由 useModalA11y 统一处理（capture 阶段），此处不再重复。
