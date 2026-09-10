@@ -57,6 +57,7 @@
   },
   "fixed": {
     "toNativeGroup": "Restore as native group",
+    "pinCrossSortUnsupported": "Sorting between saved pins and browser-pinned tabs isn't supported.",
     "convertTitle": "Restore as native group",
     "convertConfirm": "This opens the web tabs in “{{name}}” and deletes the collection. Continue?",
     "saveGroupAsFolder": "Save to collection",
@@ -258,7 +259,7 @@
     "contextMenus": "Context menus",
     "contextMenusHint": "Quick actions on page / link / tab-bar / toolbar-icon right-click",
     "omnibox": "Address bar command",
-    "omniboxHint": "Type th plus keywords to jump to tabs and fixed items",
+    "omniboxHint": "Type t plus keywords to jump to tabs and fixed items",
     "noCache": "Developer: disable cache for sites",
     "noCacheHint": "Matching sites get forced no-store response headers (subresources included, equivalent to DevTools \"Disable cache\"); matching tabs show a \"No\" badge in the side panel; enabling requires site access permission",
     "noCachePatterns": "No-cache site list",
@@ -376,7 +377,7 @@
     "step3Body": "Press ⌘K / Ctrl+K to focus search, type a title, URL, or pinyin initials, then ↑↓ to pick and Enter to switch.",
     "featuresTitle": "You also get these features",
     "feature1": "Context menus: right-click a page / link / tab bar to hibernate, pin, or search by site",
-    "feature2": "Address bar command: type th plus keywords to jump to tabs and pinned items",
+    "feature2": "Address bar command: type t plus keywords to jump to tabs and pinned items",
     "feature3": "Undo history: every close can be undone, so mis-closes are safe",
     "feature4": "Toolbar badge: live duplicate count / total tabs",
     "next": "Next",
@@ -460,14 +461,14 @@
   },
   "tips": {
     "discoverTitle": "Unlock all of Tabs in three steps",
-    "discoverBody": "① Right-click a page / link / tab bar for one-tap hibernate, pin, or search-by-site; ② Type th + keyword in the address bar to jump straight to a tab or pinned item; ③ Press ⌘P (Ctrl+P) to open the command palette and hibernate / save snapshots / open settings in one go.",
+    "discoverBody": "① Right-click a page / link / tab bar for one-tap hibernate, pin, or search-by-site; ② Type t + keyword in the address bar to jump straight to a tab or pinned item; ③ Press ⌘P (Ctrl+P) to open the command palette and hibernate / save snapshots / open settings in one go.",
     "gotIt": "Got it"
   },
   "cap": {
     "contextMenuTitle": "Context menu",
     "contextMenuHow": "Right-click a page, link, or tab bar to quickly hibernate / pin / search by site",
     "omniboxTitle": "Address-bar th command",
-    "omniboxHow": "Type th + keyword in the address bar to jump straight to a tab or pinned item",
+    "omniboxHow": "Type t + keyword in the address bar to jump straight to a tab or pinned item",
     "paletteTitle": "Command palette (⌘P)",
     "paletteHow": "Search and act directly: hibernate all, save snapshot, open settings",
     "pinTitle": "Fixed space",
@@ -482,7 +483,8 @@
     "badgeTitle": "{{total}} tabs · {{dups}} dup groups · {{discarded}} discarded",
     "discardNotSafe": "This tab can't be discarded right now.",
     "discardDone": "Tab discarded.",
-    "alreadyInFolder": "Already in a folder (deduped)."
+    "alreadyInFolder": "Already in a folder (deduped).",
+    "addToFolderFailed": "Couldn't save to folder. Please try again."
   },
   "popup": {
     "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close"

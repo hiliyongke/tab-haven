@@ -154,7 +154,10 @@ export function computeAddTabsToFolder(
       // 否则它们会共享同一个空键，第二个及之后的条目被当成重复项删除。
       if (key === null) continue;
       if (existingByKey.has(key)) {
-        duplicateItemIds.add(item.id);
+        // 清扫范围必须收敛到本次候选：URL 全局唯一不变量下，跨文件夹重复条目
+        // 属于历史遗留脏数据，但一次无关拖入不应顺带删除其他文件夹既有的重复
+        // 条目（误删面远超单次操作）。只清扫与本次候选同 key 的重复项。
+        if (comparisonKeys.has(key)) duplicateItemIds.add(item.id);
       } else {
         existingByKey.set(key, { folderId: folder.id, item });
       }

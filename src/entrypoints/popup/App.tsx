@@ -78,17 +78,16 @@ export default function App() {
 
   // 拼音词典按需动态加载：就绪后必须重算一次命中，否则首次输入的拼音查询
   // 永远等不到结果（补齐拼音不改变任何 React 状态，本信号是唯一的重算入口）。
-  const [pinyinReady, setPinyinReady] = useState(() => engine.pinyinReady);
+  // 用递增 tick 而非布尔：engine 重建后 state 可能已是 true，新引擎异步补齐
+  // 完成时 set(true) 被 React 丢弃，拼音命中照样不出现（与侧边栏同口径）。
+  const [pinyinTick, setPinyinTick] = useState(0);
   useEffect(() => {
-    if (engine.pinyinReady) {
-      setPinyinReady(true);
-      return;
-    }
+    if (engine.pinyinReady) return;
     let cancelled = false;
     void engine
       .ensurePinyin()
       .then(() => {
-        if (!cancelled) setPinyinReady(true);
+        if (!cancelled) setPinyinTick((tick) => tick + 1);
       })
       // 词典加载失败（动态 import 网络/解析错误）：保持非拼音搜索可用，
       // 不产生 unhandled rejection。
@@ -102,10 +101,10 @@ export default function App() {
 
   const hits = useMemo(
     () => engine.search(query, 20),
-    // pinyinReady 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
+    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
     // lint 规则看不见它在回调里的用途，故显式豁免。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, query, pinyinReady]
+    [engine, query, pinyinTick]
   );
 
   /**

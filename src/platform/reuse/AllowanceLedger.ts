@@ -84,6 +84,8 @@ export class AllowanceLedger {
   /**
    * 从快照恢复（合并语义，不覆盖内存中更新的授权）：
    * 逐键取「令牌数更多」的一方，过期项（expiresAt 已过）直接丢弃。
+   * 合并时 expiresAt 取较晚者：内存中刚发放的令牌（expiresAt 更晚）被
+   * 镜像里更早的过期时间覆盖会导致令牌提前过期、显式恢复的标签被误合并。
    * 供 SW 重启后从 storage.session 恢复使用。
    */
   restore(snapshot: AllowanceSnapshot): void {
@@ -100,7 +102,10 @@ export class AllowanceLedger {
       }
       const current = this.allowances.get(key);
       if (!current || incoming.tokens > current.tokens) {
-        this.allowances.set(key, { tokens: incoming.tokens, expiresAt: incoming.expiresAt });
+        this.allowances.set(key, {
+          tokens: incoming.tokens,
+          expiresAt: current ? Math.max(current.expiresAt, incoming.expiresAt) : incoming.expiresAt
+        });
         changed = true;
       }
     }

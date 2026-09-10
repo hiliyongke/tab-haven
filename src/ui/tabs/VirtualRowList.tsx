@@ -78,7 +78,14 @@ export function VirtualRowList({
   // 实测的是 wrapper 内 li 的自然高度（wrapper 只定高不裁剪，li 可溢出）；
   // 与当前生效值一致时不 setState（防「测→改→再测」反馈循环）。
   const total = tabs.length;
-  const start = Math.max(0, Math.floor(scrollTop / effectiveItemSize) - OVERSCAN);
+  // 上界钳制：tabs 收缩（搜索过滤/批量关标签）时 scrollTop 仍是旧值，
+  // start 可能超过 total，slice 返回空数组使整个虚拟列表空白一瞬。
+  // 依赖浏览器「内容高度收缩 → scrollTop 越界钳位 → 派发 scroll」的自愈
+  // 是 UA 行为而非契约，显式钳到末行保证任何时刻渲染窗口都非空。
+  const start = Math.min(
+    Math.max(0, Math.floor(scrollTop / effectiveItemSize) - OVERSCAN),
+    Math.max(0, total - 1)
+  );
   useEffect(() => {
     const inner = firstRowRef.current?.firstElementChild;
     if (!(inner instanceof HTMLElement)) return;

@@ -91,27 +91,33 @@ async function syncAutoDiscardAlarm(settings: Settings): Promise<void> {
 
 /** 休眠当前窗口全部非激活、可安全丢弃的标签（含台账与通知）。 */
 async function discardInactiveTabs(): Promise<void> {
-  const [tabs, session] = await Promise.all([
-    browser.tabs.query({ currentWindow: true }),
-    readSession()
-  ]);
-  // 与 runAutoDiscard / 面板 UI 同一安全集：固定空间绑定的标签永不休眠。
-  const boundTabIds = new Set(Object.values(session.itemTabBindings));
-  const targets: number[] = [];
-  for (const rawTab of tabs) {
-    const tab = mapTab(rawTab);
-    if (tab.id >= 0 && !boundTabIds.has(tab.id) && canSafelyDiscardTab(tab)) targets.push(tab.id);
+  try {
+    const [tabs, session] = await Promise.all([
+      browser.tabs.query({ currentWindow: true }),
+      readSession()
+    ]);
+    // 与 runAutoDiscard / 面板 UI 同一安全集：固定空间绑定的标签永不休眠。
+    const boundTabIds = new Set(Object.values(session.itemTabBindings));
+    const targets: number[] = [];
+    for (const rawTab of tabs) {
+      const tab = mapTab(rawTab);
+      if (tab.id >= 0 && !boundTabIds.has(tab.id) && canSafelyDiscardTab(tab)) targets.push(tab.id);
+    }
+    const discardedIds: number[] = [];
+    for (const tabId of targets) {
+      const ok = await browser.tabs
+        .discard(tabId)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) discardedIds.push(tabId);
+    }
+    if (discardedIds.length === 0) return;
+    await recordAutoDiscardBatch(discardedIds);
+  } catch (error) {
+    // 与 runAutoDiscard 同口径：查询失败等异常不得逃逸为 async 命令监听器的
+    // unhandled rejection（浏览器级快捷键路径）。
+    logDegraded('auto-discard', '休眠非激活标签执行失败', error);
   }
-  const discardedIds: number[] = [];
-  for (const tabId of targets) {
-    const ok = await browser.tabs
-      .discard(tabId)
-      .then(() => true)
-      .catch(() => false);
-    if (ok) discardedIds.push(tabId);
-  }
-  if (discardedIds.length === 0) return;
-  await recordAutoDiscardBatch(discardedIds);
 }
 
 export { runAutoDiscard, discardInactiveTabs, syncAutoDiscardAlarm };

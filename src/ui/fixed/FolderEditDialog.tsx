@@ -33,7 +33,16 @@ export function FolderEditDialog({
           <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
             {t('dialog.cancel')}
           </Button>
-          <Button variant="danger" onClick={onDelete}>
+          <Button
+            variant="danger"
+            onClick={() => {
+              // 无论删除成功与否都关闭弹窗：成功时 FolderRow 卸载弹窗随之消失；
+              // 失败时结果由 toast 如实告知（删除失败提示），停留在确认视图会让
+              // 用户重复点击发起重复删除，且「弹窗还开着但文件夹已删」同样困惑。
+              onDelete();
+              onClose();
+            }}
+          >
             {t('dialog.confirm')}
           </Button>
         </div>

@@ -57,6 +57,7 @@
   },
   "fixed": {
     "toNativeGroup": "恢复为原生标签组",
+    "pinCrossSortUnsupported": "持久固定与浏览器置顶标签之间不支持排序。",
     "convertTitle": "恢复为原生标签组",
     "convertConfirm": "将打开“{{name}}”中的网页标签，并删除这个收藏夹。是否继续？",
     "saveGroupAsFolder": "存为收藏夹",
@@ -258,7 +259,7 @@
     "contextMenus": "右键菜单",
     "contextMenusHint": "页面 / 链接 / 标签栏 / 工具栏图标右键快捷操作",
     "omnibox": "地址栏命令",
-    "omniboxHint": "输入 th 加关键词，直达标签与固定条目",
+    "omniboxHint": "输入 t 加关键词，直达标签与固定条目",
     "noCache": "开发者：指定站点禁用缓存",
     "noCacheHint": "命中规则的站点响应头强制 no-store（含子资源，等效 DevTools 勾选 Disable cache）；命中标签在侧边栏 tab 角标显示「禁」；开启需授权网站访问权限",
     "noCachePatterns": "禁缓存站点列表",
@@ -377,7 +378,7 @@
     "step3Body": "按 ⌘K / Ctrl+K 聚焦搜索，输入标题、网址或拼音首字母，↑↓ 选择、回车切换。",
     "featuresTitle": "你还能用这些功能",
     "feature1": "右键菜单：在页面 / 链接 / 标签栏右键快速休眠、固定、按站点搜索",
-    "feature2": "地址栏命令：输入 th 加关键词，直达标签与固定条目",
+    "feature2": "地址栏命令：输入 t 加关键词，直达标签与固定条目",
     "feature3": "撤销历史：所有关闭操作都可撤销，误关也不怕",
     "feature4": "工具栏角标：实时显示重复标签数 / 总标签数",
     "next": "下一步",
@@ -483,7 +484,8 @@
     "badgeTitle": "共 {{total}} 个标签 · {{dups}} 组重复 · {{discarded}} 个已休眠",
     "discardNotSafe": "该标签当前无法休眠。",
     "discardDone": "标签已休眠。",
-    "alreadyInFolder": "该网址已在固定文件夹中（已去重）。"
+    "alreadyInFolder": "该网址已在固定文件夹中（已去重）。",
+    "addToFolderFailed": "保存到文件夹失败，请重试。"
   },
   "popup": {
     "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭"

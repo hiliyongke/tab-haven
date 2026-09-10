@@ -41,10 +41,24 @@ export async function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<n
   if (createdIds.length > 0) {
     // 跨页锁内 RMW：两个窗口的侧边栏可并发 syncAutoGroups，
     // 锁外交错丢 id → 关闭开关时 disbandAutoGroups 漏解散（孤儿组）。
-    await withCrossPageLock(AUTO_GROUPS_RMW_LOCK, async () => {
+    const recorded = await withCrossPageLock(AUTO_GROUPS_RMW_LOCK, async () => {
       const existing = await autoGroupsRepository.read();
-      await autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
+      return autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
     });
+    if (recorded === false) {
+      // 记账写入失败（配额）：组已创建但记录缺失，关闭开关时该组永不被解散，
+      // 成为孤儿组。此时立即解散刚创建的组并留痕，宁可「自动分组未生效」
+      // 也不留下无法回收的原生组。
+      logDegraded(
+        'auto-group',
+        '自动分组记账写入失败，已回滚本次创建的组（避免孤儿组）',
+        createdIds
+      );
+      for (const groupId of createdIds) {
+        await removeGroup(groupId);
+      }
+      return 0;
+    }
   }
   return createdIds.length;
 }

@@ -1,5 +1,10 @@
 import i18n from '@/i18n';
-import { createFolderItem, createFolder as createFolderModel } from '@/core/fixed/FolderOps';
+import {
+  createFolderItem,
+  createFolder as createFolderModel,
+  dedupePins
+} from '@/core/fixed/FolderOps';
+import { fixedItemKey } from '@/core/commands/folderCommands';
 import { EXPORT_FILE_VERSION, parseExportFile, type Settings } from '@/core/schema/models';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { logFailure } from '@/platform/diagnostics';
@@ -41,6 +46,8 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
       // 互斥：并发导入（或导入期间拖拽重排走 coalesced 通道）会让分区写交错，
       // 回滚只能回到「对方的中间态」。导入是低频重操作，直接拒绝重入。
       if (ctx.isImporting()) throw new Error('import-in-progress');
+      // 与清空事务互斥：清空进行中导入，导入事务会把已清空的存储回填（反之亦然）。
+      if (ctx.isClearing()) throw new Error('clear-in-progress');
       const parsed = parseExportFile(raw);
       if (!parsed.success) throw new Error('invalid-tabs-export');
       const data = parsed.data;
@@ -73,6 +80,21 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
           settings: beforeSettings,
           snapshots: beforeSnapshots
         };
+        // 备份文件可被任意构造：含重复 identity 的 pin / 重复 URL 条目若原样提交，
+        // 会立即渲染出重复磁贴与重复条目（其余路径均做去重，导入必须同口径）。
+        // 顺序保持原序，按「全空间首见保留」清理，与固定空间的唯一性不变量一致。
+        const importedPins = dedupePins(data.persistentPins);
+        const seenKeys = new Set<string>();
+        const importedFolders = data.fixedFolders.map((folder) => ({
+          ...folder,
+          items: folder.items.filter((item) => {
+            const key = fixedItemKey(item.url);
+            if (key === null) return true;
+            if (seenKeys.has(key)) return false;
+            seenKeys.add(key);
+            return true;
+          })
+        }));
         // 同步开关不随备份迁移：备份文件可被任意构造，若其中 syncMirrorEnabled 为 true，
         // 导入即会在 500ms 后把全部固定 URL 推上浏览器账号通道，用户完全无感知。
         // 保留用户当下的选择——要开同步必须是一次显式操作。
@@ -88,12 +110,12 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
         }[] = [
           {
             name: 'folders',
-            write: () => ctx.repos.folders.write(data.fixedFolders),
+            write: () => ctx.repos.folders.write(importedFolders),
             rollback: () => ctx.repos.folders.write(before.folders)
           },
           {
             name: 'pins',
-            write: () => ctx.repos.pins.write(data.persistentPins),
+            write: () => ctx.repos.pins.write(importedPins),
             rollback: () => ctx.repos.pins.write(before.pins)
           },
           {
@@ -141,8 +163,8 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
         }
 
         ctx.set({
-          folders: data.fixedFolders,
-          pins: data.persistentPins,
+          folders: importedFolders,
+          pins: importedPins,
           collapsedSites: data.siteCollapse,
           settings: importedSettings
         });

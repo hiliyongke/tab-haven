@@ -104,29 +104,37 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
      */
     clearAllData: () =>
       serialize(async () => {
-        // 清空前先让在途/排队的合并写入收尾并丢弃旧值，避免其随后把旧数据写回已清空的存储，
-        // 使「清空」失效。（本函数也在串行链上：排队的设置写已在进入本函数前完成。）
-        await ctx.cancelWrites();
-        await syncMirror.clearAll();
-        await browser.storage.local.clear();
-        await browser.storage.session.clear();
-        // 清空期间若又排入了合并写（极少见），丢弃之，保证最终落盘为空态。
-        await ctx.cancelWrites();
-        // 存储刚被整体清空：此前累积的降级记账已无对应数据，若不重置，
-        // 「数据可能未保存」横幅会在清空之后永久驻留（用户恰恰是刚清干净的状态）。
-        ctx.resetDegraded();
-        ctx.set({
-          folders: [],
-          pins: [],
-          collapsedSites: [],
-          settings: DEFAULT_SETTINGS,
-          boundTabIds: [],
-          ready: true
-        });
-        applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
-        // 把「空态」镜像回 sync（去抖落盘），保持 local/sync 终态一致。
-        ctx.scheduleMirror(ctx.get());
-        ctx.broadcastSettingsSynced();
+        // 与导入事务互斥：导入进行中点清空，导入事务的后续分区写会对已清空的
+        // 存储继续写成功并回填内存——「清空」语义被击穿。拒绝并交由 UI 提示。
+        if (ctx.isImporting()) throw new Error('import-in-progress');
+        ctx.setClearing(true);
+        try {
+          // 清空前先让在途/排队的合并写入收尾并丢弃旧值，避免其随后把旧数据写回已清空的存储，
+          // 使「清空」失效。（本函数也在串行链上：排队的设置写已在进入本函数前完成。）
+          await ctx.cancelWrites();
+          await syncMirror.clearAll();
+          await browser.storage.local.clear();
+          await browser.storage.session.clear();
+          // 清空期间若又排入了合并写（极少见），丢弃之，保证最终落盘为空态。
+          await ctx.cancelWrites();
+          // 存储刚被整体清空：此前累积的降级记账已无对应数据，若不重置，
+          // 「数据可能未保存」横幅会在清空之后永久驻留（用户恰恰是刚清干净的状态）。
+          ctx.resetDegraded();
+          ctx.set({
+            folders: [],
+            pins: [],
+            collapsedSites: [],
+            settings: DEFAULT_SETTINGS,
+            boundTabIds: [],
+            ready: true
+          });
+          applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
+          // 把「空态」镜像回 sync（去抖落盘），保持 local/sync 终态一致。
+          ctx.scheduleMirror(ctx.get());
+          ctx.broadcastSettingsSynced();
+        } finally {
+          ctx.setClearing(false);
+        }
       }),
 
     refreshSettings: () => ctx.syncSettingsFromStorage()

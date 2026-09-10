@@ -97,7 +97,9 @@ export default defineBackground(() => {
   };
   void syncCoordinatorEnabled();
   // 设置缓存：SW 启动读一次（badge/通知/菜单/omnibox 共用；变更经 watch 更新）。
-  void syncCachedSettings();
+  // 读回后补刷一次角标：冷启动 500ms 定时器先触发时 cachedSettings 仍是默认值，
+  // 角标会按默认模式渲染且无自愈路径（要等下一次标签事件/设置变更才纠正）。
+  void syncCachedSettings().then(() => refreshBadgeSoon());
 
   /**
    * 工具栏图标点击行为（settings.actionClickMode）：
@@ -140,7 +142,18 @@ export default defineBackground(() => {
       if (settings.newTabPosition !== 'after-active') return;
       if (tab.id === undefined || tab.windowId === undefined) return;
       if (tab.pinned) return;
-      const anchorId = getLastActiveTabId(tab.windowId);
+      let anchorId = getLastActiveTabId(tab.windowId);
+      if (anchorId === undefined) {
+        // 冷启动锚点补种：SW 回收后 lastActiveTabIds 是空内存态，首个新标签
+        // 创建早于窗口缓存初始化时锚点缺失（此前静默跳过，位置落回浏览器默认）。
+        // 此时新标签已被 Chrome 激活，query active 拿不到旧锚点——退而取窗口中
+        // 除新标签外的最后一个普通标签作为近似锚点，并顺手补种。
+        const siblings = await browser.tabs.query({ windowId: tab.windowId });
+        const fallback = siblings
+          .filter((candidate) => candidate.id !== tab.id && !candidate.pinned)
+          .sort((a, b) => (b.index ?? 0) - (a.index ?? 0))[0];
+        if (typeof fallback?.id === 'number') anchorId = fallback.id;
+      }
       if (anchorId === undefined || anchorId === tab.id) return;
       const anchor = await browser.tabs.get(anchorId).catch(() => undefined);
       if (!anchor || anchor.windowId !== tab.windowId || anchor.index === undefined) return;
@@ -214,7 +227,11 @@ export default defineBackground(() => {
         coordinator.handleCreated(mapTab(tab));
         if (typeof tab.windowId === 'number') scheduleWindowRefresh(tab.windowId);
       })
-      .catch(() => {});
+      .catch((error) => {
+        // 标签在置换后瞬间又被关闭时 get 失败：留痕即可，复用追踪缺口是
+        // 一次性漏判，不必当成故障处理。
+        logDegraded('background', `onReplaced：获取新标签 ${addedTabId} 失败`, error);
+      });
     refreshBadgeSoon();
   });
 
@@ -383,7 +400,7 @@ export default defineBackground(() => {
     }
   });
 
-  // omnibox：th <关键词>（omniboxEnabled 开关）
+  // omnibox：t <关键词>（omniboxEnabled 开关）
   // 实时建议加 120ms 防抖，避免每个字符都触发读存储 + 全量扫描。
   let omniboxSuggestTimer: ReturnType<typeof setTimeout> | undefined;
   browser.omnibox?.onInputChanged.addListener((text, suggest) => {

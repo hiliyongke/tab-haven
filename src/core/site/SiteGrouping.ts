@@ -72,7 +72,10 @@ export function aggregateBySite(
     }
     // 桶键含 value（本地/IP 站点的 value 带端口）：localhost:3000 与
     // localhost:8080 不并桶；同站点归并的比较口径（registrableDomain）不变。
-    const bucketId = `${key.value}${key.subdomain}`;
+    // 用 \u0000 分隔 value 与 subdomain：直接拼接会产生跨站点碰撞——
+    // 裸域 example.com（subdomain 空）与 m.example.co（value=example.co）
+    // 的桶键同为 "example.com"，两个不同站点被混进同一分区。
+    const bucketId = `${key.value}\u0000${key.subdomain}`;
     let bucket = buckets.get(bucketId);
     if (!bucket) {
       bucket = { key, tabs: [] };

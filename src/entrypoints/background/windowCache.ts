@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
-import type { SnapshotTab } from '@/core/schema/models';
+import { z } from 'zod';
+import { SnapshotTabSchema, type SnapshotTab } from '@/core/schema/models';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { settingsRepository } from '@/platform/storage/repositories';
@@ -9,6 +10,9 @@ import { logDegraded } from '@/platform/diagnostics';
 
 const WINDOW_TABS_KEY = 'tabs.window-tabs.v1';
 type WindowTabsCache = Record<string, SnapshotTab[]>;
+/** 缓存内容 schema：session 中的脏条目（异常写入/旧版本残留）必须被隔离丢弃，
+ * 否则整条关窗快照在 persistSnapshot 的 zod 校验处整体写盘失败。 */
+const WindowTabsCacheSchema = z.record(z.string(), z.array(SnapshotTabSchema));
 let memWindowTabs: WindowTabsCache = {};
 let windowTabsFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const windowRefreshTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -99,6 +103,9 @@ async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
  * 「新建标签位置 = 激活标签之后」的定位锚点：onCreated 时新标签已被 Chrome
  * 激活，直接 query active 只会查到它自己，必须用激活前的记录。
  */
+/** 已关闭窗口集合：在途 refresh 完成时窗口若已关闭，缓存写回会复活幽灵键。 */
+const removedWindowIds = new Set<number>();
+
 const lastActiveTabIds = new Map<number, number>();
 
 export function recordActiveTab(windowId: number, tabId: number): void {
@@ -152,6 +159,9 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
       browser.tabs.query({ windowId }),
       browser.tabGroups.query({ windowId }).catch(() => [])
     ]);
+    // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会
+    // 以空数组/残余数据复活已清理的键（驻留到浏览器重启）。丢弃即可。
+    if (removedWindowIds.has(windowId)) return;
     const list = collectTabs(rawTabs, rawGroups.map(mapTabGroup));
     memWindowTabs[String(windowId)] = list;
     // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置 =
@@ -195,7 +205,15 @@ async function initWindowTabsCache(): Promise<void> {
     if (sessionArea) {
       const rec = await sessionArea.get(WINDOW_TABS_KEY);
       const val = rec[WINDOW_TABS_KEY];
-      if (val && typeof val === 'object') memWindowTabs = val as WindowTabsCache;
+      // 缓存必须过 schema：session 中的脏条目会让该窗口的关窗快照在
+      // persistSnapshot 校验处整体失败（快照丢失而非只丢坏条目）。
+      const parsed = WindowTabsCacheSchema.safeParse(val);
+      if (parsed.success) {
+        memWindowTabs = parsed.data;
+      } else {
+        memWindowTabs = {};
+        logDegraded('window-cache', 'session 窗口缓存数据损坏，已丢弃并从空态重建');
+      }
     }
     const wins = await browser.windows.getAll({ populate: false }).catch(() => []);
     for (const win of wins) {
@@ -215,6 +233,8 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
     clearTimeout(pendingTimer);
     windowRefreshTimers.delete(windowId);
   }
+  // 标记窗口已关闭：在途 refresh 完成后据此丢弃结果（防幽灵键复活）。
+  removedWindowIds.add(windowId);
   lastActiveTabIds.delete(windowId);
   const idKey = String(windowId);
   let tabs = memWindowTabs[idKey];
@@ -223,8 +243,8 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
       const sessionArea = browser.storage?.session;
       if (sessionArea) {
         const rec = await sessionArea.get(WINDOW_TABS_KEY);
-        const cache = rec[WINDOW_TABS_KEY] as WindowTabsCache | undefined;
-        if (cache) tabs = cache[idKey];
+        const cache = WindowTabsCacheSchema.safeParse(rec[WINDOW_TABS_KEY]);
+        if (cache.success) tabs = cache.data[idKey];
       }
     } catch (error) {
       logDegraded('window-cache', '窗口缓存清理失败', error);
@@ -236,10 +256,13 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
     const sessionArea = browser.storage?.session;
     if (sessionArea) {
       const rec = await sessionArea.get(WINDOW_TABS_KEY);
-      const cache = (rec[WINDOW_TABS_KEY] as WindowTabsCache) ?? {};
-      if (cache[idKey]) {
-        delete cache[idKey];
-        await sessionArea.set({ [WINDOW_TABS_KEY]: cache }).catch(() => {});
+      const parsed = WindowTabsCacheSchema.safeParse(rec[WINDOW_TABS_KEY]);
+      if (parsed.success) {
+        const cache = { ...parsed.data };
+        if (cache[idKey]) {
+          delete cache[idKey];
+          await sessionArea.set({ [WINDOW_TABS_KEY]: cache }).catch(() => {});
+        }
       }
     }
   } catch (error) {
@@ -260,7 +283,7 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
   });
   // 写盘失败（quota 超限等）只告警：自动保存是兜底链路，不应让异常逃逸为未捕获 rejection。
   await persistSnapshot(snapshot).catch((error) =>
-    console.warn('[snapshots] auto-save failed', error)
+    logDegraded('window-cache', '关窗自动快照写入失败', error)
   );
 }
 

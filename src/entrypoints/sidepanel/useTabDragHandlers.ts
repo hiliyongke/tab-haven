@@ -59,15 +59,22 @@ export function useTabDragHandlers() {
    * 后移（to > from）→ 落到 over 之后；前移（to < from）→ 落到 over 之前。
    * 这与 arrayMove(items, from, to) 一致：over 总被挤到源的相邻位。
    */
-  const isPlaceAfter = useCallback((event: DragEndEvent): boolean => {
-    const from = (event.active.data.current as { sortable?: { index?: number } } | undefined)
-      ?.sortable?.index;
-    const to = (event.over?.data.current as { sortable?: { index?: number } } | undefined)?.sortable
-      ?.index;
-    // 索引缺失（非 sortable 目标，如跨容器投到 fixed-area）时退回「插后」。
-    if (from === undefined || to === undefined) return true;
-    return to > from;
-  }, []);
+  const isPlaceAfter = useCallback(
+    (event: DragEndEvent, activeData?: DragData, overData?: DragData): boolean => {
+      // 跨容器拖拽时 from/to 属于不同的 SortableContext items 数组，两者 index
+      // 无比较语义（拖到大分区末尾 vs 小分区中间的方向判断会任意偏一位）。
+      // 跨容器场景一律退回「插后」（与索引缺失同一兜底口径）。
+      if (activeData && overData && !isSameContainer(activeData, overData)) return true;
+      const from = (event.active.data.current as { sortable?: { index?: number } } | undefined)
+        ?.sortable?.index;
+      const to = (event.over?.data.current as { sortable?: { index?: number } } | undefined)
+        ?.sortable?.index;
+      // 索引缺失（非 sortable 目标，如跨容器投到 fixed-area）时退回「插后」。
+      if (from === undefined || to === undefined) return true;
+      return to > from;
+    },
+    []
+  );
 
   /** 拖拽重排：用当前全部标签计算目标原生索引，先本地生效再写回浏览器。 */
   const handleReorder = useCallback((sourceId: number, targetId: number, placeAfter: boolean) => {
@@ -89,7 +96,18 @@ export function useTabDragHandlers() {
   /** 键盘重排（Alt+↑/↓）：把标签向相邻展示位置移动。 */
   const handleMoveTab = useCallback(
     (tabId: number, direction: -1 | 1) => {
-      if (!useDataStore.getState().settings.tabOrderSync) return;
+      const dataStore = useDataStore.getState();
+      // 与拖拽路径共用同一道闸门：recency 下显示顺序与 index 已解耦，
+      // 键盘移动会改动浏览器 index 而界面纹丝不动——必须显式告知（同拖拽口径）。
+      const blocked = reorderBlockedReason({
+        tabOrderSync: dataStore.settings.tabOrderSync,
+        sortMode: dataStore.settings.sortMode
+      });
+      if (blocked === 'recency') {
+        useUndoStore.getState().notify(t('tabs.orderLockedBySortMode'));
+        return;
+      }
+      if (blocked === 'sync-off') return;
       const allTabs = useTabStore.getState().tabs;
       const idx = allTabs.findIndex((tab) => tab.id === tabId);
       if (idx < 0) return;
@@ -97,7 +115,7 @@ export function useTabDragHandlers() {
       if (!target) return;
       handleReorder(tabId, target.id, direction > 0);
     },
-    [handleReorder]
+    [handleReorder, t]
   );
 
   /** 拖标签/分组到固定空间空白区：请求 FixedArea 弹出命名弹窗。 */
@@ -163,9 +181,13 @@ export function useTabDragHandlers() {
       useTabStore.getState().applyGroupReorder(sourceTabIds, index);
 
       if (activeData.groupId !== undefined && overData.groupId !== undefined) {
+        // 与 handleReorder / moveTabs 分支同口径：失败无事件、不自愈，需主动刷新校正。
         void useTabStore
           .getState()
           .moveGroup(activeData.groupId, index)
+          .then((ok) => {
+            if (!ok) tabSyncService.requestRefresh();
+          })
           .catch(() => {});
         return;
       }
@@ -219,7 +241,11 @@ export function useTabDragHandlers() {
               notify(t('tabs.largeListNotice'));
               return;
             }
-            handleReorder(activeData.tabId, overData.tabId, isPlaceAfter(event));
+            handleReorder(
+              activeData.tabId,
+              overData.tabId,
+              isPlaceAfter(event, activeData, overData)
+            );
             // 跨原生组：把 source 标签加入目标组（moveTab 只改位置不改归属）。
             const latest = useTabStore.getState().tabs;
             const sourceTab = latest.find((candidate) => candidate.id === activeData.tabId);
@@ -275,7 +301,7 @@ export function useTabDragHandlers() {
               notify(t('tabs.orderLockedBySortMode'));
               return;
             }
-            handleSectionReorder(activeData, overData, isPlaceAfter(event));
+            handleSectionReorder(activeData, overData, isPlaceAfter(event, activeData, overData));
           }
           return;
         }
@@ -304,7 +330,7 @@ export function useTabDragHandlers() {
             folderId: activeData.folderId,
             sourceId: activeData.itemId,
             targetId: overData.itemId,
-            placeAfter: isPlaceAfter(event)
+            placeAfter: isPlaceAfter(event, activeData, overData)
           });
           return;
         }
@@ -334,7 +360,11 @@ export function useTabDragHandlers() {
 
       // 文件夹排序。
       if (activeData.type === DragType.Folder && overData?.type === DragType.Folder) {
-        void dataStore.moveFolder(activeData.folderId, overData.folderId, isPlaceAfter(event));
+        void dataStore.moveFolder(
+          activeData.folderId,
+          overData.folderId,
+          isPlaceAfter(event, activeData, overData)
+        );
         return;
       }
 
@@ -343,9 +373,22 @@ export function useTabDragHandlers() {
       // - 有 tabId：SectionList 内浏览器原生置顶组排序（chrome.tabs.move 改浏览器位置）。
       if (activeData.type === DragType.Pin && overData?.type === DragType.Pin) {
         if (activeData.pinId !== undefined && overData.pinId !== undefined) {
-          void dataStore.reorderPins(activeData.pinId, overData.pinId, isPlaceAfter(event));
+          void dataStore.reorderPins(
+            activeData.pinId,
+            overData.pinId,
+            isPlaceAfter(event, activeData, overData)
+          );
         } else if (activeData.tabId !== undefined && overData.tabId !== undefined) {
-          handleReorder(activeData.tabId, overData.tabId, isPlaceAfter(event));
+          handleReorder(
+            activeData.tabId,
+            overData.tabId,
+            isPlaceAfter(event, activeData, overData)
+          );
+        } else {
+          // 持久 pin（PinnedStrip）与浏览器置顶磁贴互拖：两种磁贴语义不同
+          // （一个落盘、一个在浏览器标签条），互换顺序无意义。此前静默无操作，
+          // 用户以为拖拽坏了——必须明确告知不支持。
+          useUndoStore.getState().notify(t('fixed.pinCrossSortUnsupported'));
         }
       }
     },

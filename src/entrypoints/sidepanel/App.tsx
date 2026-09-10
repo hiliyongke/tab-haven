@@ -168,18 +168,19 @@ export default function App() {
    * 拼音目标是异步补齐的（词典按需动态加载），补齐本身不改变任何 React 状态。
    * 没有这个信号，拼音命中会一直不出现：既不会在首次输入时自愈，也会在
    * 「标签事件 → 重建引擎」后把已有的拼音结果瞬间清空。
+   *
+   * 用递增 tick 而非布尔：engine 重建后 state 可能已是 true（旧引擎恒 true），
+   * 新引擎异步补齐完成时 set(true) 被 React 丢弃（值未变），拼音命中照样不出现。
+   * tick 每次 +1 保证触发重算。
    */
-  const [pinyinReady, setPinyinReady] = useState(() => engine.pinyinReady);
+  const [pinyinTick, setPinyinTick] = useState(0);
   useEffect(() => {
-    if (engine.pinyinReady) {
-      setPinyinReady(true);
-      return;
-    }
+    if (engine.pinyinReady) return;
     let cancelled = false;
     void engine
       .ensurePinyin()
       .then(() => {
-        if (!cancelled) setPinyinReady(true);
+        if (!cancelled) setPinyinTick((tick) => tick + 1);
       })
       // 词典加载失败（动态 import 网络/解析错误）：保持非拼音搜索可用，
       // 不产生 unhandled rejection。
@@ -192,10 +193,10 @@ export default function App() {
   }, [engine]);
   const searchHits = useMemo(
     () => engine.search(query, Math.max(effectiveTabs.length, 50)),
-    // pinyinReady 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
+    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
     // lint 规则看不见它在回调里的用途，故显式豁免。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, query, effectiveTabs.length, pinyinReady]
+    [engine, query, effectiveTabs.length, pinyinTick]
   );
   const filteredTabs = useMemo(() => {
     if (!query.trim()) return effectiveTabs;
@@ -226,6 +227,13 @@ export default function App() {
   useEffect(() => {
     setSearchIndex(0);
   }, [query]);
+  // 搜索期间标签被关闭使 searchHits 收缩时，选中索引必须钳制回界内：
+  // 越界的 selectedSearchTabId 为 undefined，高亮消失且 Enter 无动作。
+  useEffect(() => {
+    setSearchIndex((current) =>
+      searchHits.length === 0 ? 0 : Math.min(current, searchHits.length - 1)
+    );
+  }, [searchHits.length]);
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -550,13 +558,20 @@ export default function App() {
     if (eligible.length === 0) return;
     let cancelled = false;
     for (const tab of eligible) langInFlightRef.current.add(tab.id);
-    void Promise.all(eligible.map((tab) => detectLanguage(tab.id))).then((langs) => {
-      for (const tab of eligible) langInFlightRef.current.delete(tab.id);
-      if (cancelled) return;
-      useTabStore
-        .getState()
-        .setLanguages(eligible.map((tab, index) => [tab.id, langs[index] ?? 'und']));
-    });
+    void Promise.all(eligible.map((tab) => detectLanguage(tab.id)))
+      .then((langs) => {
+        for (const tab of eligible) langInFlightRef.current.delete(tab.id);
+        if (cancelled) return;
+        useTabStore
+          .getState()
+          .setLanguages(eligible.map((tab, index) => [tab.id, langs[index] ?? 'und']));
+      })
+      .catch(() => {
+        // detectLanguage 内部有 'und' 兜底，此处兜住意外 rejection（polyfill
+        // 边界/API 异常路径）：必须清理 in-flight 登记，否则这些标签永远
+        // 失去再探测机会，且产生 unhandled rejection。
+        for (const tab of eligible) langInFlightRef.current.delete(tab.id);
+      });
     return () => {
       cancelled = true;
     };

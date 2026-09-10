@@ -3,6 +3,7 @@ import { rankForKeep } from '@/core/dup/DedupeByUrl';
 import { inspectUrl, webComparisonKey } from '@/core/url/UrlInspector';
 import { AllowanceLedger } from '@/platform/reuse/AllowanceLedger';
 import { ReusePolicy } from '@/platform/reuse/ReusePolicy';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 复用协调器：跟踪新标签生命周期，调度重复检测并以复用结果结算。
@@ -110,7 +111,9 @@ export class ReuseCoordinator {
     if (this.draining) return;
     this.draining = true;
     void this.drain()
-      .catch(console.error)
+      .catch((error) => {
+        logDegraded('reuse-coordinator', '复用调度循环异常', error);
+      })
       .finally(() => {
         this.draining = false;
       });
@@ -138,7 +141,8 @@ export class ReuseCoordinator {
       } catch (error) {
         // 单任务异常（典型：扫描与结算之间标签被用户关闭）不得中断整个调度循环，
         // 否则队列中其余脏任务会被永久滞留。按结算处理；若处理期间又收到更新则保留任务。
-        console.warn(`[ReuseCoordinator] inspect failed for tab ${tabId}`, error);
+        // 走诊断管道而非 console.warn：SW 内的 console 输出无法被 readAllDiagnostics 导出。
+        logDegraded('reuse-coordinator', `复用检查失败（标签 ${tabId}）`, error);
         if (!task.dirty) this.tasks.delete(tabId);
       }
     }
@@ -173,6 +177,10 @@ export class ReuseCoordinator {
         return 'wait';
       }
       case 'web': {
+        // 开关复核：scanWindow 之前开关可能已被关闭（setEnabled(false) 清空了
+        // tasks，但在途 inspect 不受影响），继续结算会把用户明确要求保留的
+        // 副本关闭——结算前再确认一次开关状态。
+        if (!this.enabled) return { action: 'keep' };
         const windowTabs = await this.deps.scanWindow(tab.windowId);
         const decision = this.policy.decide(tab, windowTabs, new Set(this.tasks.keys()));
         if (decision.kind === 'standalone') {
@@ -186,6 +194,13 @@ export class ReuseCoordinator {
         );
         const keep = rankForKeep(existing);
         if (!keep) return { action: 'keep' }; // 防御：既有标签已全部消失
+        // 关闭前复核：scanWindow 是异步全窗口查询，在途期间用户可能已把新标签
+        // 导航到别的页面（handleUpdated 已更新 latest）。仍按旧快照关闭会误关
+        // 用户正在浏览的标签——结算前用最新快照的 URL 复核一次，不一致即放弃。
+        const latest = this.tasks.get(tab.id)?.latest;
+        if (latest && webComparisonKey(latest.url, latest.pendingUrl) !== key) {
+          return { action: 'keep' };
+        }
         await this.deps.activate(keep.id);
         for (const candidate of existing) {
           if (candidate.id !== keep.id) await this.deps.close(candidate.id);

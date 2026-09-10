@@ -168,7 +168,7 @@ export const SettingsSchema = z.object({
   badgeMode: z.enum(['auto', 'count', 'dups', 'off']).default('auto'),
   /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
   contextMenusEnabled: z.boolean().default(true),
-  /** 地址栏命令（th <关键词>）总开关。 */
+  /** 地址栏命令（t <关键词>）总开关。 */
   omniboxEnabled: z.boolean().default(true),
   /** 开发者：指定站点禁用前端缓存（DNR 响应头强制 no-store；需网站访问权限）。 */
   noCacheEnabled: z.boolean().default(false),
@@ -275,16 +275,22 @@ export const SnapshotTabSchema = z.object({
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
 
 /** 会话快照（命名快照 + 关窗自动保存），本地优先、零账号。 */
-export const SnapshotSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  /** manual 用户手动命名 / auto 关窗自动保存 / archive 归档中心（关闭但留档）/ space 轻量空间（复用快照）。 */
-  origin: z.enum(['manual', 'auto', 'archive', 'space']),
-  createdAt: z.number(),
-  windowId: z.number().optional(),
-  tabCount: z.number().int().nonnegative(),
-  tabs: z.array(SnapshotTabSchema).max(SNAPSHOT_TABS_LIMIT)
-});
+export const SnapshotSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    /** manual 用户手动命名 / auto 关窗自动保存 / archive 归档中心（关闭但留档）/ space 轻量空间（复用快照）。 */
+    origin: z.enum(['manual', 'auto', 'archive', 'space']),
+    createdAt: z.number(),
+    windowId: z.number().optional(),
+    tabCount: z.number().int().nonnegative(),
+    tabs: z.array(SnapshotTabSchema).max(SNAPSHOT_TABS_LIMIT)
+  })
+  // tabCount 与 tabs.length 冗余，入库时锁定一致性：备份导入可构造
+  // tabCount=0 但 tabs 非空（或反之）的数据，UI 角标/列表计数与恢复条数会漂移。
+  .refine((snapshot) => snapshot.tabCount === snapshot.tabs.length, {
+    message: 'tabCount must equal tabs.length'
+  });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
 /**

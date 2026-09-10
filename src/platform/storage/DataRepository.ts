@@ -93,7 +93,9 @@ export class DataRepository<T> {
       const change = changes[this.key];
       if (!change) return;
       if (change.newValue === undefined) {
-        onChange(this.defaultValue);
+        // 经 schema 重解析出一份深拷贝：直接传 defaultValue 引用会让订阅方
+        // 拿到仓库持有的同一对象，将来任一订阅方原地修改数组即污染默认值。
+        onChange(this.schema.parse(this.defaultValue));
         return;
       }
       const parsed = this.schema.safeParse(change.newValue);

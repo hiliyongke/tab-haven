@@ -164,7 +164,13 @@ export async function addEntryToFolder(
         ? { ...folder, collapsed: false, items: [...folder.items, item] }
         : folder
     );
-    await foldersRepository.write(next);
+    const ok = await foldersRepository.write(next);
+    // write 返回 boolean：quota 超限时落盘失败，若照常返回 true，用户收到
+    // 「已添加」通知而条目重启即丢——按真实结果反馈。
+    if (!ok) {
+      notifyUser('Tabs', t('bg.addToFolderFailed'));
+      return false;
+    }
     return true;
   });
 }

@@ -24,6 +24,8 @@ import type { DataContext, DataState, MirrorState } from './types';
  */
 let importing = false;
 let watchersSuspended = false;
+/** 清空事务进行中：与导入事务互斥（导入进行中点清空会把已清空的存储回填）。 */
+let clearing = false;
 
 /**
  * 有「写入成功」路径的分区各自的降级记账 scope。
@@ -235,6 +237,10 @@ export function buildDataContext(
     isImporting: () => importing,
     setImporting: (value) => {
       importing = value;
+    },
+    isClearing: () => clearing,
+    setClearing: (value) => {
+      clearing = value;
     },
     setWatchersSuspended: (value) => {
       watchersSuspended = value;

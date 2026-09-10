@@ -3,7 +3,7 @@ import { pinIdentity } from '@/core/fixed/PinIdentity';
 import {
   activateTab as activateTabPlatform,
   createNewTab as createNewTabPlatform,
-  togglePinned as togglePinnedPlatform,
+  setPinned as setPinnedPlatform,
   queryCurrentWindowTabs,
   updateTabUrl
 } from '@/platform/tabs';
@@ -21,9 +21,9 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
       await ctx.writePins((current) =>
         dedupePins([...current.filter((p) => p.identity !== pin.identity), pin])
       );
-      // 同步把真实标签置为 Chrome 固定。
-      // togglePinned 为翻转语义：传入「当前未固定 false」→ 翻转为固定。
-      if (!tab.pinned) await togglePinnedPlatform(tab.id, false);
+      // 同步把真实标签置为 Chrome 固定（「确保固定」语义：实时值已固定则不动，
+      // 避免快照过期时翻转方向反转——快照说未固定、实际已固定会被翻成取消固定）。
+      await setPinnedPlatform(tab.id, true);
       // 标签变为固定后应从临时区（站点分组）立即移入置顶区：主动刷新快照
       // 消除对 pinned 事件回灌时序的依赖。
       tabSyncService.requestRefresh();
@@ -31,12 +31,11 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
 
     removePin: async (pin) => {
       await ctx.writePins((current) => current.filter((p) => p.id !== pin.id));
-      // 取消窗口内同身份标签的 Chrome 固定
+      // 取消窗口内同身份标签的 Chrome 固定（「确保取消固定」语义，理由同 addPin）。
       const tabs = await queryCurrentWindowTabs();
       for (const tab of tabs) {
-        if (tab.pinned && tab.url && pinIdentity(tab.url) === pin.identity) {
-          // togglePinned 为翻转语义：传入「当前已固定 true」→ 翻转为取消固定。
-          await togglePinnedPlatform(tab.id, true);
+        if (tab.url && pinIdentity(tab.url) === pin.identity) {
+          await setPinnedPlatform(tab.id, false);
         }
       }
       // 取消固定后标签应回到临时区（站点分组/未分组）显示：主动刷新快照，
@@ -65,8 +64,8 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
       });
       if (ranked[0]) {
         await activateTabPlatform(ranked[0].id);
-        // togglePinned 为翻转语义：传入「当前未固定 false」→ 翻转为固定。
-        if (!ranked[0].pinned) await togglePinnedPlatform(ranked[0].id, false);
+        // 「确保固定」语义：实时值已固定则不动（理由同 addPin）。
+        await setPinnedPlatform(ranked[0].id, true);
         return;
       }
       if (windowId === undefined) return;
@@ -74,8 +73,7 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
       // 豁免复用：显式打开的固定图标不允许被自动合并；须在导航前发放（同 openSavedItem）。
       await grantReuseAllowance(windowId, pin.url);
       await updateTabUrl(created.id, pin.url);
-      // togglePinned 为翻转语义：传入「当前未固定 false」→ 翻转为固定。
-      await togglePinnedPlatform(created.id, false);
+      await setPinnedPlatform(created.id, true);
     }
   };
 }

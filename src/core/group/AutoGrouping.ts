@@ -58,9 +58,17 @@ export function groupColorForLabel(label: string): string {
   return GROUP_COLOR_NAMES[idx]!;
 }
 
-/** 语言分组 section（siteKey 形如 lang-en）：未经过站点阈值过滤，需自行设下限。 */
+/**
+ * 语言分组 section（siteKey 形如 lang-en / lang-zh-CN / lang-unknown）。
+ *
+ * 语言 code 来自 tabs.detectLanguage（BCP-47，不含点），而真实站点的 siteKey
+ * 是注册域字符串（必含点）——注册域以 lang- 开头的站点（如 lang-8.com）此前
+ * 会被误判为语言分区。用「无点」排除域名形态，两个集合不再相交。
+ */
 function isLanguageSection(section: TemporarySection): boolean {
-  return section.kind === 'site' && section.siteKey.startsWith('lang-');
+  return (
+    section.kind === 'site' && section.siteKey.startsWith('lang-') && !section.siteKey.includes('.')
+  );
 }
 
 /** 标签 URL 的站点展示标签（子域.注册域 / 裸注册域）；无法解析（非 web 页）返回 null。 */

@@ -317,7 +317,20 @@ export const useUndoStore = create<UndoState>()((set, get) => {
           const settings = await settingsRepository.read();
           if (settings.persistUndo) {
             const disk = await undoRepository.read();
-            if (!disk.some((entry) => entry.id === latest.id)) return;
+            if (!disk.some((entry) => entry.id === latest.id)) {
+              // 磁盘查不到该批次（如批次在 persistUndo 关闭期间入栈、之后用户重新开启，
+              // 或已被另一页面撤销）：不得静默 return——「点了撤销没反应」会让用户
+              // 以为扩展卡住。批次留在内存栈中不弹出，用户至少明确知道本次未执行。
+              set({
+                toast: {
+                  message: i18n.t('errors.operationFailed'),
+                  canUndo: false,
+                  batchId: undefined
+                }
+              });
+              scheduleToastClear();
+              return;
+            }
           }
           await runUndo(latest, (current, retryBatch) => {
             // 恢复已发生：此时才出栈（按 id 精确移除，不用 popBatch——恢复期间
@@ -343,7 +356,18 @@ export const useUndoStore = create<UndoState>()((set, get) => {
           const settings = await settingsRepository.read();
           if (settings.persistUndo) {
             const disk = await undoRepository.read();
-            if (!disk.some((entry) => entry.id === batchId)) return;
+            if (!disk.some((entry) => entry.id === batchId)) {
+              // 同 undo：磁盘缺失时给出明确反馈而非静默返回。
+              set({
+                toast: {
+                  message: i18n.t('errors.operationFailed'),
+                  canUndo: false,
+                  batchId: undefined
+                }
+              });
+              scheduleToastClear();
+              return;
+            }
           }
           await runUndo(batch, (current, retryBatch) => {
             const remaining = current.filter((entry) => entry.id !== batchId);

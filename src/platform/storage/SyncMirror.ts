@@ -45,6 +45,13 @@ class SyncMirror {
   private retryAttempts = 0;
   private static readonly MAX_RETRY_ATTEMPTS = 5;
   private unloadFlushBound = false;
+  /**
+   * 写操作串行链：write 是「get 全部 → remove 过期块 → set 新块」的非原子三步，
+   * pagehide 立即 flush 与 500ms 去抖定时器（或重试定时器）的写可能在途并发，
+   * 两个写各自 get 后交错落盘会让旧 payload 覆盖新 payload（镜像整体回滚）。
+   * 全部 write 收口到本链后，同一时刻至多一个写在途，顺序确定。
+   */
+  private writeChain: Promise<void> = Promise.resolve();
 
   /**
    * 丢弃去抖窗口内尚未落盘的镜像与待重试任务。
@@ -108,8 +115,15 @@ class SyncMirror {
     }, delay);
   }
 
-  /** 立即写入镜像（分块 + 清理过期块）。 */
-  async write(payload: MirrorData): Promise<void> {
+  /** 立即写入镜像（分块 + 清理过期块）。经写串行链执行，防并发写交错回滚。 */
+  write(payload: MirrorData): Promise<void> {
+    const run = this.writeChain.then(() => this.performWrite(payload));
+    this.writeChain = run.catch(() => {});
+    return run;
+  }
+
+  /** write 的实际执行体（串行链内运行）。 */
+  private async performWrite(payload: MirrorData): Promise<void> {
     const area = browser.storage?.sync;
     if (!area) return;
     try {

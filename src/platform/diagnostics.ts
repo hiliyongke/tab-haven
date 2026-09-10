@@ -61,6 +61,9 @@ function schedulePersist(): void {
   }, PERSIST_DEBOUNCE_MS);
 }
 
+/** 清空代数：clearDiagnostics 每次递增，flush 落盘前据此丢弃已过期批次（清空后旧记录不得复活）。 */
+let clearEpoch = 0;
+
 /** 把本上下文待写增量并入共享环形缓冲（跨页锁内 read → append → trim → write）。 */
 async function flushDiagnostics(): Promise<void> {
   const batch = pending.splice(0);
@@ -70,8 +73,12 @@ async function flushDiagnostics(): Promise<void> {
     pending.unshift(...batch);
     return;
   }
+  const epoch = clearEpoch;
   try {
     await withCrossPageLock(DIAG_RMW_LOCK, async () => {
+      // 清空竞态：本批次在「清空」之后才拿到锁，写回会让清空前的旧记录复活。
+      // 批次的 clearEpoch 落后于当前值时直接丢弃（清空语义优先）。
+      if (epoch !== clearEpoch) return;
       const raw = (await area.get(STORAGE_KEY))[STORAGE_KEY];
       const existing = StoredEntriesSchema.safeParse(raw);
       const merged = [...(existing.success ? existing.data : []), ...batch];
@@ -126,6 +133,9 @@ export async function readAllDiagnostics(): Promise<DiagnosticEntry[]> {
 
 /** 清空全部诊断记录（本上下文内存 + 共享环形缓冲）。 */
 export async function clearDiagnostics(): Promise<void> {
+  // 先递增代数：在途 flush 落盘前发现代数落后即丢弃批次，
+  // 否则已拿到旧 batch、正等在锁上的 flush 会在 remove 之后写回旧记录。
+  clearEpoch += 1;
   buffer.length = 0;
   pending = [];
   if (persistTimer !== undefined) {

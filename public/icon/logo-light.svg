@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <!--
-    Tabs Logo v11 — 斜体 T + 长腿
-    透明背景；整个 T 向右倾斜 10°（italic 动感），竖画加长（44 → 56）。
+    Tabs Logo v11 — 斜体 T + 长腿（淡淡多巴胺底版）
+    奶油 → 蜜桃极淡渐变底 + 同款斜体珊瑚 T，浅色 UI 场景使用。
   -->
   <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF6E9"/>
+      <stop offset="100%" stop-color="#FFE7DF"/>
+    </linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#FF8A75"/>
       <stop offset="100%" stop-color="#FF6B5B"/>
@@ -14,12 +18,11 @@
     </linearGradient>
   </defs>
 
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+
   <g transform="translate(64 64) skewX(10) translate(-64 -64)">
-    <!-- 长腿：竖画先画，横画后画盖住顶部，接缝干净 -->
     <rect x="51" y="50" width="26" height="56" rx="7" fill="url(#stem)"/>
     <rect x="24" y="32" width="80" height="22" rx="11" fill="url(#bar)"/>
-
-    <!-- 奶油黄活力点 -->
     <circle cx="98" cy="25" r="7" fill="#FFC94D"/>
   </g>
 </svg>

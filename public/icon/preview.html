@@ -89,7 +89,7 @@
         border-radius: 14px;
         padding: 32px;
         text-align: center;
-        margin-bottom: 28px;
+        margin-bottom: 20px;
       }
       .on-dark img {
         width: 64px;
@@ -97,6 +97,24 @@
         border-radius: 14px;
       }
       .on-dark .label {
+        color: #9ca3af;
+        font-size: 12px;
+        margin-top: 10px;
+      }
+      .on-light {
+        background: #f5f6f8;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 32px;
+        text-align: center;
+        margin-bottom: 28px;
+      }
+      .on-light img {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+      }
+      .on-light .label {
         color: #9ca3af;
         font-size: 12px;
         margin-top: 10px;
@@ -125,14 +143,15 @@
   <body>
     <div class="wrap">
       <h1>Tabs · Logo 预览</h1>
-      <p class="sub">极简线条 · 层叠标签页 + 落定锚点</p>
+      <p class="sub">透明背景 · 斜体珊瑚 T · 长腿</p>
 
       <div class="hero">
         <img src="logo.svg" alt="Tabs logo" />
         <div>
           <div class="t">Tabs</div>
           <div class="d">
-            三层带标签耳的卡片 = 一眼识别「标签页」<br />水滴锚点 = 标签落定、随时找回
+            透明背景 + 向右倾斜 10° 的珊瑚 T<br />
+            腿加长、奶油黄活力点点缀
           </div>
         </div>
       </div>
@@ -162,16 +181,25 @@
 
       <div class="on-dark">
         <img src="logo.svg" alt="" />
-        <div class="label">深色背景下的效果</div>
+        <div class="label">透明版 · 明暗工具栏自适应</div>
+      </div>
+
+      <div class="on-light">
+        <img src="logo-light.svg" alt="" />
+        <div class="label">淡多巴胺底版 · 浅色 UI 用</div>
       </div>
 
       <div class="note">
         <b>设计说明</b><br />
-        · 底色 <code>#22C55E → #0EA5A5</code> 蓝绿渐变，清新专业。<br />
-        · 三张白色卡片由后到前递减、错落堆叠，每张带经典<b>标签耳</b>，一眼识别「标签页」。<br />
-        · 层次用描边 + 填充区分（非纯透明度），小尺寸下边缘更利落、不发糊。<br />
-        · 前景卡片上的<b>水滴锚点</b>，是「在当前页精准落定」的视觉落点，也是品牌记忆点。<br />
-        · 源文件 <code>public/icon/logo.svg</code> 为矢量母版，PNG 均由其无损导出。
+        · <b>透明背景</b>：<code>logo.svg</code> 无底色，珊瑚 T 直接透出工具栏背景色，
+        明暗环境天然自适应，不再有厚重的绿色方块。<br />
+        · 主体是<b>向右倾斜 10° 的珊瑚色粗 T</b>（italic 动感），腿加长（44 → 56），
+        整体重心更修长；16px 下依然清晰。<br />
+        · <b>奶油黄活力点</b>（#FFC94D）轻触横画右端，是多巴胺配色里唯一的多彩记忆点，
+        大尺寸才有、小尺寸自然隐去。<br />
+        · <b>备选</b>：<code>logo-light.svg</code> 提供「淡淡多巴胺底」版本（奶油 → 蜜桃极淡渐变），
+        供设置页 / 引导页等浅色 UI 场景使用。<br />
+        · 源文件均为矢量母版，PNG 由 <code>logo.svg</code> 无损导出。
       </div>
     </div>
   </body>

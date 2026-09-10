@@ -64,8 +64,8 @@ interface TabState {
   renameGroup: (groupId: number, title: string) => Promise<void>;
   /** 改变原生组颜色。 */
   recolorGroup: (groupId: number, color: string) => Promise<void>;
-  /** 移动原生组到指定索引（组排序）。 */
-  moveGroup: (groupId: number, index: number) => Promise<void>;
+  /** 移动原生组到指定索引（组排序）。返回是否成功（组可能已解散）。 */
+  moveGroup: (groupId: number, index: number) => Promise<boolean>;
   /** 乐观重排：拖拽松手后立即本地生效，不等浏览器事件回灌（详见实现处注释）。 */
   applyReorder: (sourceId: number, targetIndex: number) => void;
   /** 整组乐观重排（分区头拖拽）：同理，把一组标签整体落到目标索引。 */
@@ -152,7 +152,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
   },
 
   moveGroup: async (groupId, index) => {
-    await moveGroupPlatform(groupId, index);
+    return moveGroupPlatform(groupId, index);
   },
 
   /**

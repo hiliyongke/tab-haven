@@ -72,11 +72,35 @@ describe('snapshotStore 归档事务', () => {
 
     const count = await useSnapshotStore.getState().archiveCurrentWindow();
     expect(count).toBe(1);
-    expect(removeSpy).toHaveBeenCalledWith([11]);
+    // 逐条关闭并收集实际成功 id（而非数组整体 remove）：撤销登记必须与
+    // 真实关闭结果对齐，否则部分失败时会把从未关闭的标签再开一份。
+    expect(removeSpy).toHaveBeenCalledWith(11);
 
     const batches = useUndoStore.getState().batches;
     expect(batches).toHaveLength(1);
     expect(batches[0]!.kind).toBe('archive');
+    expect(batches[0]!.entries[0]!.url).toBe('https://a.com/');
+  });
+
+  it('部分标签关闭失败时，撤销只登记实际关闭的标签', async () => {
+    // 标签 12 在查询与关闭之间失效：tabs.remove(12) 抛错，只有 11 被关闭。
+    tabState.tabs = [
+      makeTab({ id: 11, url: 'https://a.com/', title: 'A' }),
+      makeTab({ id: 12, index: 1, url: 'https://b.com/', title: 'B' })
+    ];
+    const removeSpy = vi
+      .spyOn(fakeBrowser.tabs, 'remove')
+      .mockImplementation(((tabId: number) =>
+        tabId === 12 ? Promise.reject(new Error('no such tab')) : Promise.resolve()) as never);
+
+    const count = await useSnapshotStore.getState().archiveCurrentWindow();
+    expect(count).toBe(2);
+    expect(removeSpy).toHaveBeenCalledTimes(2);
+
+    // 撤销批次只含实际关闭的 11，不制造「从未关闭的 12」的重复标签。
+    const batches = useUndoStore.getState().batches;
+    expect(batches).toHaveLength(1);
+    expect(batches[0]!.entries).toHaveLength(1);
     expect(batches[0]!.entries[0]!.url).toBe('https://a.com/');
   });
 });

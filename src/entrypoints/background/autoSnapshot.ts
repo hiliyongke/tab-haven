@@ -77,7 +77,11 @@ export async function runAutoSnapshot(): Promise<void> {
 
     for (const win of normalWins) {
       if (typeof win.id !== 'number') continue;
-      const tabs = await collectWindowTabs(win.id).catch(() => [] as SnapshotTab[]);
+      const tabs = await collectWindowTabs(win.id).catch((error) => {
+        // 单窗口采集失败不得静默跳过：自动快照是唯一兜底链路，缺窗必须留痕。
+        logDegraded('auto-snapshot', `窗口 ${win.id} 标签采集失败，本轮跳过该窗口`, error);
+        return [] as SnapshotTab[];
+      });
       if (tabs.length === 0) continue;
       // 单窗口场景与上一份完全相同则跳过；多窗口时以首窗口差异判断（其余窗口仍需各自留档）。
       if (normalWins.length === 1 && previous !== null && signatureOf(tabs) === previous) continue;
@@ -88,10 +92,12 @@ export async function runAutoSnapshot(): Promise<void> {
         windowId: win.id,
         tabs
       });
-      await persistSnapshot(snapshot).catch((error) => {
+      const ok = await persistSnapshot(snapshot).catch((error) => {
         logDegraded('auto-snapshot', '定时自动快照写入失败', error);
+        return false;
       });
-      saved += 1;
+      // 仅真实落盘成功计入 saved：失败也自增会让「saved===0 直接返回」的语义失真。
+      if (ok) saved += 1;
     }
 
     if (saved === 0) return;

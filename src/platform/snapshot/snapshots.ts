@@ -10,6 +10,7 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * 快照库 read-modify-write 跨页锁名。
@@ -209,7 +210,12 @@ export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Pr
   if (target === undefined) return 0;
 
   // 1. 目标窗口已打开的 URL 集合（web 比较键）
-  const existingTabs = await browser.tabs.query({ windowId: target }).catch(() => []);
+  const existingTabs = await browser.tabs.query({ windowId: target }).catch((error) => {
+    // 查询失败不得静默按空集合处理：恢复会为窗口内已打开的 URL 重复新建标签。
+    // 留痕后仍按空集继续（恢复是显式用户操作，宁多建不缺建，且用户可撤销）。
+    logDegraded('snapshots', `快照恢复：查询目标窗口 ${target} 标签失败，按无重复处理`, error);
+    return [];
+  });
   const existingKeys = new Set<string>();
   for (const raw of existingTabs) {
     const key = webComparisonKey(raw.url, raw.pendingUrl);

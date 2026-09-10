@@ -186,9 +186,10 @@ export function CommandPalette({
 
   // 命令集收缩（标签关闭 / 过滤变窄）时钳制选中索引：越界时高亮消失、
   // aria-activedescendant 指向不存在的项、Enter 无动作。
+  // 依赖 commands 引用而非 length：等长替换（过滤词微调）同样需要钳制。
   useEffect(() => {
     setIndex((current) => (commands.length === 0 ? 0 : Math.min(current, commands.length - 1)));
-  }, [commands.length]);
+  }, [commands]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {

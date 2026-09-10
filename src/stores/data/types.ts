@@ -60,6 +60,9 @@ export interface DataContext {
   startValueWatchers: () => void;
   isImporting: () => boolean;
   setImporting: (value: boolean) => void;
+  /** 清空事务是否进行中（与导入事务互斥，见 clearAllData / importData）。 */
+  isClearing: () => boolean;
+  setClearing: (value: boolean) => void;
   setWatchersSuspended: (value: boolean) => void;
 }
 

@@ -44,20 +44,33 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
             if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
             if (parsedSettings.success) effectiveSettings = parsedSettings.data;
           }
-          await ctx.repos.seeded.write(true);
           // 镜像恢复写入失败不阻断启动（本地数据仍在），但必须留痕，否则「新设备没恢复出来」无从排查。
+          let restoreWritesOk = true;
           if (effectiveFolders !== folders) {
             const ok = await ctx.repos.folders.write(effectiveFolders);
-            if (!ok) ctx.reportPersistenceFailure('dataStore', '镜像恢复的固定文件夹写入失败');
+            if (!ok) {
+              ctx.reportPersistenceFailure('dataStore', '镜像恢复的固定文件夹写入失败');
+              restoreWritesOk = false;
+            }
           }
           if (effectivePins !== pins) {
             const ok = await ctx.repos.pins.write(effectivePins);
-            if (!ok) ctx.reportPersistenceFailure('dataStore', '镜像恢复的固定图标写入失败');
+            if (!ok) {
+              ctx.reportPersistenceFailure('dataStore', '镜像恢复的固定图标写入失败');
+              restoreWritesOk = false;
+            }
           }
           if (effectiveSettings !== settings) {
             const ok = await ctx.repos.settings.write(effectiveSettings);
-            if (!ok) ctx.reportPersistenceFailure('dataStore', '镜像恢复的设置写入失败');
+            if (!ok) {
+              ctx.reportPersistenceFailure('dataStore', '镜像恢复的设置写入失败');
+              restoreWritesOk = false;
+            }
           }
+          // seeded 必须在恢复数据全部落盘成功之后写：若先置位而回写失败，
+          // 下次启动不再拉取镜像，新设备的恢复数据永久丢失。pull 为 null
+          // （通道不可用/镜像损坏）时同样不置位——保持下次启动重试的机会。
+          if (mirror && restoreWritesOk) await ctx.repos.seeded.write(true);
         }
         ctx.set({
           folders: effectiveFolders,

@@ -60,7 +60,10 @@ export function createCoalescedWriter<T, R>(repo: {
     // 故返回时旧值必不再写入（在途批次的最终落盘值是它开始前的最后一个 target，非最新排队值）。
     hasQueued = false;
     queued = undefined;
-    return inflight ? inflight.then(() => undefined) : Promise.resolve();
+    // 契约：cancel 不吞错 —— 注入的 repo.write 若会 reject（当前生产实现不会，
+    // DataRepository.write 内部捕获并返回 boolean），此处 catch 兜住，
+    // 防止调用方 `await cancel()` 抛错或产生 unhandled rejection。
+    return inflight ? inflight.then(() => undefined).catch(() => undefined) : Promise.resolve();
   };
 
   return writer;

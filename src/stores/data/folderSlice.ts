@@ -12,6 +12,7 @@ import {
 } from '@/core/commands/folderCommands';
 import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
+import { NO_GROUP } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { structuralSignature } from '@/core/util/signature';
 import { logDegraded } from '@/platform/diagnostics';
@@ -214,7 +215,12 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
         return;
       }
       // 2) 窗口内精确 URL 匹配（与 UI 侧判定同一口径，见 core/fixed/ItemMatch）
-      const exact = tabs.find((tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito);
+      // 排除已绑定其他条目的标签：否则同一标签同时服务两个条目，违反
+      // 「一个 tab 只服务一个条目」不变量，直到下次 reconcile 才按插入序修复。
+      const boundTabIds = new Set(Object.values(bindings));
+      const exact = tabs.find(
+        (tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito && !boundTabIds.has(tab.id)
+      );
       if (exact) {
         const result = await mutateSession((session) => ({
           itemTabBindings: { ...session.itemTabBindings, [item.id]: exact.id }
@@ -311,6 +317,9 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
             itemUrlMatchesTab(item.url, candidate) &&
             !candidate.incognito &&
             !candidate.pinned &&
+            // 排除已属于其他原生组的标签：tabs.group 是移动语义，会把用户
+            // 手动建立的组拆散（标签被拖进新转换的组）。用户手动分组不可打扰。
+            candidate.groupId === NO_GROUP &&
             !seen.has(candidate.id)
         );
         if (tab) {

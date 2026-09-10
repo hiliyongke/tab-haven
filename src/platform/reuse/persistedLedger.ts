@@ -50,6 +50,10 @@ export function createPersistedAllowanceLedger(): PersistedAllowanceLedger {
       pendingFlush = snapshot;
       return;
     }
+    // 即时 fire-and-forget 落盘：storage 对同一 key 的写入按调用顺序应用，
+    // 本上下文内天然串行，无需额外串行链（串行链反而会引入「消费后镜像
+    // 仍含已消费令牌」的微任务窗口——SW 恰在窗口内重启会复活令牌）。
+    // 跨上下文的整快照覆盖由 AllowanceLedger.restore 的合并语义（取 max tokens）兜底。
     void sessionArea.set({ [ALLOWANCE_KEY]: snapshot }).catch(() => {
       // 配额/存储异常：镜像尽力而为，失败静默（内存账本仍有效）
     });

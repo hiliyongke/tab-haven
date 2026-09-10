@@ -92,7 +92,14 @@ export class TabSyncService {
         // 依据最新快照启停「发声校准轮询」（先于广播，让 onSnapshot 立即获得最新值）。
         syncAudiblePolling(tabs);
         this.generation += 1;
-        onSnapshot({ tabs, groups, windowId: tabs[0]?.windowId, generation: this.generation });
+        try {
+          onSnapshot({ tabs, groups, windowId: tabs[0]?.windowId, generation: this.generation });
+        } catch (error) {
+          // 订阅方渲染回调异常不是查询失败：若与查询同处一个 try，会被计入
+          // failures 并按指数退避反复重试，形成「错误来源在订阅方、却按查询
+          // 失败空转」的循环。单独捕获留痕，不污染退避状态。
+          logDegraded('tab-sync', '快照订阅方处理异常', error);
+        }
       } catch (error) {
         failures += 1;
         // 必须进诊断导出：查询持续失败时面板会静默停在旧数据上，无从排查。

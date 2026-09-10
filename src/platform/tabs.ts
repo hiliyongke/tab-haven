@@ -154,6 +154,26 @@ export async function togglePinned(tabId: number, currentlyPinned: boolean): Pro
   }
 }
 
+/**
+ * 「确保固定」语义：把标签置为目标固定状态（true 固定 / false 取消）。
+ *
+ * 与 togglePinned 的翻转语义不同：调用方意图是「确保固定/确保取消固定」时，
+ * 翻转基准若取过期快照会方向反转（快照说未固定、实际已固定 → 翻转反而取消固定，
+ * 且无后续校正）。以浏览器实时值为准，仅在不一致时才写。
+ */
+export async function setPinned(tabId: number, pinned: boolean): Promise<boolean> {
+  try {
+    const live = await browser.tabs.get(tabId).catch(() => undefined);
+    if (live && live.pinned === pinned) return true;
+    await browser.tabs.update(tabId, { pinned });
+    return true;
+  } catch (error) {
+    logDegraded('tabs', '设置固定状态失败', error);
+    // 标签可能已关闭
+    return false;
+  }
+}
+
 export async function setGroupCollapsed(groupId: number, collapsed: boolean): Promise<void> {
   try {
     await browser.tabGroups.update(groupId, { collapsed });
@@ -447,13 +467,15 @@ export async function removeGroup(groupId: number): Promise<'removed' | 'missing
   return 'missing';
 }
 
-/** 移动原生组到指定索引（组排序，P1⑤）。 */
-export async function moveGroup(groupId: number, index: number): Promise<void> {
+/** 移动原生组到指定索引（组排序，P1⑤）。返回是否成功（组可能已解散）。 */
+export async function moveGroup(groupId: number, index: number): Promise<boolean> {
   try {
     await browser.tabGroups.move(groupId, { index });
+    return true;
   } catch (error) {
     logDegraded('tabs', '移动分组失败', error);
     // 标签组可能已解散
+    return false;
   }
 }
 

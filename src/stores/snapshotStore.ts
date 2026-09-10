@@ -1,8 +1,7 @@
 import { create } from 'zustand';
-import { browser } from 'wxt/browser';
 import i18n from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
-import { queryCurrentWindowTabs } from '@/platform/tabs';
+import { closeTabs, queryCurrentWindowTabs, queryCurrentWindowGroups } from '@/platform/tabs';
 import { sendMessageWithAck } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import { logFailure } from '@/platform/diagnostics';
@@ -16,7 +15,6 @@ import {
   SNAPSHOTS_RMW_LOCK
 } from '@/platform/snapshot/snapshots';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
-import { queryCurrentWindowGroups } from '@/platform/tabs';
 
 /**
  * 快照 store：命名快照的读取、保存、恢复、删除、重命名，以及归档与 OneTab 导入。
@@ -83,12 +81,14 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const tabs = await queryCurrentWindowTabs();
     const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
-    const win = await browser.windows.getLastFocused().catch(() => undefined);
     const snapshot = buildSnapshot({
       name: name ?? '',
       fallbackName: i18n.t('snapshots.defaultName'),
       origin: 'manual',
-      windowId: win?.id,
+      // windowId 必须取实际采集窗口：标签来自 currentWindow 查询，而
+      // getLastFocused 在 popup/多窗口场景可能指向另一个窗口，记录与实际
+      // 内容不一致会让未来「恢复回原窗口」的逻辑直接出错。
+      windowId: tabs[0]?.windowId,
       tabs: snapTabs
     });
     const next = await persistSnapshot(snapshot);
@@ -99,12 +99,11 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const tabs = await queryCurrentWindowTabs();
     const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
-    const win = await browser.windows.getLastFocused().catch(() => undefined);
     const snapshot = buildSnapshot({
       name: name ?? '',
       fallbackName: i18n.t('snapshots.defaultSpaceName'),
       origin: 'space',
-      windowId: win?.id,
+      windowId: tabs[0]?.windowId,
       tabs: snapTabs
     });
     const next = await persistSnapshot(snapshot);
@@ -146,21 +145,24 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       await sendMessageWithAck({ type: 'skip-auto-save-once', windowId });
     }
     if (closableIds.length > 0) {
-      // 先登记撤销再关闭：归档也是一次「关闭动作」，关闭后必须存在可撤销入口，
-      // 否则用户只能去归档列表翻找（关窗即失联，违背可信关闭原则）。
+      // 先关闭拿到实际成功 id，再按真实结果登记撤销：tabs.remove 整体失败时
+      // （任一 id 在查询与关闭之间失效会整体 reject 或部分失败），若此前已把
+      // 全部 closable 标签入栈，撤销会把从未关闭的标签再开一份——撤销从安全网
+      // 变成重复标签制造机。与 closeWithUndo 的口径保持一致。
+      const closedIds = await closeTabs(closableIds);
       const closing = tabs.filter(
-        (tab) => typeof tab.id === 'number' && closableIds.includes(tab.id!)
+        (tab) => typeof tab.id === 'number' && closedIds.includes(tab.id)
       );
-      const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
-      await useUndoStore
-        .getState()
-        .recordClosedBatch(closing, 'archive', groupNameById)
-        .catch((error) => {
-          // 撤销登记失败不阻断归档（快照已经落盘，数据不会丢），但必须留痕。
-          logFailure('snapshotStore', '归档撤销登记失败，本次归档仅能从快照恢复', error);
-        });
-
-      await browser.tabs.remove(closableIds).catch(() => undefined);
+      if (closing.length > 0) {
+        const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
+        await useUndoStore
+          .getState()
+          .recordClosedBatch(closing, 'archive', groupNameById)
+          .catch((error) => {
+            // 撤销登记失败不阻断归档（快照已经落盘，数据不会丢），但必须留痕。
+            logFailure('snapshotStore', '归档撤销登记失败，本次归档仅能从快照恢复', error);
+          });
+      }
     }
     return snapTabs.length;
   },

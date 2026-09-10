@@ -21,7 +21,7 @@ export default defineConfig({
     description: '__MSG_extDescription__',
     default_locale: 'en',
     minimum_chrome_version: '114',
-    omnibox: { keyword: 'th' },
+    omnibox: { keyword: 't' },
     // options_ui 由 WXT 检测 options 入口自动生成（含 page），此处仅覆盖 open_in_tab
     options_ui: { open_in_tab: true },
     permissions: [

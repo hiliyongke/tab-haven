@@ -126,6 +126,9 @@ export function sendMessage(message: Message): void {
   void browser.runtime.sendMessage(message).catch(() => {});
 }
 
+/** ack 等待上限：SW 收到消息但不响应时（挂起/卡死）sendMessage 永不 settle，必须超时截断。 */
+const ACK_TIMEOUT_MS = 5000;
+
 /**
  * 发送一条需要 SW 应答的消息，返回是否被确认处理。
  *
@@ -133,10 +136,17 @@ export function sendMessage(message: Message): void {
  * tabs.create 完成，否则 SW 休眠唤醒慢于事件派发时，onCreated 先于豁免入账执行，
  * 显式打开的标签会被复用引擎误合并。SW 不可达时返回 false（调用方按降级处理，
  * 最坏退化为豁免失效，与历史行为一致）。
+ *
+ * 超时保护：SW 收到消息、返回 true 但从不应答时 Promise 永不 settle，
+ * 串行 await 它的调用链（豁免发放 → tabs.create）会被整体挂起。
+ * 超时按「未确认」降级，最坏退化为豁免失效而非管线停摆。
  */
 export async function sendMessageWithAck(message: Message): Promise<boolean> {
   try {
-    const response: unknown = await browser.runtime.sendMessage(message);
+    const response: unknown = await Promise.race([
+      browser.runtime.sendMessage(message),
+      new Promise((resolve) => setTimeout(() => resolve(undefined), ACK_TIMEOUT_MS))
+    ]);
     return (response as { ok?: boolean } | undefined)?.ok === true;
   } catch {
     return false;
@@ -174,12 +184,26 @@ export function onRuntimeMessage(handler: (message: Message) => void): () => voi
  */
 export function watchPendingActions(handler: (action: PendingAction) => void): () => void {
   const sessionArea = browser.storage?.session;
+  // 已消费动作的 at 去重集（有界）：初始 get 与 onChanged 双通道可能读到同一批
+  // 动作（SW 侧 RMW 合并写入时 newValue 含面板已消费过的旧动作），协议层必须自防重，
+  // 不能依赖消费方各自实现 at 去重。
+  const consumedAts = new Set<number>();
   /** 执行并清除队列：执行即清，杜绝历史动作随下次写入重放。 */
   const consume = (list: unknown[]): void => {
     for (const action of list) {
       // 队列里的每一项都可能是任意形状，统一走挂起动作 schema 校验。
       const parsed = PendingActionSchema.safeParse(action);
-      if (parsed.success) handler(parsed.data);
+      if (!parsed.success) continue;
+      const at = parsed.data.at;
+      // 无 at 的动作无法去重（协议允许缺省），照常执行。
+      if (at !== undefined && consumedAts.has(at)) continue;
+      if (at !== undefined) {
+        consumedAts.add(at);
+        // 有界：去重集只服务「面板挂载前后」的短暂窗口，超限整体重置，
+        // 最坏退化为重复执行一次（消费方仍有自己的 at 兜底）。
+        if (consumedAts.size > 64) consumedAts.clear();
+      }
+      handler(parsed.data);
     }
     void sessionArea?.remove(PENDING_ACTIONS_KEY).catch(() => {});
   };

@@ -36,6 +36,8 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   /** 正在恢复的快照 id：恢复会新建大量标签（耗时数百 ms），期间禁用该行按钮防双击并发。 */
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  /** 正在删除的快照 id：删除确认按钮连点防护（与 restoringId 同口径）。 */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const ordered = useMemo(
     () => [...snapshots].sort((a, b) => b.createdAt - a.createdAt),
@@ -143,10 +145,16 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
 
   const performDelete = async (id: string) => {
     setConfirmDeleteId(null);
+    // 互斥：确认弹窗按钮快速连点会并发触发两次 deleteSnapshot（同 id 双写竞态）。
+    // 与 handleRestore 的 restoringId、handleSave 的 saveInFlight 同一口径。
+    if (deletingId !== null) return;
+    setDeletingId(id);
     try {
       await deleteSnapshot(id);
     } catch {
       notify(t('errors.operationFailed'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
