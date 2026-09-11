@@ -120,7 +120,6 @@
 
   /* 语义表面（供少量自定义组件直接引用） */
   --surface: #ffffff;
-  --surface-muted: rgba(255, 255, 255, 0.62);
   /* 页面画布：暖调米灰（暖底 + 绿强调的成熟配色结构，与白色表面层次清晰） */
   --canvas: #f5f4f0;
   --border-subtle: #dde0dd;
@@ -131,7 +130,6 @@
   /* 焦点环：直接取品牌 500 实色 —— 此前用 rgba(品牌, 0.32) 合成后仅 1.55:1，
      键盘焦点在浅色下几乎不可见。实色对画布达 5.00:1。 */
   --ring: var(--c-brand-500);
-  --drop-line: #347554;
   --shadow-tint: 38 55 47;
   --count-badge-bg: var(--c-brand-500);
   --c-on-accent: #ffffff;
@@ -147,9 +145,6 @@
 /* 阴影工具类：供组件以 className 引用（替代 shadow-sm/lg/xl） */
 .elev-1 {
   box-shadow: var(--elev-1);
-}
-.elev-2 {
-  box-shadow: var(--elev-2);
 }
 .elev-3 {
   box-shadow: var(--elev-3);
@@ -202,12 +197,10 @@
   --count-badge-bg: var(--c-brand-700);
 
   --surface: #282e2b;
-  --surface-muted: rgba(40, 46, 43, 0.72);
   --canvas: #1d2220;
   --border-subtle: #36413b;
   /* 控件边框：深色下需提亮而非压暗（对 --surface 达 3.2:1） */
   --border-control: #747b77;
-  --drop-line: #70bd8d;
   --shadow-tint: 0 0 0;
   /* 深色下强调色整体提亮（亮绿/亮红），前景改用深色文字保证 WCAG 对比度 */
   --c-on-accent: #1d2220;
@@ -241,7 +234,6 @@
      （#dde0dd）留在冷蓝画布上，是「换了皮没换骨」的观感来源。
      仅调装饰线（无对比度要求）；控件边框 --border-control 不动。 */
   --border-subtle: #dbe3ec;
-  --drop-line: #3a6ea8;
 }
 :root[data-theme='dark'][data-hue='ocean'] {
   --c-brand-50: #1e2c3a;
@@ -263,11 +255,9 @@
   --c-gray-800: #dce5ec;
   --c-gray-900: #e4eaf0;
   --surface: #272d34;
-  --surface-muted: rgba(39, 45, 52, 0.72);
   --canvas: #1c2126;
   --border-subtle: #353d46;
   --border-control: #747a80;
-  --drop-line: #85b4dc;
   --c-on-accent: #1c2126;
 }
 
@@ -285,7 +275,6 @@
   --c-gray-100: #e9e5f2;
   --canvas: #f4f2f8;
   --border-subtle: #e0dce8;
-  --drop-line: #6f4ba6;
 }
 :root[data-theme='dark'][data-hue='violet'] {
   --c-brand-50: #292137;
@@ -307,11 +296,9 @@
   --c-gray-800: #e0dee4;
   --c-gray-900: #e8e6eb;
   --surface: #2c2833;
-  --surface-muted: rgba(44, 40, 51, 0.72);
   --canvas: #211e26;
   --border-subtle: #3a3542;
   --border-control: #79757e;
-  --drop-line: #a98fd6;
   --c-on-accent: #211e26;
 }
 
@@ -331,7 +318,6 @@
   --c-gray-100: #f1e7d8;
   --canvas: #f8f3ec;
   --border-subtle: #e8e0d2;
-  --drop-line: #b85f22;
 }
 :root[data-theme='dark'][data-hue='sunset'] {
   --c-brand-50: #362920;
@@ -353,11 +339,9 @@
   --c-gray-800: #e5ded9;
   --c-gray-900: #ebe6e2;
   --surface: #302a26;
-  --surface-muted: rgba(48, 42, 38, 0.72);
   --canvas: #241f1c;
   --border-subtle: #403832;
   --border-control: #7c7773;
-  --drop-line: #dcab7a;
   --c-on-accent: #241f1c;
 }
 
@@ -375,7 +359,6 @@
   --c-gray-100: #e8e8e8;
   --canvas: #f4f4f4;
   --border-subtle: #e0e0e0;
-  --drop-line: #4a524a;
 }
 :root[data-theme='dark'][data-hue='mono'] {
   --c-brand-50: #26282a;
@@ -397,11 +380,9 @@
   --c-gray-800: #dee2e6;
   --c-gray-900: #e6eaed;
   --surface: #292a2c;
-  --surface-muted: rgba(41, 42, 44, 0.72);
   --canvas: #1e1f20;
   --border-subtle: #37393c;
   --border-control: #767779;
-  --drop-line: #b0b8c0;
   --c-on-accent: #1e1f20;
 }
 
@@ -427,10 +408,8 @@
   --c-gray-900: #1a1a1a;
   --canvas: Canvas;
   --surface: Canvas;
-  --surface-muted: color-mix(in srgb, Canvas 72%, transparent);
   --border-subtle: #dadce0;
   --border-control: #868887;
-  --drop-line: #5f6368;
   --count-badge-bg: var(--c-brand-500);
   --c-on-accent: #ffffff;
 }
@@ -456,10 +435,8 @@
   --c-gray-900: #f1f3f4;
   --canvas: Canvas;
   --surface: Canvas;
-  --surface-muted: color-mix(in srgb, Canvas 72%, transparent);
   --border-subtle: #3c4043;
   --border-control: #6e6f70;
-  --drop-line: #bdc1c6;
   --count-badge-bg: var(--c-brand-700);
   --c-on-accent: #202124;
 }
@@ -882,12 +859,6 @@ html.theme-transition *::after {
   color: var(--c-brand-700);
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-}
-
-/* 固定/激活态：用品牌绿表达「已开启」 */
-.row-action.is-on {
-  background: var(--c-brand-100);
-  color: var(--c-brand-600);
 }
 
 /* 危险操作（关闭/删除）：悬停/键盘聚焦转砖红。
@@ -1802,12 +1773,6 @@ body.dnd-dragging .row-item .row-actions {
   }
   .section-head {
     gap: 2px;
-  }
-  .fixed-folder-actions {
-    gap: 0;
-  }
-  .fixed-folder-action {
-    width: 22px;
   }
 }
 

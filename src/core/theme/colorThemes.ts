@@ -32,8 +32,3 @@ export const COLOR_THEME_IDS = COLOR_THEMES.map((theme) => theme.id) as [
   ColorTheme,
   ...ColorTheme[]
 ];
-
-/** 色号 → 十六进制色值（设置页色块与预览用）。 */
-export const COLOR_THEME_HEX: Record<ColorTheme, string> = Object.fromEntries(
-  COLOR_THEMES.map((theme) => [theme.id, theme.hex])
-) as Record<ColorTheme, string>;
