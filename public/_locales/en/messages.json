@@ -7,18 +7,6 @@
     "message": "A local-first, account-free tab workbench: turn scattered tabs into an organized space, and always let you find your way back.",
     "description": "Extension long description shown in the store"
   },
-  "actionDefaultTitle": {
-    "message": "Tabs",
-    "description": "Toolbar icon hover tooltip"
-  },
-  "sidePanelTitle": {
-    "message": "Tabs Tab Panel",
-    "description": "Side panel title"
-  },
-  "popupTitle": {
-    "message": "Tabs Quick Switcher",
-    "description": "Popup quick switcher title"
-  },
   "commandFocusSearch": {
     "message": "Focus tab search",
     "description": "Command description for the keyboard shortcut"

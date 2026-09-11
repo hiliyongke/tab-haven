@@ -20,7 +20,8 @@
     "check:privacy": "node scripts/privacy-check.mjs",
     "check:i18n": "node scripts/i18n-dead-keys.mjs",
     "check": "npm run typecheck && npm run lint && npm run check:i18n && npm run check:ui && npm run test && npm run build && npm run check:privacy",
-    "zip": "wxt zip"
+    "zip": "wxt zip",
+    "crx": "wxt build && node scripts/pack-crx.mjs"
   },
   "packageManager": "pnpm@11.1.3",
   "engines": {

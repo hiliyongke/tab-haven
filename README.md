@@ -140,6 +140,7 @@ src/
 | `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                                         |
 | `pnpm build` / `pnpm build:compat`                               | 生产构建（标准版 / 兼容版）                                                       |
 | `pnpm zip`                                                       | 打包为上架用 ZIP                                                                  |
+| `pnpm crx`                                                       | 打包离线分发用 CRX3（复用 `.output/tabs.pem` 签名；上架仍用 zip）                 |
 | `pnpm check`                                                     | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
 | `pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm test:watch` | 类型 / 规范 / 测试                                                                |
 | `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案键 / 隐私回归                                                      |
