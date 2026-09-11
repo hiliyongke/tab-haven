@@ -35,8 +35,6 @@ export interface SearchControllerOptions {
   pinyinSearch: boolean;
   noCacheEnabled: boolean;
   noCachePatterns: readonly string[];
-  /** 命中项被确认（Enter）时的激活动作。 */
-  onActivate: (tabId: number) => void;
 }
 
 export interface SearchController {
@@ -47,19 +45,22 @@ export interface SearchController {
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   /** 过滤后的标签集（非过滤态恒等于入参 tabs）。 */
   filteredTabs: TabRecord[];
-  /** 当前键盘选中的命中项（供列表高亮）。 */
-  selectedSearchTabId: number | undefined;
+  /**
+   * 命中序列（按相关度）。
+   * 键盘漫游在搜索态的序列来源 —— 漫游本身由 useListNavigation 统一承担
+   * （空态也能漫游，两态共用一套 ↑↓/Enter 语义）。
+   */
+  searchHitTabIds: number[];
   /** 命中「开发者禁缓存」规则的标签 id 集合（空规则时为空集单例）。 */
   noCacheTabIds: ReadonlySet<number>;
+  /** 搜索框按键：仅 Esc（清空 + 失焦）；↑↓ / Enter 由 useListNavigation 承担。 */
   handleSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export function useSearchController(options: SearchControllerOptions): SearchController {
-  const { tabs, t, searchAllWindows, pinyinSearch, noCacheEnabled, noCachePatterns, onActivate } =
-    options;
+  const { tabs, t, searchAllWindows, pinyinSearch, noCacheEnabled, noCachePatterns } = options;
 
   const [query, setQuery] = useState('');
-  const [searchIndex, setSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // 全窗口搜索数据源（设置开启且输入非空时，异步补充其他窗口标签；默认仅当前窗口）
@@ -139,50 +140,16 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     return effectiveTabs.filter((tab) => hitIds.has(tab.id));
   }, [query, searchHits, effectiveTabs]);
 
-  const selectedSearchTabId = searchHits[searchIndex]?.tabId;
+  /** 命中序列（按相关度）：键盘漫游在搜索态的序列来源，见 useListNavigation。 */
+  const searchHitTabIds = useMemo(() => searchHits.map((hit) => hit.tabId), [searchHits]);
 
-  // 输入变化时选中项回到首个命中
-  useEffect(() => {
-    setSearchIndex(0);
-  }, [query]);
-
-  // 搜索期间标签被关闭使 searchHits 收缩时，选中索引必须钳制回界内：
-  // 越界的 selectedSearchTabId 为 undefined，高亮消失且 Enter 无动作。
-  useEffect(() => {
-    setSearchIndex((current) =>
-      searchHits.length === 0 ? 0 : Math.min(current, searchHits.length - 1)
-    );
-  }, [searchHits.length]);
-
-  const onActivateRef = useRef(onActivate);
-  useEffect(() => {
-    onActivateRef.current = onActivate;
-  }, [onActivate]);
-
-  const handleSearchKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        if (searchHits.length === 0) return;
-        event.preventDefault();
-        const delta = event.key === 'ArrowDown' ? 1 : -1;
-        setSearchIndex((current) => (current + delta + searchHits.length) % searchHits.length);
-        return;
-      }
-      if (event.key === 'Enter') {
-        const tabId = searchHits[searchIndex]?.tabId;
-        if (tabId === undefined) return;
-        event.preventDefault();
-        onActivateRef.current(tabId);
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setQuery('');
-        searchInputRef.current?.blur();
-      }
-    },
-    [searchHits, searchIndex]
-  );
+  const handleSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setQuery('');
+      searchInputRef.current?.blur();
+    }
+  }, []);
 
   const clearQuery = useCallback(() => setQuery(''), []);
 
@@ -193,7 +160,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     isFiltering,
     searchInputRef,
     filteredTabs,
-    selectedSearchTabId,
+    searchHitTabIds,
     noCacheTabIds,
     handleSearchKeyDown
   };

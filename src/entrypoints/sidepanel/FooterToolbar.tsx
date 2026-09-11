@@ -11,18 +11,28 @@ export interface FooterToolbarProps {
   /** 可折叠分区数（原生组 + 站点组），为 0 时折叠按钮禁用。 */
   collapsibleCount: number;
   allCollapsed: boolean;
-  quickRegrouping: boolean;
   activeTabId: number | undefined;
   /** 休眠中的标签数（>0 时显示唤醒全部按钮）。 */
   discardedCount: number;
+  /** 可清理的重复标签数（>0 时显示清理重复入口，徽章显示待清理数）。 */
+  duplicateCount: number;
+  /** 浏览器多选（Ctrl+Click）的标签数（≥2 时显示批量关闭入口）。 */
+  highlightedCount: number;
   /** 撤销栈中可恢复的批次数量（>0 时护盾显示计数，强化「一切可反悔」的信任感）。 */
   undoBatchCount: number;
   /** 会话快照数量（>0 时快照按钮提示可恢复）。 */
   snapshotCount: number;
+  /** 重排进行中：期间禁用入口防重复触发。 */
+  quickRegrouping: boolean;
   onToggleAllSections: () => void;
   onDiscardInactive: () => void;
   onWakeAll: () => void;
+  /** 重排临时区分组（打散现有分组后按当前方式重新归拢，可撤销）。 */
   onQuickRegroup: () => void;
+  /** 一键清理重复标签（保留每网址的激活/固定/最早者，可撤销）。 */
+  onCleanDuplicates: () => void;
+  /** 关闭浏览器多选的标签（Ctrl+Click 选中后批量关闭）。 */
+  onCloseHighlighted: () => void;
   onLocateActive: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
@@ -44,15 +54,19 @@ export function FooterToolbar(props: FooterToolbarProps) {
     tabCount,
     collapsibleCount,
     allCollapsed,
-    quickRegrouping,
     activeTabId,
     discardedCount,
+    duplicateCount,
+    highlightedCount,
     undoBatchCount,
     snapshotCount,
+    quickRegrouping,
     onToggleAllSections,
     onDiscardInactive,
     onWakeAll,
     onQuickRegroup,
+    onCleanDuplicates,
+    onCloseHighlighted,
     onLocateActive,
     onOpenHistory,
     onOpenSnapshots,
@@ -88,6 +102,8 @@ export function FooterToolbar(props: FooterToolbarProps) {
           disabled={collapsibleCount === 0}
           onClick={onToggleAllSections}
         />
+        {/* 重排分组：分组乱了之后唯一的一键修复入口 ——
+            虽然低频，但价值不可替代（曾被下沉到命令面板，用户要求恢复常驻）。 */}
         <IconButton
           icon={Icons.quickRegroup}
           title={t('footer.quickRegroupHint')}
@@ -102,6 +118,28 @@ export function FooterToolbar(props: FooterToolbarProps) {
           disabled={activeTabId === undefined}
           onClick={onLocateActive}
         />
+        {/* 清理重复：仅在存在可清理项时出现（与「唤醒全部」同款条件出现模式），
+            徽章直接显示待清理数量，点按即清理并进撤销栈。 */}
+        {duplicateCount > 0 && (
+          <IconButton
+            icon={Icons.copyX}
+            title={t('duplicates.cleanHint')}
+            label={footerLabels ? t('footer.labelCleanDuplicates') : undefined}
+            badge={duplicateCount}
+            onClick={onCleanDuplicates}
+          />
+        )}
+        {/* 关闭选中的标签：浏览器 Ctrl+Click 多选 ≥2 个时出现 ——
+            此前多选只有视觉高亮、没有操作出口（半成品承诺）。 */}
+        {highlightedCount >= 2 && (
+          <IconButton
+            icon={Icons.close}
+            title={t('selection.closeSelected', { count: highlightedCount })}
+            label={footerLabels ? t('footer.labelCloseSelected') : undefined}
+            badge={highlightedCount}
+            onClick={onCloseHighlighted}
+          />
+        )}
         <GroupDivider />
         {/* 组 2 · 内存管理：休眠全部 / 唤醒全部（条件出现） */}
         <IconButton

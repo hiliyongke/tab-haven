@@ -98,7 +98,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
   }, [tabs, folder.items]);
 
   /** 弹窗状态：edit 改名 / convert 转原生组 / delete 删除确认。
-   *  删除必须有确认 —— 收藏夹是用户长期积累的资产，直删不可撤销。 */
+   *  删除必须有确认 —— 文件夹是用户长期积累的资产，直删不可撤销。 */
   const [dialog, setDialog] = useState<
     { type: 'edit' } | { type: 'convert' } | { type: 'delete' } | null
   >(null);

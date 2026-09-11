@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import {
   DndContext,
   DragOverlay,
@@ -9,11 +11,13 @@ import {
   pointerWithin,
   useSensor,
   useSensors,
+  type Announcements,
   type Collision,
   type CollisionDetection,
   type DragCancelEvent,
   type DragEndEvent,
-  type DragStartEvent
+  type DragStartEvent,
+  type ScreenReaderInstructions
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { KeyboardCode } from '@dnd-kit/core';
@@ -140,6 +144,45 @@ export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]):
   return closestCenter({ ...args, droppableContainers: anyRow });
 }
 
+/** 拖拽元素的可播报名称：分组/标签用 title，文件夹用 name。 */
+function dragLabel(data: DragData | undefined): string {
+  if (!data) return '';
+  if ('title' in data) return data.title;
+  return 'name' in data ? data.name : '';
+}
+
+/**
+ * 构建读屏播报配置（导出供测试驱动）。
+ *
+ * dnd-kit 内置指令与公告是英文，中文界面下读屏用户会听到与界面语言不一致的
+ * 提示。这里注入 i18n 文案（指令 + 抓取/移动/放置/取消）。
+ * 导出理由同 dragCollisionDetection：这些回调藏在 DndContext 内部，
+ * 不导出就没有任何回归保护。
+ */
+export function buildDragAccessibility(t: TFunction): {
+  screenReaderInstructions: ScreenReaderInstructions;
+  announcements: Announcements;
+} {
+  return {
+    screenReaderInstructions: {
+      draggable: t('dnd.instructions')
+    },
+    announcements: {
+      onDragStart: ({ active }) =>
+        t('dnd.grabbed', { title: dragLabel(active.data.current as DragData | undefined) }),
+      onDragOver: ({ over }) =>
+        over
+          ? t('dnd.over', { title: dragLabel(over.data.current as DragData | undefined) })
+          : undefined,
+      onDragEnd: ({ over }) =>
+        over
+          ? t('dnd.dropped', { title: dragLabel(over.data.current as DragData | undefined) })
+          : t('dnd.droppedNowhere'),
+      onDragCancel: () => t('dnd.cancelled')
+    }
+  };
+}
+
 /** 根据拖拽数据生成 DragOverlay 的轻量跟随内容（导出理由同 dragCollisionDetection）。 */
 export function buildDragOverlay(data: DragData): ReactNode {
   switch (data.type) {
@@ -216,6 +259,10 @@ export function DndRoot({
     useSensor(KeyboardSensor, KEYBOARD_SENSOR_CONFIG)
   );
   const [overlay, setOverlay] = useState<ReactNode | null>(null);
+  const { t } = useTranslation();
+
+  /** 读屏播报本地化（构建逻辑见 buildDragAccessibility，导出供测试驱动）。 */
+  const accessibility = useMemo(() => buildDragAccessibility(t), [t]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as DragData | undefined;
@@ -243,6 +290,7 @@ export function DndRoot({
   return (
     <DndContext
       sensors={sensors}
+      accessibility={accessibility}
       collisionDetection={dragCollisionDetection}
       measuring={DROPPABLE_MEASURING}
       autoScroll={AUTO_SCROLL_CONFIG}

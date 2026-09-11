@@ -11,7 +11,7 @@ import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import type { DataContext, DataState } from './types';
 
-/** 固定图标切片：永久固定图标的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
+/** 磁贴切片：常驻磁贴的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
 export function createPinsSlice(ctx: DataContext): Partial<DataState> {
   return {
     addPin: async (tab) => {

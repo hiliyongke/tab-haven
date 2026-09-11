@@ -32,7 +32,7 @@ import { BINDINGS_SCOPE } from './context';
 import type { AddTabsToFolderResult, DataContext, DataState } from './types';
 
 /**
- * 文件夹切片：收藏夹的增删改/拖入/排序、固定条目打开与跨组移动、原生组 ↔ 固定文件夹转换、
+ * 文件夹切片：文件夹的增删改/拖入/排序、固定条目打开与跨组移动、原生组 ↔ 文件夹转换、
  * 以及每次标签事件后的挂起转正 + 绑定维护。
  */
 export function createFolderSlice(ctx: DataContext): Partial<DataState> {

@@ -50,6 +50,27 @@ export function EmptyTabs() {
   );
 }
 
+/** 数据初始化失败（自动重试仍失败）：说明 + 手动重试出口，替代无出口的骨架屏。 */
+export function LoadErrorState({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <EmptyState
+      icon={<Icon d={Icons.infoAlert} className="h-4.5 w-4.5" />}
+      title={t('errors.loadFailedTitle')}
+      hint={t('errors.loadFailedHint')}
+      action={
+        <button
+          type="button"
+          className="mt-1 rounded-lg border border-accent-300 bg-accent-50 px-3 py-1.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+          onClick={onRetry}
+        >
+          {t('errors.retry')}
+        </button>
+      }
+    />
+  );
+}
+
 /** 搜索无结果空态（可一键清空搜索）。 */
 export function NoSearchResults(props: { onClear: () => void }) {
   const { t } = useTranslation();

@@ -17,7 +17,11 @@ export function CategoryModule({
   className,
   setNodeRef,
   isOver,
-  'aria-label': ariaLabel
+  'aria-label': ariaLabel,
+  icon,
+  accent,
+  onToggle,
+  collapsed
 }: {
   title: string;
   count: number;
@@ -31,6 +35,12 @@ export function CategoryModule({
   isOver?: boolean;
   /** a11y 标签（如 "固定空间"）。 */
   'aria-label'?: string;
+  /** 标题前的强调色条（固定空间用品牌色标识「长期资产归口」）。 */
+  accent?: string;
+  /** 折叠相关：仅固定空间外壳使用；不传则头不可折叠、children 恒渲染。 */
+  icon?: ReactNode;
+  onToggle?: () => void;
+  collapsed?: boolean;
 }) {
   return (
     <section
@@ -40,8 +50,16 @@ export function CategoryModule({
         'section-card' + (className ? ' ' + className : '') + (isOver ? ' is-drop-target' : '')
       }
     >
-      <SectionHead title={title} count={count} action={action} />
-      {children}
+      <SectionHead
+        title={title}
+        count={count}
+        action={action}
+        accent={accent}
+        icon={icon}
+        onToggle={onToggle}
+        expanded={onToggle ? !collapsed : undefined}
+      />
+      {!collapsed && children}
     </section>
   );
 }

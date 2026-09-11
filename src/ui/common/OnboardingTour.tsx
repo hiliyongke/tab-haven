@@ -10,8 +10,18 @@ const TOTAL = 3;
  * 首启交互式引导：仅首次展示（settings.onboarded=false）。
  * 三步讲清核心价值（列表已就绪 / 固定空间 / 键盘直达）+ 功能发现清单，
  * 完成后调用 onDone 写回 onboarded 标记，不再出现。
+ *
+ * Esc 走 onDismiss（仅本次会话关闭、不落盘）：误按 Esc 不会永久失去引导，
+ * 下次打开面板仍会再展示，直到用户显式「跳过 / 完成」。
  */
-export function OnboardingTour({ onDone }: { onDone: () => void }) {
+export function OnboardingTour({
+  onDone,
+  onDismiss
+}: {
+  onDone: () => void;
+  /** Esc 关闭（不写回 onboarded 标记）。 */
+  onDismiss: () => void;
+}) {
   const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const last = step === TOTAL;
@@ -19,7 +29,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
   const titleId = useId();
   // 与弹窗族统一：焦点陷阱 + 关闭后焦点恢复；
   // 不加遮罩点击关闭，避免误点直接写回 onboarded 标记。
-  useModalA11y(panelRef, onDone);
+  useModalA11y(panelRef, onDismiss);
 
   // 原生 <dialog> 默认 hidden，必须显式 showModal() 才会显示并进入真正的模态。
   useEffect(() => {
@@ -35,19 +45,19 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
   // container-type 层叠上下文。
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       role="presentation"
     >
       <dialog
         ref={panelRef}
-        className="relative m-0 w-full max-w-[calc(100%-16px)] rounded-xl border border-gray-200 bg-surface p-5 shadow-lg sm:max-w-sm"
+        className="modal-panel elev-3 relative m-0 w-full max-w-[calc(100%-16px)] rounded-xl border border-gray-200 bg-surface p-5 sm:max-w-sm"
         aria-labelledby={titleId}
         onCancel={(event) => {
-          // 阻止原生「直接关闭」是为了走统一的 onDone 出口（写回 onboarded 标记）；
-          // 但仍需显式 close()，否则 ESC 只是标记已读而弹窗依旧停在前台。
+          // Esc 已由 useModalA11y preventDefault 并走 onDismiss；此分支只兜底
+          // 原生 cancel 事件路径（防御性），同样走 onDismiss 不落盘。
           event.preventDefault();
           panelRef.current?.close();
-          onDone();
+          onDismiss();
         }}
       >
         <p className="text-3xs font-medium tracking-wide text-accent-600">
@@ -99,7 +109,8 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
         </div>
 
         {/* 进度点：可点击跳步（向导常见交互）。改用 button 并补 aria-label，
-            读屏用户可获得「转到第 n 步」而非被 aria-hidden 整块吞掉。 */}
+            读屏用户可获得「转到第 n 步」而非被 aria-hidden 整块吞掉。
+            tour-dot 透明扩区把 6px 视觉高度撑到 ≥24px 命中（WCAG 2.5.8）。 */}
         <div className="mt-4 flex justify-center gap-1">
           {Array.from({ length: TOTAL }, (_, i) => (
             <button
@@ -109,7 +120,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
               aria-label={t('onboarding.goToStep', { step: i + 1 })}
               aria-current={i + 1 === step ? 'step' : undefined}
               className={
-                'h-1.5 rounded-full transition-base ' +
+                'tour-dot h-1.5 rounded-full transition-base ' +
                 (i + 1 === step ? 'w-4 bg-accent-500' : 'w-1.5 bg-gray-200 hover:bg-gray-300')
               }
             />

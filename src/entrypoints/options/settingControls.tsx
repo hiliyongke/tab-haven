@@ -29,47 +29,36 @@ export function SectionCount({ count }: { count?: number }) {
   );
 }
 
-/** 设置分区：collapsible 时折叠为「高级设置」抽屉（details/summary）；forceOpen 用于搜索时展开。 */
+/**
+ * 设置分区：标题 + 计数 + 卡片容器。
+ *
+ * 曾支持 `collapsible`（details/summary 折叠「高级设置」抽屉）。该能力已移除：
+ * 折叠的唯一价值是缩短滚动长度，而侧栏目录（SettingsOutline）已经提供了直达导航，
+ * 折叠只剩代价 —— 用户看不见里面有什么（折叠态没有任何内容提示）。
+ * `id` 供目录锚点定位，`scroll-mt-*` 让锚点跳转后标题不贴顶。
+ */
 export function Section({
   title,
   children,
-  collapsible = false,
   count,
-  forceOpen
+  id
 }: {
   title: string;
   children: ReactNode;
-  collapsible?: boolean;
   count?: number;
-  /** 搜索时强制展开折叠分区；缺省不传保持非受控。 */
-  forceOpen?: boolean;
+  /** 目录锚点 id（通常传 titleKey）。 */
+  id?: string;
 }) {
-  if (!collapsible) {
-    return (
-      <section className="mb-6 sm:mb-8">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-600">
-          <span>{title}</span>
-          <SectionCount count={count} />
-        </h2>
-        <div className="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200 bg-surface">
-          {children}
-        </div>
-      </section>
-    );
-  }
   return (
-    <details className="group mb-6 sm:mb-8" open={forceOpen}>
-      <summary className="mb-3 flex cursor-pointer items-center justify-between text-sm font-semibold tracking-wide text-gray-600 select-none">
-        <span className="flex items-center gap-2">
-          {title}
-          <SectionCount count={count} />
-        </span>
-        <Icon d={Icons.chevron} className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
-      </summary>
+    <section id={id} className="mb-6 scroll-mt-6 sm:mb-8">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-600">
+        <span>{title}</span>
+        <SectionCount count={count} />
+      </h2>
       <div className="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200 bg-surface">
         {children}
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -130,7 +119,8 @@ export function WhitelistEditor({
                 aria-label={t('settings.whitelistRemove')}
                 title={t('settings.whitelistRemove')}
                 onClick={() => onChange(value.filter((v) => v !== entry))}
-                className="text-gray-500 hover:text-gray-600"
+                /* whitelist-remove 透明扩区：12px 图标命中区远低于 WCAG 2.5.8 的 24px */
+                className="whitelist-remove text-gray-500 hover:text-gray-600"
               >
                 <Icon d={Icons.close} className="h-3 w-3" />
               </button>

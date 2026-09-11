@@ -173,7 +173,7 @@ const COLOR_THEME_LABELS: Record<ColorTheme, string> = {
 export function buildSections(
   t: (key: string, options?: Record<string, unknown>) => string,
   sidePanelSide: string
-): { titleKey: string; collapsible?: boolean; specs: SettingSpec[] }[] {
+): { titleKey: string; specs: SettingSpec[] }[] {
   return [
     {
       titleKey: 'settings.appearance',
@@ -243,7 +243,8 @@ export function buildSections(
           labelKey: 'settings.density',
           options: [
             { value: 'compact', label: t('settings.densityCompact') },
-            { value: 'cozy', label: t('settings.densityCozy') }
+            { value: 'cozy', label: t('settings.densityCozy') },
+            { value: 'large', label: t('settings.densityLarge') }
           ]
         },
         {
@@ -394,12 +395,6 @@ export function buildSections(
               onChange={(next) => update('discardWhitelist', next)}
             />
           )
-        },
-        {
-          kind: 'toggle',
-          key: 'discardNotifyEnabled',
-          labelKey: 'settings.discardNotify',
-          hintKey: 'settings.discardNotifyHint'
         }
       ]
     },
@@ -456,6 +451,19 @@ export function buildSections(
           key: 'rowActionsVisible',
           labelKey: 'settings.rowActionsVisible',
           hintKey: 'settings.rowActionsVisibleHint'
+        }
+      ]
+    },
+    {
+      // 低频分区：通知开关、角标模式、容量与开发者项集中在此。
+      // 不再折叠（曾用 details 抽屉）：侧栏目录已提供直达导航，折叠只会隐藏内容。
+      titleKey: 'settings.advanced',
+      specs: [
+        {
+          kind: 'toggle',
+          key: 'discardNotifyEnabled',
+          labelKey: 'settings.discardNotify',
+          hintKey: 'settings.discardNotifyHint'
         },
         {
           kind: 'select',
@@ -468,14 +476,7 @@ export function buildSections(
             { value: 'dups', label: t('settings.badgeDups') },
             { value: 'off', label: t('settings.badgeOff') }
           ]
-        }
-      ]
-    },
-    {
-      // 低频分区默认折叠（details/summary），搜索命中时由 forceOpen 自动展开。
-      titleKey: 'settings.advanced',
-      collapsible: true,
-      specs: [
+        },
         {
           kind: 'toggle',
           key: 'reuseNotifyEnabled',

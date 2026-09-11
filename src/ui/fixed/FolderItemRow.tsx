@@ -102,7 +102,7 @@ export const FolderItemRow = memo(function FolderItemRow({
             aria-label={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
             onClick={() => void toggleMute(runtimeTab)}
           >
-            <Icon d={runtimeTab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
+            <Icon d={runtimeTab.muted ? Icons.volumeOff : Icons.volumeOn} className="h-3.5 w-3.5" />
           </button>
         )}
         {runtimeTab &&

@@ -50,7 +50,7 @@ function SectionListImpl({
   showUrl?: boolean;
   autoScrollActive?: boolean;
   closeOnMiddleClick?: boolean;
-  density?: 'compact' | 'cozy';
+  density?: 'compact' | 'cozy' | 'large';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
   highlightedIds?: ReadonlySet<number>;
@@ -135,7 +135,8 @@ function SectionListImpl({
 
   return (
     <SortableContext items={sortableSectionKeys} strategy={verticalListSortingStrategy}>
-      <div className="flex flex-col gap-1">
+      {/* data-density 下发给分组标题等非行内文字：大字号档位需要同步放大导航级文字 */}
+      <div className="flex flex-col gap-1" data-density={density}>
         {sections.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
             <Icon d={Icons.search} className="h-6 w-6 text-gray-300" />

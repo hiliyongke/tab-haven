@@ -62,8 +62,8 @@ export const TabRow = memo(function TabRow({
   autoScrollActive?: boolean;
   /** 中键点击关闭标签。 */
   closeOnMiddleClick?: boolean;
-  /** 列表密度：compact 紧凑 / cozy 宽松。 */
-  density?: 'compact' | 'cozy';
+  /** 列表密度：compact 紧凑 / cozy 宽松 / large 大字号。 */
+  density?: 'compact' | 'cozy' | 'large';
   /** 是否显示分屏「拆 / 伴」标记。 */
   showSplitBadges?: boolean;
   /** 来源树模式下的缩进层级（0 为根）。 */
@@ -151,7 +151,7 @@ export const TabRow = memo(function TabRow({
             aria-label={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
             onClick={() => onToggleMute(tab)}
           >
-            <Icon d={tab.muted ? Icons.muted : Icons.mute} className="h-3.5 w-3.5" />
+            <Icon d={tab.muted ? Icons.volumeOff : Icons.volumeOn} className="h-3.5 w-3.5" />
           </button>
         )}
         <button

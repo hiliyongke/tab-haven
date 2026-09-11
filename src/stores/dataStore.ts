@@ -12,7 +12,7 @@ import type { AddTabsToFolderResult, DataState } from './data/types';
 export type { AddTabsToFolderResult, DataState };
 
 /**
- * 固定空间数据 store：文件夹、永久固定图标、设置、折叠状态。
+ * 固定空间数据 store：文件夹、常驻磁贴、设置、折叠状态。
  * 持久化经 DataRepository（chrome.storage.local + zod + 坏数据隔离）。
  *
  * 该文件为组合根：共享的写入/降级/镜像/监视器逻辑集中在 `data/context.ts`，

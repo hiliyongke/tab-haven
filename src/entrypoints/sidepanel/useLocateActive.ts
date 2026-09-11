@@ -5,6 +5,26 @@ import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
 
 /**
+ * 给指定标签行播放一次定位脉冲（复用 `.is-located` 的既有动画）。
+ *
+ * 与 useLocateActive 共用同一套 DOM 约定（`data-tabs-tab-id` → 内部 `.row-item`），
+ * 因此放在同文件：两处一旦分家，选择器改动就会漏掉另一处。
+ * 用途：批量操作后高亮「被保留的项」（如清理重复后让用户看到每个域名留下了哪一个）。
+ */
+export function pulseTabRows(tabIds: readonly number[]): void {
+  for (const tabId of tabIds) {
+    const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${tabId}"]`);
+    const row = target?.querySelector<HTMLElement>('.row-item') ?? target;
+    if (!row) continue;
+    row.classList.remove('is-located');
+    // 强制重排以重播动画（与 useLocateActive 内同款技巧）
+    void row.offsetWidth;
+    row.classList.add('is-located');
+    window.setTimeout(() => row.classList.remove('is-located'), 1200);
+  }
+}
+
+/**
  * 「定位激活标签」hook：滚动到当前激活标签所在行并高亮。
  *
  * 从 `App.tsx` 抽出的原因：这是全文件最重的一段过程式逻辑（含递归重试），

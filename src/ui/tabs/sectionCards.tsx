@@ -51,7 +51,7 @@ function RowList({
   showUrl?: boolean;
   autoScrollActive?: boolean;
   closeOnMiddleClick?: boolean;
-  density?: 'compact' | 'cozy';
+  density?: 'compact' | 'cozy' | 'large';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
   depths?: ReadonlyMap<number, number>;
@@ -95,16 +95,21 @@ function RowList({
   if (useVirtual) {
     // itemSize 为估算起步值：VirtualRowList 首行挂载后会实测校准，
     // 字号 / 密度 / 副标题开关调整不再要求同步改这里的公式。
-    // 单行 = text-xs 行高 16px + 垂直 padding（compact 4px / cozy 8px）→ 20 / 24；
-    // showUrl 副标题（10px leading-tight ≈ 12.5px）取整 +13 → 33 / 37。
-    const itemSize = (density === 'cozy' ? 24 : 20) + (showUrl ? 13 : 0);
+    // 单行 = 行高 + 垂直 padding（compact 16+4 / cozy 16+8 / large 19+14）；
+    // showUrl 副标题 compact/cozy 取 +13（10px leading-tight），large 取 +16（12px）。
+    const itemSize =
+      (density === 'cozy' ? 24 : density === 'large' ? 33 : 20) +
+      (showUrl ? (density === 'large' ? 16 : 13) : 0);
+    // 虚拟列表高度随面板可用高度自适应（上限 720px）：固定 480px 会让大分区
+    // 变成「列表里套列表」的第三层滚动区，滚轮停在上面时页面滚不动的误判。
+    const virtualMaxHeight = Math.max(240, Math.min(720, window.innerHeight - 240));
     return (
       <>
         {sortPaused && <p className="virtual-notice">{t('tabs.largeListNotice')}</p>}
         <VirtualRowList
           tabs={tabs}
           itemSize={itemSize}
-          maxHeight={480}
+          maxHeight={virtualMaxHeight}
           activeTabId={activeTabId}
           autoScrollActive={autoScrollActive}
           searchActiveTabId={searchActiveTabId}
@@ -268,7 +273,7 @@ function PlayingIndicator({
         callbacks.onActivate(playingTab.id);
       }}
     >
-      <Icon d={Icons.mute} className="h-3 w-3" />
+      <Icon d={Icons.volumeOn} className="h-3 w-3" />
       <span className="section-media-label">{t('status.playing')}</span>
       <span className="section-media-dot" aria-hidden="true" />
     </button>
@@ -365,7 +370,7 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
               rowProps.callbacks.onSaveGroupAsFolder?.(section.groupId);
             }}
           >
-            <Icon d={Icons.saveToFolder} className="h-3.5 w-3.5" />
+            <Icon d={Icons.folderPlus} className="h-3.5 w-3.5" />
           </button>
         )}
         <button

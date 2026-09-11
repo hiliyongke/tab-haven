@@ -3,7 +3,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
  * 固定概念心智地图：用紧凑的三段卡片把「常驻磁贴 /
- * 收藏夹 / 浏览器固定标签」的区别与适用场景讲清，消解 5 种固定语义的认知混乱。
+ * 文件夹 / 浏览器固定标签」的区别与适用场景讲清，消解 5 种固定语义的认知混乱。
  * 纯展示组件，不依赖任何业务状态。
  */
 export function FixedConceptsMap({ className }: { className?: string }) {
@@ -11,7 +11,7 @@ export function FixedConceptsMap({ className }: { className?: string }) {
   const items = [
     { icon: Icons.pin, name: t('fixedMap.tilesName'), how: t('fixedMap.tilesHow') },
     { icon: Icons.folder, name: t('fixedMap.collName'), how: t('fixedMap.collHow') },
-    { icon: Icons.shield, name: t('fixedMap.nativeName'), how: t('fixedMap.nativeHow') }
+    { icon: Icons.anchor, name: t('fixedMap.nativeName'), how: t('fixedMap.nativeHow') }
   ];
   return (
     <div className={className}>

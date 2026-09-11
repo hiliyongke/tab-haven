@@ -36,7 +36,7 @@ export interface SectionCardProps {
   showUrl?: boolean;
   autoScrollActive?: boolean;
   closeOnMiddleClick?: boolean;
-  density?: 'compact' | 'cozy';
+  density?: 'compact' | 'cozy' | 'large';
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
   highlightedIds?: ReadonlySet<number>;

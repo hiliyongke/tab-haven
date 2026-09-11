@@ -61,7 +61,7 @@ export const RowItem = memo(
       isHighlighted?: boolean;
       isSearchActive?: boolean;
       isDropTarget?: boolean;
-      density?: 'compact' | 'cozy';
+      density?: 'compact' | 'cozy' | 'large';
       indent?: number;
       onClick?: () => void;
       onAuxClick?: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -109,6 +109,7 @@ export const RowItem = memo(
     const className =
       'group relative flex items-center gap-1 rounded pl-1.5 pr-1.5 py-[2px] text-xs transition-base row-item' +
       (density === 'cozy' ? ' density-cozy' : '') +
+      (density === 'large' ? ' density-large' : '') +
       (isActive ? ' is-active' : '') +
       (isMediaPlaying ? ' is-media-playing' : '') +
       (isDiscarded ? ' opacity-60' : '') +

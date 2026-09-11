@@ -23,7 +23,7 @@ import { COLOR_THEME_IDS } from '@/core/theme/colorThemes';
 export const FOLDER_ITEMS_LIMIT = 500;
 /** 固定文件夹数量上限。 */
 export const FOLDERS_LIMIT = 200;
-/** 永久固定图标数量上限。 */
+/** 常驻磁贴数量上限。 */
 export const PINS_LIMIT = 200;
 /** 折叠站点记录条数上限。 */
 export const SITE_COLLAPSE_LIMIT = 2_000;
@@ -93,12 +93,13 @@ export const SettingsSchema = z.object({
   // —— 外观 appearance ——
   /** 顶部固定磁贴条（固定空间）显示开关。 */
   showPinnedStrip: z.boolean().default(true),
-  /** 列表密度：compact 紧凑 / cozy 宽松。 */
-  density: z.enum(['compact', 'cozy']).default('cozy'),
+  /** 列表密度：compact 紧凑 / cozy 宽松 / large 大字号（低视力可读性档位）。 */
+  density: z.enum(['compact', 'cozy', 'large']).default('cozy'),
   /** 标签行标题下方显示完整网址。 */
   showUrl: z.boolean().default(false),
-  /** 底部工具区可选文字模式：开启后图标旁显示功能名称（默认仅图标 + 悬停提示）。 */
-  footerLabels: z.boolean().default(false),
+  /** 底部工具区文字模式：新装默认开启，图标旁显示功能名称（窄面板自动退回纯图标；
+   *  熟悉后可关闭。默认仅图标 + 悬停提示会让新用户面对一排不可辨识的按钮）。 */
+  footerLabels: z.boolean().default(true),
   /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
   showSplitBadges: z.boolean().default(true),
   /** 站点组强调色：auto 按域名/favicon 自动配色 / mono 统一中性色。 */
@@ -132,7 +133,10 @@ export const SettingsSchema = z.object({
    * 默认关闭（PRD FR-D5.2 / 原则 8：自动化能力不默认接管用户数据）。
    * 注意：默认值只作用于新装用户，已存设置的用户读的是自己的存储值。
    */
-  autoSaveSnapshots: z.boolean().default(false),
+  /** 自动保存（关窗 + 定时快照）：默认开启 —— 这是纯保护性能力（只保存、
+   *  不改动任何标签），且「关窗后标签全丢」是最大痛点，出厂不保护等于放弃安全网。
+   *  容量由 maxAutoSnapshots（10 条滚动保留）约束，不会无限增长。 */
+  autoSaveSnapshots: z.boolean().default(true),
   /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
   autoSnapshotIntervalMin: z.number().int().min(5).max(720).default(30),
   /** 自动快照最大保留数（超出淘汰最旧）。 */
@@ -194,7 +198,7 @@ export const SettingsSchema = z.object({
   /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
   conceptsSeen: z.boolean().default(false),
   /**
-   * 是否把固定集合与设置镜像到浏览器账号同步通道（chrome.storage.sync）。
+   * 是否把文件夹与设置镜像到浏览器账号同步通道（chrome.storage.sync）。
    *
    * **默认关闭**。开启后这些数据会经由浏览器厂商的同步通道离开本机——
    * 与「本地优先」的定位相悖，且此前无任何开关、用户完全无感知。

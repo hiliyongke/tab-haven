@@ -12,7 +12,8 @@ import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
 import { clearDiagnostics, exportDiagnostics, readAllDiagnostics } from '@/platform/diagnostics';
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
-import { openUrlInTab } from '@/platform/navigation';
+import { openAboutPage, openUrlInTab } from '@/platform/navigation';
+import { SettingsOutline, type OutlineItem } from '@/entrypoints/options/SettingsOutline';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
 import { CapabilitiesGuide, PresetsPanel } from '@/entrypoints/options/settingPresets';
@@ -205,6 +206,41 @@ export function SettingsPage() {
   // 必须在下面的 early return 之前调用（Hooks 规则：调用顺序须每次渲染一致）。
   const sections = useMemo(() => buildSections(t, sidePanelSide), [t, sidePanelSide]);
 
+  const isSearching = settingsSearch.trim().length > 0;
+
+  /** 过滤后的分区（visible 判定 + 搜索命中）；目录与正文渲染共用同一份结果。 */
+  const visibleSections = useMemo(() => {
+    const q = settingsSearch.trim().toLowerCase();
+    const matchesSearch = (spec: SettingSpec): boolean => {
+      if (!q) return true;
+      const label = t(spec.labelKey).toLowerCase();
+      const hint = spec.kind !== 'custom' && spec.hintKey ? t(spec.hintKey).toLowerCase() : '';
+      return label.includes(q) || hint.includes(q) || spec.labelKey.toLowerCase().includes(q);
+    };
+    return sections.map((section) => ({
+      section,
+      specs: section.specs
+        .filter((spec) => ('visible' in spec && spec.visible ? spec.visible(settings) : true))
+        .filter(matchesSearch)
+    }));
+  }, [sections, settings, settingsSearch, t]);
+
+  /** 目录条目：静态区块 + 当前可见的设置分区（被搜索过滤掉的分区不进目录，避免点了没反应）。 */
+  const outlineItems = useMemo<OutlineItem[]>(() => {
+    const dynamic: OutlineItem[] = visibleSections
+      .filter((entry) => entry.specs.length > 0)
+      .map(({ section }) => ({ id: section.titleKey, label: t(section.titleKey) }));
+    return [
+      { id: 'presets.title', label: t('presets.title') },
+      { id: 'settings.capabilitiesGuide', label: t('settings.capabilitiesGuide') },
+      { id: 'fixedMap.title', label: t('fixedMap.title') },
+      ...dynamic,
+      { id: 'settings.shortcuts', label: t('settings.shortcuts') },
+      { id: 'settings.data', label: t('settings.data') },
+      { id: 'about.title', label: t('about.title') }
+    ];
+  }, [t, visibleSections]);
+
   if (!ready) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-gray-500">
@@ -213,168 +249,183 @@ export function SettingsPage() {
     );
   }
 
-  const isSearching = settingsSearch.trim().length > 0;
-
-  const matchesSearch = (spec: SettingSpec): boolean => {
-    if (!isSearching) return true;
-    const q = settingsSearch.trim().toLowerCase();
-    const label = t(spec.labelKey).toLowerCase();
-    const hint = spec.kind !== 'custom' && spec.hintKey ? t(spec.hintKey).toLowerCase() : '';
-    return label.includes(q) || hint.includes(q) || spec.labelKey.toLowerCase().includes(q);
-  };
-
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
-      <header className="mb-4 flex items-start justify-between gap-3 sm:mb-6">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-gray-200 bg-surface shadow-sm">
-            <Icon d={Icons.settings} className="h-4.5 w-4.5 text-accent-600" />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">{t('settings.title')}</h1>
-            <p className="mt-0.5 text-2xs text-gray-600">{t('settings.subtitle')}</p>
+    /* 左目录 + 右正文：目录在 lg 以下隐藏（窄屏放不下侧栏，此时正文占满宽度） */
+    <div className="mx-auto flex max-w-5xl gap-8 px-4 py-6 sm:px-6 sm:py-10">
+      <SettingsOutline items={outlineItems} />
+      <div className="min-w-0 max-w-2xl flex-1">
+        <header className="mb-4 flex items-start justify-between gap-3 sm:mb-6">
+          <div className="flex items-start gap-3">
+            <span className="elev-1 mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-gray-200 bg-surface">
+              <Icon d={Icons.settings} className="h-4.5 w-4.5 text-accent-600" />
+            </span>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900">{t('settings.title')}</h1>
+              <p className="mt-0.5 text-2xs text-gray-600">{t('settings.subtitle')}</p>
+            </div>
           </div>
-        </div>
-        <Button variant="danger-ghost" onClick={() => setConfirmingReset(true)}>
-          {t('settings.resetAll')}
-        </Button>
-      </header>
+          <Button variant="danger-ghost" onClick={() => setConfirmingReset(true)}>
+            {t('settings.resetAll')}
+          </Button>
+        </header>
 
-      <div className="mb-6">
-        <TextField
-          type="search"
-          size="lg"
-          className="rounded-lg shadow-sm"
-          value={settingsSearch}
-          onChange={setSettingsSearch}
-          placeholder={t('settings.searchPlaceholder')}
-          ariaLabel={t('settings.searchPlaceholder')}
+        <div className="mb-6">
+          <TextField
+            type="search"
+            size="lg"
+            className="elev-1 rounded-lg"
+            value={settingsSearch}
+            onChange={setSettingsSearch}
+            placeholder={t('settings.searchPlaceholder')}
+            ariaLabel={t('settings.searchPlaceholder')}
+          />
+        </div>
+
+        <div id="presets.title" className="scroll-mt-6">
+          <PresetsPanel onApplied={setTransferStatus} />
+        </div>
+
+        <div id="settings.capabilitiesGuide" className="scroll-mt-6">
+          <CapabilitiesGuide />
+        </div>
+
+        <Section id="fixedMap.title" title={t('fixedMap.title')}>
+          <div className="p-4">
+            <FixedConceptsMap />
+          </div>
+        </Section>
+
+        {isSearching && visibleSections.every((entry) => entry.specs.length === 0) && (
+          /* 搜索无命中的空态反馈：此前所有分区静默消失，用户分不清
+             「没有这个设置」还是「搜索没生效」。 */
+          <p className="mb-4 rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-xs text-gray-500">
+            {t('settings.searchEmpty')}
+          </p>
+        )}
+        {visibleSections.map(({ section, specs }) => {
+          if (specs.length === 0) return null;
+          return (
+            <Section
+              key={section.titleKey}
+              id={section.titleKey}
+              title={t(section.titleKey)}
+              count={specs.length}
+            >
+              {specs.map((spec) => (
+                <SettingRow key={spec.labelKey} spec={spec} settings={settings} update={update} />
+              ))}
+            </Section>
+          );
+        })}
+
+        <div id="settings.shortcuts" className="scroll-mt-6">
+          <ShortcutsSection onOpenShortcutSettings={openShortcutSettings} />
+        </div>
+
+        <Section id="settings.data" title={t('settings.data')}>
+          <Row label={t('settings.exportData')} hint={t('settings.exportDataHint')}>
+            <Button variant="secondary" onClick={() => void handleExport()}>
+              {t('settings.export')}
+            </Button>
+          </Row>
+          <Row label={t('settings.importData')} hint={t('settings.importDataHint')}>
+            <>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                disabled={importing}
+                onChange={(event) => void handleImport(event)}
+              />
+              {/* 事务进行中禁用入口：并发导入会被 importData 拒绝（只能看到一个泛化的
+                「操作失败」），不如直接让用户点不动。 */}
+              <Button
+                variant="secondary"
+                disabled={importing}
+                onClick={() => importInputRef.current?.click()}
+              >
+                {t('settings.import')}
+              </Button>
+            </>
+          </Row>
+          <Row label={t('settings.importBookmarks')} hint={t('settings.importBookmarksHint')}>
+            <Button variant="secondary" onClick={handleImportBookmarks}>
+              {t('settings.importBookmarksAction')}
+            </Button>
+          </Row>
+          <Row label={t('settings.syncMirror')} hint={t('settings.syncMirrorHint')}>
+            <Toggle
+              checked={settings.syncMirrorEnabled}
+              onChange={(checked) => update('syncMirrorEnabled', checked)}
+              ariaLabel={t('settings.syncMirror')}
+            />
+          </Row>
+          <Row label={t('settings.exportDiagnostics')} hint={t('settings.exportDiagnosticsHint')}>
+            <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
+              {t('settings.export')}
+            </Button>
+          </Row>
+          <Row label={t('settings.clearData')} hint={t('settings.clearDataHint')}>
+            <Button
+              variant="danger-ghost"
+              onClick={() => {
+                setClearAck(false);
+                setConfirmingClear(true);
+              }}
+            >
+              {t('settings.clearDataAction')}
+            </Button>
+          </Row>
+          {transferStatus && (
+            /* 操作结果对读屏播报（与侧边栏搜索命中数同口径：<output> + aria-live） */
+            <output className="px-4 py-2 text-xs text-gray-600" role="status" aria-live="polite">
+              {transferStatus}
+            </output>
+          )}
+        </Section>
+
+        {/* 关于：能力总览在独立页面（宽版式的能力网格），设置页只放入口 */}
+        <Section id="about.title" title={t('about.title')}>
+          <Row label={t('about.tagline')} hint={t('about.entryHint')}>
+            <Button variant="secondary" onClick={openAboutPage}>
+              {t('about.open')}
+            </Button>
+          </Row>
+        </Section>
+
+        {pendingImport !== null && (
+          <ConfirmDialog
+            title={t('dialog.confirmTitle')}
+            message={t('settings.importConfirm')}
+            danger
+            onCancel={() => setPendingImport(null)}
+            onConfirm={runImport}
+          />
+        )}
+
+        {confirmingReset && (
+          <ConfirmDialog
+            title={t('dialog.confirmTitle')}
+            message={t('settings.resetConfirm')}
+            danger
+            onCancel={() => setConfirmingReset(false)}
+            onConfirm={handleResetSettings}
+          />
+        )}
+
+        <ClearDataDialog
+          open={confirmingClear}
+          onClose={() => {
+            setConfirmingClear(false);
+            setClearAck(false);
+          }}
+          onConfirm={handleClearData}
+          ack={clearAck}
+          onAckChange={setClearAck}
+          onExportBackup={() => void handleExport()}
         />
       </div>
-
-      <PresetsPanel onApplied={setTransferStatus} />
-
-      <CapabilitiesGuide />
-
-      <Section title={t('fixedMap.title')}>
-        <div className="p-4">
-          <FixedConceptsMap />
-        </div>
-      </Section>
-
-      {sections.map((section) => {
-        const specs = section.specs
-          .filter((spec) => ('visible' in spec && spec.visible ? spec.visible(settings) : true))
-          .filter(matchesSearch);
-        if (specs.length === 0) return null;
-        return (
-          <Section
-            key={section.titleKey}
-            title={t(section.titleKey)}
-            collapsible={section.collapsible}
-            count={specs.length}
-            forceOpen={isSearching}
-          >
-            {specs.map((spec) => (
-              <SettingRow key={spec.labelKey} spec={spec} settings={settings} update={update} />
-            ))}
-          </Section>
-        );
-      })}
-
-      <ShortcutsSection onOpenShortcutSettings={openShortcutSettings} />
-
-      <Section title={t('settings.data')}>
-        <Row label={t('settings.exportData')} hint={t('settings.exportDataHint')}>
-          <Button variant="secondary" onClick={() => void handleExport()}>
-            {t('settings.export')}
-          </Button>
-        </Row>
-        <Row label={t('settings.importData')} hint={t('settings.importDataHint')}>
-          <>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              disabled={importing}
-              onChange={(event) => void handleImport(event)}
-            />
-            {/* 事务进行中禁用入口：并发导入会被 importData 拒绝（只能看到一个泛化的
-                「操作失败」），不如直接让用户点不动。 */}
-            <Button
-              variant="secondary"
-              disabled={importing}
-              onClick={() => importInputRef.current?.click()}
-            >
-              {t('settings.import')}
-            </Button>
-          </>
-        </Row>
-        <Row label={t('settings.importBookmarks')} hint={t('settings.importBookmarksHint')}>
-          <Button variant="secondary" onClick={handleImportBookmarks}>
-            {t('settings.importBookmarksAction')}
-          </Button>
-        </Row>
-        <Row label={t('settings.syncMirror')} hint={t('settings.syncMirrorHint')}>
-          <Toggle
-            checked={settings.syncMirrorEnabled}
-            onChange={(checked) => update('syncMirrorEnabled', checked)}
-            ariaLabel={t('settings.syncMirror')}
-          />
-        </Row>
-        <Row label={t('settings.exportDiagnostics')} hint={t('settings.exportDiagnosticsHint')}>
-          <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
-            {t('settings.export')}
-          </Button>
-        </Row>
-        <Row label={t('settings.clearData')} hint={t('settings.clearDataHint')}>
-          <Button
-            variant="danger-ghost"
-            onClick={() => {
-              setClearAck(false);
-              setConfirmingClear(true);
-            }}
-          >
-            {t('settings.clearDataAction')}
-          </Button>
-        </Row>
-        {transferStatus && (
-          <output className="px-4 py-2 text-xs text-gray-600">{transferStatus}</output>
-        )}
-      </Section>
-
-      {pendingImport !== null && (
-        <ConfirmDialog
-          title={t('dialog.confirmTitle')}
-          message={t('settings.importConfirm')}
-          danger
-          onCancel={() => setPendingImport(null)}
-          onConfirm={runImport}
-        />
-      )}
-
-      {confirmingReset && (
-        <ConfirmDialog
-          title={t('dialog.confirmTitle')}
-          message={t('settings.resetConfirm')}
-          danger
-          onCancel={() => setConfirmingReset(false)}
-          onConfirm={handleResetSettings}
-        />
-      )}
-
-      <ClearDataDialog
-        open={confirmingClear}
-        onClose={() => {
-          setConfirmingClear(false);
-          setClearAck(false);
-        }}
-        onConfirm={handleClearData}
-        ack={clearAck}
-        onAckChange={setClearAck}
-        onExportBackup={() => void handleExport()}
-      />
     </div>
   );
 }

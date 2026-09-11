@@ -178,7 +178,8 @@ export async function setGroupCollapsed(groupId: number, collapsed: boolean): Pr
   try {
     await browser.tabGroups.update(groupId, { collapsed });
   } catch (error) {
-    logDegraded('tabs', '切换分组折叠失败', error);
+    // 组在点击与写入之间被解散属预期内竞态（同 updateGroupMeta），静默留痕即可。
+    logDegraded('tabs', '切换分组折叠失败', error, { quiet: isMissingGroupError(error) });
     // 标签组可能已解散
   }
 }
@@ -389,6 +390,17 @@ export async function waitForTabGroupAssignment(
   }
 }
 
+/**
+ * 「组已不存在」判定：Chrome 的报错文案为 `No group with id: N`。
+ *
+ * 组在查询与写入之间被解散属于**预期内竞态**（用户手动解散、成员被移走、
+ * 并发建组导致空组被浏览器回收），不是故障。这类失败按 quiet 记录，
+ * 不写进扩展错误页（Chrome 会收集扩展上下文的 warning/error 级 console 输出）。
+ */
+function isMissingGroupError(error: unknown): boolean {
+  return error instanceof Error && /no group with id/i.test(error.message);
+}
+
 /** 设置原生组的标题与颜色。组可能已解散，失败不影响主流程。 */
 export async function updateGroupMeta(
   groupId: number,
@@ -399,7 +411,9 @@ export async function updateGroupMeta(
     await tabGroups.update(groupId, color ? { title, color } : { title });
   } catch (error) {
     // 组在查询与写入之间被解散是常见竞态，降级记录即可。
-    logDegraded('tabs', `更新分组 ${groupId} 的标题/颜色失败`, error);
+    logDegraded('tabs', `更新分组 ${groupId} 的标题/颜色失败`, error, {
+      quiet: isMissingGroupError(error)
+    });
   }
 }
 
@@ -408,7 +422,7 @@ export async function renameGroup(groupId: number, title: string): Promise<void>
   try {
     await browser.tabGroups.update(groupId, { title });
   } catch (error) {
-    logDegraded('tabs', '重命名分组失败', error);
+    logDegraded('tabs', '重命名分组失败', error, { quiet: isMissingGroupError(error) });
     // 标签组可能已解散
   }
 }
@@ -418,13 +432,13 @@ export async function recolorGroup(groupId: number, color: string): Promise<void
   try {
     await tabGroups.update(groupId, { color });
   } catch (error) {
-    logDegraded('tabs', '修改分组颜色失败', error);
+    logDegraded('tabs', '修改分组颜色失败', error, { quiet: isMissingGroupError(error) });
     // 标签组可能已解散
   }
 }
 
-/** 原生组是否仍存在（用于区分「已解散」与「解散失败」）。 */
-async function groupExists(groupId: number): Promise<boolean> {
+/** 原生组是否仍存在（用于区分「已解散」与「解散失败」，以及写入前的目标校验）。 */
+export async function groupExists(groupId: number): Promise<boolean> {
   try {
     await browser.tabGroups.get(groupId);
     return true;

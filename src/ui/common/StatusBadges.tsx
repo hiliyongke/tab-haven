@@ -32,7 +32,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="dup"
-        className="rounded bg-warn-100 px-1 text-2xs font-medium text-warn-700"
+        className="status-badge status-keep rounded bg-warn-100 px-1 text-2xs font-medium text-warn-700"
         title={t('status.duplicateTitle', { count: duplicateCount })}
       >
         <span aria-hidden="true">{duplicateCount}×</span>
@@ -45,17 +45,17 @@ export function StatusBadges({
     badges.push(
       <span
         key="audible"
-        className="media-playing-badge"
+        className="media-playing-badge status-badge"
         title={t('status.audible')}
         aria-label={t('status.audible')}
       >
-        <Icon d={Icons.mute} className="h-3 w-3" />
+        <Icon d={Icons.volumeOn} className="h-3 w-3" />
         <span>{t('status.playing')}</span>
       </span>
     );
   } else if (tab.muted) {
     badges.push(
-      <span key="muted" className="text-2xs text-gray-500" title={t('status.muted')}>
+      <span key="muted" className="status-badge text-2xs text-gray-500" title={t('status.muted')}>
         <span aria-hidden="true">{t('status.mutedGlyph')}</span>
         <span className="sr-only">{t('status.muted')}</span>
       </span>
@@ -66,7 +66,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="split"
-        className="rounded bg-accent-500 px-1 text-2xs font-medium text-on-accent"
+        className="status-badge rounded bg-accent-500 px-1 text-2xs font-medium text-on-accent"
         title={t('status.split')}
       >
         <span aria-hidden="true">{t('status.splitGlyph')}</span>
@@ -79,7 +79,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="companion"
-        className="rounded bg-accent-100 px-1 text-2xs font-medium text-accent-700"
+        className="status-badge rounded bg-accent-100 px-1 text-2xs font-medium text-accent-700"
         title={t('status.companion')}
       >
         <span aria-hidden="true">{t('status.companionGlyph')}</span>
@@ -93,7 +93,7 @@ export function StatusBadges({
       <Icon
         key="frozen"
         d={Icons.snowflake}
-        className="h-3 w-3 text-gray-500"
+        className="status-badge status-keep h-3 w-3 text-gray-500"
         title={t('status.discarded')}
       />
     );
@@ -103,7 +103,7 @@ export function StatusBadges({
     badges.push(
       <span
         key="noCache"
-        className="rounded bg-warn-100 px-1 text-2xs font-medium text-warn-700"
+        className="status-badge rounded bg-warn-100 px-1 text-2xs font-medium text-warn-700"
         title={t('status.noCacheTitle')}
       >
         <span aria-hidden="true">{t('status.noCacheGlyph')}</span>

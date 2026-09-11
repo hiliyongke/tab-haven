@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { disbandAutoGroups, syncAutoGroups } from '@/platform/group/AutoGroupSync';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
+import { NO_GROUP } from '@/core/tab-types';
 
 const PLAN_A: AutoGroupPlan = { title: 'github.com', color: 'blue', tabIds: [1, 2] };
 const PLAN_B: AutoGroupPlan = { title: 'zh-CN', color: 'cyan', tabIds: [3, 4] };
@@ -45,6 +46,32 @@ function stubTabsGroup(): ReturnType<typeof vi.fn> {
   return groupMock;
 }
 
+/**
+ * 注入 tabs.query 的最小实现，区分两种调用形态：
+ *  - `{ currentWindow: true }`：执行前的真实状态对齐，返回**仍未分组**的标签；
+ *  - `{ groupId }`：removeGroup 查询组成员。
+ */
+function stubTabsQuery(
+  options: {
+    /** 仍未分组的标签 id。传函数可在多次调用间变化（模拟状态收敛）。 */
+    ungrouped?: readonly number[] | (() => readonly number[]);
+    /** groupId → 成员 id 列表（解散路径使用）。 */
+    members?: Record<number, readonly number[]>;
+  } = {}
+): ReturnType<typeof vi.fn> {
+  const queryMock = vi.fn(async (opts: { currentWindow?: boolean; groupId?: number }) => {
+    if (opts?.groupId !== undefined) {
+      return (options.members?.[opts.groupId] ?? []).map((id) => ({ id }));
+    }
+    const ungrouped =
+      typeof options.ungrouped === 'function' ? options.ungrouped() : (options.ungrouped ?? []);
+    return ungrouped.map((id) => ({ id, groupId: NO_GROUP }));
+  });
+  const tabs = fakeBrowser.tabs as unknown as { query: typeof queryMock };
+  tabs.query = queryMock as unknown as typeof tabs.query;
+  return queryMock;
+}
+
 afterEach(() => {
   fakeBrowser.reset();
   vi.restoreAllMocks();
@@ -54,6 +81,7 @@ describe('AutoGroupSync 生命周期', () => {
   it('创建组成功后在记录中持久化组 id（去重追加）', async () => {
     const groupMock = stubTabsGroup();
     stubTabGroups();
+    stubTabsQuery({ ungrouped: [1, 2, 3, 4] });
 
     await syncAutoGroups([PLAN_A]);
     await syncAutoGroups([PLAN_B]);
@@ -73,15 +101,12 @@ describe('AutoGroupSync 生命周期', () => {
     const ungroupMock = vi.fn(async (tabIds: number[]) => {
       if (tabIds.includes(21)) throw new Error('ungroup failed');
     });
-    const queryMock = vi.fn(async (opts: { groupId?: number }) =>
-      opts?.groupId === 10 ? [{ id: 21 }, { id: 22 }] : [{ id: 31 }]
-    );
-    const tabs = fakeBrowser.tabs as unknown as {
-      query: typeof queryMock;
-      ungroup: typeof ungroupMock;
-    };
-    tabs.query = queryMock;
-    tabs.ungroup = ungroupMock;
+    const tabs = fakeBrowser.tabs as unknown as { ungroup: typeof ungroupMock };
+    tabs.ungroup = ungroupMock as unknown as typeof tabs.ungroup;
+    stubTabsQuery({
+      ungrouped: [1, 2, 3, 4],
+      members: { 10: [21, 22], 11: [31] }
+    });
 
     await syncAutoGroups([PLAN_A, PLAN_B]);
     const count = await disbandAutoGroups();
@@ -103,6 +128,7 @@ describe('AutoGroupSync 生命周期', () => {
   it('吸收计划：把标签移入既有组，不新建组、不记录、不改标题', async () => {
     const groupMock = stubTabsGroup();
     const { updateMock } = stubTabGroups();
+    stubTabsQuery({ ungrouped: [2] });
 
     const absorbPlan: AutoGroupPlan = {
       title: 'yehe.woa.com',
@@ -120,5 +146,49 @@ describe('AutoGroupSync 生命周期', () => {
     expect(updateMock).not.toHaveBeenCalled();
     const stored = await fakeBrowser.storage.local.get('tabs.auto-groups.v1');
     expect(stored['tabs.auto-groups.v1']).toBeUndefined();
+  });
+
+  it('计划过期（标签已入组或已关闭）时不建组：快照滞后不该产生重复组', async () => {
+    const groupMock = stubTabsGroup();
+    stubTabGroups();
+    // 快照派生的计划声称 1、2 未分组，但浏览器真实状态已无未分组标签
+    stubTabsQuery({ ungrouped: [] });
+
+    const count = await syncAutoGroups([PLAN_A]);
+
+    expect(count).toBe(0);
+    expect(groupMock).not.toHaveBeenCalled();
+  });
+
+  it('计划部分过期：只对仍未分组的标签建组', async () => {
+    const groupMock = stubTabsGroup();
+    stubTabGroups();
+    // 标签 1 已入组、标签 2 仍未分组 → 只应把 2 入组
+    stubTabsQuery({ ungrouped: [2] });
+
+    await syncAutoGroups([PLAN_A]);
+
+    expect(groupMock).toHaveBeenCalledTimes(1);
+    expect(groupMock).toHaveBeenCalledWith({ tabIds: [2] });
+  });
+
+  it('并发调用串行执行：后到者按已收敛的真实状态过滤，不重复建组', async () => {
+    stubTabGroups();
+    const grouped = new Set<number>();
+    stubTabsQuery({ ungrouped: () => [1, 2].filter((id) => !grouped.has(id)) });
+    // tabs.group 延迟 resolve，制造「上一轮 await 未结束就再次进入」的窗口
+    const groupMock = vi.fn(async (options: { tabIds: number[] }) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      for (const id of options.tabIds) grouped.add(id);
+      return 10;
+    });
+    const tabs = fakeBrowser.tabs as unknown as { group: typeof groupMock };
+    tabs.group = groupMock as unknown as typeof tabs.group;
+
+    // 模拟响应式路径的连续两次进入（建组本身会触发标签事件）
+    const [first, second] = await Promise.all([syncAutoGroups([PLAN_A]), syncAutoGroups([PLAN_A])]);
+
+    expect(groupMock).toHaveBeenCalledTimes(1);
+    expect(first + second).toBe(1);
   });
 });

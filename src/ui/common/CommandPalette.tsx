@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { LucideIcon } from 'lucide-react';
 import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { Favicon } from '@/ui/common/Favicon';
 import { useModalA11y } from '@/ui/dialog/Dialog';
 
 /** 命令面板的动作回调集合（由 sidepanel App 注入，复用既有 handler）。 */
@@ -11,6 +12,8 @@ export interface PaletteActions {
   onDiscardInactive: () => void;
   onWakeAll: () => void;
   onQuickRegroup: () => void;
+  /** 一键清理重复标签（保留每网址的激活/固定/最早者，可撤销）。 */
+  onCleanDuplicates: () => void;
   onLocateActive: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
@@ -26,10 +29,16 @@ interface CommandItem {
   id: string;
   label: string;
   icon: LucideIcon;
+  /** 标签项携带网站图标（favicon 失败回退首字母），扫读效率远高于统一放大镜。 */
+  favIconUrl?: string;
+  /** 是否为当前激活标签（显示「当前」标记并置顶）。 */
+  current?: boolean;
+  /** 可选说明行：破坏性操作（如重排分组）需要在这里讲清影响面。 */
+  hint?: string;
   run: () => void;
 }
 
-/** listbox 内的单个选项（命令 / 标签通用）：图标 + 截断标签 + 选中态。 */
+/** listbox 内的单个选项（命令 / 标签通用）：图标（favicon 优先）+ 截断标签 + 选中态。 */
 function PaletteOption({
   cmd,
   selected,
@@ -41,6 +50,7 @@ function PaletteOption({
   onSelect: () => void;
   onRun: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       id={`palette-item-${cmd.id}`}
@@ -56,8 +66,26 @@ function PaletteOption({
       onMouseEnter={onSelect}
       onClick={onRun}
     >
-      <Icon d={cmd.icon} className="h-4 w-4 shrink-0 opacity-70" />
-      <span className="truncate">{cmd.label}</span>
+      {cmd.favIconUrl ? (
+        <span className="flex shrink-0 items-center">
+          <Favicon src={cmd.favIconUrl} title={cmd.label} size={16} />
+        </span>
+      ) : (
+        <Icon d={cmd.icon} className="h-4 w-4 shrink-0 opacity-70" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{cmd.label}</span>
+        {/* 字号走 text-3xs：项目纪律「正文说明 ≥ 11px」（text-2xs 仅限图标内文/徽角），
+            由 design-tokens 守卫强制。 */}
+        {cmd.hint && (
+          <span className="block truncate text-3xs leading-snug text-gray-400">{cmd.hint}</span>
+        )}
+      </span>
+      {cmd.current && (
+        <span className="shrink-0 rounded bg-accent-100 px-1 text-3xs font-medium text-accent-700">
+          {t('palette.current')}
+        </span>
+      )}
     </div>
   );
 }
@@ -114,7 +142,14 @@ export function CommandPalette({
         id: 'regroup',
         label: t('footer.quickRegroup'),
         icon: Icons.quickRegroup,
+        hint: t('footer.quickRegroupHint'),
         run: actions.onQuickRegroup
+      },
+      {
+        id: 'cleanDuplicates',
+        label: t('duplicates.clean'),
+        icon: Icons.copyX,
+        run: actions.onCleanDuplicates
       },
       {
         id: 'locate',
@@ -165,12 +200,20 @@ export function CommandPalette({
         run: actions.onToggleAllSections
       }
     ];
-    const tabCmds: CommandItem[] = tabs.map((tab) => ({
-      id: `tab-${tab.id}`,
-      label: tab.title || tab.url || '',
-      icon: Icons.search,
-      run: () => actions.onSwitchTab(tab.id)
-    }));
+    // 激活标签置顶 + 其余按最近访问降序（Spotlight 惯例），并携带 favicon 供扫读。
+    const tabCmds: CommandItem[] = [...tabs]
+      .sort((a, b) => {
+        if (a.active !== b.active) return a.active ? -1 : 1;
+        return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0);
+      })
+      .map((tab) => ({
+        id: `tab-${tab.id}`,
+        label: tab.title || tab.url || '',
+        icon: Icons.search,
+        favIconUrl: tab.favIconUrl,
+        current: tab.active,
+        run: () => actions.onSwitchTab(tab.id)
+      }));
     const q = query.trim().toLowerCase();
     if (!q) return { commandItems: base, tabItems: tabCmds };
     const match = (c: CommandItem) => c.label.toLowerCase().includes(q);
@@ -223,12 +266,12 @@ export function CommandPalette({
   // container-type 层叠上下文影响。
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[12vh]"
+      className="modal-overlay fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[12vh]"
       role="presentation"
     >
       <dialog
         ref={panelRef}
-        className="relative m-0 w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-surface p-0 shadow-lg"
+        className="modal-panel elev-3 relative m-0 w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-surface p-0"
         aria-label={t('palette.title')}
         onCancel={(event) => {
           event.preventDefault();

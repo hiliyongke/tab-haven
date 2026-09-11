@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/common/Button';
@@ -123,14 +123,15 @@ export function DialogShell({
   // 且不再受 .app 内部 z-index 影响（层级由 z-stack 的 50 档统一保证）。
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
         ref={shellRef}
-        className={`${widthClassName} max-h-[85vh] overflow-y-auto rounded-xl border border-gray-200 bg-surface p-4 shadow-xl`}
+        // elev-3 而非 shadow-xl：阴影统一走 shadow-tint 暖调令牌（见 main.css）
+        className={`${widthClassName} modal-panel elev-3 max-h-[85vh] overflow-y-auto rounded-xl border border-gray-200 bg-surface p-4`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -161,30 +162,37 @@ export function PromptDialog({
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
+  // 受控值：确认按钮随输入实时禁用 —— 空值点「确定」此前完全静默，
+  // 用户会当成「按钮坏了」，禁用态让不可提交的原因一目了然。
+  const [value, setValue] = useState(initialValue ?? '');
+  const canSubmit = value.trim().length > 0;
 
   const submit = () => {
-    const value = inputRef.current?.value.trim() ?? '';
-    if (value) onConfirm(value);
+    const trimmed = value.trim();
+    if (trimmed) onConfirm(trimmed);
   };
 
   return (
     <DialogShell title={title} onClose={onCancel}>
       <TextField
         inputRef={inputRef}
-        defaultValue={initialValue}
+        value={value}
         placeholder={placeholder}
         /* 视觉 label 由弹窗标题承担，读屏需要程序化关联（placeholder 不算标签） */
         ariaLabel={title}
         className="w-full"
+        onChange={setValue}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') submit();
+          if (event.key === 'Enter' && canSubmit) submit();
         }}
       />
       <div className="mt-3 flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel}>
           {t('dialog.cancel')}
         </Button>
-        <Button onClick={submit}>{t('dialog.confirm')}</Button>
+        <Button disabled={!canSubmit} onClick={submit}>
+          {t('dialog.confirm')}
+        </Button>
       </div>
     </DialogShell>
   );

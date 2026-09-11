@@ -24,6 +24,20 @@ function hostnameOf(url: string | undefined): string {
   }
 }
 
+/**
+ * 批次来源标签：让用户知道这批关闭是「我手动关的」还是「归档带走的」。
+ *
+ * 此前所有批次长得一样，用户回看历史时分不清操作来源 —— 而「自动行为发生在
+ * 我不知情时」正是最容易引发不信任的场景，来源必须显式。
+ * 未知 kind 返回 null（不显示标签）：schema 里 kind 是自由字符串，
+ * 未来新增来源不应在旧版本里显示成错误的标签。
+ */
+function kindLabel(kind: string, t: (key: string) => string): string | null {
+  if (kind === 'archive') return t('undo.kindArchive');
+  if (kind === 'close') return t('undo.kindClose');
+  return null;
+}
+
 export function UndoHistoryPanel({
   hasSnapshots,
   onOpenSnapshots,
@@ -118,6 +132,11 @@ export function UndoHistoryPanel({
                         : '·'}
                       {batch.entries.length > 1 ? ` +${batch.entries.length - 1}` : ''}
                     </span>
+                    {kindLabel(batch.kind, t) && (
+                      <span className="shrink-0 rounded bg-gray-100 px-1 py-px text-2xs leading-none text-gray-500">
+                        {kindLabel(batch.kind, t)}
+                      </span>
+                    )}
                     <span className="shrink-0 text-2xs text-gray-500">
                       {formatTime(batch.createdAt)} · {batch.entries.length}
                     </span>

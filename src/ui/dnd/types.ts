@@ -66,7 +66,7 @@ export type DragData =
 
 /** 固定空间整体投放目标（拖到空白处创建新文件夹）。 */
 export const FIXED_AREA_DROPPABLE = 'fixed-area';
-/** 顶部永久固定图标区投放目标（拖标签到此固定）。 */
+/** 顶部常驻磁贴区投放目标（拖标签到此固定）。 */
 export const PINNED_STRIP_DROPPABLE = 'pinned-strip';
 
 /** 判断两个拖拽元素是否属于同一容器（同一列表内才允许排序）。 */

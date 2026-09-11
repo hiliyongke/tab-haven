@@ -14,7 +14,7 @@ import {
 } from '@/ui/tabs/SortablePinnedTile';
 
 /**
- * 顶部永久固定图标区：
+ * 顶部常驻磁贴区：
  * 单击切换/重新打开；中键仅关闭页面、入口保留；拖标签到该区域固定。
  * 视觉语言：pinned-strip 磁贴（active 底部绿条、
  * closed 降透明度、audible 绿点、discarded 灰化、split 角标）。

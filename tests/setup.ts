@@ -52,3 +52,31 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     dispatchEvent: () => false
   })) as unknown as typeof window.matchMedia;
 }
+
+/**
+ * jsdom 未实现 `IntersectionObserver`。
+ *
+ * `SettingsOutline`（设置页目录的滚动高亮）依赖它；缺失时会在 effect 中抛
+ * `ReferenceError: IntersectionObserver is not defined`，与上面两例一样会
+ * **中断整棵树的提交**（表现为设置页整体渲染不出来）。
+ * 测试环境无真实布局与滚动，观察器只需存在且可注册/注销即可，不触发回调。
+ */
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly thresholds: readonly number[] = [];
+    observe(): void {
+      // 测试环境无滚动，无需产生回调
+    }
+    unobserve(): void {
+      // 同上
+    }
+    disconnect(): void {
+      // 同上
+    }
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  } as unknown as typeof IntersectionObserver;
+}

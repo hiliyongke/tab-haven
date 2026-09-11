@@ -1,17 +1,18 @@
 import {
+  Anchor,
+  BookmarkPlus,
   Camera,
   Check,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
   CircleAlert,
-  Bookmark,
-  BookmarkPlus,
   Command,
   Copy,
+  CopyX,
   Folder,
-  FolderInput,
   FolderOpen,
+  FolderPlus,
   GripVertical,
   History,
   Layers,
@@ -50,12 +51,16 @@ export const Icons = {
   collapseAll: ChevronsDownUp,
   expandAll: ChevronsUpDown,
   pin: Pin,
-  mute: Volume2,
-  muted: VolumeX,
+  /** 音量开（当前有声）：点击后静音。按「当前状态」而非动作命名，避免读到 d={Icons.mute} 时误以为是静音图标。 */
+  volumeOn: Volume2,
+  /** 已静音：点击后恢复声音。 */
+  volumeOff: VolumeX,
   search: Search,
   pencil: Pencil,
   grip: GripVertical,
   copy: Copy,
+  /** 清理重复标签：带叉的副本，与「复制标签」的 copy 明确区分。 */
+  copyX: CopyX,
   /** 休眠标签（释放内存）。 */
   snowflake: Snowflake,
   /** 转换为原生分组：标签集图标，表达「归类成组」。 */
@@ -63,8 +68,11 @@ export const Icons = {
   /** 快速整理（自动分组）：魔法棒表达「一键自动归组」。 */
   quickRegroup: Wand2,
   folder: Folder,
-  /** 存为固定文件夹：书签表达「收藏固定」。 */
-  saveToFolder: Bookmark,
+  /** 存入文件夹（分组存为固定文件夹）：文件夹 + 加号。
+   *  此前用书签图标，与「导出到浏览器书签」（bookmarkAdd）语义打架。 */
+  folderPlus: FolderPlus,
+  /** 浏览器固定标签（系统级固定）：锚定意象，区别于 Tabs 自己的 pin。 */
+  anchor: Anchor,
   locate: LocateFixed,
   settings: Settings,
   /** 打开文件夹全部条目。 */
@@ -77,8 +85,6 @@ export const Icons = {
   shortcuts: Command,
   /** 固定文件夹保存为书签。 */
   bookmarkAdd: BookmarkPlus,
-  /** 从书签导入。 */
-  bookmarkImport: FolderInput,
   /** 一键删除（固定文件夹 / 原生分组），标签保留。 */
   trash: Trash2,
   /** 安全网指示：所有关闭都可撤销。 */

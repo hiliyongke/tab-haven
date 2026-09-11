@@ -96,12 +96,25 @@ async function flushDiagnostics(): Promise<void> {
  *
  * 用于替代 `catch {}` / `catch { return null }` 这类不可观测的错误处理。
  * 调用点语义：主流程可以继续，但本次操作未产生预期效果。
+ *
+ * `quiet`：预期内竞态（如「组在查询与写入之间被解散」）置 true。
+ * Chrome 扩展管理页的「错误」面板会记录扩展上下文的 warning 与 error 级
+ * console 输出（官方行为），预期内竞态刷在那里只会淹没真实故障——用户看到
+ * 的是一屏「报错」，而这些记录本来只该出现在诊断导出里。
+ * quiet 仍然进诊断环形缓冲（可导出排查），只是输出降为 debug 级。
  */
-export function logDegraded(scope: string, message: string, error?: unknown): void {
+export function logDegraded(
+  scope: string,
+  message: string,
+  error?: unknown,
+  options?: { quiet?: boolean }
+): void {
   const detail =
     error instanceof Error ? error.message : error === undefined ? undefined : String(error);
   push({ at: new Date().toISOString(), scope, message, detail });
-  console.warn(`[Tabs][${scope}] ${message}`, error ?? '');
+  const line = `[Tabs][${scope}] ${message}`;
+  if (options?.quiet) console.debug(line, error ?? '');
+  else console.warn(line, error ?? '');
 }
 
 /** 记录一次真实失败（操作未达成且无法自动恢复）。 */

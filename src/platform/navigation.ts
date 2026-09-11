@@ -29,3 +29,18 @@ export async function openUrlInTab(url: string): Promise<void> {
     logDegraded('navigation', '打开标签失败', error);
   }
 }
+
+/** 打开扩展自带的关于页（能力总览）。路径需以 `/` 开头（WXT 的入口路径类型约束）。 */
+export function openAboutPage(): void {
+  void openUrlInTab(browser.runtime.getURL('/about.html'));
+}
+
+/** 扩展版本号（关于页展示用）；读取失败时返回空串而非抛错。 */
+export function getExtensionVersion(): string {
+  try {
+    return browser.runtime.getManifest().version;
+  } catch (error) {
+    logDegraded('navigation', '读取扩展版本失败', error);
+    return '';
+  }
+}

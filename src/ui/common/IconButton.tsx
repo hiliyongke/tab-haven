@@ -60,7 +60,7 @@ export function IconButton({
       onClick={onClick}
     >
       <Icon d={icon} className={iconClass} />
-      {label && <span className="text-3xs leading-none">{label}</span>}
+      {label && <span className="icon-btn-label text-3xs leading-none">{label}</span>}
       {badge !== undefined && badge > 0 && (
         <span className="count-badge absolute -right-1 -top-1" aria-hidden="true">
           {badge}

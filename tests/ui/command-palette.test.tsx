@@ -41,6 +41,7 @@ function makeActions(): PaletteActions & { calls: string[] } {
     onDiscardInactive: record('discard'),
     onWakeAll: record('wake'),
     onQuickRegroup: record('regroup'),
+    onCleanDuplicates: record('cleanDuplicates'),
     onLocateActive: record('locate'),
     onOpenHistory: record('history'),
     onOpenSettings: record('settings'),
@@ -93,8 +94,8 @@ describe('CommandPalette 无障碍契约', () => {
     const { input } = renderPalette();
 
     const options = screen.getAllByRole('option');
-    // 11 条命令 + 2 个标签
-    expect(options).toHaveLength(13);
+    // 12 条命令 + 2 个标签
+    expect(options).toHaveLength(14);
     expect(options[0]).toHaveTextContent(i18n.t('discard.allInactive'));
     expect(options.at(-1)).toHaveTextContent('标签-2');
     expect(input).toBeInTheDocument();

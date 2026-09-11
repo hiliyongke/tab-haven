@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { openSidePanelInCurrentWindow } from '@/platform/sidePanel';
 import { useDataStore } from '@/stores/dataStore';
@@ -57,15 +58,58 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
   const { t } = useTranslation();
   const settings = useDataStore((state) => state.settings);
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
+  /** 最近一次套用的预设及其生效前的设置快照：提供「撤销预设」出口。 */
+  const [undoPatch, setUndoPatch] = useState<{
+    patch: Partial<Settings>;
+    before: Partial<Settings>;
+  } | null>(null);
   /**
    * 激活态 = 当前设置与预设 patch 逐字段完全一致（不记「最近点过谁」——
    * 预设是配置模板，套用后用户逐项微调即漂移，按值比对才诚实）。
    */
   const isActive = (preset: PresetProfile): boolean =>
     Object.entries(preset.patch).every(([key, value]) => settings[key as keyof Settings] === value);
+
+  const applyPreset = async (preset: PresetProfile) => {
+    if (isActive(preset)) return;
+    // 应用前快照被覆盖字段的旧值，供撤销恢复（一键套用改 5 项设置，
+    // 没有出口的话用户只能逐项手动改回，等于惩罚探索）。
+    const before: Partial<Settings> = {};
+    for (const key of Object.keys(preset.patch) as (keyof Settings)[]) {
+      // 逐字段赋值：Settings 各字段类型互异，直接索引赋值无法通过编译期检查。
+      (before as Record<keyof Settings, unknown>)[key] = settings[key];
+    }
+    const ok = await tryUpdateSettings(preset.patch);
+    if (ok) {
+      setUndoPatch({ patch: preset.patch, before });
+      onApplied(t('presets.applied', { name: t(preset.nameKey) }));
+    } else {
+      onApplied(t('settings.saveFailed'));
+    }
+  };
+
+  const revertPreset = async () => {
+    if (!undoPatch) return;
+    const { before } = undoPatch;
+    setUndoPatch(null);
+    const ok = await tryUpdateSettings(before);
+    onApplied(ok ? t('presets.reverted') : t('settings.saveFailed'));
+  };
+
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
-      <h2 className="mb-1 text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
+        {undoPatch && (
+          <button
+            type="button"
+            className="rounded px-2 py-1 text-2xs font-medium text-accent-600 transition-base hover:bg-accent-50"
+            onClick={() => void revertPreset()}
+          >
+            {t('presets.undo')}
+          </button>
+        )}
+      </div>
       <p className="mb-3 text-2xs text-gray-600">{t('presets.hint')}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {PRESET_PROFILES.map((preset) => {
@@ -81,15 +125,7 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
                   ? 'border-accent-500 bg-accent-50'
                   : 'border-control bg-surface hover:border-accent-400 hover:bg-accent-50')
               }
-              onClick={async () => {
-                // 已在使用中的预设重复点击无副作用，直接忽略。
-                if (active) return;
-                // 按结果反馈，不抢先报成功（写入失败时 store 不会变更）。
-                const ok = await tryUpdateSettings(preset.patch);
-                onApplied(
-                  ok ? t('presets.applied', { name: t(preset.nameKey) }) : t('settings.saveFailed')
-                );
-              }}
+              onClick={() => void applyPreset(preset)}
             >
               <span className="flex w-full items-center justify-between gap-1">
                 <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
@@ -134,6 +170,13 @@ const CAPABILITIES = [
 
 export function CapabilitiesGuide() {
   const { t } = useTranslation();
+  const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
+  /** 重播引导：重置 onboarded 标记（tipSeen/conceptsSeen 不动）并打开侧边栏立即观看。
+   *  Esc 误关引导的用户此前没有回看入口，只能永远错过首启教学。 */
+  const replayTour = async () => {
+    await tryUpdateSettings({ onboarded: false });
+    void openSidePanelInCurrentWindow();
+  };
   return (
     <Section title={t('settings.capabilitiesGuide')}>
       <div className="divide-y divide-gray-100">
@@ -155,6 +198,20 @@ export function CapabilitiesGuide() {
             </Button>
           </div>
         ))}
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-50 text-accent-600">
+            <Icon d={Icons.sparkles} className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-gray-800">{t('settings.replayTour')}</p>
+            <p className="mt-0.5 text-3xs leading-snug text-gray-600">
+              {t('settings.replayTourHint')}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => void replayTour()}>
+            {t('settings.replayTourAction')}
+          </Button>
+        </div>
       </div>
     </Section>
   );

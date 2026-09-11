@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
+import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
@@ -32,17 +32,47 @@ import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
-import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
+import { pulseTabRows, useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { useAutoGroupSync } from '@/entrypoints/sidepanel/hooks/useAutoGroupSync';
 import { useSearchController } from '@/entrypoints/sidepanel/hooks/useSearchController';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
 import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
+import { useListNavigation } from '@/entrypoints/sidepanel/hooks/useListNavigation';
 import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
-import { EmptyTabs, LoadingSkeleton, NoSearchResults } from '@/entrypoints/sidepanel/ListStates';
+import {
+  EmptyTabs,
+  LoadErrorState,
+  LoadingSkeleton,
+  NoSearchResults
+} from '@/entrypoints/sidepanel/ListStates';
 import { useTabDragHandlers } from '@/entrypoints/sidepanel/useTabDragHandlers';
+
+/**
+ * 重复清理计划：可关闭的标签 + 每个重复组保留的 keeper id。
+ *
+ * 抽成模块级纯函数：清理按钮的「可清理数」徽章与清理动作本身必须基于同一份
+ * 计算（否则会出现「徽章显示 3 个，点下去说没有」这类不一致）；keepIds 供
+ * 清理后的脉冲高亮使用，让「保留了谁」可见。
+ * 固定空间绑定的标签豁免：用户显式保存的资产不参与自动清理。
+ */
+function planDuplicateCleanup(
+  index: DuplicateIndex,
+  boundTabIds: readonly number[]
+): { removable: TabRecord[]; keepIds: number[] } {
+  const removable: TabRecord[] = [];
+  const keepIds: number[] = [];
+  for (const group of index.duplicates()) {
+    const { keeper, removable: groupRemovable } = KeeperPolicy.default.select(group);
+    keepIds.push(keeper.id);
+    for (const tab of groupRemovable) {
+      if (!boundTabIds.includes(tab.id)) removable.push(tab);
+    }
+  }
+  return { removable, keepIds };
+}
 
 export default function App() {
   const { t } = useTranslation();
@@ -85,6 +115,11 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  // 引导延迟挂载：让用户先看到真实列表一眼，再弹出介绍（边看边学）。
+  const [showTour, setShowTour] = useState(false);
+  // 数据初始化自动重试仍失败：从骨架屏转为错误态（说明 + 手动重试），
+  // 否则用户会永久停在一个没有出口的骨架屏上。
+  const [loadFailed, setLoadFailed] = useState(false);
   /**
    * 用户主动滚动后的一段静默期（防"抢滚"）：静默中不自动跟随激活标签滚动。
    *
@@ -121,9 +156,8 @@ export default function App() {
     [activateTab]
   );
 
-  // 常驻搜索：查询状态 / 引擎 / 命中 / 键盘导航 / 禁缓存角标集。
-  // onActivate 注入 smartActivate（跨窗口命中需先聚焦窗口），hook 内部经 ref 取值，
-  // 因此这里不需要额外稳定引用。
+  // 常驻搜索：查询状态 / 引擎 / 命中 / 禁缓存角标集。
+  // 键盘漫游（↑↓/Enter）已拆到 useListNavigation：搜索态与空态共用一套语义。
   const {
     query,
     setQuery,
@@ -131,7 +165,7 @@ export default function App() {
     isFiltering,
     searchInputRef,
     filteredTabs,
-    selectedSearchTabId,
+    searchHitTabIds,
     noCacheTabIds,
     handleSearchKeyDown
   } = useSearchController({
@@ -140,8 +174,7 @@ export default function App() {
     searchAllWindows: settings.searchAllWindows,
     pinyinSearch: settings.pinyinSearch,
     noCacheEnabled: settings.noCacheEnabled,
-    noCachePatterns: settings.noCachePatterns,
-    onActivate: smartActivate
+    noCachePatterns: settings.noCachePatterns
   });
 
   const activeTabId = tabs.find((tab) => tab.active)?.id;
@@ -242,7 +275,10 @@ export default function App() {
       if (cancelled) return;
       notify(i18n.t('errors.dataLoadFailed'));
       retryTimer = window.setTimeout(() => {
-        void initializeData().catch(() => undefined);
+        void initializeData().catch(() => {
+          // 自动重试仍失败：转错误态（手动重试 / 重新打开面板），不再静默。
+          if (!cancelled) setLoadFailed(true);
+        });
       }, 1000);
     });
     void loadUndo();
@@ -278,6 +314,34 @@ export default function App() {
       })
       .catch(() => {});
   }, [showDiscardUndoToast]);
+
+  // 首启引导延迟弹出：数据就绪后先让用户看到真实列表约 0.9s，
+  // 避免模态遮罩第一时间盖住被介绍的对象。引导完成（onboarded）后不再触发。
+  // 延迟窗口内用户一旦开始操作（指针/键盘）即放弃本次自动弹出 ——
+  // 用户已经上手了，再弹模态介绍只会打断他（可从设置页「重新观看引导」找回）。
+  useEffect(() => {
+    if (!dataReady || settings.onboarded) return;
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      detach();
+    };
+    const detach = () => {
+      window.removeEventListener('pointerdown', cancel, true);
+      window.removeEventListener('keydown', cancel, true);
+    };
+    const timer = window.setTimeout(() => {
+      detach();
+      if (!cancelled) setShowTour(true);
+    }, 900);
+    window.addEventListener('pointerdown', cancel, true);
+    window.addEventListener('keydown', cancel, true);
+    return () => {
+      window.clearTimeout(timer);
+      detach();
+    };
+  }, [dataReady, settings.onboarded]);
 
   // 面板未开时挂起的动作由 usePendingActions 内部订阅（初始 get + session.onChanged）。
 
@@ -318,6 +382,58 @@ export default function App() {
     toggleSiteCollapsed
   });
 
+  /**
+   * 键盘漫游序列（空查询态）：按列表显示顺序展开可见分区 ——
+   * 固定磁贴区在前，其后是各未折叠分区。折叠分区内的标签**不进序列**：
+   * 它们在 DOM 里不存在，选中一个看不见的标签会让 Enter 变成「激活未知项」。
+   */
+  const roamTabIds = useMemo(() => {
+    // displayCollapsedSites 是「Set 或数组」的联合类型（与 SectionList 的入参同源），
+    // 这里统一成 Set 再查询。
+    const collapsedSitesSet =
+      displayCollapsedSites instanceof Set ? displayCollapsedSites : new Set(displayCollapsedSites);
+    const ids: number[] = [];
+    if (settings.showPinnedStrip && pinnedSection) {
+      for (const tab of pinnedSection.tabs) ids.push(tab.id);
+    }
+    for (const section of restSections) {
+      const collapsed =
+        section.kind === 'native'
+          ? displayCollapsedGroups.has(section.groupId)
+          : section.kind === 'site'
+            ? collapsedSitesSet.has(section.siteKey)
+            : false;
+      if (collapsed) continue;
+      for (const tab of section.tabs) ids.push(tab.id);
+    }
+    return ids;
+  }, [
+    settings.showPinnedStrip,
+    pinnedSection,
+    restSections,
+    displayCollapsedGroups,
+    displayCollapsedSites
+  ]);
+
+  /**
+   * 键盘漫游：搜索态走命中序列（相关度），空态走可见列表顺序。
+   * `resetKey` 用 query —— 输入变化时回到首项（与搜索预期一致）。
+   */
+  const { selectedTabId: selectedNavTabId, handleKeyDown: handleNavKeyDown } = useListNavigation({
+    tabIds: isFiltering ? searchHitTabIds : roamTabIds,
+    resetKey: query,
+    onActivate: smartActivate
+  });
+
+  /** 搜索框按键：漫游（↑↓ / Enter）优先；未消费的交给搜索自身（Esc 清空并失焦）。 */
+  const handleSearchInputKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (handleNavKeyDown(event)) return;
+      handleSearchKeyDown(event);
+    },
+    [handleNavKeyDown, handleSearchKeyDown]
+  );
+
   // 自动原生分组：把聚合结果落成浏览器 tabGroups / 关闭时解散（细则见该 hook 注释）。
   useAutoGroupSync({
     sections: baseSections,
@@ -329,6 +445,12 @@ export default function App() {
   const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers();
   const duplicateIndex = useMemo(() => DuplicateIndex.build(tabs), [tabs]);
   const duplicateCounts = useMemo(() => duplicateIndex.counts(), [duplicateIndex]);
+  // 可清理的重复标签数（与清理动作共用 planDuplicateCleanup，口径必然一致）。
+  // >0 时底栏出现「清理重复」入口（与「唤醒全部」同款条件出现模式）。
+  const duplicateRemovableCount = useMemo(
+    () => planDuplicateCleanup(duplicateIndex, boundTabIds).removable.length,
+    [duplicateIndex, boundTabIds]
+  );
 
   const partners = useMemo(() => splitPartnerIds(tabs, activeTabId), [tabs, activeTabId]);
 
@@ -370,12 +492,58 @@ export default function App() {
     };
   }, [settings.groupMode, tabs]);
 
+  /** 手动重试数据初始化（自动重试失败后错误态的出口）。 */
+  const handleRetryLoad = useCallback(() => {
+    setLoadFailed(false);
+    void initializeData().catch(() => setLoadFailed(true));
+  }, [initializeData]);
+
+  /**
+   * 关闭浏览器多选（Ctrl+Click）的标签。
+   *
+   * 此前多选高亮只同步了视觉、没有任何操作出口 —— 用户选中几个标签后会
+   * 尝试「一起关掉」，发现不行。这里补上出口（走既有撤销管线，可反悔）。
+   */
+  const handleCloseHighlighted = useCallback(() => {
+    const state = useTabStore.getState();
+    const ids = [...state.highlightedIds];
+    if (ids.length === 0) return;
+    void closeWithUndo(state.tabs, ids);
+  }, [closeWithUndo]);
+
   const handleCloseTab = useCallback(
     (tab: TabRecord) => {
       void closeWithUndo(useTabStore.getState().tabs, [tab.id]);
     },
     [closeWithUndo]
   );
+
+  /**
+   * 一键清理重复标签：每个网址保留「激活 > 固定 > 位置靠前」的一个（固定标签豁免），
+   * 关闭其余可清理者。走既有 closeWithUndo 管线 —— 清理同样进撤销栈、可一键反悔。
+   * 固定空间绑定的标签额外豁免：那是用户显式保存的资产，不能被自动清理。
+   *
+   * 清理后对「保留项」播放一次脉冲高亮：结果不再只是一个数量，
+   * 用户能看到每个域名留下了哪一个（否则只能靠撤销后反推）。
+   */
+  const handleCloseDuplicates = useCallback(() => {
+    const liveTabs = useTabStore.getState().tabs;
+    const plan = planDuplicateCleanup(
+      DuplicateIndex.build(liveTabs),
+      useDataStore.getState().boundTabIds
+    );
+    if (plan.removable.length === 0) {
+      // 入口条件出现（>0 才显示），但命令面板常驻：无候选时不能静默。
+      notify(t('duplicates.cleanNone'));
+      return;
+    }
+    void closeWithUndo(
+      liveTabs,
+      plan.removable.map((tab) => tab.id)
+    );
+    // 关闭是异步的（tabs 事件回灌后才移除行）；保留项始终在 DOM 里，可立即脉冲。
+    window.setTimeout(() => pulseTabRows(plan.keepIds), 80);
+  }, [closeWithUndo, notify, t]);
   /**
    * 固定/取消固定带 toast 反馈。
    *
@@ -574,6 +742,7 @@ export default function App() {
       onDiscardInactive: handleDiscardInactive,
       onWakeAll: handleWakeAll,
       onQuickRegroup: handleQuickRegroup,
+      onCleanDuplicates: handleCloseDuplicates,
       onLocateActive: handleLocateActive,
       onOpenHistory: () => setShowHistory(true),
       onOpenSettings: openOptionsPage,
@@ -603,6 +772,7 @@ export default function App() {
       handleDiscardInactive,
       handleWakeAll,
       handleQuickRegroup,
+      handleCloseDuplicates,
       handleLocateActive,
       handleToggleAllSections,
       smartActivate,
@@ -619,7 +789,9 @@ export default function App() {
           query={query}
           onChange={setQuery}
           inputRef={searchInputRef}
-          onKeyDown={handleSearchKeyDown}
+          onKeyDown={handleSearchInputKeyDown}
+          /* 有可选项才允许提示（聚焦时显示）：空态同样支持漫游，故不再要求先输入 */
+          showKeyboardHint={isFiltering ? filteredTabs.length > 0 : tabs.length > 0}
         />
         {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status；视觉用户有列表过滤反馈，读屏用户此前无感知） */}
         <output className="sr-only" aria-live="polite">
@@ -706,8 +878,13 @@ export default function App() {
           onTouchMove={markUserScroll}
         >
           {!dataReady ? (
-            // 加载骨架：区分「同步中」与「真的没有标签」
-            <LoadingSkeleton />
+            loadFailed ? (
+              /* 自动重试仍失败：给出说明与手动出口，不留无出口的骨架屏 */
+              <LoadErrorState onRetry={handleRetryLoad} />
+            ) : (
+              // 加载骨架：区分「同步中」与「真的没有标签」
+              <LoadingSkeleton />
+            )
           ) : tabs.length === 0 ? (
             <EmptyTabs />
           ) : isFiltering && filteredTabs.length === 0 ? (
@@ -728,7 +905,7 @@ export default function App() {
               rowActionsVisible={settings.rowActionsVisible}
               showSplitBadges={settings.showSplitBadges}
               highlightedIds={highlightedIds}
-              searchActiveTabId={selectedSearchTabId}
+              searchActiveTabId={selectedNavTabId}
               noCacheTabIds={noCacheTabIds}
               callbacks={sectionCallbacks}
             />
@@ -747,13 +924,17 @@ export default function App() {
           footerLabels={settings.footerLabels}
           collapsibleCount={collapsibleSections.length}
           allCollapsed={allSectionsCollapsed}
-          quickRegrouping={quickRegrouping}
           activeTabId={activeTabId}
           discardedCount={discardedCount}
+          duplicateCount={duplicateRemovableCount}
+          highlightedCount={highlightedIds.size}
+          quickRegrouping={quickRegrouping}
           onToggleAllSections={handleToggleAllSections}
           onDiscardInactive={handleDiscardInactive}
           onWakeAll={handleWakeAll}
           onQuickRegroup={handleQuickRegroup}
+          onCleanDuplicates={handleCloseDuplicates}
+          onCloseHighlighted={handleCloseHighlighted}
           onLocateActive={handleLocateActive}
           onOpenHistory={() => setShowHistory(true)}
           onOpenSettings={openOptionsPage}
@@ -773,14 +954,16 @@ export default function App() {
           />
         )}
         {showSnapshots && <SnapshotsPanel onClose={() => setShowSnapshots(false)} />}
-        {!settings.onboarded && dataReady && (
-          // 引导已完整讲过功能清单与固定空间概念（磁贴 vs 收藏夹），完成引导即
+        {!settings.onboarded && dataReady && showTour && (
+          // 引导已完整讲过功能清单与固定空间概念（磁贴 vs 文件夹），完成引导即
           // 同步收起三层引导（Tour / Tip Banner / 固定空间概念卡）中的后两层，
           // 避免"关完一层还有一层"（概念卡仍可从设置页「固定概念一览」随时查看）。
+          // Esc 走 onDismiss：仅本次关闭不落盘，下次打开面板可再次查看。
           <OnboardingTour
             onDone={() => {
               void tryUpdateSettings({ onboarded: true, tipSeen: true, conceptsSeen: true });
             }}
+            onDismiss={() => setShowTour(false)}
           />
         )}
         {showPalette && (

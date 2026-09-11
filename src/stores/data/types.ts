@@ -9,7 +9,7 @@ import type { TabRecord } from '@/core/tab-types';
 import type { MutateSessionResult } from '@/platform/storage/session';
 import type { Repositories } from '@/platform/registry';
 
-/** 拖标签/分组进入收藏夹的落位结果计数。对外导出供 UI 层组织反馈文案。 */
+/** 拖标签/分组进入文件夹的落位结果计数。对外导出供 UI 层组织反馈文案。 */
 export interface AddTabsToFolderResult {
   added: number;
   moved: number;
