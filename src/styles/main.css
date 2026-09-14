@@ -782,11 +782,13 @@ html.theme-transition *::after {
      浅色模式下键盘用户几乎看不见焦点在哪 —— 对以键盘流为卖点的产品是致命伤）；
    - box-shadow 补一圈画布色内描边，保证环落在深色/彩色控件上时依然可辨；
    - 选择器须覆盖 select / textarea / summary：它们同样是键盘可达控件，
-     漏掉会让「高级设置」抽屉的 <summary> 拿到焦点却毫无视觉提示。 */
+     漏掉会让「高级设置」抽屉的 <summary> 拿到焦点却毫无视觉提示；
+   - 不写 border-radius：outline 天然沿元素自身圆角绘制。
+     历史坑：曾全局写死 6px，特异性 (0,1,0) 与单类选择器同级，圆角归属随
+     CSS 书写顺序漂移 —— 方形控件被强加圆环、8px/12px 圆角控件被压回 6px。 */
 :where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
-  border-radius: 6px;
   box-shadow: 0 0 0 1px var(--canvas);
 }
 
@@ -826,6 +828,36 @@ html.theme-transition *::after {
   }
   :where(button, [role='button']):active {
     transform: none;
+  }
+}
+
+/* ---------- Windows 高对比度模式（forced-colors: active）----------
+   系统会强制替换作者颜色：color-mix 半透明状态背景与 box-shadow 描边被丢弃，
+   拖放目标 / 激活行 / 浏览器高亮行退化为不可辨，焦点环失去内描边保障。
+   对策：改用系统语义色（Highlight / SelectedItem）实色表达状态。
+   原则：只求「状态可辨」，不求还原品牌色；不使用 forced-color-adjust: none
+   （强行保留作者色反而失去系统级对比度保障）。
+   此块受 design-tokens.test.ts「交互基线」断言守护，整块删除会被 CI 拦下。 */
+@media (forced-colors: active) {
+  /* 拖放目标：三处 color-mix 高亮统一降级为系统高亮色边框 + 选中底色 */
+  .section-card.is-drop-target,
+  .pinned-strip.is-drop-target,
+  .row-item.is-drop-target {
+    background: SelectedItem;
+    outline: 2px solid Highlight;
+  }
+
+  /* 激活 / 浏览器高亮行：底色降级为系统选中色，保底一行实色描边 */
+  .row-item.is-active,
+  .row-item.is-highlighted:not(.is-active) {
+    background: SelectedItem;
+    outline: 1px solid Highlight;
+  }
+
+  /* 焦点环：box-shadow 内描边被系统丢弃，改为纯 outline（系统保证可见） */
+  :where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
   }
 }
 
@@ -1005,6 +1037,35 @@ html.theme-transition *::after {
 .search-bar-clear:hover {
   background: var(--c-gray-100);
   color: var(--c-gray-700);
+}
+
+/* 「包含历史」开关（P-01 时间线搜索）：与 clear 同款的 24px 命中尺寸与过渡；
+   激活态用品牌色区分——常驻按钮需要一眼可辨的开/关状态。 */
+.search-bar-history {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--c-gray-500);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.search-bar-history:hover {
+  background: var(--c-gray-100);
+  color: var(--c-gray-700);
+}
+
+.search-bar-history.is-active {
+  color: var(--c-brand-600);
+}
+
+.search-bar-history.is-active:hover {
+  background: var(--c-brand-50);
+  color: var(--c-brand-700);
 }
 
 /* 搜索键盘导航提示：过滤态出现，极淡不抢眼（键盘流能力的可发现性出口） */
@@ -1808,13 +1869,25 @@ body.dnd-dragging .row-item .row-actions {
   }
 }
 
-/* 底栏文字标签只在「一行放得下」时显示。
-   此前阈值 360px 的后果反直觉：把侧边栏从 340px 拉宽到 400px，反而从
-   「一行纯图标」变成「两行带文字」—— 越拉宽越挤。按按钮实际占宽
-   （8 个常驻按钮 × 约 55px + 左侧计数约 90px ≈ 560px）取值，
-   保证显示文字时必然单行。 */
-@container (max-width: 560px) {
+/* 底栏文字标签的窄面板策略：
+   旧规则「≤560px 全部隐藏」让 footerLabels 设置在默认侧边栏宽度（Chrome 侧边栏
+   上限约 500px）下永远看不到效果 —— 设置形同虚设。新策略：
+   - 常规宽度：按设置显示，nav 已有 flex-wrap，文字放不下自然换行到第二行；
+   - 窄档（≤360px）：与 .section-media-label 同档退化，仅隐藏非核心标签，
+     保留「快照 / 历史 / 设置」三个记录恢复与设置入口的文字，其余退回纯图标
+     （提示文案 footerLabelsHint 已同步改写）；
+   - 极窄档（≤300px）：全部退回纯图标，与 .add-tab-btn 同档。 */
+@container (max-width: 360px) {
   .icon-btn-label {
+    display: none;
+  }
+  .icon-btn-label-keep {
+    display: inline;
+  }
+}
+@container (max-width: 300px) {
+  .icon-btn-label,
+  .icon-btn-label-keep {
     display: none;
   }
 }

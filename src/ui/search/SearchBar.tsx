@@ -12,7 +12,10 @@ export function SearchBar({
   onChange,
   inputRef,
   onKeyDown,
-  showKeyboardHint = false
+  showKeyboardHint = false,
+  showHistoryToggle = false,
+  historyOn = false,
+  onToggleHistory
 }: {
   query: string;
   onChange: (value: string) => void;
@@ -20,6 +23,12 @@ export function SearchBar({
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
   /** 是否允许显示键盘导航提示（↑↓/Enter/Esc）；实际只在输入框聚焦时呈现。 */
   showKeyboardHint?: boolean;
+  /** 是否显示「包含历史」开关（仅 sidepanel 装配时传入）。 */
+  showHistoryToggle?: boolean;
+  /** 历史搜索当前开关态（决定按钮激活样式与提示文案）。 */
+  historyOn?: boolean;
+  /** 切换历史搜索（含快照/归档索引）。 */
+  onToggleHistory?: () => void;
 }) {
   const { t } = useTranslation();
   /** 聚焦态：提示只在用户把焦点放进搜索框时出现，避免常驻占位与视觉噪音。 */
@@ -46,6 +55,21 @@ export function SearchBar({
             }
           }}
         />
+        {showHistoryToggle && onToggleHistory && (
+          <button
+            type="button"
+            className={'search-bar-history' + (historyOn ? ' is-active' : '')}
+            title={historyOn ? t('search.historyToggle') : t('search.historyToggleOff')}
+            aria-label={historyOn ? t('search.historyToggle') : t('search.historyToggleOff')}
+            aria-pressed={historyOn}
+            onClick={() => {
+              onToggleHistory();
+              inputRef.current?.focus();
+            }}
+          >
+            <Icon d={Icons.history} className="h-3.5 w-3.5" />
+          </button>
+        )}
         {query && (
           <button
             type="button"

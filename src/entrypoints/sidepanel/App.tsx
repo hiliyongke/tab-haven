@@ -4,8 +4,10 @@ import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
+import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import {
   activateTabAcrossWindows,
+  createTabsWithUrls,
   detectLanguage,
   onTabHighlighted,
   reloadTabs
@@ -35,6 +37,7 @@ import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 import { pulseTabRows, useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { useAutoGroupSync } from '@/entrypoints/sidepanel/hooks/useAutoGroupSync';
 import { useSearchController } from '@/entrypoints/sidepanel/hooks/useSearchController';
+import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
 import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
 import { useListNavigation } from '@/entrypoints/sidepanel/hooks/useListNavigation';
@@ -114,6 +117,8 @@ export default function App() {
   const notifyError = useUndoStore((state) => state.notifyError);
   const undoBatchCount = useUndoStore((state) => state.batches.length);
   const snapshotCount = useSnapshotStore((state) => state.snapshots.length);
+  /** 完整快照列表（P-01 时间线搜索索引源；仅引用变化时重建引擎）。 */
+  const snapshots = useSnapshotStore((state) => state.snapshots);
 
   const [quickRegrouping, setQuickRegrouping] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -160,7 +165,7 @@ export default function App() {
     [activateTab]
   );
 
-  // 常驻搜索：查询状态 / 引擎 / 命中 / 禁缓存角标集。
+  // 常驻搜索：查询状态 / 引擎 / 命中 / 禁缓存角标集 / 历史命中（P-01）。
   // 键盘漫游（↑↓/Enter）已拆到 useListNavigation：搜索态与空态共用一套语义。
   const {
     query,
@@ -171,12 +176,15 @@ export default function App() {
     filteredTabs,
     searchHitTabIds,
     noCacheTabIds,
+    historyHits,
     handleSearchKeyDown
   } = useSearchController({
     tabs,
     t,
     searchAllWindows: settings.searchAllWindows,
     pinyinSearch: settings.pinyinSearch,
+    searchHistory: settings.searchHistory,
+    snapshots,
     noCacheEnabled: settings.noCacheEnabled,
     noCachePatterns: settings.noCachePatterns
   });
@@ -741,6 +749,35 @@ export default function App() {
     ]
   );
 
+  /**
+   * 打开文件夹全部条目（P-04「文件夹即空间」命令面板出口）：
+   * 只开缺失条目（窗口内已打开的跳过），与 FolderRow.handleOpenAll 同口径；
+   * 导入事务进行中固定空间只读不影响「打开」（不写 folders），无需禁用。
+   */
+  const handleOpenFolder = useCallback(
+    (folderId: string) => {
+      const folder = useDataStore.getState().folders.find((entry) => entry.id === folderId);
+      if (!folder) return;
+      const liveTabs = useTabStore.getState().tabs;
+      const missing = folder.items.filter(
+        (item) =>
+          item.url &&
+          item.pendingTabId === undefined &&
+          !liveTabs.some((tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito)
+      );
+      if (missing.length === 0) {
+        notify(t('fixed.allOpen'));
+        return;
+      }
+      void createTabsWithUrls(
+        missing.map((item) => item.url).filter((u): u is string => Boolean(u))
+      )
+        .then((created) => notify(t('fixed.openedAll', { count: created })))
+        .catch(() => notifyError(t('errors.operationFailed')));
+    },
+    [notify, notifyError, t]
+  );
+
   // 命令面板动作集合（⌘P）：复用既有 handler。必须 memo 化：面板打开期间每次
   // 标签快照都重建 actions 引用，会让 CommandPalette 的 commands 重算、索引钳制与
   // scrollIntoView effect 反复执行。
@@ -773,7 +810,8 @@ export default function App() {
           .getState()
           .archiveCurrentWindow()
           .then((count) => notify(t('snapshots.archived', { count })))
-          .catch(() => notifyError(t('errors.operationFailed')))
+          .catch(() => notifyError(t('errors.operationFailed'))),
+      onOpenFolder: handleOpenFolder
     }),
     [
       handleDiscardInactive,
@@ -782,11 +820,38 @@ export default function App() {
       handleCloseDuplicates,
       handleLocateActive,
       handleToggleAllSections,
+      handleOpenFolder,
       smartActivate,
       notify,
       notifyError,
       t
     ]
+  );
+
+  /** 历史命中「打开该页面」：仅新建一个标签（最轻量找回），失败走错误提示。 */
+  const handleHistoryOpenUrl = useCallback(
+    (url: string) => {
+      void createTabsWithUrls([url])
+        .then(() => notify(t('search.historyOpened')))
+        .catch(() => notifyError(t('errors.operationFailed')));
+    },
+    [notify, notifyError, t]
+  );
+
+  /** 历史命中「恢复该快照」：复用快照面板整份恢复管线与提示文案。 */
+  const handleHistoryRestoreSnapshot = useCallback(
+    (snapshotId: string, tabCount: number) => {
+      if (tabCount === 0) {
+        notify(t('snapshots.emptySnapshot'));
+        return;
+      }
+      void useSnapshotStore
+        .getState()
+        .restore(snapshotId)
+        .then((count) => notify(t('snapshots.restored', { count })))
+        .catch(() => notifyError(t('errors.operationFailed')));
+    },
+    [notify, notifyError, t]
   );
 
   return (
@@ -804,6 +869,9 @@ export default function App() {
           onKeyDown={handleSearchInputKeyDown}
           /* 有可选项才允许提示（聚焦时显示）：空态同样支持漫游，故不再要求先输入 */
           showKeyboardHint={isFiltering ? filteredTabs.length > 0 : tabs.length > 0}
+          showHistoryToggle
+          historyOn={settings.searchHistory}
+          onToggleHistory={() => void tryUpdateSettings({ searchHistory: !settings.searchHistory })}
         />
         {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status；视觉用户有列表过滤反馈，读屏用户此前无感知） */}
         <output className="sr-only" aria-live="polite">
@@ -924,6 +992,16 @@ export default function App() {
           )}
         </div>
 
+        {/* P-01 历史命中分区：仅过滤态且设置开启时展示；当前标签在上方列表，
+            历史是回溯补充，刻意放列表之后。 */}
+        {isFiltering && settings.searchHistory && historyHits.length > 0 && (
+          <HistoryHitsSection
+            hits={historyHits}
+            onOpenUrl={handleHistoryOpenUrl}
+            onRestoreSnapshot={handleHistoryRestoreSnapshot}
+          />
+        )}
+
         <div className="add-tab-bar">
           <button type="button" className="add-tab-btn" onClick={() => void createNewTab()}>
             <Icon d={Icons.plus} className="h-4 w-4" />
@@ -965,7 +1043,20 @@ export default function App() {
             onClose={() => setShowHistory(false)}
           />
         )}
-        {showSnapshots && <SnapshotsPanel onClose={() => setShowSnapshots(false)} />}
+        {showSnapshots && (
+          <SnapshotsPanel
+            onClose={() => setShowSnapshots(false)}
+            onCleanDuplicates={handleCloseDuplicates}
+            onDiscardInactive={handleDiscardInactive}
+            onArchiveWindow={() =>
+              void useSnapshotStore
+                .getState()
+                .archiveCurrentWindow()
+                .then((count) => notify(t('snapshots.archived', { count })))
+                .catch(() => notifyError(t('errors.operationFailed')))
+            }
+          />
+        )}
         {!settings.onboarded && dataReady && showTour && (
           // 引导已完整讲过功能清单与固定空间概念（磁贴 vs 文件夹），完成引导即
           // 同步收起三层引导（Tour / Tip Banner / 固定空间概念卡）中的后两层，
@@ -981,6 +1072,7 @@ export default function App() {
         {showPalette && (
           <CommandPalette
             tabs={tabs}
+            folders={folders}
             actions={paletteActions}
             onClose={() => setShowPalette(false)}
           />

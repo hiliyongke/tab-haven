@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import i18n from '@/i18n';
-import type { Snapshot } from '@/core/schema/models';
+import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
 import { closeTabs, queryCurrentWindowTabs, queryCurrentWindowGroups } from '@/platform/tabs';
 import { sendMessageWithAck } from '@/platform/messages';
@@ -15,6 +15,9 @@ import {
   restoreSnapshot,
   SNAPSHOTS_RMW_LOCK
 } from '@/platform/snapshot/snapshots';
+import { parseWorkona } from '@/core/insights/workonaImport';
+import { newId } from '@/core/util/id';
+import { buildPartialSnapshot } from '@/core/snapshot/snapshotDiff';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 
 /**
@@ -36,12 +39,26 @@ interface SnapshotState {
   archiveCurrentWindow: (name?: string) => Promise<number>;
   /** 从 OneTab 导出文本导入为快照，返回导入标签数。 */
   importOneTab: (text: string, name?: string) => Promise<number>;
+  /**
+   * 从 Workona 导出 JSON 批量导入为快照族（P-09 迁移矩阵）。
+   * 返回 { 导入快照数, 导入标签数, 识别但跳过的 workspace 数 }。
+   */
+  importWorkona: (text: string) => Promise<{
+    snapshots: number;
+    tabs: number;
+    skipped: number;
+  }>;
   /** 删除指定快照。 */
   deleteSnapshot: (id: string) => Promise<void>;
   /** 重命名指定快照。 */
   renameSnapshot: (id: string, name: string) => Promise<void>;
   /** 恢复指定快照（在当前窗口重新打开全部标签），返回打开的标签数。 */
   restore: (id: string) => Promise<number>;
+  /**
+   * 选择性恢复（P-02）：只恢复勾选的条目，返回实际新建标签数。
+   * 勾选集为空返回 0；其余语义与 restore 一致（缺失才新建、分组还原等）。
+   */
+  restoreSelected: (id: string, selectedTabs: readonly SnapshotTab[]) => Promise<number>;
   /** 内存态重置（清除所有数据时调用：已删除的快照不应继续出现在列表里）。 */
   reset: () => void;
 }
@@ -192,6 +209,27 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     return tabs.length;
   },
 
+  importWorkona: async (text) => {
+    const result = parseWorkona(text, () => newId('snap'));
+    if (result.snapshots.length === 0) {
+      return { snapshots: 0, tabs: 0, skipped: result.skippedWorkspaces };
+    }
+    // 逐份落盘：每份各自走 persistSnapshot 的跨页锁 + trimSnapshots 裁剪。
+    // 刻意不整批塞进一次写入——快照族上限（SNAPSHOTS_LIMIT）由裁剪函数按
+    // 「保留最新」语义收敛，一次性合并写入会在超上限时丢掉整批中较旧的份，
+    // 而逐份写入让每份都经同一语义收敛（与用户手动逐条保存的最终态一致）。
+    let latest: Snapshot[] | undefined;
+    for (const snapshot of result.snapshots) {
+      latest = await persistSnapshot(snapshot);
+    }
+    if (latest) set({ snapshots: latest });
+    return {
+      snapshots: result.snapshots.length,
+      tabs: result.totalTabs,
+      skipped: result.skippedWorkspaces
+    };
+  },
+
   deleteSnapshot: async (id) => {
     // 读-改-写基于仓库最新值 + 跨页锁串行化：面板打开期间 background 可能写入
     // 关窗自动快照，锁外 RMW 交错仍会把它们覆盖丢失（锁与 persistSnapshot 同一把）。
@@ -222,6 +260,14 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const snap = get().snapshots.find((entry) => entry.id === id);
     if (!snap) return 0;
     return restoreSnapshot(snap);
+  },
+
+  restoreSelected: async (id, selectedTabs) => {
+    const snap = get().snapshots.find((entry) => entry.id === id);
+    if (!snap || selectedTabs.length === 0) return 0;
+    // 部分快照：勾选条目 + 同步重算 tabCount（满足 schema refine 约束），
+    // 之后完全复用整份恢复管线（豁免/并发创建/分组还原语义不变）。
+    return restoreSnapshot(buildPartialSnapshot(snap, selectedTabs));
   },
 
   reset: () => set({ snapshots: [], ready: false })

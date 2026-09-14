@@ -187,6 +187,33 @@ const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
   { titleKey: 'about.privacy5Title', bodyKey: 'about.privacy5Body' }
 ];
 
+/**
+ * 权限 → 用途映射（P-03 信任面板）：把「零网络」从文档承诺变成可见功能。
+ * 键一律字面量：死键守卫靠「源码中出现精确键串」判定，模板拼接会让整批键被判死键。
+ * 数据源：wxt.config.ts permissions（10 项）+ WXT 自动追加的 sidePanel + optional host。
+ * privacy-check 校验权限清单与 PRIVACY.md 一致，本面板只做展示，不引入任何监测代码。
+ */
+const PERMISSION_FACTS: { titleKey: string; bodyKey: string }[] = [
+  { titleKey: 'about.permTabsTitle', bodyKey: 'about.permTabsBody' },
+  { titleKey: 'about.permTabGroupsTitle', bodyKey: 'about.permTabGroupsBody' },
+  { titleKey: 'about.permStorageTitle', bodyKey: 'about.permStorageBody' },
+  { titleKey: 'about.permAlarmsTitle', bodyKey: 'about.permAlarmsBody' },
+  { titleKey: 'about.permContextMenusTitle', bodyKey: 'about.permContextMenusBody' },
+  { titleKey: 'about.permOmniboxTitle', bodyKey: 'about.permOmniboxBody' },
+  { titleKey: 'about.permSessionsTitle', bodyKey: 'about.permSessionsBody' },
+  { titleKey: 'about.permBookmarksTitle', bodyKey: 'about.permBookmarksBody' },
+  { titleKey: 'about.permNotificationsTitle', bodyKey: 'about.permNotificationsBody' },
+  { titleKey: 'about.permDnrTitle', bodyKey: 'about.permDnrBody' },
+  { titleKey: 'about.permSidePanelTitle', bodyKey: 'about.permSidePanelBody' },
+  { titleKey: 'about.permOptionalHostsTitle', bodyKey: 'about.permOptionalHostsBody' }
+];
+
+/** 信任面板补充事实：数据存放位置 + 自行验证教程（不要求信任声明，教会用户验证）。 */
+const TRUST_EXTRA_FACTS: { titleKey: string; bodyKey: string }[] = [
+  { titleKey: 'about.trustDataTitle', bodyKey: 'about.trustDataBody' },
+  { titleKey: 'about.trustVerifyTitle', bodyKey: 'about.trustVerifyBody' }
+];
+
 /** 技术与许可。 */
 const TECH_FACTS: { titleKey: string; bodyKey: string }[] = [
   { titleKey: 'about.tech1Title', bodyKey: 'about.tech1Body' },
@@ -343,6 +370,30 @@ export function AboutPage() {
         <h2 className={SECTION_TITLE_CLASS}>{t('about.privacyTitle')}</h2>
         <ul className="grid gap-3 sm:grid-cols-2">
           {PRIVACY_FACTS.map((fact) => (
+            <li key={fact.titleKey} className={CARD_CLASS}>
+              <p className="text-xs font-medium text-gray-700">{t(fact.titleKey)}</p>
+              <p className="mt-1 text-3xs leading-relaxed text-gray-500">{t(fact.bodyKey)}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* 信任面板（P-03）：权限 → 用途映射 + 数据位置 + 自行验证教程 */}
+      <section className="mt-8">
+        <h2 className={SECTION_TITLE_CLASS}>{t('about.trustTitle')}</h2>
+        <p className="mb-3 text-3xs leading-relaxed text-gray-500">{t('about.trustIntro')}</p>
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-surface">
+          <ul className="divide-y divide-gray-100">
+            {PERMISSION_FACTS.map((fact) => (
+              <li key={fact.titleKey} className="flex flex-col gap-0.5 px-4 py-2.5">
+                <p className="text-xs font-medium text-gray-700">{t(fact.titleKey)}</p>
+                <p className="text-3xs leading-relaxed text-gray-500">{t(fact.bodyKey)}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+          {TRUST_EXTRA_FACTS.map((fact) => (
             <li key={fact.titleKey} className={CARD_CLASS}>
               <p className="text-xs font-medium text-gray-700">{t(fact.titleKey)}</p>
               <p className="mt-1 text-3xs leading-relaxed text-gray-500">{t(fact.bodyKey)}</p>

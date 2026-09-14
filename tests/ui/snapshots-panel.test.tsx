@@ -30,6 +30,18 @@ afterEach(() => {
   useSnapshotStore.setState({ snapshots: [], ready: false });
 });
 
+/** 渲染面板（P-05 后 props 增加三个洞察行动出口，测试统一注入 noop）。 */
+function renderPanel(): void {
+  render(
+    <SnapshotsPanel
+      onClose={() => {}}
+      onCleanDuplicates={() => {}}
+      onDiscardInactive={() => {}}
+      onArchiveWindow={() => {}}
+    />
+  );
+}
+
 describe('SnapshotsPanel 分组', () => {
   it('按生命周期分组展示，命名快照与归档不混排', () => {
     useSnapshotStore.setState({
@@ -42,7 +54,7 @@ describe('SnapshotsPanel 分组', () => {
       ready: true
     });
 
-    render(<SnapshotsPanel onClose={() => {}} />);
+    renderPanel();
 
     // 断言用英文文案：i18n 默认语言在测试环境下为 en（不依赖浏览器语言）。
     const groupNamed = screen.getByText('Named snapshots').closest('div');
@@ -62,7 +74,7 @@ describe('SnapshotsPanel 分组', () => {
   });
 
   it('无快照时只显示空态，不渲染任何分组标题', () => {
-    render(<SnapshotsPanel onClose={() => {}} />);
+    renderPanel();
 
     expect(screen.queryByText('Named snapshots')).toBeNull();
     expect(screen.queryByText('Archives (closed and kept)')).toBeNull();

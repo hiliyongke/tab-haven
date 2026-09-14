@@ -50,6 +50,7 @@ function makeActions(): PaletteActions & { calls: string[] } {
     onSaveSnapshot: record('saveSnapshot'),
     onArchiveWindow: record('archive'),
     onSaveSpace: record('saveSpace'),
+    onOpenFolder: () => undefined,
     onSwitchTab: (id) => calls.push(`switch:${id}`)
   };
 }
@@ -57,7 +58,7 @@ function makeActions(): PaletteActions & { calls: string[] } {
 function renderPalette(tabs: TabRecord[] = [tab({ id: 1 }), tab({ id: 2 })]) {
   const actions = makeActions();
   const onClose = vi.fn();
-  render(<CommandPalette tabs={tabs} actions={actions} onClose={onClose} />);
+  render(<CommandPalette tabs={tabs} folders={[]} actions={actions} onClose={onClose} />);
   const input = screen.getByRole('combobox');
   return { actions, onClose, input };
 }

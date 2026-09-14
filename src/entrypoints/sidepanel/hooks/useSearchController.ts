@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchEngine } from '@/core/search/SearchEngine';
+import {
+  buildHistoryTargets,
+  decodeHistoryId,
+  HISTORY_SNAPSHOT_LIMIT,
+  type HistoryHitInfo
+} from '@/core/search/historyIndex';
 import { matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { logDegraded } from '@/platform/diagnostics';
+import type { Snapshot } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
 
@@ -33,8 +40,17 @@ export interface SearchControllerOptions {
   t: (key: string, options?: Record<string, unknown>) => string;
   searchAllWindows: boolean;
   pinyinSearch: boolean;
+  /** 时间线搜索：命中快照/归档条目（P-01）。 */
+  searchHistory: boolean;
+  /** 快照族数据源（时间线索引用；为空数组时历史命中恒空）。 */
+  snapshots: readonly Snapshot[];
   noCacheEnabled: boolean;
   noCachePatterns: readonly string[];
+}
+
+export interface HistorySearchHit extends HistoryHitInfo {
+  /** 标题命中分段（与当前标签命中同结构，渲染层加粗）。 */
+  titleSegments: Array<{ text: string; hit: boolean }>;
 }
 
 export interface SearchController {
@@ -53,12 +69,26 @@ export interface SearchController {
   searchHitTabIds: number[];
   /** 命中「开发者禁缓存」规则的标签 id 集合（空规则时为空集单例）。 */
   noCacheTabIds: ReadonlySet<number>;
+  /**
+   * 历史命中（P-01 时间线搜索）：查询命中快照/归档条目的解码结果（按相关度，
+   * 上限 20 条）。仅当 searchHistory 开启且查询非空时非空数组。
+   */
+  historyHits: HistorySearchHit[];
   /** 搜索框按键：仅 Esc（清空 + 失焦）；↑↓ / Enter 由 useListNavigation 承担。 */
   handleSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export function useSearchController(options: SearchControllerOptions): SearchController {
-  const { tabs, t, searchAllWindows, pinyinSearch, noCacheEnabled, noCachePatterns } = options;
+  const {
+    tabs,
+    t,
+    searchAllWindows,
+    pinyinSearch,
+    searchHistory,
+    snapshots,
+    noCacheEnabled,
+    noCachePatterns
+  } = options;
 
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -102,6 +132,34 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     [effectiveTabs, t, pinyinSearch]
   );
 
+  // 时间线搜索引擎（P-01）：快照条目映射为负数合成 id 目标，与主引擎同内核。
+  // 只在开启历史搜索时构造——快照数据不动则引擎引用稳定，不会随标签事件重建。
+  const historyEngine = useMemo(
+    () =>
+      searchHistory
+        ? new SearchEngine(buildHistoryTargets(snapshots), { pinyin: pinyinSearch })
+        : null,
+    [searchHistory, snapshots, pinyinSearch]
+  );
+
+  /** 历史引擎拼音就绪信号（与主引擎同款 tick 机制）。 */
+  const [historyPinyinTick, setHistoryPinyinTick] = useState(0);
+  useEffect(() => {
+    if (!historyEngine || historyEngine.pinyinReady) return;
+    let cancelled = false;
+    void historyEngine
+      .ensurePinyin()
+      .then(() => {
+        if (!cancelled) setHistoryPinyinTick((tick) => tick + 1);
+      })
+      .catch((error: unknown) => {
+        logDegraded('search', '历史搜索拼音词典加载失败，本轮拼音匹配不可用', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [historyEngine]);
+
   /**
    * 拼音目标是异步补齐的（词典按需动态加载），补齐本身不改变任何 React 状态。
    * 没有这个信号，拼音命中会一直不出现：既不会在首次输入时自愈，也会在
@@ -134,6 +192,24 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     [engine, query, effectiveTabs.length, pinyinTick]
   );
 
+  /**
+   * 历史命中（P-01）：合成 id 命中后立即解码为结构化信息（快照名/来源/时间/条目）。
+   * 解码需要与构造时同序的快照列表，故依赖 snapshots 原引用而非排序副本。
+   */
+  const historyHits = useMemo(() => {
+    if (!historyEngine || !isFiltering) return [];
+    const raw = historyEngine.search(query, 20);
+    const decoded: HistorySearchHit[] = [];
+    for (const hit of raw) {
+      const info = decodeHistoryId(hit.tabId, snapshots, HISTORY_SNAPSHOT_LIMIT);
+      if (!info) continue;
+      decoded.push({ ...info, titleSegments: hit.titleSegments });
+    }
+    return decoded;
+    // historyPinyinTick 同 pinyinTick：异步补齐后引用未变，靠 tick 触发重算。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyEngine, query, isFiltering, snapshots, historyPinyinTick]);
+
   const filteredTabs = useMemo(() => {
     if (!query.trim()) return effectiveTabs;
     const hitIds = new Set(searchHits.map((hit) => hit.tabId));
@@ -162,6 +238,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     filteredTabs,
     searchHitTabIds,
     noCacheTabIds,
+    historyHits,
     handleSearchKeyDown
   };
 }

@@ -359,3 +359,36 @@ describe('间距 / 圆角 / 阴影刻度', () => {
     expect(failures).toEqual([]);
   });
 });
+
+describe('交互基线（2026-09-14 诊断补强）', () => {
+  /**
+   * UI-01 守卫：Tailwind v4 preflight 不再为按钮默认提供 cursor: pointer，
+   * 基类若漏写该类，所有按钮 hover 退化为箭头光标，且构建期不会有任何报错。
+   */
+  it('Button 与 IconButton 基类必须声明 cursor-pointer', () => {
+    const button = readFileSync(join(SRC_DIR, 'ui', 'common', 'Button.tsx'), 'utf8');
+    const iconButton = readFileSync(join(SRC_DIR, 'ui', 'common', 'IconButton.tsx'), 'utf8');
+    expect(button).toMatch(/cursor-pointer/);
+    expect(iconButton).toMatch(/cursor-pointer/);
+  });
+
+  /**
+   * UI-02 守卫：forced-colors 适配块整体删除或改名后，CI 须能拦下。
+   * （Windows 高对比度下 color-mix 状态色会退化为不可辨，详见 main.css 内注释。）
+   */
+  it('main.css 必须包含 forced-colors 适配块', () => {
+    expect(css).toMatch(/@media \(forced-colors: active\)/);
+  });
+
+  /**
+   * UI-03 守卫：全局焦点环不得重新写死 border-radius（outline 沿元素自身圆角绘制）。
+   * 历史坑：写死 6px 后特异性 (0,1,0) 与单类同级，圆角归属随书写顺序漂移。
+   */
+  it('全局焦点环不得声明固定 border-radius', () => {
+    const block = cssNoComments.match(
+      /:where\(button, a, input, select, textarea, summary, \[tabindex\], \[role='button'\]\):focus-visible\s*\{[^}]*\}/
+    );
+    expect(block, '未找到全局焦点环规则块').not.toBeNull();
+    expect(block![0]).not.toMatch(/border-radius/);
+  });
+});

@@ -39,6 +39,7 @@ export type BooleanSettingKey =
   | 'autoSaveSnapshots'
   | 'uniqueUrlTabs'
   | 'searchAllWindows'
+  | 'searchHistory'
   | 'discardNotifyEnabled'
   | 'reuseNotifyEnabled'
   | 'contextMenusEnabled'
@@ -406,6 +407,12 @@ export function buildSections(
           key: 'searchAllWindows',
           labelKey: 'settings.searchAllWindows',
           hintKey: 'settings.searchAllWindowsHint'
+        },
+        {
+          kind: 'toggle',
+          key: 'searchHistory',
+          labelKey: 'settings.searchHistory',
+          hintKey: 'settings.searchHistoryHint'
         },
         {
           kind: 'select',

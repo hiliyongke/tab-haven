@@ -148,6 +148,13 @@ export const SettingsSchema = z.object({
   rowActionsVisible: z.boolean().default(false),
   /** 搜索是否包含中文拼音首字母匹配。 */
   pinyinSearch: z.boolean().default(true),
+  /**
+   * 时间线搜索：搜索同时命中快照与归档条目（P-01）。
+   * 默认开启——快照数据已在本地，索引是纯本地计算，「找回上次看过的页面」
+   * 是全产品最大的场景缺口；索引量受 HISTORY_SNAPSHOT_LIMIT（最近 20 份）
+   * 约束，不会随快照积累拖垮搜索性能。搜索框内有开关可临时关闭。
+   */
+  searchHistory: z.boolean().default(true),
   /** 撤销记录跨重启持久化（关闭后仅会话内可撤销）。 */
   persistUndo: z.boolean().default(true),
   /** 同一网址只保留一个标签：新开已存在则切到最近访问的既有标签，其余（含新建）关闭。 */

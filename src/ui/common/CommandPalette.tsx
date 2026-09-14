@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { LucideIcon } from 'lucide-react';
+import type { FixedFolder } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { Favicon } from '@/ui/common/Favicon';
@@ -23,6 +24,8 @@ export interface PaletteActions {
   onSaveSnapshot: () => void;
   onArchiveWindow: () => void;
   onSaveSpace: () => void;
+  /** 打开指定固定文件夹的全部条目（P-04：文件夹即空间）。 */
+  onOpenFolder: (folderId: string) => void;
 }
 
 interface CommandItem {
@@ -97,10 +100,13 @@ function PaletteOption({
  */
 export function CommandPalette({
   tabs,
+  folders,
   actions,
   onClose
 }: {
   tabs: readonly TabRecord[];
+  /** 固定文件夹列表（P-04 动态命令：每个文件夹一个「打开全部」命令）。 */
+  folders: readonly FixedFolder[];
   actions: PaletteActions;
   onClose: () => void;
 }) {
@@ -127,9 +133,18 @@ export function CommandPalette({
     };
   }, []);
 
-  // 命令与标签分组（P2-5）：键盘漫游顺序保持「命令 → 标签」不变，
+  // 命令与标签分组（P2-5）：键盘漫游顺序保持「文件夹 → 命令 → 标签」不变，
   // 仅在视觉上插入分组标题，让混排的数十项结果可按类别扫读。
-  const { commandItems, tabItems } = useMemo(() => {
+  // 文件夹命令（P-04）：每个固定文件夹一个「打开全部条目」命令 ——
+  // 「文件夹即空间」的命令面板入口，键入空间名直达。
+  const { folderItems, commandItems, tabItems } = useMemo(() => {
+    const folderCmds: CommandItem[] = folders.map((folder) => ({
+      id: `folder-${folder.id}`,
+      label: folder.name,
+      icon: Icons.folder,
+      hint: t('palette.openFolderHint', { count: folder.items.length }),
+      run: () => actions.onOpenFolder(folder.id)
+    }));
     const base: CommandItem[] = [
       {
         id: 'discard',
@@ -215,13 +230,20 @@ export function CommandPalette({
         run: () => actions.onSwitchTab(tab.id)
       }));
     const q = query.trim().toLowerCase();
-    if (!q) return { commandItems: base, tabItems: tabCmds };
+    if (!q) return { folderItems: folderCmds, commandItems: base, tabItems: tabCmds };
     const match = (c: CommandItem) => c.label.toLowerCase().includes(q);
-    return { commandItems: base.filter(match), tabItems: tabCmds.filter(match) };
-  }, [query, tabs, t, actions]);
+    return {
+      folderItems: folderCmds.filter(match),
+      commandItems: base.filter(match),
+      tabItems: tabCmds.filter(match)
+    };
+  }, [query, tabs, folders, t, actions]);
 
-  /** 扁平顺序 = 键盘漫游顺序（命令组在前，与分组渲染顺序一致）。 */
-  const commands = useMemo(() => [...commandItems, ...tabItems], [commandItems, tabItems]);
+  /** 扁平顺序 = 键盘漫游顺序（文件夹组在前，与分组渲染顺序一致）。 */
+  const commands = useMemo(
+    () => [...folderItems, ...commandItems, ...tabItems],
+    [folderItems, commandItems, tabItems]
+  );
 
   useEffect(() => {
     setIndex(0);
@@ -323,9 +345,27 @@ export function CommandPalette({
           {commands.length === 0 && (
             <div className="px-4 py-3 text-center text-2xs text-gray-500">{t('palette.empty')}</div>
           )}
+          {folderItems.length > 0 && (
+            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
+              {t('palette.sectionFolders')}
+            </div>
+          )}
+          {folderItems.map((cmd, folderIndex) => (
+            <PaletteOption
+              key={cmd.id}
+              cmd={cmd}
+              /* 该项在扁平漫游序列中的下标 = 文件夹组长度 + 组内序号 */
+              selected={folderIndex === index}
+              onSelect={() => setIndex(folderIndex)}
+              onRun={() => {
+                cmd.run();
+                onClose();
+              }}
+            />
+          ))}
           {commandItems.length > 0 && (
             /* 分组标题对读屏隐藏（role=presentation）：listbox 语义内只保留 option，
-               分组信息通过命令/标签的 label 本身已可区分。 */
+             分组信息通过命令/标签的 label 本身已可区分。 */
             <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
               {t('palette.sectionCommands')}
             </div>
@@ -334,8 +374,8 @@ export function CommandPalette({
             <PaletteOption
               key={cmd.id}
               cmd={cmd}
-              selected={i === index}
-              onSelect={() => setIndex(i)}
+              selected={folderItems.length + i === index}
+              onSelect={() => setIndex(folderItems.length + i)}
               onRun={() => {
                 cmd.run();
                 onClose();
@@ -351,9 +391,9 @@ export function CommandPalette({
             <PaletteOption
               key={cmd.id}
               cmd={cmd}
-              /* 该项在扁平漫游序列中的下标 = 命令组长度 + 组内序号 */
-              selected={commandItems.length + groupIndex === index}
-              onSelect={() => setIndex(commandItems.length + groupIndex)}
+              /* 该项在扁平漫游序列中的下标 = 前两组长度 + 组内序号 */
+              selected={folderItems.length + commandItems.length + groupIndex === index}
+              onSelect={() => setIndex(folderItems.length + commandItems.length + groupIndex)}
               onRun={() => {
                 cmd.run();
                 onClose();
