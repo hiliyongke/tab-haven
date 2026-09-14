@@ -104,7 +104,7 @@ describe('syncCachedSettings', () => {
     await syncCachedSettings();
 
     expect(cachedSettings.badgeMode).toBe(before);
-    expect(lastDiagnostic()).toContain('共享上下文读取失败');
+    expect(lastDiagnostic()).toContain('设置缓存读取失败');
   });
 });
 
@@ -188,7 +188,7 @@ describe('queueAction 挂起队列', () => {
     await expect(queueAction({ type: 'focus-search' })).resolves.toBeUndefined();
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(lastDiagnostic()).toContain('共享上下文操作失败');
+    expect(lastDiagnostic()).toContain('挂起动作入队失败');
     session.set = original;
   });
 });

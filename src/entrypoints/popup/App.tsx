@@ -143,7 +143,13 @@ export default function App() {
    * 「窗口聚焦了但标签没切」。
    */
   const activateAndClose = (tabId: number) => {
-    void smartActivate(tabId).finally(() => window.close());
+    // 激活失败必须先兜住再关窗：此前 `void …finally` 只保证关闭，
+    // 被拒的 promise 无人接住，成为 unhandled rejection（诊断里查不到根因）。
+    void smartActivate(tabId)
+      .catch((error: unknown) => {
+        logDegraded('popup', '标签激活失败', error);
+      })
+      .finally(() => window.close());
   };
 
   useEffect(() => {

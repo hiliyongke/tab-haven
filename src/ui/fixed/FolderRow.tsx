@@ -65,6 +65,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
   /** 导入事务进行中：期间写固定空间会被丢弃，相关入口禁用（见 DataState.importing）。 */
   const importing = useDataStore((state) => state.importing);
   const notify = useUndoStore((state) => state.notify);
+  const notifyError = useUndoStore((state) => state.notifyError);
   const tabs = useTabStore((state) => state.tabs);
 
   /**
@@ -161,14 +162,14 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
     }
     void createTabsWithUrls(missing.map((item) => item.url).filter((u): u is string => Boolean(u)))
       .then((created) => notify(t('fixed.openedAll', { count: created })))
-      .catch(() => notify(t('errors.operationFailed')));
+      .catch(() => notifyError(t('errors.operationFailed')));
   };
   const handleExportBookmarks = () => {
     void saveFolderToBookmarks(folder)
       .then((count) =>
         notify(count > 0 ? t('fixed.bookmarked', { count }) : t('fixed.bookmarkEmpty'))
       )
-      .catch(() => notify(t('errors.operationFailed')));
+      .catch(() => notifyError(t('errors.operationFailed')));
   };
   const headerAction = (
     <>
@@ -288,7 +289,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
           onRename={(name) => {
             void renameFolder(folder.id, name).then(
               () => notify(t('toast.folderRenamed')),
-              () => notify(t('errors.operationFailed'))
+              () => notifyError(t('errors.operationFailed'))
             );
           }}
           onDelete={() => {
@@ -296,7 +297,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
             // 否则用户以为已删除，实际数据还在（或反之）。
             void deleteFolder(folder.id).then(
               () => notify(t('toast.folderRemoved')),
-              () => notify(t('errors.operationFailed'))
+              () => notifyError(t('errors.operationFailed'))
             );
           }}
           onClose={() => setDialog(null)}
@@ -330,7 +331,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
             setDialog(null);
             void deleteFolder(folder.id).then(
               () => notify(t('toast.folderRemoved')),
-              () => notify(t('errors.operationFailed'))
+              () => notifyError(t('errors.operationFailed'))
             );
           }}
           onCancel={() => setDialog(null)}

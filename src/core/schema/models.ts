@@ -129,13 +129,12 @@ export const SettingsSchema = z.object({
   /** 撤销栈深度（FIFO 淘汰上限）。 */
   undoStackLimit: z.number().int().min(5).max(50).default(DEFAULT_UNDO_STACK_LIMIT),
   /**
-   * 关窗自动保存：窗口关闭时自动存为快照（画像二生死线兜底）。
-   * 默认关闭（PRD FR-D5.2 / 原则 8：自动化能力不默认接管用户数据）。
+   * 自动保存（关窗 + 定时快照）：默认开启 —— 这是纯保护性能力（只保存、
+   * 不改动任何标签），且「关窗后标签全丢」是最大痛点，出厂不保护等于放弃安全网。
+   * 容量由 maxAutoSnapshots（10 条滚动保留）约束，不会无限增长。
+   *
    * 注意：默认值只作用于新装用户，已存设置的用户读的是自己的存储值。
    */
-  /** 自动保存（关窗 + 定时快照）：默认开启 —— 这是纯保护性能力（只保存、
-   *  不改动任何标签），且「关窗后标签全丢」是最大痛点，出厂不保护等于放弃安全网。
-   *  容量由 maxAutoSnapshots（10 条滚动保留）约束，不会无限增长。 */
   autoSaveSnapshots: z.boolean().default(true),
   /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
   autoSnapshotIntervalMin: z.number().int().min(5).max(720).default(30),

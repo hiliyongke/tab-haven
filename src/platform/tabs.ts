@@ -1,5 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
+import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
 
@@ -184,18 +185,16 @@ export async function setGroupCollapsed(groupId: number, collapsed: boolean): Pr
   }
 }
 
-/**
- * 在当前窗口新建标签，返回领域记录。
- * position：end 窗口末尾（默认）/ after-active 当前激活标签之后。
- */
-/**
- * 新建空白标签（空态「新建标签页」入口）。
- * 不指定 windowId —— 浏览器默认在当前窗口打开，正是该入口的语义。
- */
+/** 新建空白标签（空态「新建标签页」入口）。
+ *  不指定 windowId —— 浏览器默认在当前窗口打开，正是该入口的语义。 */
 export async function createPlainNewTab(): Promise<TabRecord> {
   return mapTab(await browser.tabs.create({}));
 }
 
+/**
+ * 在当前窗口新建标签，返回领域记录。
+ * position：end 窗口末尾（默认）/ after-active 当前激活标签之后。
+ */
 export async function createNewTab(
   windowId: number | undefined,
   position: 'end' | 'after-active' = 'end'
@@ -451,8 +450,8 @@ export async function groupExists(groupId: number): Promise<boolean> {
  * 解散原生组：把组内全部标签移出分组（标签保留不关闭，空组由浏览器自动回收）。
  * chrome.tabGroups 无 remove API，ungroup 是唯一标准做法。
  *
- * 返回解散结果，让调用方能区分三种情形：
- * 导致 AutoGroupSync 把「查询失败」误判为「解散失败」并无限重试）：
+ * 返回解散结果，让调用方能区分三种情形（区分是必需的，否则调用方会把
+ * 「组已不存在」当成失败而无限重试）：
  *  - 'removed'：组存在且已解散（含组内无成员的自然空组）；
  *  - 'missing'：组已不存在（用户手动解散）——调用方应清理记录，不应重试；
  *  - 'failed'：真实失败（查询或 ungroup 报错）——可重试。
@@ -584,8 +583,10 @@ export async function createTabsWithUrls(
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     target = win?.id;
   }
-  let created = 0;
-  for (const url of urls) {
+  // 与 RestoreEngine / restoreSnapshot 同口径：每条都要「发放豁免（一次 runtime
+  // 往返）→ create」，严格串行的总耗时随条目数线性放大（「打开文件夹全部条目」
+  // 常一次开几十条）。限流后约为 1/并发度，单条失败照旧跳过。
+  const results = await mapWithConcurrency(urls, DEFAULT_CONCURRENCY, async (url) => {
     try {
       if (target !== undefined) await grantReuseAllowance(target, url);
       await browser.tabs.create({
@@ -593,11 +594,12 @@ export async function createTabsWithUrls(
         active,
         ...(target !== undefined ? { windowId: target } : {})
       });
-      created += 1;
+      return true;
     } catch (error) {
       logDegraded('tabs', '批量新建标签：单条创建失败', error);
       // 无效 URL 跳过，其余继续
+      return false;
     }
-  }
-  return created;
+  });
+  return results.filter(Boolean).length;
 }

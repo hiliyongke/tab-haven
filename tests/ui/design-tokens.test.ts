@@ -232,13 +232,19 @@ describe('CSS 变量定义完整性', () => {
 
 describe('设计令牌边界', () => {
   const defined = new Set([...css.matchAll(/--color-([a-z]+-\d+)\s*:/g)].map((m) => m[1]!));
-  const PREFIXES = 'bg|text|border|ring|divide|from|to|via|fill|stroke|placeholder';
+  // outline / shadow / rounded / accent 此前不在扫描范围内，圆角与阴影类
+  // 因此完全游离在守卫之外（散写 rounded-lg / shadow-lg 无人拦截）。
+  const PREFIXES =
+    'bg|text|border|ring|divide|from|to|via|fill|stroke|placeholder|outline|shadow|rounded|accent';
   const tokenRe = new RegExp(
     `\\b(?:${PREFIXES})-((?:accent|gray|warn|red|surface|on-accent|control)-\\d+)`
   );
 
-  // Tailwind 默认调色板（未被 @theme 重映射，使用即视为泄漏）
+  // Tailwind 默认调色板（未被 @theme 重映射，使用即视为泄漏）。
+  // black / white 必须在列：此前三处遮罩写 bg-black/30 正是因为白名单漏了它。
   const UNCONTROLLED = [
+    'black',
+    'white',
     'slate',
     'zinc',
     'neutral',
@@ -315,6 +321,37 @@ describe('字号令牌', () => {
         if (/text-2xs/.test(line) && /leading-(relaxed|snug|tight|loose|normal)/.test(line)) {
           failures.push(
             `${relative(ROOT, file)}:${i + 1} text-2xs 搭配多行行高 leading-*，正文说明应改用 text-3xs`
+          );
+        }
+      });
+    }
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('间距 / 圆角 / 阴影刻度', () => {
+  /**
+   * @theme 已显式声明 --spacing(4px) 与 --radius-* 刻度，Tailwind 的
+   * p-1 / py-0.5 / rounded-lg 等工具类即由它们派生。散写 `[Npx]` 任意值会
+   * 绕过刻度（历史上出现过 py-[2px]、py-[7px] 这类非网格值），必须拦住。
+   * 宽高类（w-/max-h-/max-w-）不在此列：它们多为「面板/列表的容器级尺寸」，
+   * 与内容网格无关，且常需 calc() 兜底。
+   */
+  it('间距与圆角、阴影不得散写任意值', () => {
+    const failures: string[] = [];
+    // 仅覆盖内/外边距与间隙：这些才是 4px 网格的适用范围。
+    const spacingArbitrary = /\b(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap)-\[[^\]]*px\]/;
+    const shapeArbitrary = /\b(?:rounded|shadow)-\[/;
+    for (const file of tsxFiles) {
+      const src = readFileSync(file, 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (line.trim().startsWith('*') || line.trim().startsWith('//')) return;
+        if (spacingArbitrary.test(line)) {
+          failures.push(`${relative(ROOT, file)}:${i + 1} 任意值间距，请改用 4px 刻度工具类`);
+        }
+        if (shapeArbitrary.test(line)) {
+          failures.push(
+            `${relative(ROOT, file)}:${i + 1} 任意值圆角/阴影，请改用 rounded-* / shadow-elev-* 令牌`
           );
         }
       });

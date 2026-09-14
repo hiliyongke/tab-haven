@@ -51,6 +51,7 @@ export function UndoHistoryPanel({
   const batches = useUndoStore((state) => state.batches);
   const undoBatch = useUndoStore((state) => state.undoBatch);
   const notify = useUndoStore((state) => state.notify);
+  const notifyError = useUndoStore((state) => state.notifyError);
   const [recent, setRecent] = useState<RecentClosedEntry[] | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
@@ -75,12 +76,14 @@ export function UndoHistoryPanel({
     setRestoringId(entry.sessionId);
     void restoreRecentClosed(entry.sessionId)
       .then((ok) => {
-        notify(ok ? t('undo.recentRestored') : t('errors.operationFailed'));
+        // 失败走 notifyError（role="alert"）：与抛错分支同一语义强度。
+        if (ok) notify(t('undo.recentRestored'));
+        else notifyError(t('errors.operationFailed'));
       })
       .catch(() => {
         // sessions.restore 抛错（sessionId 失效等）：必须经 finally 复位，
         // 否则该按钮永久 disabled 卡死。
-        notify(t('errors.operationFailed'));
+        notifyError(t('errors.operationFailed'));
       })
       .finally(() => {
         setRestoringId(null);

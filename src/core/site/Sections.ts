@@ -1,10 +1,8 @@
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
-import { aggregateBySite, subLabel, type SiteSubGroup } from '@/core/site/SiteGrouping';
+import { aggregateBySite, subLabel } from '@/core/site/SiteGrouping';
 import type { SiteKey } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
 import { domainToUnicode } from '@/core/url/punycode';
-
-export type { SiteSubGroup } from '@/core/site/SiteGrouping';
 
 /**
  * 临时区视图模型：把标签镜像派生为侧边栏可渲染的 section 列表。
@@ -33,8 +31,6 @@ export type TemporarySection =
       title: string;
       tabs: TabRecord[];
       siteKey: string;
-      /** 折叠模式已移除，恒为空（分区即单一子域站点）；保留字段兼容归并与渲染路径。 */
-      subgroups: SiteSubGroup[];
       /**
        * 因同站点归并而吸收进本分区的原生组 id（见 collectSiteMergeCandidates）。
        * 自动分组据此把同站点未分组标签并入既有原生组，而不是另建重复域名组。
@@ -256,16 +252,24 @@ function buildSitePlan({
     absorbedGroupIds.add(candidate.groupId);
     target.tabs = [...target.tabs, ...candidate.memberTabs].sort(sortCmp);
   }
-  const sections = siteGroups.map((group) => ({
+  // 「已吸收候选者」与「每个站点组的标签 id 集合」预先算好：原实现在
+  // siteGroups.map 内对每个组遍历全部 candidates 再做 group.tabs.some(...)，
+  // 是 O(站点组 × 候选组 × 标签) 的三层嵌套。预建 Set 后降为 O(站点组 × 候选组)。
+  const absorbedCandidates = candidates.filter((candidate) =>
+    absorbedGroupIds.has(candidate.groupId)
+  );
+  const tabIdsByGroup = siteGroups.map((group) => new Set(group.tabs.map((tab) => tab.id)));
+  const sections = siteGroups.map((group, groupIndex) => ({
     kind: 'site' as const,
     key: `site-${group.key.value}`,
     title: group.key.label,
     tabs: group.tabs,
     siteKey: group.key.value,
-    subgroups: group.subgroups,
-    mergedGroupIds: candidates
-      .filter((candidate) => absorbedGroupIds.has(candidate.groupId))
-      .filter((candidate) => group.tabs.some((tab) => tab.id === candidate.memberTabs[0]!.id))
+    mergedGroupIds: absorbedCandidates
+      .filter((candidate) => {
+        const headId = candidate.memberTabs[0]?.id;
+        return headId !== undefined && tabIdsByGroup[groupIndex]!.has(headId);
+      })
       .map((candidate) => candidate.groupId)
   }));
   return { sections, singles, absorbedGroupIds };
@@ -377,8 +381,7 @@ export function deriveSections({
         key: `lang-${code}`,
         title: languageLabel(code, t),
         tabs: byLang.get(code) ?? [],
-        siteKey: `lang-${code}`,
-        subgroups: []
+        siteKey: `lang-${code}`
       });
     }
     return sections;

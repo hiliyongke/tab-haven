@@ -12,11 +12,17 @@ export function StatusToast() {
 
   if (!toast) return null;
 
+  // 失败提示走 role="alert"：读屏会打断当前播报立即念出，而不是排在
+  // 「已保存」这类普通提示之后。视觉上同时转为危险色，让失败不被误读为普通状态。
+  const isError = toast.tone === 'error';
+
   return (
     <div
-      className="status-toast flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600"
-      role="status"
-      aria-live="polite"
+      className={`status-toast flex items-center gap-2 px-3 py-1.5 text-xs ${
+        isError ? 'text-red-600' : 'text-gray-600'
+      }`}
+      role={isError ? 'alert' : 'status'}
+      aria-live={isError ? 'assertive' : 'polite'}
     >
       <span className="flex-1 truncate">{toast.message}</span>
       {toast.canUndo && (

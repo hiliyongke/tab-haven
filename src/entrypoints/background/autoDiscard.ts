@@ -6,7 +6,8 @@ import { readSession } from '@/platform/storage/session';
 import { autoDiscardRepository, settingsRepository } from '@/platform/storage/repositories';
 import { sendMessage } from '@/platform/messages';
 import { t } from '@/i18n/headless';
-import { cachedSettings, hostnameOf, isWhitelisted, notifyUser } from './shared';
+import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
+import { buildWhitelistMatcher, cachedSettings, hostnameOf, notifyUser } from './shared';
 import { logDegraded } from '@/platform/diagnostics';
 
 async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
@@ -44,9 +45,10 @@ const runAutoDiscard = async (): Promise<void> => {
       readSession()
     ]);
     const boundTabIds = new Set(Object.values(session.itemTabBindings));
-    const whitelist = settings.discardWhitelist;
+    // 白名单归一化只做一次（原实现对每个标签×每个条目重复 3 次正则）。
+    const isWhitelistedHost = buildWhitelistMatcher(settings.discardWhitelist);
     const cutoff = Date.now() - settings.autoDiscardMinutes * 60_000;
-    const discardedIds: number[] = [];
+    const targets: number[] = [];
     for (const rawTab of tabs) {
       const tab = mapTab(rawTab);
       if (
@@ -59,13 +61,18 @@ const runAutoDiscard = async (): Promise<void> => {
         continue;
       }
       const host = hostnameOf(tab.url);
-      if (host && isWhitelisted(host, whitelist)) continue;
-      const ok = await browser.tabs
-        .discard(tab.id)
-        .then(() => true)
-        .catch(() => false);
-      if (ok) discardedIds.push(tab.id);
+      if (host && isWhitelistedHost(host)) continue;
+      targets.push(tab.id);
     }
+    // 有限并发：严格串行下每个 tabs.discard 一次 IPC 往返，数百个标签会让 SW
+    // 在每轮闹钟里长时间被占满（且 alarms 是每分钟触发的兜底链路）。
+    const outcomes = await mapWithConcurrency(targets, DEFAULT_CONCURRENCY, (tabId) =>
+      browser.tabs
+        .discard(tabId)
+        .then(() => true)
+        .catch(() => false)
+    );
+    const discardedIds = targets.filter((_tabId, index) => outcomes[index] === true);
     if (discardedIds.length > 0) await recordAutoDiscardBatch(discardedIds);
     await pruneAutoDiscardBatch();
   } catch (error) {
@@ -103,14 +110,14 @@ async function discardInactiveTabs(): Promise<void> {
       const tab = mapTab(rawTab);
       if (tab.id >= 0 && !boundTabIds.has(tab.id) && canSafelyDiscardTab(tab)) targets.push(tab.id);
     }
-    const discardedIds: number[] = [];
-    for (const tabId of targets) {
-      const ok = await browser.tabs
+    // 与 runAutoDiscard 同口径：有限并发，避免数百次串行 IPC 往返。
+    const outcomes = await mapWithConcurrency(targets, DEFAULT_CONCURRENCY, (tabId) =>
+      browser.tabs
         .discard(tabId)
         .then(() => true)
-        .catch(() => false);
-      if (ok) discardedIds.push(tabId);
-    }
+        .catch(() => false)
+    );
+    const discardedIds = targets.filter((_tabId, index) => outcomes[index] === true);
     if (discardedIds.length === 0) return;
     await recordAutoDiscardBatch(discardedIds);
   } catch (error) {

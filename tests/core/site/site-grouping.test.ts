@@ -114,7 +114,6 @@ describe('aggregateBySite', () => {
     // mail.qq.com 2 个标签 → 独立成组；其余单标签子域 → singles。
     const mailGroup = groups.find((g) => g.key.value === 'mail.qq.com');
     expect(mailGroup).toBeDefined();
-    expect(mailGroup?.subgroups).toHaveLength(0);
     expect(singles.map((t) => t.id).sort()).toEqual([3, 4]);
   });
 
@@ -177,9 +176,6 @@ describe('deriveSections', () => {
     const sections = deriveSections({ tabs, groups: [] });
     const sites = sections.filter((s) => s.kind === 'site');
     expect(sites.map((s) => s.title)).toEqual(['mail.google.com', 'drive.google.com']);
-    for (const site of sites) {
-      if (site.kind === 'site') expect(site.subgroups).toHaveLength(0);
-    }
     const mail = sites.find((s) => s.title === 'mail.google.com');
     expect(mail?.tabs.map((tab) => tab.id)).toEqual([1, 2]);
   });

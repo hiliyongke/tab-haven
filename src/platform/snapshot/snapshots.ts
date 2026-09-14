@@ -7,6 +7,8 @@ import {
 } from '@/core/schema/models';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
+import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
+import { newId } from '@/core/util/id';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
@@ -21,16 +23,9 @@ import { logDegraded } from '@/platform/diagnostics';
  */
 export const SNAPSHOTS_RMW_LOCK = 'tabs.snapshots-rmw';
 
-/** 生成快照 id（SW / 面板均可用的 crypto.randomUUID，退化路径相容）。 */
+/** 生成快照 id（SW / 面板统一走 core 的 id 口径，含非安全上下文的退化路径）。 */
 function newSnapshotId(): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-  } catch {
-    // 退化路径
-  }
-  return `snap-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return newId('snap');
 }
 
 /**
@@ -226,27 +221,34 @@ export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Pr
   const missing = missingTabsOf(snapshot, existingKeys);
   if (missing.length === 0) return 0;
 
-  // 3. 逐条创建：豁免 → 创建（pinned 内联）→ muted 后置
-  const created: { id: number; tab: SnapshotTab }[] = [];
-  for (const tab of missing) {
-    try {
-      await grantReuseAllowance(target, tab.url);
-      const createdTab = await browser.tabs.create({
-        windowId: target,
-        url: tab.url,
-        active: false,
-        pinned: tab.pinned
-      });
-      const id = createdTab.id;
-      if (id === undefined) continue;
-      if (tab.muted) {
-        await browser.tabs.update(id, { muted: true }).catch(() => {});
+  // 3. 有限并发创建：豁免 → 创建（pinned 内联）→ muted 后置
+  //
+  // 与 RestoreEngine 同口径：每条都要「发放豁免（一次 runtime 往返）→ create →
+  // 静音」，严格串行的总耗时随条目数线性放大。限流后约为 1/并发度。
+  // 结果按 missing 顺序收集（mapWithConcurrency 保证），第 4 步的分组还原依赖
+  // 该顺序 —— 组内标签的排列由 tabIds 顺序决定，乱序会让恢复出的组与原快照不符。
+  const created = (
+    await mapWithConcurrency(missing, DEFAULT_CONCURRENCY, async (tab) => {
+      try {
+        await grantReuseAllowance(target, tab.url);
+        const createdTab = await browser.tabs.create({
+          windowId: target,
+          url: tab.url,
+          active: false,
+          pinned: tab.pinned
+        });
+        const id = createdTab.id;
+        if (id === undefined) return null;
+        if (tab.muted) {
+          await browser.tabs.update(id, { muted: true }).catch(() => {});
+        }
+        return { id, tab };
+      } catch {
+        // 单条失败（无效 URL 等）跳过，继续其余条目
+        return null;
       }
-      created.push({ id, tab });
-    } catch {
-      // 单条失败（无效 URL 等）跳过，继续其余条目
-    }
-  }
+    })
+  ).filter((entry): entry is { id: number; tab: SnapshotTab } => entry !== null);
   if (created.length === 0) return 0;
 
   // 4. 分组还原：同组名一次性成组（同名并入 / 缺失重建）

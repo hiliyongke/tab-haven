@@ -5,6 +5,7 @@
     "openNewTab": "打开新标签"
   },
   "tabs": {
+    "panelTitle": "当前窗口的标签",
     "newTab": "新建标签页",
     "currentOpen": "共",
     "tabCountUnit": "个标签",
@@ -383,6 +384,7 @@
     "loadFailedTitle": "数据加载失败",
     "loadFailedHint": "本地数据暂时无法读取，可能是浏览器存储被占用或正在重启。可重试，或关闭侧边栏后重新打开。",
     "operationFailed": "操作失败，请稍后重试",
+    "retry": "重试",
     "storageDegraded": "最近的改动可能没能保存到本地：请检查浏览器存储空间是否已满，或扩展权限是否被收回",
     "boundaryTitle": "出了点意外",
     "boundaryBody": "界面遇到了无法自行恢复的错误。你的数据仍保存在本地，可以重试或重载页面。",
@@ -492,8 +494,8 @@
   "cap": {
     "contextMenuTitle": "右键菜单",
     "contextMenuHow": "在页面、链接或标签栏右键，快速休眠 / 固定 / 按域名搜索",
-    "omniboxTitle": "地址栏 th 命令",
-    "omniboxHow": "地址栏输入 th + 关键词，直达标签与固定条目",
+    "omniboxTitle": "地址栏 t 命令",
+    "omniboxHow": "地址栏输入 t + 关键词，直达标签与固定条目",
     "paletteTitle": "命令面板（⌘P）",
     "paletteHow": "搜索并直接执行动作：休眠全部、存快照、开设置",
     "pinTitle": "固定空间",

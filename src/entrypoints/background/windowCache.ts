@@ -105,6 +105,8 @@ async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
  */
 /** 已关闭窗口集合：在途 refresh 完成时窗口若已关闭，缓存写回会复活幽灵键。 */
 const removedWindowIds = new Set<number>();
+/** 已关闭窗口标记的保留时长（覆盖在途 refresh 的防抖 + 查询往返，之后即失效）。 */
+const REMOVED_MARK_TTL_MS = 5_000;
 
 const lastActiveTabIds = new Map<number, number>();
 
@@ -235,6 +237,10 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
   }
   // 标记窗口已关闭：在途 refresh 完成后据此丢弃结果（防幽灵键复活）。
   removedWindowIds.add(windowId);
+  // 标记只需覆盖「在途 refresh 收敛」的窗口（刷新防抖 250ms + 查询往返），
+  // 之后即无意义；不清理会让集合在 SW 存活期内随每次关窗单调增长。
+  // 裸 setTimeout：SW 上下文没有 window（同文件其余定时器一致）。
+  setTimeout(() => removedWindowIds.delete(windowId), REMOVED_MARK_TTL_MS);
   lastActiveTabIds.delete(windowId);
   const idKey = String(windowId);
   let tabs = memWindowTabs[idKey];

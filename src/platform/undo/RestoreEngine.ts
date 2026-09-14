@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import type { UndoTabRecord } from '@/core/schema/models';
 import { NO_GROUP } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
+import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 
 /**
@@ -57,68 +58,75 @@ export async function restoreTabRecordsDetailed(
   // 已打开去重：与快照恢复（snapshots.restoreSnapshot）同口径。
   // 不做这一步的话，用户手动重开某页后再撤销，必定收获一个重复标签。
   const openKeys = await openKeysInWindow(windowId);
-  let count = 0;
-  const failed: UndoTabRecord[] = [];
 
-  for (const record of restored) {
-    // 无 URL 的记录无法恢复：计入失败明细，避免整批重试时反复静默跳过。
-    if (!record.url) {
-      failed.push(record);
-      continue;
-    }
+  // 有限并发而非严格串行：每条记录都要走「发放豁免（一次 runtime 往返）→
+  // tabs.create → 静音/分组」三段 await，严格串行下 100 条就是 300 次串行往返，
+  // 用户感知为「点了恢复卡住」。限流后总耗时约为 1/并发度。
+  // 结果按输入顺序收集（见 mapWithConcurrency）：restored 已按 index 排好，
+  // 顺序即用户期望的标签落位顺序。
+  const outcomes = await mapWithConcurrency(
+    restored,
+    DEFAULT_CONCURRENCY,
+    async (record): Promise<boolean> => {
+      // 无 URL 的记录无法恢复：计入失败明细，避免整批重试时反复静默跳过。
+      if (!record.url) return false;
 
-    const recordKey = webComparisonKey(record.url, undefined);
-    if (recordKey !== null && openKeys.has(recordKey)) {
-      // 目标窗口已有同 URL：视为已恢复，不再新建一个副本。
-      count += 1;
-      continue;
-    }
-
-    try {
-      // 豁免复用：新恢复的标签不允许被重复复用引擎合并掉
-      await grantReuseAllowance(windowId, record.url);
-
-      const created = await browser.tabs.create({
-        windowId,
-        url: record.url,
-        active: false,
-        pinned: record.pinned,
-        index: record.index
-      });
-      const createdId = created.id;
-      // 拿不到 id 视为恢复失败（后续静音/分组都无从下手），计入明细而非静默跳过。
-      if (createdId === undefined) {
-        failed.push(record);
-        continue;
+      const recordKey = webComparisonKey(record.url, undefined);
+      if (recordKey !== null && openKeys.has(recordKey)) {
+        // 目标窗口已有同 URL：视为已恢复，不再新建一个副本。
+        return true;
       }
 
-      if (record.muted) {
-        await browser.tabs.update(createdId, { muted: true });
-      }
+      try {
+        // 豁免复用：新恢复的标签不允许被重复复用引擎合并掉
+        await grantReuseAllowance(windowId, record.url);
 
-      if (!record.pinned && record.groupId !== NO_GROUP) {
-        try {
-          await browser.tabs.group({ tabIds: [createdId], groupId: record.groupId });
-        } catch {
-          // 原组已删除：按名重建
-          if (record.groupName) {
-            try {
-              const newGroupId = await browser.tabs.group({ tabIds: [createdId] });
-              await browser.tabGroups.update(newGroupId, { title: record.groupName });
-            } catch {
-              // 组重建失败：保持未分组
+        const created = await browser.tabs.create({
+          windowId,
+          url: record.url,
+          active: false,
+          pinned: record.pinned,
+          index: record.index
+        });
+        const createdId = created.id;
+        // 拿不到 id 视为恢复失败（后续静音/分组都无从下手），计入明细而非静默跳过。
+        if (createdId === undefined) return false;
+
+        if (record.muted) {
+          await browser.tabs.update(createdId, { muted: true });
+        }
+
+        if (!record.pinned && record.groupId !== NO_GROUP) {
+          try {
+            await browser.tabs.group({ tabIds: [createdId], groupId: record.groupId });
+          } catch {
+            // 原组已删除：按名重建
+            if (record.groupName) {
+              try {
+                const newGroupId = await browser.tabs.group({ tabIds: [createdId] });
+                await browser.tabGroups.update(newGroupId, { title: record.groupName });
+              } catch {
+                // 组重建失败：保持未分组
+              }
             }
           }
         }
+        // 刻意**不**把新恢复的 URL 加回 openKeys：撤销是「把关掉的还回来」，
+        // 同一批次里出现两条同 URL 是合法的（用户确实关了两个同 URL 标签）。
+        // 若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
+        return true;
+      } catch {
+        // 单个标签恢复失败不影响同一批次中的其余标签；记录明细供调用方保留重试。
+        return false;
       }
-      // 刻意**不**把新恢复的 URL 加回 openKeys：撤销是「把关掉的还回来」，
-      // 同一批次里出现两条同 URL 是合法的（用户确实关了两个同 URL 标签）。
-      // 若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
-      count += 1;
-    } catch {
-      // 单个标签恢复失败不影响同一批次中的其余标签；记录明细供调用方保留重试。
-      failed.push(record);
     }
+  );
+
+  let count = 0;
+  const failed: UndoTabRecord[] = [];
+  for (const [index, ok] of outcomes.entries()) {
+    if (ok) count += 1;
+    else failed.push(restored[index]!);
   }
 
   return { count, failed };

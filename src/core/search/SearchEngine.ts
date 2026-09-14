@@ -26,10 +26,18 @@ let pinyinModulePromise: Promise<typeof import('pinyin-pro')> | null = null;
 let cachedPinyin: PinyinFn | null = null;
 function loadPinyin() {
   if (!pinyinModulePromise) {
-    pinyinModulePromise = import('pinyin-pro').then((mod) => {
-      cachedPinyin = mod.pinyin;
-      return mod;
-    });
+    pinyinModulePromise = import('pinyin-pro')
+      .then((mod) => {
+        cachedPinyin = mod.pinyin;
+        return mod;
+      })
+      .catch((error: unknown) => {
+        // 失败必须允许重试：不重置的话 promise 永久 rejected，此后每次重建
+        // 搜索引擎（标签事件 40ms 节流下高频发生）都会派生一个新的
+        // unhandled rejection，把诊断环形缓冲刷满。
+        pinyinModulePromise = null;
+        throw error;
+      });
   }
   return pinyinModulePromise;
 }
@@ -136,7 +144,10 @@ export class SearchEngine {
       if (pinyinEnabled && cachedPinyin) fillPinyin(target, cachedPinyin);
       return target;
     });
-    if (pinyinEnabled && !cachedPinyin) void this.ensurePinyin();
+    // 失败在此收敛为「拼音搜索暂不可用」：拼音只是增强匹配，标题/URL 匹配不受影响，
+    // 且 loadPinyin 已重置可重试，下一次重建引擎会自动再试。core 层没有日志通道，
+    // 故不留痕——但绝不能让这个 promise 变成 unhandled rejection。
+    if (pinyinEnabled && !cachedPinyin) void this.ensurePinyin().catch(() => undefined);
   }
 
   /**
@@ -169,7 +180,12 @@ export class SearchEngine {
           fillPinyin(target, pinyin);
         }
       }
-    })();
+    })().catch((error: unknown) => {
+      // 与 loadPinyin 同理：失败后清空占位，否则本实例永远停在「加载中」，
+      // 拼音目标再也不会被补齐。
+      this.pinyinLoading = null;
+      throw error;
+    });
     return this.pinyinLoading;
   }
 

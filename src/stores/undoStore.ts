@@ -29,6 +29,12 @@ interface ToastState {
   batchId: string | undefined;
   /** 自定义动作按钮（自动休眠撤销等非关闭类操作）。 */
   action?: ToastAction;
+  /**
+   * 语义强度：error 走 role="alert"（打断读屏、立刻播报），info 走
+   * role="status"（排队播报）。此前所有提示一律 status/polite，失败提示
+   * 与「已保存」同权重——对依赖读屏的用户，操作失败是最不该被延后的信息。
+   */
+  tone?: 'info' | 'error';
 }
 
 interface UndoState {
@@ -57,6 +63,8 @@ interface UndoState {
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
+  /** 失败提示：读屏即刻播报（role="alert"），不与其他提示排队。 */
+  notifyError: (message: string) => void;
   /** 清空撤销栈（内存 + 持久化）。清除所有数据时调用——被清除的数据不参与撤销。 */
   clearBatches: () => Promise<void>;
 }
@@ -162,7 +170,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         toast: {
           message: i18n.t('errors.operationFailed'),
           canUndo: false,
-          batchId: undefined
+          batchId: undefined,
+          tone: 'error'
         }
       });
       scheduleToastClear();
@@ -329,7 +338,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
                 toast: {
                   message: i18n.t('errors.operationFailed'),
                   canUndo: false,
-                  batchId: undefined
+                  batchId: undefined,
+                  tone: 'error'
                 }
               });
               scheduleToastClear();
@@ -366,7 +376,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
                 toast: {
                   message: i18n.t('errors.operationFailed'),
                   canUndo: false,
-                  batchId: undefined
+                  batchId: undefined,
+                  tone: 'error'
                 }
               });
               scheduleToastClear();
@@ -402,7 +413,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     },
 
     notify: (message, action) => {
-      set({ toast: { message, canUndo: false, batchId: undefined, action } });
+      set({ toast: { message, canUndo: false, batchId: undefined, action, tone: 'info' } });
+      scheduleToastClear();
+    },
+
+    notifyError: (message) => {
+      set({ toast: { message, canUndo: false, batchId: undefined, tone: 'error' } });
       scheduleToastClear();
     },
 

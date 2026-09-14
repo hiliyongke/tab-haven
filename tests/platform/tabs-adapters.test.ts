@@ -396,26 +396,24 @@ describe('失败不抛、返回可判定值', () => {
 
 describe('waitForTabGroupAssignment 收敛等待', () => {
   it('成员已入组时立即返回（不空等）', async () => {
-    Object.assign(fakeBrowser.tabs, {
-      query: vi.fn(async () => [rawTab({ id: 1, groupId: 20 })])
-    });
+    const query = vi.fn(async () => [rawTab({ id: 1, groupId: 20 })]);
+    Object.assign(fakeBrowser.tabs, { query });
 
-    const started = Date.now();
     await waitForTabGroupAssignment([1], 20, 3, 50);
 
-    expect(Date.now() - started).toBeLessThan(50);
+    // 断言「没有空等」用调用次数而非墙钟耗时：CI 冷机上的定时器抖动会让
+    // `Date.now() - started < 50` 随机失败，而「只查一次」才是真正要保的语义。
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('中途已关闭的成员不阻塞收敛（只要求存活成员已入组）', async () => {
-    Object.assign(fakeBrowser.tabs, {
-      // id 1 已不存在于查询结果中，只剩 id 2 且已入组
-      query: vi.fn(async () => [rawTab({ id: 2, groupId: 20 })])
-    });
+    // id 1 已不存在于查询结果中，只剩 id 2 且已入组
+    const query = vi.fn(async () => [rawTab({ id: 2, groupId: 20 })]);
+    Object.assign(fakeBrowser.tabs, { query });
 
-    const started = Date.now();
     await waitForTabGroupAssignment([1, 2], 20, 3, 50);
 
-    expect(Date.now() - started).toBeLessThan(50);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('始终未收敛时按上限退出且不抛错（best-effort，由事件驱动兜底）', async () => {

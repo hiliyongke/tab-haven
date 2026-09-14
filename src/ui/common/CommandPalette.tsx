@@ -266,7 +266,7 @@ export function CommandPalette({
   // container-type 层叠上下文影响。
   return createPortal(
     <div
-      className="modal-overlay fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[12vh]"
+      className="modal-overlay fixed inset-0 z-50 flex items-start justify-center p-4 pt-[12vh]"
       role="presentation"
     >
       <dialog

@@ -45,6 +45,25 @@ const buffer: DiagnosticEntry[] = [];
 let pending: DiagnosticEntry[] = [];
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * 抹掉文本中夹带的 URL。
+ *
+ * 部分 chrome API 的错误消息会原样带上调用参数（典型如 `Invalid URL:
+ * https://...`），而诊断环形缓冲是**可导出**的 —— 落进去等于把浏览内容写进
+ * 用户会随手发给我们的文件，直接违背本模块「只含技术上下文、不记录标签标题与
+ * URL」的承诺（platform/reuse/persistedLedger 已为同一承诺单独规避过一次）。
+ */
+function redactUrls(text: string): string {
+  return text.replace(/https?:\/\/[^\s'")\]}]+/gi, '<url>');
+}
+
+/** 提取错误详情：只取 message（不取 stack，避免缓冲膨胀），并做 URL 脱敏。 */
+function detailOf(error: unknown): string | undefined {
+  const raw =
+    error instanceof Error ? error.message : error === undefined ? undefined : String(error);
+  return raw === undefined ? undefined : redactUrls(raw);
+}
+
 function push(entry: DiagnosticEntry): void {
   buffer.push(entry);
   if (buffer.length > MAX_ENTRIES) buffer.splice(0, buffer.length - MAX_ENTRIES);
@@ -109,9 +128,7 @@ export function logDegraded(
   error?: unknown,
   options?: { quiet?: boolean }
 ): void {
-  const detail =
-    error instanceof Error ? error.message : error === undefined ? undefined : String(error);
-  push({ at: new Date().toISOString(), scope, message, detail });
+  push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
   const line = `[Tabs][${scope}] ${message}`;
   if (options?.quiet) console.debug(line, error ?? '');
   else console.warn(line, error ?? '');
@@ -119,9 +136,7 @@ export function logDegraded(
 
 /** 记录一次真实失败（操作未达成且无法自动恢复）。 */
 export function logFailure(scope: string, message: string, error?: unknown): void {
-  const detail =
-    error instanceof Error ? error.message : error === undefined ? undefined : String(error);
-  push({ at: new Date().toISOString(), scope, message, detail });
+  push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
   console.error(`[Tabs][${scope}] ${message}`, error ?? '');
 }
 
@@ -138,25 +153,54 @@ export function readDiagnostics(): DiagnosticEntry[] {
  * 那等于这类故障完全没有排查线索。这是最后一道兜底，**不替代**各处的显式 catch：
  * 走到这里的都应该是「我们没预料到」的路径。
  *
- * 不在 `/background` 安装：SW 无 `window`，且其全局监听需另一套事件类型；
- * 由调用方按上下文决定是否安装（本函数在无 window 时安全空转）。
+ * 页面上下文（window）与 SW 上下文（self）都安装：SW 侧此前完全没有兜底，
+ * background 的 alarms / omnibox / contextMenus / 关窗缓存等异步路径一旦漏网，
+ * 诊断里连一条线索都没有。无全局对象时安全空转。
  */
+/** 最小事件目标形状：绕开 window / ServiceWorkerGlobalScope 的类型分歧。 */
+interface ErrorEventTarget {
+  addEventListener(type: string, listener: (event: Event) => void): void;
+  removeEventListener(type: string, listener: (event: Event) => void): void;
+}
+
 export function installGlobalErrorHandlers(): () => void {
-  if (typeof window === 'undefined') return () => undefined;
-  const onRejection = (event: PromiseRejectionEvent): void => {
-    logFailure('global', '未处理的 Promise rejection（未被任何 catch 覆盖）', event.reason);
+  if (typeof window !== 'undefined') {
+    const onRejection = (event: PromiseRejectionEvent): void => {
+      logFailure('global', '未处理的 Promise rejection（未被任何 catch 覆盖）', event.reason);
+    };
+    const onError = (event: ErrorEvent): void => {
+      // 资源加载失败（img / script / link）同样会派发 error，此时 event.error 为 null。
+      // 这类噪声量级大且无排查价值（favicon 抓取失败也在其中），只记真正的运行时异常。
+      if (event.error === null || event.error === undefined) return;
+      logFailure('global', '未捕获的运行时异常', event.error);
+    };
+    window.addEventListener('unhandledrejection', onRejection);
+    window.addEventListener('error', onError);
+    return () => {
+      window.removeEventListener('unhandledrejection', onRejection);
+      window.removeEventListener('error', onError);
+    };
+  }
+
+  // SW / Worker 上下文：事件对象不是 ErrorEvent / PromiseRejectionEvent 的页面实现，
+  // 只取 reason 与 error 字段，取不到就退化为事件本身。
+  const target = (typeof self === 'undefined' ? undefined : self) as unknown as
+    ErrorEventTarget | undefined;
+  if (!target) return () => undefined;
+  const onSwRejection = (event: Event): void => {
+    const reason = (event as { reason?: unknown }).reason;
+    logFailure('global', '未处理的 Promise rejection（background SW）', reason ?? event);
   };
-  const onError = (event: ErrorEvent): void => {
-    // 资源加载失败（img / script / link）同样会派发 error，此时 event.error 为 null。
-    // 这类噪声量级大且无排查价值（favicon 抓取失败也在其中），只记真正的运行时异常。
-    if (event.error === null || event.error === undefined) return;
-    logFailure('global', '未捕获的运行时异常', event.error);
+  const onSwError = (event: Event): void => {
+    const error = (event as { error?: unknown }).error;
+    if (error === null || error === undefined) return;
+    logFailure('global', '未捕获的运行时异常（background SW）', error);
   };
-  window.addEventListener('unhandledrejection', onRejection);
-  window.addEventListener('error', onError);
+  target.addEventListener('unhandledrejection', onSwRejection);
+  target.addEventListener('error', onSwError);
   return () => {
-    window.removeEventListener('unhandledrejection', onRejection);
-    window.removeEventListener('error', onError);
+    target.removeEventListener('unhandledrejection', onSwRejection);
+    target.removeEventListener('error', onSwError);
   };
 }
 

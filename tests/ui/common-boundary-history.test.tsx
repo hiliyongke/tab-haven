@@ -68,9 +68,11 @@ function batch(id: string, entryCount = 1, host = 'b') {
 function primeUndoStore(overrides: Partial<ReturnType<typeof useUndoStore.getState>> = {}): {
   undoBatch: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
+  notifyError: ReturnType<typeof vi.fn>;
 } {
   const undoBatch = vi.fn(async () => undefined);
   const notify = vi.fn();
+  const notifyError = vi.fn();
   useUndoStore.setState({
     batches: [],
     toast: null,
@@ -78,9 +80,10 @@ function primeUndoStore(overrides: Partial<ReturnType<typeof useUndoStore.getSta
     undoing: false,
     undoBatch,
     notify,
+    notifyError,
     ...overrides
   } as never);
-  return { undoBatch, notify };
+  return { undoBatch, notify, notifyError };
 }
 
 function renderPanel(props: Partial<Parameters<typeof UndoHistoryPanel>[0]> = {}) {
@@ -315,19 +318,19 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
   });
 
   it('恢复失败（返回 false）提示失败，不谎报成功', async () => {
-    const { notify } = primeUndoStore();
+    const { notify, notifyError } = primeUndoStore();
     mocks.restoreRecentClosed.mockResolvedValueOnce(false);
     mocks.getRecentlyClosed.mockResolvedValueOnce([closedEntry({ sessionId: 's1' })]);
     renderPanel();
 
     fireEvent.click(await screen.findByText('标题-s1'));
 
-    await waitFor(() => expect(notify).toHaveBeenCalledWith(i18n.t('errors.operationFailed')));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed')));
     expect(notify).not.toHaveBeenCalledWith(i18n.t('undo.recentRestored'));
   });
 
   it('恢复抛错（sessionId 失效）也会复位按钮，不永久 disabled 卡死', async () => {
-    const { notify } = primeUndoStore();
+    const { notifyError } = primeUndoStore();
     mocks.restoreRecentClosed.mockRejectedValueOnce(new Error('stale sessionId'));
     mocks.getRecentlyClosed.mockResolvedValueOnce([closedEntry({ sessionId: 's1' })]);
     renderPanel();
@@ -335,7 +338,7 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
     const row = await screen.findByText('标题-s1');
     fireEvent.click(row);
 
-    await waitFor(() => expect(notify).toHaveBeenCalledWith(i18n.t('errors.operationFailed')));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed')));
 
     // 关键：按钮必须恢复可用（finally 复位 restoringId）
     await waitFor(() => {

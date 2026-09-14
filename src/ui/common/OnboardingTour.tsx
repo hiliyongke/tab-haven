@@ -45,7 +45,7 @@ export function OnboardingTour({
   // container-type 层叠上下文。
   return createPortal(
     <div
-      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
       role="presentation"
     >
       <dialog

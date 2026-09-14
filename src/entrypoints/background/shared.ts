@@ -22,8 +22,8 @@ export const syncCachedSettings = async (): Promise<void> => {
   try {
     cachedSettings = await settingsRepository.read();
   } catch (error) {
-    logDegraded('background', '共享上下文读取失败', error);
-    // 读取失败保持默认值，后续 watch 会自动纠正
+    // 文案须与函数名对应：此处是「设置缓存读取」，不是泛化的共享上下文操作。
+    logDegraded('background', '设置缓存读取失败，保持当前缓存值（后续 watch 会纠正）', error);
   }
 };
 
@@ -33,24 +33,42 @@ export function hostnameOf(url: string | undefined): string {
   try {
     return new URL(url).hostname;
   } catch (error) {
-    logDegraded('background', '共享上下文读取失败', error);
+    // 文案须与函数名对应：此前这里是复制粘贴的「共享上下文读取失败」，
+    // 诊断导出里出现大量语义无关条目会淹没真实故障。
+    logDegraded('background', 'URL 解析失败，已按空主机名处理', error);
     return '';
   }
 }
 
-/** 域名白名单匹配：精确 hostname 或子域匹配（qq.com 覆盖 mail.qq.com）。 */
-export function isWhitelisted(hostname: string, whitelist: readonly string[]): boolean {
-  const host = hostname.toLowerCase();
-  return whitelist.some((entry) => {
+/**
+ * 构建白名单匹配器（精确 hostname 或子域匹配，qq.com 覆盖 mail.qq.com）。
+ *
+ * 归一化只做一次：原实现对每个 (标签 × 条目) 组合做 3 次正则替换，而自动休眠
+ * 每轮要过「全部标签 × 全部白名单」（上限各 500，即 25 万次正则/轮）。预归一化
+ * 后内层只剩字符串比较，正则次数压到 O(条目数)。
+ *
+ * 供多标签热路径复用；单次判定直接用下面的 `isWhitelisted`。
+ */
+export function buildWhitelistMatcher(whitelist: readonly string[]): (hostname: string) => boolean {
+  const targets: string[] = [];
+  for (const entry of whitelist) {
     const target = entry
       .trim()
       .toLowerCase()
       .replace(/^https?:\/\//, '')
       .replace(/\/.*$/, '')
       .replace(/^www\./, '');
-    if (!target) return false;
-    return host === target || host.endsWith(`.${target}`);
-  });
+    if (target) targets.push(target);
+  }
+  return (hostname: string) => {
+    const host = hostname.toLowerCase();
+    return targets.some((target) => host === target || host.endsWith(`.${target}`));
+  };
+}
+
+/** 域名白名单匹配：精确 hostname 或子域匹配（qq.com 覆盖 mail.qq.com）。 */
+export function isWhitelisted(hostname: string, whitelist: readonly string[]): boolean {
+  return buildWhitelistMatcher(whitelist)(hostname);
 }
 
 /** 通知用户（notifications 权限不可用时静默）。 */
@@ -104,8 +122,8 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
         await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
       }
     } catch (error) {
-      logDegraded('background', '共享上下文操作失败', error);
-      // session 存储不可用时仅即时广播
+      // 文案须与函数名对应：此处是「挂起动作入队」，不是泛化的共享上下文操作。
+      logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error);
     }
   });
   queueActionChain = step;

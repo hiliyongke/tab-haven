@@ -396,7 +396,7 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
       rowProps.callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
     }
   };
-  // 展开态：站点分区永远平铺渲染（子域折叠已移除，subgroups 恒为空）。
+  // 展开态：站点分区永远平铺渲染（子域折叠模式已移除，层级只有一级）。
   const renderBody = () => (
     <div className="section-body">
       <SectionRows

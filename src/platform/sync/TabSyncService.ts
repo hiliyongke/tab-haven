@@ -53,17 +53,27 @@ const MAX_BACKOFF_FACTOR = 32;
 
 export class TabSyncService {
   private generation = 0;
-  /** 当前活跃 start 会话的刷新信号（由 start 注册、cleanup 注销）。 */
-  private activeSignal: (() => void) | null = null;
+  /**
+   * 全部活跃 start 会话的刷新信号（由 start 注册、cleanup 注销）。
+   *
+   * 必须是集合而非单值：sidepanel / popup / options 可各自挂载一个 start 会话，
+   * 只保留最后一个会让 requestRefresh() 打到「别人的」会话 —— 发起请求的页面
+   * 收不到这次刷新（表现为「点了没反应，切一下标签才对」），而不展示列表的那个
+   * 页面反而白跑一次全窗口查询。
+   */
+  private readonly activeSignals = new Set<() => void>();
 
   /**
    * 显式请求一次快照刷新（幂等）：供「直接改写浏览器标签/组结构」的写操作
    * （如固定文件夹转原生组）完成后调用，确保 UI 立即反映，不依赖
    * tabs/tabGroups 事件被派发到本上下文的时序（事件驱动的 refresh 照常生效，
    * 两者经 signal 的 querying/timer 合并机制天然去重，不会重复查询）。
+   *
+   * 广播到全部活跃会话：调用方不知道自己关心的是哪一个，而多余的一次刷新会被
+   * 各会话内部的 querying/timer 合并掉，成本可忽略。
    */
   requestRefresh(): void {
-    this.activeSignal?.();
+    for (const signal of [...this.activeSignals]) signal();
   }
 
   start(onSnapshot: (snapshot: TabSnapshot) => void): () => void {
@@ -181,14 +191,14 @@ export class TabSyncService {
     }
 
     // 启动即刷新一次（首帧数据）。
-    this.activeSignal = signal;
+    this.activeSignals.add(signal);
     signal();
 
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
       if (audibleTimer !== null) clearInterval(audibleTimer);
-      if (this.activeSignal === signal) this.activeSignal = null;
+      this.activeSignals.delete(signal);
       browser.tabs.onUpdated.removeListener(onUpdated);
       for (const event of events) {
         event.removeListener(signal);

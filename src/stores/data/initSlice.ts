@@ -2,7 +2,13 @@ import { syncMirror } from '@/platform/storage/SyncMirror';
 import { readSession } from '@/platform/storage/session';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { dedupePins } from '@/core/fixed/FolderOps';
-import { FixedFolderSchema, PersistentPinSchema, SettingsSchema } from '@/core/schema/models';
+import {
+  FOLDERS_LIMIT,
+  FixedFolderSchema,
+  PINS_LIMIT,
+  PersistentPinSchema,
+  SettingsSchema
+} from '@/core/schema/models';
 import type { DataContext, DataState } from './types';
 
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
@@ -36,8 +42,14 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
           // 否则关掉同步的用户在换机时仍会被旧镜像回灌。
           const mirror = await syncMirror.pull();
           if (mirror) {
-            const parsedFolders = FixedFolderSchema.array().safeParse(mirror.folders);
-            const parsedPins = PersistentPinSchema.array().safeParse(mirror.pins);
+            // 镜像来自浏览器账号通道，属外部可控输入（与备份文件同级）：集合必须
+            // 带体积上限，否则一份异常镜像就能把本地库撑到远超正常使用规模。
+            // 注意口径：上限只加在「外部输入」侧，不加进 registry 的仓库 schema ——
+            // 后者一旦收紧，存量超限用户的真实数据会在读盘时被判为坏数据而清空。
+            const parsedFolders = FixedFolderSchema.array()
+              .max(FOLDERS_LIMIT)
+              .safeParse(mirror.folders);
+            const parsedPins = PersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
             const parsedSettings = SettingsSchema.safeParse(mirror.settings);
             if (parsedFolders.success && folders.length === 0)
               effectiveFolders = parsedFolders.data;

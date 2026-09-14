@@ -10,8 +10,10 @@ pnpm dev          # 开发模式，加载 .output/chrome-mv3 到 chrome://extens
 pnpm check        # 提交前跑这一条即可（等价于 CI 全流程）
 ```
 
-`pnpm check` = 格式 → 类型 → 规范 → 文案键 → 测试（含覆盖率阈值）→ 构建 → 隐私回归。
+`pnpm check` = 类型 → 规范 → 文案键 → UI 设计令牌 → 测试（含覆盖率阈值）→ 构建 → 隐私回归。
 **任何一项失败，CI 都会拒绝合并。**
+
+> 注意：`check` 不含 `format:check`，格式化由 pre-commit 的 lint-staged 与 CI 单独把关。
 
 提交时 pre-commit 钩子会自动对暂存文件跑 lint-staged（ESLint + Prettier）。
 若钩子未生效，先执行一次：
@@ -54,15 +56,16 @@ stores / ui / entrypoints
 
 新增 UI 文案必须同时补 `zh-CN` 与 `en` 两份 locale，键集合必须一致，否则 `check:i18n` 失败。
 
-### 5. 持久化数据变更要同步两处
+### 5. 持久化数据变更要同步 schema 与隐私说明
 
 改动持久化数据结构时，必须同步更新：
 
-- `core/schema` 里的 zod schema；
-- `CHANGELOG.md`。
+- `core/schema` 里的 zod schema（默认值、体积上限与坏数据隔离策略都在这里）；
+- `PRIVACY.md` 第 3 节「我们存储的数据」表（新增存储类型或字段时 —— 否则对外口径失真）。
 
-若改动的是**导出备份格式**，还须递增 `EXPORT_FILE_VERSION` 并保留旧结构的解析路径 ——
-版本号一旦发布就无法回补，这是唯一零成本的时机。
+若改动的是**导出备份格式**，须递增 `EXPORT_FILE_VERSION`。
+本项目采用**单一备份格式**：schema 用 `z.literal(EXPORT_FILE_VERSION)` 校验，
+版本不同即拒绝导入，**不做跨版本兼容**，因此不存在「保留旧结构解析路径」的要求。
 
 ## 测试
 

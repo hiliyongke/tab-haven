@@ -11,7 +11,7 @@ Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它只管理**�
 - 拖拽排序（标签 / 常驻磁贴 / 分组头 / 文件夹），关闭操作可多层撤销
 - 一键清理重复标签、安全休眠、JSON 数据导出导入
 
-隐私详情见 [PRIVACY.md](./PRIVACY.md)，版本变更记录见 [CHANGELOG.md](./CHANGELOG.md)，许可证见 [LICENSE](./LICENSE)。
+隐私详情见 [PRIVACY.md](./PRIVACY.md)，许可证见 [LICENSE](./LICENSE)。
 漏洞报告见 [SECURITY.md](./SECURITY.md)，参与开发见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ---
@@ -184,7 +184,7 @@ pnpm format:check
 改动还须满足以下约定：
 
 - `core/**` 保持零 `chrome.*` / DOM / React 依赖，且不 import `platform/**`；
-- 持久化数据的形状变更必须同步 `core/schema` 的 zod schema 与 `CHANGELOG.md`；
+- 持久化数据的形状变更必须同步 `core/schema` 的 zod schema（新增存储类型还须同步 `PRIVACY.md` 第 3 节）；
 - 新增权限必须同时改 `wxt.config.ts` 与 `PRIVACY.md`，否则 `check:privacy` 会失败；
 - 新增 UI 文案必须同时补 `zh-CN` 与 `en` 两份 locale，否则 `check:i18n` 会失败。
 

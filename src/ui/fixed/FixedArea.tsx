@@ -28,6 +28,7 @@ export function FixedArea() {
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const settings = useDataStore((state) => state.settings);
   const notify = useUndoStore((state) => state.notify);
+  const notifyError = useUndoStore((state) => state.notifyError);
   const [creating, setCreating] = useState(false);
   const [dropRequest, setDropRequest] = useState<CreateFolderRequest | null>(null);
   // 固定空间折叠：文件夹多（>5）时首次自动折叠，避免 34vh 独立滚动区抢占首屏；
@@ -67,7 +68,7 @@ export function FixedArea() {
       // 新建的文件夹可能落在固定空间的滚动区之外（固定区上限 34vh），
       // 不给反馈的话用户会以为「拖过去没反应」。
       notify(t('toast.folderCreated'));
-    })().catch(() => notify(t('errors.operationFailed')));
+    })().catch(() => notifyError(t('errors.operationFailed')));
   };
 
   return (
@@ -141,7 +142,7 @@ export function FixedArea() {
             setCreating(false);
             void createFolder(name).then(
               () => notify(t('toast.folderCreated')),
-              () => notify(t('errors.operationFailed'))
+              () => notifyError(t('errors.operationFailed'))
             );
           }}
           onCancel={() => setCreating(false)}

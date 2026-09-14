@@ -29,6 +29,23 @@ describe('logDegraded / logFailure', () => {
     vi.restoreAllMocks();
   });
 
+  /**
+   * 隐私红线：诊断是可导出的，而部分 chrome API 的错误消息会原样带上调用参数
+   * （如 `Invalid URL: https://...`）。落进缓冲等于把浏览内容写进用户会随手
+   * 分享的文件，故 detail 一律脱敏。
+   */
+  it('错误详情中的 URL 一律脱敏（可导出的诊断不得携带浏览内容）', () => {
+    logFailure('tabs', '创建失败', new Error('Invalid URL: https://example.com/secret?token=1'));
+    const entries = readDiagnostics();
+    expect(entries.at(-1)?.detail).toBe('Invalid URL: <url>');
+    expect(entries.at(-1)?.detail).not.toContain('example.com');
+  });
+
+  it('logDegraded 的 detail 同样脱敏（两条入口同口径）', () => {
+    logDegraded('snapshots', '恢复失败', new Error('Cannot open https://a.com/x'));
+    expect(readDiagnostics().at(-1)?.detail).toBe('Cannot open <url>');
+  });
+
   it('记录 scope / message / detail，且 detail 取自 Error.message', () => {
     logDegraded('demo-scope', '降级了', new Error('根因'));
     const entries = readDiagnostics();

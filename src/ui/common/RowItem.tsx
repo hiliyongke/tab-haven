@@ -107,7 +107,7 @@ export const RowItem = memo(
     ref
   ) {
     const className =
-      'group relative flex items-center gap-1 rounded pl-1.5 pr-1.5 py-[2px] text-xs transition-base row-item' +
+      'group relative flex items-center gap-1 rounded pl-1.5 pr-1.5 py-0.5 text-xs transition-base row-item' +
       (density === 'cozy' ? ' density-cozy' : '') +
       (density === 'large' ? ' density-large' : '') +
       (isActive ? ' is-active' : '') +

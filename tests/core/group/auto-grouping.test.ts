@@ -25,8 +25,7 @@ function siteSection(title: string, tabs: TabRecord[]): TemporarySection {
     key: `site-${title}`,
     title,
     tabs,
-    siteKey: title,
-    subgroups: []
+    siteKey: title
   };
 }
 
@@ -50,8 +49,7 @@ describe('planAutoGroups', () => {
       key: 'site-lang-en',
       title: 'English',
       tabs: [makeTab(1)],
-      siteKey: 'lang-en',
-      subgroups: []
+      siteKey: 'lang-en'
     };
     expect(planAutoGroups([langSection])).toHaveLength(0);
     // planRegroup（options 形式，内部派生语言 section）同样不下发单标签语言组

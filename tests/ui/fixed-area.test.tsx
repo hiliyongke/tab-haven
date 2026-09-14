@@ -72,6 +72,7 @@ function stubStores(options: {
   closeTabs: ReturnType<typeof vi.fn>;
   tryUpdateSettings: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
+  notifyError: ReturnType<typeof vi.fn>;
 } {
   const created = { ...createFolder('新建文件夹'), id: 'created-folder' };
   const spies = {
@@ -85,7 +86,8 @@ function stubStores(options: {
     removePin: vi.fn(async () => undefined),
     closeTabs: vi.fn(async () => [1]),
     tryUpdateSettings: vi.fn(async () => true),
-    notify: vi.fn()
+    notify: vi.fn(),
+    notifyError: vi.fn()
   };
 
   useDataStore.setState({
@@ -108,7 +110,13 @@ function stubStores(options: {
     highlightedIds: new Set<number>(),
     closeTabs: spies.closeTabs
   } as never);
-  useUndoStore.setState({ notify: spies.notify, batches: [], toast: null, ready: true } as never);
+  useUndoStore.setState({
+    notify: spies.notify,
+    notifyError: spies.notifyError,
+    batches: [],
+    toast: null,
+    ready: true
+  } as never);
 
   return spies;
 }
@@ -183,7 +191,7 @@ describe('FixedArea 区域骨架', () => {
     fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.confirm') }));
 
     await waitFor(() =>
-      expect(spies.notify).toHaveBeenCalledWith(i18n.t('errors.operationFailed'))
+      expect(spies.notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed'))
     );
     expect(spies.notify).not.toHaveBeenCalledWith(i18n.t('toast.folderCreated'));
   });
@@ -350,7 +358,7 @@ describe('FolderRow 弹窗与结果反馈', () => {
     fireEvent.click(await screen.findByRole('button', { name: i18n.t('fixed.confirmDelete') }));
 
     await waitFor(() =>
-      expect(spies.notify).toHaveBeenCalledWith(i18n.t('errors.operationFailed'))
+      expect(spies.notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed'))
     );
     expect(spies.notify).not.toHaveBeenCalledWith(i18n.t('toast.folderRemoved'));
   });

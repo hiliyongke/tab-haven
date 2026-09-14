@@ -57,6 +57,25 @@ export function useModalA11y(
       focusable?.focus();
     });
 
+    // 背景滚动锁定：模态打开时背景仍随滚轮滚动，会让遮罩与内容错位、且把
+    // 「在遮罩上滚一下」变成误操作。嵌套弹窗只在最外层上锁/解锁 —— 内层
+    // 卸载时若直接解锁，外层还开着却已可滚动。
+    const isOutermost = modalStack.length === 0;
+    const root = document.documentElement;
+    const previousOverflow = isOutermost ? root.style.overflow : undefined;
+    const previousPaddingRight = isOutermost ? root.style.paddingRight : undefined;
+    if (isOutermost) {
+      // 补偿滚动条宽度：直接 overflow:hidden 会让滚动条消失、内容横向跳一下，
+      // 在窄侧栏里这个跳动非常明显。
+      const scrollbarWidth = window.innerWidth - root.clientWidth;
+      root.style.overflow = 'hidden';
+      // 钳到真实滚动条量级（≤40px）：无头/无布局环境下 clientWidth 可能为 0，
+      // 差值会大得离谱（jsdom 下得到视口整宽），直接拿来补 padding 会把内容挤没。
+      if (scrollbarWidth > 0 && scrollbarWidth <= 40) {
+        root.style.paddingRight = `${scrollbarWidth}px`;
+      }
+    }
+
     const self = Symbol('modal');
     modalStack.push(self);
 
@@ -99,6 +118,10 @@ export function useModalA11y(
       document.removeEventListener('keydown', onKeyDown, true);
       const index = modalStack.indexOf(self);
       if (index !== -1) modalStack.splice(index, 1);
+      if (modalStack.length === 0 && previousOverflow !== undefined) {
+        root.style.overflow = previousOverflow;
+        root.style.paddingRight = previousPaddingRight ?? '';
+      }
       trigger?.focus?.();
     };
     // eslint 依赖提示：onClose 已通过 ref 持有，effect 仅需挂载/卸载各执行一次。
@@ -123,7 +146,7 @@ export function DialogShell({
   // 且不再受 .app 内部 z-index 影响（层级由 z-stack 的 50 档统一保证）。
   return createPortal(
     <div
-      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

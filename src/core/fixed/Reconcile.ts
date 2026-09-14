@@ -118,6 +118,11 @@ export function reconcileBindings(
     else candidatesByKey.set(key, [tab]);
   }
 
+  // 每个键的游标：桶内已被占用的标签不必重复扫描。原实现用 find 每次从头找
+  // 第一个未占用标签，同一键下聚集 N 个条目/N 个标签时退化为 O(N²)；
+  // boundTabIds 在本循环中只增不减，跳过的标签此后必然仍被占用，单向推进是安全的。
+  const cursorByKey = new Map<string, number>();
+
   // 为未绑定且非挂起的条目寻找精确 URL 匹配的未占用标签
   for (const folder of folders) {
     for (const item of folder.items) {
@@ -128,7 +133,12 @@ export function reconcileBindings(
       if (!item.url) continue;
       const key = webComparisonKey(item.url, undefined);
       if (key === null) continue;
-      const match = candidatesByKey.get(key)?.find((tab) => !boundTabIds.has(tab.id));
+      const list = candidatesByKey.get(key);
+      if (list === undefined) continue;
+      let cursor = cursorByKey.get(key) ?? 0;
+      while (cursor < list.length && boundTabIds.has(list[cursor]!.id)) cursor += 1;
+      cursorByKey.set(key, cursor);
+      const match = cursor < list.length ? list[cursor] : undefined;
       if (match) {
         next[item.id] = match.id;
         boundTabIds.add(match.id);

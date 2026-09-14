@@ -5,6 +5,13 @@ import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
 import { pinsRepository, snapshotsRepository } from '@/platform/storage/repositories';
+import {
+  COLLAPSE_RMW_LOCK,
+  FOLDERS_RMW_LOCK,
+  PINS_RMW_LOCK,
+  SETTINGS_RMW_LOCK
+} from '@/platform/storage/crossPageLock';
+import { SNAPSHOTS_RMW_LOCK } from '@/platform/snapshot/snapshots';
 import { readSession } from '@/platform/storage/session';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -18,6 +25,34 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
     groupId: -1,
     ...partial
   };
+}
+
+/**
+ * 捕获一段异步过程中请求的跨页锁名。
+ *
+ * jsdom 不提供 Web Locks，`withCrossPageLock` 会退化为直接执行（见该文件注释），
+ * 这使「哪些写入路径加了锁」在测试里完全不可观测 —— 给 `navigator.locks` 打桩后
+ * 即可断言并发契约，而不必真的制造跨上下文竞争。
+ */
+async function captureLockNames(run: () => Promise<void>): Promise<string[]> {
+  const requested: string[] = [];
+  const original = Object.getOwnPropertyDescriptor(navigator, 'locks');
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: (name: string, fn: () => Promise<unknown>) => {
+        requested.push(name);
+        return fn();
+      }
+    }
+  });
+  try {
+    await run();
+  } finally {
+    if (original) Object.defineProperty(navigator, 'locks', original);
+    else Reflect.deleteProperty(navigator, 'locks');
+  }
+  return requested;
 }
 
 /**
@@ -157,6 +192,81 @@ describe('dataStore 固定空间事务', () => {
   });
 
   /**
+   * 回归：备份整表替换 folders，而会话绑定（item id → tab id）的有效性只校验
+   * 「item 与 tab 都还存在」，不校验 URL 是否仍匹配（见 core/fixed/Reconcile 的
+   * reconcileBindings）。导入后同 id 的条目可能已指向另一个网址，残留绑定在新数据下
+   * 依然「item 与 tab 都存在」，按存在性校验识别不出来 —— 后果是无关标签被永久排除
+   * 出临时区（用户视角「标签凭空消失」），且点击该条目会激活内容不相干的标签。
+   * 故导入成功后整表清空，由下一次 reconcileWithTabs 按 URL 精确重建。
+   */
+  it('importData：整表替换 folders 后清空会话绑定（残留绑定会指向无关标签）', async () => {
+    await useDataStore.getState().createFolder('F');
+    const folderId = useDataStore.getState().folders[0]!.id;
+    await useDataStore
+      .getState()
+      .addTabsToFolder([makeTab({ id: 7, url: 'https://a.com/', title: 'A' })], folderId);
+
+    const itemId = useDataStore.getState().folders[0]!.items[0]!.id;
+    expect((await readSession()).itemTabBindings[itemId]).toBe(7);
+
+    // 备份文件可被任意构造：同 item id、不同 URL 是最典型的脏绑定来源。
+    await useDataStore.getState().importData({
+      format: 'tabs.export',
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [
+        {
+          id: 'f1',
+          name: '导入的文件夹',
+          collapsed: false,
+          items: [{ id: itemId, url: 'https://b.com/', title: 'B', createdAt: 1 }]
+        }
+      ],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS
+    });
+
+    expect((await readSession()).itemTabBindings).toEqual({});
+    expect(useDataStore.getState().boundTabIds).toEqual([]);
+  });
+
+  /**
+   * 回归：导入事务此前只有 snapshots 走了跨页 RMW 锁，folders / pins 是裸写 ——
+   * 而 background 的右键菜单加条目（contextMenus.addEntryToFolder）与面板的
+   * coalesced 写都在锁内做 read→合并→write，锁外整表写会被它们覆盖丢失。
+   *
+   * jsdom 无 Web Locks（crossPageLock 会退化为直接执行），因此这里给
+   * `navigator.locks` 打桩来观测锁名，守住「哪些分区必须加锁」这一契约。
+   */
+  it('importData：全部整表写分区均经各自的跨页 RMW 锁', async () => {
+    const payload = {
+      format: 'tabs.export',
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [
+        {
+          id: 'f1',
+          name: '导入的文件夹',
+          collapsed: false,
+          items: [{ id: 'i1', url: 'https://a.com/', title: 'A', createdAt: 1 }]
+        }
+      ],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS
+    };
+
+    const requested = await captureLockNames(() => useDataStore.getState().importData(payload));
+
+    expect(requested).toContain(FOLDERS_RMW_LOCK);
+    expect(requested).toContain(PINS_RMW_LOCK);
+    expect(requested).toContain(SNAPSHOTS_RMW_LOCK);
+    // 回归：collapse 与 settings 同样是「多入口各持一份内存的整表写」分区，
+    // 此前导入事务在这两处锁外整表覆盖，并发页的折叠状态会被静默抹掉。
+    expect(requested).toContain(COLLAPSE_RMW_LOCK);
+    expect(requested).toContain(SETTINGS_RMW_LOCK);
+  });
+
+  /**
    * 回归：导出入口在设置页（options），而设置页从不加载 snapshotStore。
    * 早期实现走「快照读取桥」，未登记时导出 `snapshots: []`——用户拿这份备份
    * 恢复时快照全丢。现改为直读仓库，与页面是否加载过快照 store 无关。
@@ -278,6 +388,41 @@ describe('dataStore 固定空间事务', () => {
 
     expect(useDataStore.getState().folders).toHaveLength(1);
     expect(useDataStore.getState().storageDegraded).toBe(true);
+  });
+
+  it('toggleSiteCollapsed：经 collapse 分区的跨页 RMW 锁（并发页互抹折叠态）', async () => {
+    const requested = await captureLockNames(async () => {
+      await useDataStore.getState().toggleSiteCollapsed('a.com', true);
+    });
+    expect(requested).toContain(COLLAPSE_RMW_LOCK);
+    expect(useDataStore.getState().collapsedSites).toEqual(['a.com']);
+  });
+
+  it('resetSettings：写盘失败时抛错并保持原设置（不谎报已恢复默认）', async () => {
+    await useDataStore.getState().updateSettings({ density: 'compact' });
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.local, 'set')
+      .mockImplementation(() => Promise.reject(new Error('quota')) as never);
+
+    await expect(useDataStore.getState().resetSettings()).rejects.toThrow('settings-write-failed');
+
+    expect(useDataStore.getState().settings.density).toBe('compact');
+    expect(useDataStore.getState().storageDegraded).toBe(true);
+    setSpy.mockRestore();
+  });
+
+  it('resetSettings：成功时回落到出厂默认并清掉已上传的同步镜像', async () => {
+    await useDataStore.getState().updateSettings({ density: 'compact', syncMirrorEnabled: true });
+    // 键名必须与 SyncMirror 的 CHUNK_PREFIX 一致，否则清的是另一个键。
+    await fakeBrowser.storage.sync.set({ 'tabs.sync.v1.0': '{"folders":[]}' });
+
+    await useDataStore.getState().resetSettings();
+
+    expect(useDataStore.getState().settings).toEqual(DEFAULT_SETTINGS);
+    // 默认值里同步是关闭的：恢复默认等同于「关闭同步」，残留镜像会在下次
+    // 首启把数据回灌回来——用户以为已经关干净了。
+    const mirror = await fakeBrowser.storage.sync.get('tabs.sync.v1.0');
+    expect(mirror['tabs.sync.v1.0']).toBeUndefined();
   });
 
   it('toggleSiteCollapsed：幂等写入', async () => {

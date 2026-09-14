@@ -16,20 +16,9 @@ import { domainToUnicode } from '@/core/url/punycode';
  * 组 = 子域站点，层级永远只有一级。
  */
 
-export interface SiteSubGroup {
-  /** 子域部分（不含 www；裸域为空串）。 */
-  subdomain: string;
-  /** 展示标签（子域.注册域 或裸注册域）。 */
-  label: string;
-  tabs: TabRecord[];
-}
-
 interface SiteGroup {
   key: SiteKey;
-  /** 组内全部标签（兼容字段）。 */
   tabs: TabRecord[];
-  /** 折叠模式已移除，恒为空；保留字段以兼容归并（buildSitePlan）与渲染路径。 */
-  subgroups: SiteSubGroup[];
 }
 
 interface SiteAggregation {
@@ -103,7 +92,7 @@ export function aggregateBySite(
             registrableDomain: key.registrableDomain,
             subdomain: key.subdomain
           };
-    groups.push({ key: groupKey, tabs: bucket.tabs, subgroups: [] });
+    groups.push({ key: groupKey, tabs: bucket.tabs });
   }
   groups.sort((a, b) => (a.tabs[0]?.index ?? 0) - (b.tabs[0]?.index ?? 0));
 

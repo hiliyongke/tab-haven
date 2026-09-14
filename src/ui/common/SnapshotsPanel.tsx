@@ -22,6 +22,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
   const renameSnapshot = useSnapshotStore((state) => state.renameSnapshot);
   const restore = useSnapshotStore((state) => state.restore);
   const notify = useUndoStore((state) => state.notify);
+  const notifyError = useUndoStore((state) => state.notifyError);
 
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
@@ -88,7 +89,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
       setName('');
       notify(t('snapshots.saved'));
     } catch {
-      notify(t('errors.operationFailed'));
+      notifyError(t('errors.operationFailed'));
     } finally {
       saveInFlight.current = false;
       setSaving(false);
@@ -100,7 +101,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
       await saveSpace(t('snapshots.space'));
       notify(t('snapshots.saved'));
     } catch {
-      notify(t('errors.operationFailed'));
+      notifyError(t('errors.operationFailed'));
     }
   };
 
@@ -119,7 +120,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
       setImportName('');
       setView('list');
     } catch {
-      notify(t('errors.operationFailed'));
+      notifyError(t('errors.operationFailed'));
     }
   };
 
@@ -137,7 +138,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
       notify(t('snapshots.restored', { count }));
       onClose();
     } catch {
-      notify(t('errors.operationFailed'));
+      notifyError(t('errors.operationFailed'));
     } finally {
       setRestoringId(null);
     }
@@ -152,7 +153,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     try {
       await deleteSnapshot(id);
     } catch {
-      notify(t('errors.operationFailed'));
+      notifyError(t('errors.operationFailed'));
     } finally {
       setDeletingId(null);
     }
@@ -166,7 +167,7 @@ export function SnapshotsPanel({ onClose }: { onClose: () => void }) {
     try {
       if (editingId) await renameSnapshot(editingId, editingName);
     } catch {
-      notify(t('errors.operationFailed'));
+      notifyError(t('errors.operationFailed'));
     } finally {
       setEditingId(null);
       setEditingName('');

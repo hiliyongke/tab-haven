@@ -1,6 +1,10 @@
 import { browser } from 'wxt/browser';
 import { syncMirror } from '@/platform/storage/SyncMirror';
-import { SETTINGS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import {
+  COLLAPSE_RMW_LOCK,
+  SETTINGS_RMW_LOCK,
+  withCrossPageLock
+} from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { DEFAULT_SETTINGS, SettingsSchema } from '@/core/schema/models';
 import type { DataContext, DataState } from './types';
@@ -30,7 +34,9 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
             ? ctx.get().collapsedSites
             : [...ctx.get().collapsedSites, siteKey]
           : ctx.get().collapsedSites.filter((key) => key !== siteKey);
-        const ok = await ctx.repos.collapse.write(next);
+        // 与 updateSettings 同口径：折叠状态是整表写，options / sidepanel 各有独立
+        // 内存副本，锁外写会把另一页刚改的折叠项整表抹掉。
+        const ok = await withCrossPageLock(COLLAPSE_RMW_LOCK, () => ctx.repos.collapse.write(next));
         if (!ok)
           ctx.reportPersistenceFailure('dataStore', '站点折叠状态写入失败（仅影响分组展开状态）');
         ctx.set({ collapsedSites: next });

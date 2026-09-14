@@ -209,7 +209,7 @@ export function useTabDragHandlers() {
       const activeData = active.data.current as DragData | undefined;
       const overData = over.data.current as DragData | undefined;
       if (!activeData) return;
-      const { notify } = useUndoStore.getState();
+      const { notify, notifyError } = useUndoStore.getState();
       const dataStore = useDataStore.getState();
       // 导入事务进行中：固定空间（文件夹/固定图标）的写入会被有意丢弃，以防与事务的
       // 串行写交错。此时投进固定空间只会「看起来没反应」，必须明确拒绝并说明原因，
@@ -271,7 +271,7 @@ export function useTabDragHandlers() {
             void dataStore
               .addTabsToFolder([target], overData.folderId)
               .then(notifyDropResult)
-              .catch(() => notify(t('errors.operationFailed')));
+              .catch(() => notifyError(t('errors.operationFailed')));
           }
           return;
         }
@@ -313,7 +313,7 @@ export function useTabDragHandlers() {
             void dataStore
               .addTabsToFolder(targetTabs, overData.folderId)
               .then(notifyDropResult)
-              .catch(() => notify(t('errors.operationFailed')));
+              .catch(() => notifyError(t('errors.operationFailed')));
           }
           return;
         }
@@ -345,7 +345,7 @@ export function useTabDragHandlers() {
           void dataStore
             .moveFolderItem(activeData.folderId, activeData.itemId, targetFolderId)
             .then(() => notify(t('toast.folderItemMoved')))
-            .catch(() => notify(t('errors.operationFailed')));
+            .catch(() => notifyError(t('errors.operationFailed')));
           return;
         }
         // 移出固定空间：拖到临时区（标签行 / 分组卡）时移除条目，标签随之回到临时区。
@@ -353,7 +353,7 @@ export function useTabDragHandlers() {
           void dataStore
             .removeFolderItem(activeData.folderId, activeData.itemId)
             .then(() => notify(t('toast.removedFromFolder')))
-            .catch(() => notify(t('errors.operationFailed')));
+            .catch(() => notifyError(t('errors.operationFailed')));
         }
         return;
       }

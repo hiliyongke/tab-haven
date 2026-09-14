@@ -2,6 +2,7 @@ import type { UndoBatch } from '@/core/schema/models';
 import { DEFAULT_UNDO_STACK_LIMIT } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { NO_GROUP } from '@/core/tab-types';
+import { newId } from '@/core/util/id';
 
 /**
  * 撤销栈：操作记录制而非状态快照制。
@@ -65,7 +66,7 @@ export function createUndoBatch(
   options: CreateUndoBatchOptions = {}
 ): UndoBatch {
   return {
-    id: options.id ?? crypto.randomUUID(),
+    id: options.id ?? newId('undo'),
     kind,
     createdAt: options.now ?? Date.now(),
     windowId: options.windowId,

@@ -1,6 +1,7 @@
 import type { FixedFolder, FixedFolderItem, PersistentPin } from '@/core/schema/models';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import { webComparisonKey } from '@/core/url/UrlInspector';
+import { newId } from '@/core/util/id';
 
 /**
  * 固定空间纯函数集：不触碰 chrome API，只做数据变换。
@@ -30,7 +31,7 @@ export function createFolderItem(input: {
   now?: number;
 }): FixedFolderItem {
   return {
-    id: crypto.randomUUID(),
+    id: newId('item'),
     url: input.url,
     title: input.title,
     favIconUrl: input.favIconUrl,
@@ -41,7 +42,7 @@ export function createFolderItem(input: {
 
 export function createFolder(name: string): FixedFolder {
   return {
-    id: crypto.randomUUID(),
+    id: newId('folder'),
     name,
     collapsed: false,
     items: []

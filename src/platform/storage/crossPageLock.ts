@@ -8,10 +8,24 @@
  *
  * 环境不支持（单测 jsdom / 旧引擎）时退化为直接执行：调用方页内互斥
  * （如 undoInFlight / 页内串行链）仍然生效，语义不弱于引入本锁之前。
+ * 降级会留痕（一次）——锁失效而无人知晓比没有锁更危险。
  */
+import { logDegraded } from '@/platform/diagnostics';
+
+/** 降级只告警一次：调用点密集（每次导入/每次设置变更），逐次留痕会刷满诊断缓冲。 */
+let degradeWarned = false;
+
 export async function withCrossPageLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
-  if (!locks || typeof locks.request !== 'function') return fn();
+  if (!locks || typeof locks.request !== 'function') {
+    // 静默降级曾是隐患：跨页互斥实际失效，而调用方以为自己持锁。
+    // 至少让它可见——否则「并发页互覆数据」在诊断里毫无痕迹。
+    if (!degradeWarned) {
+      degradeWarned = true;
+      logDegraded('cross-page-lock', 'Web Locks 不可用，跨页面互斥已降级为页内串行');
+    }
+    return fn();
+  }
   return locks.request(name, fn) as Promise<T>;
 }
 
@@ -28,3 +42,6 @@ export const AUTO_GROUPS_RMW_LOCK = 'tabs.auto-groups-rmw';
 /** settings 分区：options / sidepanel / popup 各有独立 dataStore，
  *  整对象写必须以「锁内重读 → 合并 → 写」执行，否则并发页互丢字段级更新。 */
 export const SETTINGS_RMW_LOCK = 'tabs.settings-rmw';
+/** collapse 分区：与 settings 同为「多入口各自一份内存」的整表写分区，
+ *  面板折叠 / 导入事务都会整表覆盖，锁外写会互相抹掉对方的折叠状态。 */
+export const COLLAPSE_RMW_LOCK = 'tabs.collapse-rmw';

@@ -9,7 +9,14 @@ import { EXPORT_FILE_VERSION, parseExportFile, type Settings } from '@/core/sche
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { logFailure } from '@/platform/diagnostics';
 import { SNAPSHOTS_RMW_LOCK } from '@/platform/snapshot/snapshots';
-import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+import {
+  COLLAPSE_RMW_LOCK,
+  FOLDERS_RMW_LOCK,
+  PINS_RMW_LOCK,
+  SETTINGS_RMW_LOCK,
+  withCrossPageLock
+} from '@/platform/storage/crossPageLock';
+import { mutateSession } from '@/platform/storage/session';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { isExportableUrl, readBookmarkBar } from '@/platform/bookmarks';
 import type { DataContext, DataState } from './types';
@@ -108,25 +115,40 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
           write: () => Promise<boolean>;
           rollback: () => Promise<boolean>;
         }[] = [
+          // folders / pins 同样必须走各自的 RMW 锁：导入事务持续数百 ms，期间
+          // background 的右键菜单加条目（contextMenus.addEntryToFolder）与面板的
+          // coalesced 写都在锁内做 read→合并→write，锁外整表写会被它们覆盖丢失
+          // （反之亦然）。与下方 snapshots 同一口径。
           {
             name: 'folders',
-            write: () => ctx.repos.folders.write(importedFolders),
-            rollback: () => ctx.repos.folders.write(before.folders)
+            write: () =>
+              withCrossPageLock(FOLDERS_RMW_LOCK, () => ctx.repos.folders.write(importedFolders)),
+            rollback: () =>
+              withCrossPageLock(FOLDERS_RMW_LOCK, () => ctx.repos.folders.write(before.folders))
           },
           {
             name: 'pins',
-            write: () => ctx.repos.pins.write(importedPins),
-            rollback: () => ctx.repos.pins.write(before.pins)
+            write: () => withCrossPageLock(PINS_RMW_LOCK, () => ctx.repos.pins.write(importedPins)),
+            rollback: () =>
+              withCrossPageLock(PINS_RMW_LOCK, () => ctx.repos.pins.write(before.pins))
           },
           {
             name: 'siteCollapse',
-            write: () => ctx.repos.collapse.write(data.siteCollapse),
-            rollback: () => ctx.repos.collapse.write(before.collapse)
+            write: () =>
+              withCrossPageLock(COLLAPSE_RMW_LOCK, () =>
+                ctx.repos.collapse.write(data.siteCollapse)
+              ),
+            rollback: () =>
+              withCrossPageLock(COLLAPSE_RMW_LOCK, () => ctx.repos.collapse.write(before.collapse))
           },
           {
             name: 'settings',
-            write: () => ctx.repos.settings.write(importedSettings),
-            rollback: () => ctx.repos.settings.write(before.settings)
+            write: () =>
+              withCrossPageLock(SETTINGS_RMW_LOCK, () =>
+                ctx.repos.settings.write(importedSettings)
+              ),
+            rollback: () =>
+              withCrossPageLock(SETTINGS_RMW_LOCK, () => ctx.repos.settings.write(before.settings))
           },
           // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
           // 快照分区必须走 SNAPSHOTS_RMW_LOCK：导入事务持续数百 ms，期间 background
@@ -168,6 +190,14 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
           collapsedSites: data.siteCollapse,
           settings: importedSettings
         });
+        // 绑定整表失效：备份整表替换了 folders，而会话绑定（item id → tab id）的
+        // 有效性只校验「item 与 tab 都还存在」，不校验 URL 是否仍匹配（见
+        // core/fixed/Reconcile 的 reconcileBindings）。导入后同 id 的条目可能已指向
+        // 另一个网址，残留绑定会把无关标签从临时区排除（表现为「标签凭空消失」），
+        // 且点击该条目会激活一个内容不相干的标签。清空后由下一次
+        // reconcileWithTabs 按 URL 精确重建。
+        const rebound = await mutateSession(() => ({ itemTabBindings: {} }));
+        ctx.applyBindings(rebound);
         // 快照属于 snapshotStore 的内存态：本 store 不持有，交由其自行感知仓库变更
         // （snapshotStore.load 已 watch 仓库，写入后会自动同步列表与角标）。
         applyTheme(importedSettings.themePreference, importedSettings.colorTheme);

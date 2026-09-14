@@ -15,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const SRC = join(ROOT, 'src');
-const MANIFEST = join(ROOT, '.output', 'chrome-mv3', 'manifest.json');
+const OUT = join(ROOT, '.output', 'chrome-mv3');
+const MANIFEST = join(OUT, 'manifest.json');
+const PRIVACY_DOC = join(ROOT, 'PRIVACY.md');
 
 /** 权限冻结清单（PRD 附录 A）。新增权限须先走 PRD 变更。 */
 const ALLOWED_PERMISSIONS = new Set([
@@ -26,7 +28,7 @@ const ALLOWED_PERMISSIONS = new Set([
   'commands',
   'alarms', // 用户开启自动休眠后周期检查
   'contextMenus', // 右键菜单快捷操作（休眠/固定/入文件夹/按站点搜索）
-  'omnibox', // 地址栏 th 命令搜索标签/固定条目/文件夹
+  'omnibox', // 地址栏 t 命令搜索标签/固定条目/文件夹
   'sessions', // 撤销历史面板恢复浏览器最近关闭
   'bookmarks', // 用户主动的固定文件夹 ↔ 书签互转
   'notifications', // 自动休眠完成的本机通知
@@ -72,6 +74,25 @@ function walk(dir) {
   return out;
 }
 
+/**
+ * PRIVACY.md 第 2 节的权限表是本检查的**第二事实源**。
+ *
+ * 此前本脚本只比对脚本内硬编码的 ALLOWED_PERMISSIONS，导致 README / CONTRIBUTING /
+ * PRIVACY.md 三处宣称的「新增权限须同步 PRIVACY.md，否则门禁失败」并不成立——
+ * 改了 wxt.config.ts 而不动文档，门禁依然全绿。这里把文档解析为真实比对源，
+ * 让「承诺」与「强制」对齐：源码清单与文档清单必须逐项一致。
+ */
+function readDocumentedPermissions() {
+  if (!existsSync(PRIVACY_DOC)) return null;
+  const text = readFileSync(PRIVACY_DOC, 'utf8');
+  const found = new Set();
+  for (const line of text.split('\n')) {
+    const row = line.match(/^\|\s*`([a-zA-Z]+)`\s*\|/);
+    if (row) found.add(row[1]);
+  }
+  return found;
+}
+
 const issues = [];
 
 if (!existsSync(MANIFEST)) {
@@ -83,6 +104,21 @@ const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const permissions = new Set(manifest.permissions ?? []);
 const unexpected = [...permissions].filter((p) => !ALLOWED_PERMISSIONS.has(p));
 if (unexpected.length > 0) issues.push(`未授权权限: ${unexpected.sort().join(', ')}`);
+
+// 权限清单 ↔ PRIVACY.md 双向比对（任一方向漏改都失败）。
+const documented = readDocumentedPermissions();
+if (documented === null) {
+  issues.push('未找到 PRIVACY.md，无法校验权限清单与文档是否一致');
+} else {
+  const undocumented = [...permissions].filter((p) => !documented.has(p));
+  const staleDoc = [...documented].filter((p) => !permissions.has(p));
+  if (undocumented.length > 0) {
+    issues.push(`权限已声明但未在 PRIVACY.md 记录: ${undocumented.sort().join(', ')}`);
+  }
+  if (staleDoc.length > 0) {
+    issues.push(`PRIVACY.md 记录了 manifest 中已不存在的权限: ${staleDoc.sort().join(', ')}`);
+  }
+}
 
 // 主机权限同样进冻结清单：`<all_urls>` 是本项目最敏感的一项声明，
 // 只查 permissions 会让它完全游离在守卫之外。
@@ -97,16 +133,42 @@ if (unexpectedHosts.length > 0) {
   issues.push(`未授权主机权限: ${unexpectedHosts.sort().join(', ')}`);
 }
 
-for (const file of walk(SRC)) {
-  const lines = readFileSync(file, 'utf8').split('\n');
-  lines.forEach((line, i) => {
-    if (NETWORK_EXEMPT.test(line)) return;
-    for (const pattern of NETWORK_PATTERNS) {
-      if (pattern.test(line)) {
-        issues.push(`发现网络调用: ${relative(ROOT, file)}:${i + 1} ${line.trim().slice(0, 80)}`);
+/** 单文件最多报告的网络命中数：压缩产物是单行，不设上限会被一条规则刷满输出。 */
+const MAX_HITS_PER_FILE = 5;
+
+function scanFiles(files, label) {
+  let hits = 0;
+  for (const file of files) {
+    const lines = readFileSync(file, 'utf8').split('\n');
+    let fileHits = 0;
+    lines.forEach((line, i) => {
+      if (fileHits >= MAX_HITS_PER_FILE) return;
+      if (NETWORK_EXEMPT.test(line)) return;
+      for (const pattern of NETWORK_PATTERNS) {
+        if (pattern.test(line)) {
+          issues.push(
+            `发现网络调用（${label}）: ${relative(ROOT, file)}:${i + 1} ${line.trim().slice(0, 80)}`
+          );
+          fileHits += 1;
+          hits += 1;
+          break;
+        }
       }
-    }
-  });
+    });
+  }
+  return hits;
+}
+
+scanFiles(walk(SRC), '源码');
+
+// 构建产物同样要扫：只扫 src/ 时，第三方依赖（pinyin-pro / tldts / fuzzysort 等）
+// 打进 bundle 后的网络调用完全不可见，而「零出站网络请求」是面向**最终产物**
+// 的承诺——用户安装的是 .output，不是 src。
+if (existsSync(OUT)) {
+  scanFiles(
+    walk(OUT).filter((f) => f.endsWith('.js')),
+    '构建产物'
+  );
 }
 
 if (issues.length > 0) {
@@ -116,8 +178,10 @@ if (issues.length > 0) {
 }
 
 const sourceCount = walk(SRC).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')).length;
+const bundleCount = existsSync(OUT) ? walk(OUT).filter((f) => f.endsWith('.js')).length : 0;
 console.log(
   `隐私回归检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
     `主机权限 ${[...hostPermissions].sort().join(', ')}，` +
-    `网络通道调用 0，源码文件 ${sourceCount} 个`
+    `网络通道调用 0（源码 ${sourceCount} 个 + 产物 ${bundleCount} 个），` +
+    `权限清单与 PRIVACY.md 一致`
 );

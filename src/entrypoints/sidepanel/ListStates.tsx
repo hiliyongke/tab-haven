@@ -19,7 +19,7 @@ export function LoadingSkeleton() {
         <span className="skeleton h-3 w-6" />
       </div>
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="flex items-center gap-2 px-1.5 py-[7px]">
+        <div key={i} className="flex items-center gap-2 px-1.5 py-1.5">
           <span className="skeleton h-4 w-4 shrink-0" />
           <span className="skeleton h-3 flex-1" />
           <span className="skeleton h-3 w-8" />

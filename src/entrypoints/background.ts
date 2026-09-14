@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
 import { mapTab } from '@/platform/tabs';
-import { logDegraded } from '@/platform/diagnostics';
+import { installGlobalErrorHandlers, logDegraded } from '@/platform/diagnostics';
 import { openOptionsPage } from '@/platform/navigation';
 import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
 import {
@@ -60,6 +60,11 @@ export default defineBackground(() => {
    * url/title/favIconUrl/pinned/muted/group）。
    */
   const WINDOW_CACHE_UPDATE_KEYS = ['url', 'title', 'favIconUrl', 'pinned', 'mutedInfo', 'groupId'];
+
+  // 全局异常兜底：SW 侧此前完全无兜底（旧实现只在有 window 的页面安装），
+  // background 的 alarms / omnibox / contextMenus / 关窗缓存等异步路径
+  // 漏网的 rejection 在诊断里一条线索都不会留。
+  installGlobalErrorHandlers();
 
   // 后台文案轨道：通知/自动快照默认名等 SW 侧文案按用户语言解析。
   // 异步初始化不阻塞消息注册；完成前的 t() 调用回退浏览器语言判定。

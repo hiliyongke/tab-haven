@@ -64,11 +64,14 @@ function planDuplicateCleanup(
 ): { removable: TabRecord[]; keepIds: number[] } {
   const removable: TabRecord[] = [];
   const keepIds: number[] = [];
+  // 绑定集转 Set 后查表：原实现对每个可清理标签做一次 O(n) 数组扫描，
+  // 在大标签量 + 大量固定绑定时是渲染期的固定热点（本函数每帧都可能重算）。
+  const bound = new Set(boundTabIds);
   for (const group of index.duplicates()) {
     const { keeper, removable: groupRemovable } = KeeperPolicy.default.select(group);
     keepIds.push(keeper.id);
     for (const tab of groupRemovable) {
-      if (!boundTabIds.includes(tab.id)) removable.push(tab);
+      if (!bound.has(tab.id)) removable.push(tab);
     }
   }
   return { removable, keepIds };
@@ -108,6 +111,7 @@ export default function App() {
   const loadUndo = useUndoStore((state) => state.load);
   const closeWithUndo = useUndoStore((state) => state.closeWithUndo);
   const notify = useUndoStore((state) => state.notify);
+  const notifyError = useUndoStore((state) => state.notifyError);
   const undoBatchCount = useUndoStore((state) => state.batches.length);
   const snapshotCount = useSnapshotStore((state) => state.snapshots.length);
 
@@ -556,7 +560,7 @@ export default function App() {
       void togglePinned(tab).then((ok) => {
         // 平台层真实结果驱动反馈：失败（标签已关闭/不可固定）时不提示「已固定」。
         if (!ok) {
-          notify(t('errors.operationFailed'));
+          notifyError(t('errors.operationFailed'));
           return;
         }
         notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned'));
@@ -565,7 +569,7 @@ export default function App() {
         tabSyncService.requestRefresh();
       });
     },
-    [togglePinned, notify, t]
+    [togglePinned, notify, notifyError, t]
   );
   const handleDuplicateTab = useCallback(
     (tab: TabRecord) => {
@@ -604,7 +608,9 @@ export default function App() {
       }
       const results = await Promise.all(targets.map((tab) => discardTab(tab.id)));
       const discardedCount = results.filter(Boolean).length;
-      const skippedCount = allInactive.length - discardedCount;
+      // 跳过数只统计「真正尝试过」的候选（targets 已排除绑定标签与不可安全休眠者）：
+      // 用 allInactive 作基数会把固定标签也计入「跳过 N 个」，而它们本就不该参与休眠。
+      const skippedCount = targets.length - discardedCount;
       if (discardedCount > 0) {
         notify(
           skippedCount === 0
@@ -682,7 +688,7 @@ export default function App() {
         tabSyncService.requestRefresh();
         notify(t('footer.quickRegroupDone', { count }));
       })
-      .catch(() => notify(t('errors.operationFailed')))
+      .catch(() => notifyError(t('errors.operationFailed')))
       .finally(() => setQuickRegrouping(false));
   }, [
     quickRegrouping,
@@ -691,6 +697,7 @@ export default function App() {
     settings.groupMode,
     settings.aggregationThreshold,
     notify,
+    notifyError,
     t
   ]);
 
@@ -754,19 +761,19 @@ export default function App() {
           .getState()
           .saveCurrentWindow()
           .then(() => notify(t('snapshots.saved')))
-          .catch(() => notify(t('errors.operationFailed'))),
+          .catch(() => notifyError(t('errors.operationFailed'))),
       onSaveSpace: () =>
         void useSnapshotStore
           .getState()
           .saveSpace(t('snapshots.space'))
           .then(() => notify(t('snapshots.saved')))
-          .catch(() => notify(t('errors.operationFailed'))),
+          .catch(() => notifyError(t('errors.operationFailed'))),
       onArchiveWindow: () =>
         void useSnapshotStore
           .getState()
           .archiveCurrentWindow()
           .then((count) => notify(t('snapshots.archived', { count })))
-          .catch(() => notify(t('errors.operationFailed')))
+          .catch(() => notifyError(t('errors.operationFailed')))
     }),
     [
       handleDiscardInactive,
@@ -777,12 +784,17 @@ export default function App() {
       handleToggleAllSections,
       smartActivate,
       notify,
+      notifyError,
       t
     ]
   );
 
   return (
     <main className="app flex h-full flex-col">
+      {/* h1 此前完全缺失：侧边栏直接从 <main> 进入列表，标题层级断裂，
+          读屏用户无法用「跳到标题」快速定位，也拿不到页面主题。
+          视觉上隐藏——面板顶部已有搜索框与品牌标识，再加一个可见标题是噪音。 */}
+      <h1 className="sr-only">{t('tabs.panelTitle')}</h1>
       <DndRoot onDragEnd={onDragEnd}>
         <SettingsSync />
         <SearchBar

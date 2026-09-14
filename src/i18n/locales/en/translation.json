@@ -5,6 +5,7 @@
     "openNewTab": "Open new tab"
   },
   "tabs": {
+    "panelTitle": "Tabs in this window",
     "newTab": "New tab",
     "currentOpen": "",
     "tabCountUnit": "tabs",
@@ -382,6 +383,7 @@
     "loadFailedTitle": "Failed to load data",
     "loadFailedHint": "Local data can't be read right now — browser storage may be busy or restarting. Retry, or close and reopen the side panel.",
     "operationFailed": "Operation failed. Please try again.",
+    "retry": "Retry",
     "storageDegraded": "Recent changes may not have been saved locally. Check whether browser storage is full, or whether extension permissions were revoked.",
     "boundaryTitle": "Something went wrong",
     "boundaryBody": "The interface hit an error it cannot recover from. Your data is still saved locally — retry or reload the panel.",
