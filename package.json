@@ -6,6 +6,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "wxt prepare",
     "dev": "wxt",
     "dev:edge": "wxt -b edge",
     "build": "wxt build",
