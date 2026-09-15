@@ -30,11 +30,14 @@ describe('useListNavigation', () => {
   it('↑↓ 在序列中循环移动并更新选中项', () => {
     const { result } = setup([1, 2, 3]);
 
-    expect(result.current.selectedTabId).toBe(1);
+    // 未做过键盘导航时无选中项：`selectedTabId` 会被下传为列表的「搜索命中」
+    // 高亮，初值 0 会让面板一打开首行就被渲染成选中态。
+    expect(result.current.selectedTabId).toBeUndefined();
 
     act(() => {
       expect(result.current.handleKeyDown(key('ArrowDown'))).toBe(true);
     });
+    // 首次导航从首项起算，落到第二项（与旧行为一致）
     expect(result.current.selectedTabId).toBe(2);
 
     act(() => {

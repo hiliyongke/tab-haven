@@ -121,6 +121,20 @@ export default function App() {
   const snapshots = useSnapshotStore((state) => state.snapshots);
 
   const [quickRegrouping, setQuickRegrouping] = useState(false);
+  /**
+   * 批量操作（休眠全部 / 唤醒全部 / 清理重复）的在途互斥。
+   *
+   * 这些入口此前没有并发守卫：连点会并发执行同一批操作（重复 IPC、叠加多条
+   * toast）。用 ref 而非 state：操作在百毫秒级完成，无需按钮态反馈。
+   */
+  const batchBusyRef = useRef(false);
+  const runBatch = useCallback((action: () => void | Promise<void>) => {
+    if (batchBusyRef.current) return;
+    batchBusyRef.current = true;
+    void Promise.resolve(action()).finally(() => {
+      batchBusyRef.current = false;
+    });
+  }, []);
   const [showHistory, setShowHistory] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -539,23 +553,25 @@ export default function App() {
    * 用户能看到每个域名留下了哪一个（否则只能靠撤销后反推）。
    */
   const handleCloseDuplicates = useCallback(() => {
-    const liveTabs = useTabStore.getState().tabs;
-    const plan = planDuplicateCleanup(
-      DuplicateIndex.build(liveTabs),
-      useDataStore.getState().boundTabIds
-    );
-    if (plan.removable.length === 0) {
-      // 入口条件出现（>0 才显示），但命令面板常驻：无候选时不能静默。
-      notify(t('duplicates.cleanNone'));
-      return;
-    }
-    void closeWithUndo(
-      liveTabs,
-      plan.removable.map((tab) => tab.id)
-    );
-    // 关闭是异步的（tabs 事件回灌后才移除行）；保留项始终在 DOM 里，可立即脉冲。
-    window.setTimeout(() => pulseTabRows(plan.keepIds), 80);
-  }, [closeWithUndo, notify, t]);
+    runBatch(() => {
+      const liveTabs = useTabStore.getState().tabs;
+      const plan = planDuplicateCleanup(
+        DuplicateIndex.build(liveTabs),
+        useDataStore.getState().boundTabIds
+      );
+      if (plan.removable.length === 0) {
+        // 入口条件出现（>0 才显示），但命令面板常驻：无候选时不能静默。
+        notify(t('duplicates.cleanNone'));
+        return;
+      }
+      // 关闭是异步的（tabs 事件回灌后才移除行）；保留项始终在 DOM 里，可立即脉冲。
+      window.setTimeout(() => pulseTabRows(plan.keepIds), 80);
+      return closeWithUndo(
+        liveTabs,
+        plan.removable.map((tab) => tab.id)
+      );
+    });
+  }, [runBatch, closeWithUndo, notify, t]);
   /**
    * 固定/取消固定带 toast 反馈。
    *
@@ -601,7 +617,7 @@ export default function App() {
   );
   // 一键休眠全部非激活、未固定的标签（释放内存）。
   const handleDiscardInactive = useCallback(() => {
-    void (async () => {
+    runBatch(async () => {
       const allInactive = useTabStore
         .getState()
         .tabs.filter((tab) => !tab.active && !tab.discarded);
@@ -628,23 +644,25 @@ export default function App() {
       } else if (allInactive.length > 0) {
         notify(t('toast.discardSkippedMany', { count: allInactive.length }));
       }
-    })();
-  }, [boundTabIds, discardTab, notify, t]);
+    });
+  }, [runBatch, boundTabIds, discardTab, notify, t]);
   // 一键唤醒全部休眠标签（与批量休眠成对）。
   const handleWakeAll = useCallback(() => {
-    const discardedIds = useTabStore
-      .getState()
-      .tabs.filter((tab) => tab.discarded)
-      .map((tab) => tab.id);
-    if (discardedIds.length === 0) {
-      // 命令面板/底栏入口恒可用：无休眠标签时点按不能静默。
-      notify(t('discard.wakeNone'));
-      return;
-    }
-    void reloadTabs(discardedIds).then((woken) =>
-      notify(t('discard.woken', { count: woken.length }))
-    );
-  }, [notify, t]);
+    runBatch(() => {
+      const discardedIds = useTabStore
+        .getState()
+        .tabs.filter((tab) => tab.discarded)
+        .map((tab) => tab.id);
+      if (discardedIds.length === 0) {
+        // 命令面板/底栏入口恒可用：无休眠标签时点按不能静默。
+        notify(t('discard.wakeNone'));
+        return;
+      }
+      return reloadTabs(discardedIds).then((woken) =>
+        notify(t('discard.woken', { count: woken.length }))
+      );
+    });
+  }, [runBatch, notify, t]);
   const discardedCount = tabs.filter((tab) => tab.discarded).length;
   // 原生标签组 → 固定文件夹（桥接反向）。
   const handleSaveGroupAsFolder = useCallback(

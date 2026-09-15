@@ -73,7 +73,10 @@ function buildCondition(
   pattern: string
 ): Pick<NoCacheDnrRule['condition'], 'urlFilter' | 'regexFilter'> {
   if (pattern.includes('://')) {
-    return { urlFilter: pattern };
+    // `|` 前缀锚定 URL 开头：DNR 的 urlFilter 不带锚时是子串匹配，
+    // 会让 `https://a.com/app` 命中 `https://b.com/?u=https://a.com/app`
+    // （与页面侧 matchesNoCachePattern 的 startsWith 语义分叉）。
+    return { urlFilter: `|${pattern}` };
   }
   if (!pattern.includes('/')) {
     // 裸域 + 任意深度子域：`([^/?#]+\.)?` 覆盖 `www.` / `a.b.` 前缀，`([/:?#]|$)` 界定主机名边界。

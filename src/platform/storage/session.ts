@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
+import { SESSION_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -92,12 +93,11 @@ export interface MutateSessionResult {
 }
 
 /**
- * 基于当前会话数据做变换（串行化）。
+ * 基于当前会话数据做变换（页内串行 + 跨页互斥）。
  *
- * 并发安全：所有 read-modify-write 操作经模块级串行队列执行，
- * 每个 updater 都基于队列内最新的存储值计算，避免快速连续操作互相覆盖。
- * 跨页面实例（popup/sidepanel 同时打开）仍有理论竞态窗口，属 MV3 固有约束，
- * 通过单次原子写降低实际影响。
+ * 并发安全：页内所有 read-modify-write 经模块级串行队列执行；跨页面实例
+ * （popup/sidepanel/background 同时存在）由 SESSION_RMW_LOCK 串行化 ——
+ * 整个 read → modify → write 都在锁内完成，后写覆盖先写的问题由此根治。
  */
 export function mutateSession(
   updater: (current: SessionData) => Partial<SessionData>
@@ -108,20 +108,25 @@ export function mutateSession(
 
   const step = async (): Promise<void> => {
     try {
-      const current = await readSession();
-      const partial = updater(current);
-      const next: SessionData = { ...current, ...partial };
+      // 跨页锁内完成 read → modify → write：页内串行链只能串行化本上下文，
+      // 两个侧边栏窗口并发时仍会整表互覆（后写覆盖先写，绑定静默丢失）。
+      // 与 folders/pins 的 RMW 同口径。
+      await withCrossPageLock(SESSION_RMW_LOCK, async () => {
+        const current = await readSession();
+        const partial = updater(current);
+        const next: SessionData = { ...current, ...partial };
 
-      // updater 无变更（空 partial）时跳过写盘，消除高频路径（如 reconcileWithTabs）的写放大。
-      // 沿用本上下文上一次真实写入的持久化结果（非本次调用的初始值）。
-      if (Object.keys(partial).length === 0) {
-        result = { data: next, persisted: lastPersisted };
-        return;
-      }
+        // updater 无变更（空 partial）时跳过写盘，消除高频路径（如 reconcileWithTabs）的写放大。
+        // 沿用本上下文上一次真实写入的持久化结果（非本次调用的初始值）。
+        if (Object.keys(partial).length === 0) {
+          result = { data: next, persisted: lastPersisted };
+          return;
+        }
 
-      const persisted = await writeSession(next);
-      lastPersisted = persisted;
-      result = { data: next, persisted };
+        const persisted = await writeSession(next);
+        lastPersisted = persisted;
+        result = { data: next, persisted };
+      });
     } catch (error) {
       // 异常必须就地消化。链上任何一环抛出，chain 都会变成 rejected promise，
       // 此后每个 mutateSession 的 `.then` 回调全部被跳过 —— 会话写入永久静默失效，

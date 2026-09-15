@@ -1,5 +1,11 @@
 import { syncMirror } from '@/platform/storage/SyncMirror';
 import { readSession } from '@/platform/storage/session';
+import {
+  FOLDERS_RMW_LOCK,
+  PINS_RMW_LOCK,
+  SETTINGS_RMW_LOCK,
+  withCrossPageLock
+} from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { dedupePins } from '@/core/fixed/FolderOps';
 import {
@@ -59,21 +65,42 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
           // 镜像恢复写入失败不阻断启动（本地数据仍在），但必须留痕，否则「新设备没恢复出来」无从排查。
           let restoreWritesOk = true;
           if (effectiveFolders !== folders) {
-            const ok = await ctx.repos.folders.write(effectiveFolders);
+            // 跨页锁 + 锁内重读：镜像恢复是整表写，与另一上下文（另一侧边栏窗口 /
+            // background 右键写入）并发时锁外写会互相覆盖；锁内发现本地已有数据
+            // 说明并发上下文刚写过，以本地为准放弃覆盖（内存同步为读到的值）。
+            const ok = await withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
+              const disk = await ctx.repos.folders.read();
+              if (disk.length > 0) {
+                effectiveFolders = disk;
+                return true;
+              }
+              return ctx.repos.folders.write(effectiveFolders);
+            });
             if (!ok) {
               ctx.reportPersistenceFailure('dataStore', '镜像恢复的固定文件夹写入失败');
               restoreWritesOk = false;
             }
           }
           if (effectivePins !== pins) {
-            const ok = await ctx.repos.pins.write(effectivePins);
+            const ok = await withCrossPageLock(PINS_RMW_LOCK, async () => {
+              const disk = await ctx.repos.pins.read();
+              if (disk.length > 0) {
+                effectivePins = disk;
+                return true;
+              }
+              return ctx.repos.pins.write(effectivePins);
+            });
             if (!ok) {
               ctx.reportPersistenceFailure('dataStore', '镜像恢复的固定图标写入失败');
               restoreWritesOk = false;
             }
           }
           if (effectiveSettings !== settings) {
-            const ok = await ctx.repos.settings.write(effectiveSettings);
+            // settings 没有「本地为空」判据（默认值恒存在）：只做跨页串行化，
+            // 保证与并发页的 settings 写入不交错。
+            const ok = await withCrossPageLock(SETTINGS_RMW_LOCK, () =>
+              ctx.repos.settings.write(effectiveSettings)
+            );
             if (!ok) {
               ctx.reportPersistenceFailure('dataStore', '镜像恢复的设置写入失败');
               restoreWritesOk = false;

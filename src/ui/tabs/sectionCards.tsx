@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
+import { webComparisonKey } from '@/core/url/UrlInspector';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TabRow } from '@/ui/tabs/TabRow';
@@ -22,6 +23,15 @@ import type {
 const VIRTUAL_THRESHOLD = 60;
 /** 排序开启时的强制虚拟化阈值（见 RowList 内说明）。 */
 const FORCE_VIRTUAL_THRESHOLD = 120;
+
+/**
+ * 重复份数查询：键与 `DuplicateIndex.build` 同口径（webComparisonKey）。
+ * 用原始 tab.url 查表会因归一化差异（导航中取 pendingUrl、主机小写、去默认端口）
+ * 落空 —— 角标恒显示 1，重复标签不被提示，与「清理重复」入口的候选数矛盾。
+ */
+function duplicateCountOf(tab: TabRecord, counts: ReadonlyMap<string, number>): number {
+  return counts.get(webComparisonKey(tab.url, tab.pendingUrl) ?? '') ?? 1;
+}
 
 function RowList({
   tabs,
@@ -116,7 +126,7 @@ function RowList({
           renderRow={(tab) => (
             <TabRow
               tab={tab}
-              duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
+              duplicateCount={duplicateCountOf(tab, duplicateCounts)}
               isActive={tab.id === activeTabId}
               isSplitCompanion={splitPartners.has(tab.id)}
               splitGroupRole={splitGroupRoles.get(tab.id)}
@@ -158,7 +168,7 @@ function RowList({
           <TabRow
             key={tab.id}
             tab={tab}
-            duplicateCount={duplicateCounts.get(tab.url || '') ?? 1}
+            duplicateCount={duplicateCountOf(tab, duplicateCounts)}
             isActive={tab.id === activeTabId}
             isSplitCompanion={splitPartners.has(tab.id)}
             splitGroupRole={splitGroupRoles.get(tab.id)}

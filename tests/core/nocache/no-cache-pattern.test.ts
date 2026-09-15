@@ -38,6 +38,15 @@ describe('normalizeNoCachePattern', () => {
     expect(normalizeNoCachePattern('-example.com')).toBeNull(); // 首尾非法字符
     expect(normalizeNoCachePattern('https://')).toBeNull(); // 无法解析的 URL
   });
+
+  it('裸 TLD 被拒绝（单标签主机只放行 localhost）', () => {
+    // `com` 会在 DNR 侧编译成 `^https?://([^/?#]+\.)?com([/:?#]|$)`，
+    // 一条输入即对整个 .com 顶级域强制 no-store。
+    expect(normalizeNoCachePattern('com')).toBeNull();
+    expect(normalizeNoCachePattern('io')).toBeNull();
+    // 本机名是唯一放行的单标签主机（对本机服务禁缓存的合法需求）
+    expect(normalizeNoCachePattern('localhost')).toBe('localhost');
+  });
 });
 
 /**

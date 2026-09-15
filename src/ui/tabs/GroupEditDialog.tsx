@@ -33,6 +33,17 @@ export function GroupEditDialog({
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(title);
+  // 颜色同样走草稿态：此前 onChange 立即写回原生组，点「取消」也回滚不了 ——
+  // 与「取消放弃本次编辑」的按钮语义矛盾。改为随「确定」一起提交。
+  const [draftColor, setDraftColor] = useState(color);
+
+  /** 提交草稿（改名 + 换色）并关闭：取消路径不写回任何一项。 */
+  const commit = () => {
+    onRename(draft.trim() || title);
+    // draftColor 为 undefined 表示用户没选过色（原始 color 也可能缺省），无需写回。
+    if (draftColor !== undefined && draftColor !== color) onRecolor(draftColor);
+    onClose();
+  };
 
   return (
     <DialogShell title={t('groups.edit')} onClose={onClose}>
@@ -43,10 +54,7 @@ export function GroupEditDialog({
         value={draft}
         onChange={setDraft}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            onRename(draft.trim() || title);
-            onClose();
-          }
+          if (e.key === 'Enter') commit();
         }}
       />
       {/* 分组取色器：无文字、纯色块，边框是唯一的边界线索 —— 必须用 --border-control
@@ -60,12 +68,12 @@ export function GroupEditDialog({
             key={c}
             type="radio"
             name="groupColor"
-            checked={color === c}
+            checked={draftColor === c}
             className="swatch appearance-none"
             style={{ backgroundColor: groupAccentVar(c) }}
             title={c}
             aria-label={c}
-            onChange={() => onRecolor(c)}
+            onChange={() => setDraftColor(c)}
           />
         ))}
       </div>
@@ -80,10 +88,7 @@ export function GroupEditDialog({
         <button
           type="button"
           className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
-          onClick={() => {
-            onRename(draft.trim() || title);
-            onClose();
-          }}
+          onClick={commit}
         >
           {t('dialog.confirm')}
         </button>

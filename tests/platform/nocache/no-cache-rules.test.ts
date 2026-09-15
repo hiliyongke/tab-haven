@@ -72,7 +72,9 @@ describe('buildNoCacheDnrRules', () => {
       'example.com/app'
     ]);
     expect(rules).toHaveLength(3);
-    expect(rules[0]!.condition.urlFilter).toBe('https://example.com/app');
+    // 形态 1 带 `|` 前缀锚定：DNR 的 urlFilter 不带锚时是子串匹配，
+    // 会让该规则命中「查询串里包含此 URL」的其它站点（与页面侧 startsWith 分叉）。
+    expect(rules[0]!.condition.urlFilter).toBe('|https://example.com/app');
     expect(rules[1]!.condition.regexFilter).toBe('^https?://([^/?#]+\\.)?example\\.com([/:?#]|$)');
     expect(rules[2]!.condition.urlFilter).toBe('||example.com/app');
   });

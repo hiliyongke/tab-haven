@@ -130,7 +130,9 @@ export function computeInsights(
   //    不属于「忘记关」；已休眠的已经不占内存，无需催促）。
   const staleTabs: StaleTab[] = [];
   for (const tab of tabs) {
-    if (tab.active || tab.pinned || tab.discarded) continue;
+    // 固定空间绑定标签与 pinned 同属「用户主动长期保留」，不该被建议归档
+    // （与上方 discardableCount 的绑定排除同口径；此前只排除了 pinned）。
+    if (tab.active || tab.pinned || tab.discarded || boundTabIds.has(tab.id)) continue;
     if (typeof tab.lastAccessed !== 'number' || !Number.isFinite(tab.lastAccessed)) continue;
     const idleMs = now - tab.lastAccessed;
     if (idleMs < STALE_TAB_MS) continue;

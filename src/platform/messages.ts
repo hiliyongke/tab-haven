@@ -142,14 +142,21 @@ const ACK_TIMEOUT_MS = 5000;
  * 超时按「未确认」降级，最坏退化为豁免失效而非管线停摆。
  */
 export async function sendMessageWithAck(message: Message): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const response: unknown = await Promise.race([
       browser.runtime.sendMessage(message),
-      new Promise((resolve) => setTimeout(() => resolve(undefined), ACK_TIMEOUT_MS))
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(undefined), ACK_TIMEOUT_MS);
+      })
     ]);
     return (response as { ok?: boolean } | undefined)?.ok === true;
   } catch {
     return false;
+  } finally {
+    // 清理超时定时器：批量调用（如快照恢复）时每条消息都会留下一个最长
+    // ACK_TIMEOUT_MS 的悬挂定时器，既延迟 SW 休眠也在长任务里持续累积。
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

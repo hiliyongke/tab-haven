@@ -1,4 +1,12 @@
-import { memo, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
@@ -137,6 +145,31 @@ export const TabRow = memo(function TabRow({
       liRef.current.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
   }, [isSearchActive]);
+
+  // 行内事件回调同样必须稳定：RowItem 是 memo 组件，此前内联箭头函数每次渲染
+  // 都是新引用，浅比较必然失败 —— 任何 prop 变化（如 isSearchActive）都会让
+  // 全部可见行多做一轮 reconcile，memo 收益被抵消。
+  const handleActivate = useCallback(() => onActivate(tab.id), [onActivate, tab.id]);
+  const handleAuxClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (event.button === 1 && closeOnMiddleClick) onClose(tab);
+    },
+    [closeOnMiddleClick, onClose, tab]
+  );
+  const handleRowKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      if (reorderEnabled && onMoveTab && event.altKey) {
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          onMoveTab(tab.id, -1);
+        } else if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          onMoveTab(tab.id, 1);
+        }
+      }
+    },
+    [reorderEnabled, onMoveTab, tab.id]
+  );
 
   // 行内派生元素一律 memo 化：它们作为 props 下传给 RowItem，每次新建对象
   // 都会击穿其 memo（详见 RowItem 注释）。
@@ -284,21 +317,9 @@ export const TabRow = memo(function TabRow({
         isSearchActive={isSearchActive}
         density={density}
         indent={indent}
-        onClick={() => onActivate(tab.id)}
-        onAuxClick={(event) => {
-          if (event.button === 1 && closeOnMiddleClick) onClose(tab);
-        }}
-        onKeyDown={(event) => {
-          if (reorderEnabled && onMoveTab && event.altKey) {
-            if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              onMoveTab(tab.id, -1);
-            } else if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              onMoveTab(tab.id, 1);
-            }
-          }
-        }}
+        onClick={handleActivate}
+        onAuxClick={handleAuxClick}
+        onKeyDown={handleRowKeyDown}
         buttonTitle={t('tabs.switchTo', { title: tab.title || '' })}
         title={tab.title || t('tabs.untitled')}
         secondary={secondary}

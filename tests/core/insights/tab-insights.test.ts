@@ -95,6 +95,26 @@ describe('computeInsights（P-05 标签习惯洞察）', () => {
     expect(result.staleTabs[1]?.days).toBe(9);
   });
 
+  it('滞留预警：固定空间绑定标签同样豁免（与休眠候选同口径）', () => {
+    const tabs = [
+      tabOf({
+        id: 1,
+        url: 'https://bound.com',
+        title: '绑定但滞留',
+        lastAccessed: NOW - 30 * 24 * 3600 * 1000
+      }),
+      tabOf({
+        id: 2,
+        url: 'https://free.com',
+        title: '未绑定且滞留',
+        lastAccessed: NOW - 30 * 24 * 3600 * 1000
+      })
+    ];
+    const result = computeInsights(tabs, new Set([1]), NOW);
+    // 绑定标签是用户显式保存的资产，不该被建议归档（此前只排除了 pinned）
+    expect(result.staleTabs.map((tab) => tab.id)).toEqual([2]);
+  });
+
   it('无 lastAccessed 的标签不参与滞留判定（旧浏览器兼容）', () => {
     const tabs = [tabOf({ id: 1, url: 'https://x.com' })];
     const result = computeInsights(tabs, new Set());

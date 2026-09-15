@@ -223,6 +223,22 @@ describe('deriveSections', () => {
     expect(sections[1]?.tabs).toHaveLength(1);
   });
 
+  it('groupId 不属于传入 groups 的标签按未分组渲染（跨窗口搜索不丢标签）', () => {
+    // 跨窗口搜索时 filteredTabs 含其他窗口标签，而 groups 只含当前窗口：
+    // 若把「有 groupId」一律视为已入组，这些标签既不在原生区也不在未分组，
+    // 会从列表里凭空消失（与搜索命中数自相矛盾）。
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://a.com/1' }),
+      makeTab({ id: 2, index: 1, url: 'https://b.com/1', groupId: 99 })
+    ];
+    const sections = deriveSections({ tabs, groups: [] });
+    expect(sections.filter((s) => s.kind === 'native')).toHaveLength(0);
+    const ungrouped = sections.find((s) => s.kind === 'ungrouped');
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([
+      1, 2
+    ]);
+  });
+
   it('排除集不进入任何 section', () => {
     const tabs = [makeTab({ id: 1, index: 0, url: 'https://a.com/1' })];
     const sections = deriveSections({ tabs, groups: [], excludedTabIds: new Set([1]) });

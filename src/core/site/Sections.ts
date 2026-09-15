@@ -149,8 +149,32 @@ interface SiteMergeCandidate {
   groupId: number;
   registrableDomain: string;
   subdomain: string;
+  /** 该站点的完整解析键（新建站点分区时用于构造与 aggregateBySite 同口径的 key）。 */
+  key: SiteKey;
   /** 组内成员（非固定、未被固定空间排除），deriveSections 的排序已应用。 */
   memberTabs: TabRecord[];
+}
+
+/** 站点桶键：与 aggregateBySite 的分桶键完全同口径（value + 子域）。 */
+function siteBucketId(site: SiteKey): string {
+  return `${site.value}\u0000${site.subdomain}`;
+}
+
+/**
+ * 站点分区与归并候选是否同一站点。
+ *
+ * 普通域名按 (注册域, 子域) 比较即可；本地/IP 的 registrableDomain 不含端口，
+ * 必须再比 value（aggregateBySite 对无子域的分区保留解析器原始 value，含端口），
+ * 否则 localhost:3000 的候选会命中 localhost:8080 的分区。
+ */
+function isSameSiteKey(groupKey: SiteKey, candidate: SiteMergeCandidate): boolean {
+  if (
+    groupKey.subdomain !== candidate.subdomain ||
+    groupKey.registrableDomain !== candidate.registrableDomain
+  ) {
+    return false;
+  }
+  return candidate.subdomain !== '' || groupKey.value === candidate.key.value;
 }
 
 /**
@@ -175,7 +199,7 @@ function collectSiteMergeCandidates(
   const eligibleSiteKeys = new Set<string>();
   for (const tab of eligible) {
     const site = tab.url ? siteResolver.resolve(tab.url) : null;
-    if (site) eligibleSiteKeys.add(`${site.registrableDomain}|${site.subdomain}`);
+    if (site) eligibleSiteKeys.add(siteBucketId(site));
   }
   const candidates: SiteMergeCandidate[] = [];
   for (const { group, groupTabs } of groupsByFirstTab) {
@@ -201,13 +225,19 @@ function collectSiteMergeCandidates(
       }
     }
     if (!sameSite || !first) continue;
-    const siteLabel = domainToUnicode(subLabel(first.subdomain, first.registrableDomain));
-    if (group.title !== siteLabel) continue;
-    if (!eligibleSiteKeys.has(`${first.registrableDomain}|${first.subdomain}`)) continue;
+    // 组标题与自动建组时的标题同口径（aggregateBySite 的 groupKey.label）：
+    // 子域非空用「子域.注册域」，子域为空（本地/IP）沿用解析器原始 value（含端口）。
+    // 此前一律用 subLabel（丢端口），localhost:3000 之类自动组标题含端口 → 永不匹配，
+    // 该站点的碎片化归并对本地/IP 站点完全失效。
+    const groupValue =
+      first.subdomain === '' ? first.value : subLabel(first.subdomain, first.registrableDomain);
+    if (group.title !== domainToUnicode(groupValue)) continue;
+    if (!eligibleSiteKeys.has(siteBucketId(first))) continue;
     candidates.push({
       groupId: group.id,
       registrableDomain: first.registrableDomain,
       subdomain: first.subdomain,
+      key: first,
       memberTabs: groupTabs
     });
   }
@@ -224,9 +254,17 @@ interface SitePlan {
 }
 
 /**
- * 站点聚合 + 同站点归并：先按未分组标签聚合，再把候选原生组成员追加进
- * 对应站点分区（必须有同 (注册域, 子域) 的分区才吸收——不改变聚合阈值
- * 与 singles 判定，避免把原生组标签挤进「未分组」）。
+ * 站点聚合 + 同站点归并：先按未分组标签聚合，再把候选原生组成员并入
+ * 对应站点分区。
+ *
+ * 归并判定口径 = 「该站点在临时区的全部标签」（未分组标签 + 同站点原生组成员）
+ * 达到聚合阈值：
+ *  - 未分组侧自身已达阈值 → 分区已存在，直接吸收原生组成员；
+ *  - 未分组侧不足阈值、但加上原生组成员后总数达阈值 → 新建站点分区并把
+ *    未分组标签一并纳入（否则浏览器里已有同站点原生组时，新打开的同站点
+ *    标签会一直滞留「未分组」，而「重排分组」却能修好——两条路径口径必须一致）；
+ *  - 总数仍不足阈值 → 保持原样（原生组与未分组标签各自渲染，不拆不并）。
+ * 任何分支都不把原生组标签挤进「未分组」。
  */
 function buildSitePlan({
   eligible,
@@ -239,19 +277,58 @@ function buildSitePlan({
   candidates: readonly SiteMergeCandidate[];
   sortCmp: (a: TabRecord | undefined, b: TabRecord | undefined) => number;
 }): SitePlan {
+  const effectiveThreshold = threshold ?? 2;
   const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold });
   const absorbedGroupIds = new Set<number>();
   for (const candidate of candidates) {
-    // 平铺模式下分区即单一子域站点，直接按 (注册域, 子域) 精确匹配。
-    const target = siteGroups.find(
-      (group) =>
-        group.key.registrableDomain === candidate.registrableDomain &&
-        group.key.subdomain === candidate.subdomain
-    );
-    if (!target) continue;
+    // 平铺模式下分区即单一子域站点，按站点桶键精确匹配（见 isSameSiteKey）。
+    const target = siteGroups.find((group) => isSameSiteKey(group.key, candidate));
+    if (target) {
+      absorbedGroupIds.add(candidate.groupId);
+      target.tabs = [...target.tabs, ...candidate.memberTabs].sort(sortCmp);
+      continue;
+    }
+    // 未分组里该站点自身不足阈值 → 未形成站点分区。但归并的判定口径应当是
+    // 「该站点在临时区的全部标签」＝ 未分组标签 + 同站点原生组成员：总数达阈值时
+    // 仍归并成站点分区。否则浏览器里已存在同站点原生组时，新打开的同站点标签会
+    // 一直滞留「未分组」——只有「重排分组」（planRegroup 把临时区标签全部视为
+    // 未分组重聚合）才能修好，两条路径的判定口径必须一致。
+    const sameSiteSingles = singles.filter((tab) => {
+      const site = tab.url ? siteResolver.resolve(tab.url) : null;
+      return (
+        site !== null &&
+        site.registrableDomain === candidate.registrableDomain &&
+        site.subdomain === candidate.subdomain
+      );
+    });
+    if (sameSiteSingles.length === 0) continue;
+    if (sameSiteSingles.length + candidate.memberTabs.length < effectiveThreshold) continue;
+    // 从 singles 摘除：这些标签已进新分区，不能再在「未分组」重复渲染。
+    const takenIds = new Set(sameSiteSingles.map((tab) => tab.id));
+    for (let i = singles.length - 1; i >= 0; i -= 1) {
+      if (takenIds.has(singles[i]!.id)) singles.splice(i, 1);
+    }
+    // 分区 key 与 aggregateBySite 同口径：子域非空用「子域.注册域」，否则沿用解析器原始键。
+    const value =
+      candidate.subdomain === ''
+        ? candidate.key.value
+        : subLabel(candidate.subdomain, candidate.registrableDomain);
+    const groupKey: SiteKey = {
+      value,
+      label: domainToUnicode(value),
+      registrableDomain: candidate.registrableDomain,
+      subdomain: candidate.subdomain
+    };
+    siteGroups.push({
+      key: groupKey,
+      tabs: [...sameSiteSingles, ...candidate.memberTabs].sort(sortCmp)
+    });
     absorbedGroupIds.add(candidate.groupId);
-    target.tabs = [...target.tabs, ...candidate.memberTabs].sort(sortCmp);
   }
+  // 吸收既有组成员（target 分支）与新建分区都会改变分区的首标签：统一按
+  // 「组内首标签位置」排序（与 aggregateBySite 同规则）。此前只有新建分区分支
+  // 排序，被吸收成员的分区会停在旧位置 —— 出现「首标签更靠前的分区反而排在后面」的抖动。
+  siteGroups.sort((a, b) => (a.tabs[0]?.index ?? 0) - (b.tabs[0]?.index ?? 0));
   // 「已吸收候选者」与「每个站点组的标签 id 集合」预先算好：原实现在
   // siteGroups.map 内对每个组遍历全部 candidates 再做 group.tabs.some(...)，
   // 是 O(站点组 × 候选组 × 标签) 的三层嵌套。预建 Set 后降为 O(站点组 × 候选组)。
@@ -308,9 +385,12 @@ export function deriveSections({
   // 原生标签组：组内标签按排序规则，排除绑定到固定空间的标签与固定标签。
   // 先按 groupId 单次分桶再排序：原先在 groups.map 内对每个组 filter 全量标签，
   // 复杂度 O(组数 × 标签数)（200 组 × 1000 标签 = 20 万次比较 + 200 次数组分配）。
+  // 已知原生组 id：分组信息缺失的标签不能被当作「已入组」丢掉（见 eligible 注释）。
+  const knownGroupIds = new Set(groups.map((group) => group.id));
   const tabsByGroup = new Map<number, TabRecord[]>();
   for (const tab of tabs) {
     if (tab.pinned || tab.groupId === NO_GROUP || excluded.has(tab.id)) continue;
+    if (!knownGroupIds.has(tab.groupId)) continue;
     const list = tabsByGroup.get(tab.groupId);
     if (list) list.push(tab);
     else tabsByGroup.set(tab.groupId, [tab]);
@@ -321,8 +401,16 @@ export function deriveSections({
     .sort((a, b) => sortCmp(a.groupTabs[0], b.groupTabs[0]));
 
   // 非固定、未分组标签（固定标签与原生组已单独分区）。
+  // groupId 不在 groups 里的标签同样按未分组处理：跨窗口搜索时 filteredTabs 含
+  // 其他窗口标签，而 groups 只含当前窗口 —— 若按「已入组」排除，这些标签既不在
+  // 原生区也不在未分组，会从列表里凭空消失（与搜索命中数自相矛盾）。
   const eligible = tabs
-    .filter((tab) => !tab.pinned && tab.groupId === NO_GROUP && !excluded.has(tab.id))
+    .filter(
+      (tab) =>
+        !tab.pinned &&
+        (tab.groupId === NO_GROUP || !knownGroupIds.has(tab.groupId)) &&
+        !excluded.has(tab.id)
+    )
     .sort(sortCmp);
 
   // 站点模式先完成聚合与同站点归并：吸收结果决定哪些"域名命名的同站点原生组"

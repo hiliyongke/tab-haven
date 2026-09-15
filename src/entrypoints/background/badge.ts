@@ -28,8 +28,16 @@ async function refreshBadge(): Promise<void> {
       seen.add(key);
     }
     const discarded = tabs.filter((tab) => tab.discarded).length;
-    const mode = cachedSettings.badgeMode;
+    // 显式标注 string：TS 会因开头的 early-return 把 cachedSettings.badgeMode
+    // 收窄为排除 'off' 的联合，而 await 期间它确实可能被改回 off。
+    const mode: string = cachedSettings.badgeMode;
     const dupCount = dupGroups.size;
+    // 全量查询期间模式可能被改成 off：必须重新判定，否则会落入 auto 分支
+    // 在「角标已关闭」的状态下重新点亮它。
+    if (mode === 'off') {
+      await browser.action.setBadgeText({ text: '' }).catch(() => {});
+      return;
+    }
     let text = '';
     let color = '#6366f1';
     if (mode === 'dups') {

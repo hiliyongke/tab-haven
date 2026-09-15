@@ -29,17 +29,26 @@ export function useListNavigation(params: {
   onActivate: (tabId: number) => void;
 }): ListNavigation {
   const { tabIds, resetKey, onActivate } = params;
-  const [index, setIndex] = useState(0);
+  /**
+   * 漫游游标：`null` = 用户尚未做过键盘导航。
+   *
+   * 不能用 0 作初值：`selectedTabId` 会被下传为列表的「搜索命中」高亮，
+   * 面板一打开首行就被渲染成品牌底色 + 左条 + 加粗，与真实状态（无搜索、无导航）
+   * 不符。Enter 仍按首项处理（`index ?? 0`），导航语义不变。
+   */
+  const [index, setIndex] = useState<number | null>(null);
 
-  // 换批时回到首项
+  // 换批时回到首项（尚未导航过则保持无选中）
   useEffect(() => {
-    setIndex(0);
+    setIndex((current) => (current === null ? null : 0));
   }, [resetKey]);
 
   // 序列收缩（标签被关闭 / 命中变少）时钳制索引：越界的选中项为 undefined，
   // 表现为高亮消失且 Enter 无动作。
   useEffect(() => {
-    setIndex((current) => (tabIds.length === 0 ? 0 : Math.min(current, tabIds.length - 1)));
+    setIndex((current) =>
+      current === null || tabIds.length === 0 ? null : Math.min(current, tabIds.length - 1)
+    );
   }, [tabIds.length]);
 
   const onActivateRef = useRef(onActivate);
@@ -53,11 +62,12 @@ export function useListNavigation(params: {
         if (tabIds.length === 0) return false;
         event.preventDefault();
         const delta = event.key === 'ArrowDown' ? 1 : -1;
-        setIndex((current) => (current + delta + tabIds.length) % tabIds.length);
+        setIndex((current) => ((current ?? 0) + delta + tabIds.length) % tabIds.length);
         return true;
       }
       if (event.key === 'Enter') {
-        const tabId = tabIds[index];
+        // 尚未导航过时按首项处理：与旧行为（初值 0）一致。
+        const tabId = tabIds[index ?? 0];
         if (tabId === undefined) return false;
         event.preventDefault();
         onActivateRef.current(tabId);
@@ -68,5 +78,5 @@ export function useListNavigation(params: {
     [tabIds, index]
   );
 
-  return { selectedTabId: tabIds[index], handleKeyDown };
+  return { selectedTabId: index === null ? undefined : tabIds[index], handleKeyDown };
 }

@@ -45,3 +45,9 @@ export const SETTINGS_RMW_LOCK = 'tabs.settings-rmw';
 /** collapse 分区：与 settings 同为「多入口各自一份内存」的整表写分区，
  *  面板折叠 / 导入事务都会整表覆盖，锁外写会互相抹掉对方的折叠状态。 */
 export const COLLAPSE_RMW_LOCK = 'tabs.collapse-rmw';
+/** session 分区：itemTabBindings 是整表 read-modify-write，面板与弹窗各持一份内存，
+ *  锁外 RMW 会让两页的绑定互相覆盖（标签在固定区与临时区之间跳变）。 */
+export const SESSION_RMW_LOCK = 'tabs.session-rmw';
+/** 撤销库写盘：撤销栈同样是整表写，两个侧边栏窗口并发入栈/出栈时
+ *  整表写本页内存栈会互相覆盖（已撤销批次复活 / 新批次从磁盘消失）。 */
+export const UNDO_PERSIST_LOCK = 'tabs.undo-persist';

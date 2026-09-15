@@ -12,12 +12,19 @@ import { logDegraded } from '@/platform/diagnostics';
 
 async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
-  await autoDiscardRepository.write({ tabIds, at: Date.now(), count: tabIds.length });
+  const at = Date.now();
+  const persisted = await autoDiscardRepository.write({ tabIds, at, count: tabIds.length });
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
     notifyUser('Tabs', t('bg.autoDiscarded', { count: tabIds.length }));
   }
-  sendMessage({ type: 'auto-discarded', tabIds, count: tabIds.length, at: Date.now() });
+  if (!persisted) {
+    // 台账未落盘：撤销入口会指向不存在的批次，故不发带 tabIds 的「可撤销」消息
+    // （标签本身确实已休眠，通知照发）。写失败当成功上报会让「全部唤醒」点不动。
+    logDegraded('auto-discard', '自动休眠台账写入失败，本次批次不支持撤销');
+    return;
+  }
+  sendMessage({ type: 'auto-discarded', tabIds, count: tabIds.length, at });
 }
 
 /** 清理已失效的自动休眠台账（批次标签全部不存在或已唤醒）。 */

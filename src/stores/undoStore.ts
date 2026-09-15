@@ -5,7 +5,7 @@ import { structuralSignature } from '@/core/util/signature';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
-import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { UNDO_PERSIST_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
 import { resolveRestoreWindowId } from '@/platform/tabs';
 import { logFailure } from '@/platform/diagnostics';
@@ -107,18 +107,23 @@ let undoWatcherStarted = false;
  * undoInFlight 拦截）。旧实现中 appendBatch 与撤销出栈各自基于自己的快照
  * 写盘，两条异步链的 `chrome.storage.set` 完成先后无保证 —— 磁盘终态可能
  * 是被「旧栈+新批」覆盖（已撤销批次重启后复活，可被再次撤销、重复恢复标签）。
- * 统一收口到本链，且写盘内容一律在链内执行时读取（makeData），消除读-写窗口。
+ * 统一收口到本链，且写盘内容一律在链内以「磁盘基线 + 本页意图」计算（apply），
+ * 既消除读-写窗口，也避免跨页整表覆盖。
  */
 let undoPersistChain: Promise<void> = Promise.resolve();
 /**
  * 入队一次撤销库写盘，返回该步骤完成的 promise（调用方按需等待）。
+ *
+ * `apply` 接收锁内重读到的磁盘栈，返回本次要落盘的栈：撤销栈是整表写，
+ * 两个侧边栏窗口并发入栈/出栈时「写本页内存栈」会互相覆盖（已撤销批次复活 /
+ * 新批次从磁盘消失），以磁盘为基线叠加本页意图才能两边都不丢。
  *
  * 常规写入（入栈/撤销出栈）遵循 persistUndo 开关（关闭时不写库）；
  * 清库类写入（load 清历史库 / clearBatches 兜底）必须无条件执行：
  * 它们防的是「上一轮开启时留下的批次复活」，与开关无关。
  */
 function enqueueUndoPersist(
-  makeData: () => UndoBatch[],
+  apply: (disk: UndoBatch[]) => UndoBatch[],
   opts?: { alwaysWrite?: boolean }
 ): Promise<void> {
   const step = undoPersistChain.then(async () => {
@@ -126,8 +131,11 @@ function enqueueUndoPersist(
       const settings = await settingsRepository.read();
       if (!settings.persistUndo) return;
     }
-    const ok = await undoRepository.write(makeData());
-    if (!ok) logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
+    await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
+      const disk = await undoRepository.read();
+      const ok = await undoRepository.write(apply(disk));
+      if (!ok) logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
+    });
   });
   undoPersistChain = step.catch((error) => logFailure('undoStore', '撤销历史写入失败', error));
   return step;
@@ -188,9 +196,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 用入口快照会把它们整批抹掉。
     onCommitted(get().batches, retryBatch);
 
-    // 出栈后入队持久化：写盘内容在链内执行时读取最新内存栈，避免与
-    // 恢复期间入栈的新批次产生「旧快照覆盖新数据」的交错（见 enqueueUndoPersist）。
-    await enqueueUndoPersist(() => get().batches);
+    // 出栈后入队持久化：链内以磁盘栈为基线按 id 精确移除本批次（恢复期间
+    // 可能有新批次入栈，也可能是另一窗口写入的批次），失败项放回栈顶。
+    await enqueueUndoPersist((disk) => {
+      const remaining = disk.filter((entry) => entry.id !== batch.id);
+      return retryBatch ? [retryBatch, ...remaining] : remaining;
+    });
 
     set({
       toast: {
@@ -213,9 +224,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     const settings = await settingsRepository.read();
     const next = pushBatch(get().batches, batch, settings.undoStackLimit);
     set({ batches: next });
-    // 入队持久化：链内执行时重读最新内存栈（可能已含后续批次或撤销出栈，
-    // 保证磁盘终态与内存一致）；persistUndo 关闭时不写库（链内检查）。
-    await enqueueUndoPersist(() => get().batches);
+    // 入队持久化：链内以磁盘栈为基线追加本批次（磁盘可能已含另一窗口写入的
+    // 批次或已发生的撤销出栈）；persistUndo 关闭时不写库（链内检查）。
+    await enqueueUndoPersist((disk) => pushBatch(disk, batch, settings.undoStackLimit));
   };
 
   return {

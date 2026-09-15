@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { isModalOpen } from '@/ui/dialog/Dialog';
 
 /**
  * 面板全局快捷键：`⌘/Ctrl + P` 命令面板、`⌘/Ctrl + J` 定位激活标签、`⌘/Ctrl + K` 搜索。
@@ -31,6 +32,9 @@ export function useGlobalHotkeys(handlers: GlobalHotkeyHandlers): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!event.metaKey && !event.ctrlKey) return;
+      // 模态打开时不响应：DialogShell 只拦 Tab/Esc，背景未 inert，
+      // ⌘K/⌘P/⌘J 会把焦点移到遮罩后的搜索框、滚动背景列表或叠开命令面板。
+      if (isModalOpen()) return;
       switch (event.key.toLowerCase()) {
         case 'p':
           event.preventDefault();

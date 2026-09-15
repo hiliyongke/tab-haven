@@ -72,6 +72,10 @@ export function normalizeNoCachePattern(input: string): string | null {
   // 形态 2：纯域名（不含路径）。
   const slashIndex = lower.indexOf('/');
   if (slashIndex === -1) {
+    // 单标签主机必须拒绝：`com` / `io` 这类裸 TLD 在 DNR 侧会编译成
+    // `^https?://([^/?#]+\.)?com([/:?#]|$)` —— 一条输入即对整个顶级域强制 no-store。
+    // 唯一放行的单标签主机是本机名 localhost（对本机服务禁缓存的合法需求）。
+    if (!lower.includes('.') && lower !== 'localhost') return null;
     return HOST_PATTERN.test(lower) && !lower.includes('..') ? lower : null;
   }
 

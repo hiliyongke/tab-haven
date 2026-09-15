@@ -74,6 +74,13 @@ export function VirtualRowList({
   /** 实际生效行高：实测值优先，未测得时退回估算值。 */
   const effectiveItemSize = measuredSize ?? itemSize;
 
+  // 估算值变化（切换密度 / 打开「显示网址」副标题）意味着行高结构已变：
+  // 丢弃旧实测值重新校准。否则 measuredSize 会一直优先于新的 itemSize，
+  // wrapper 定高与真实 li 高度不符 —— 表现为行互相重叠或被裁切。
+  useEffect(() => {
+    setMeasuredSize(null);
+  }, [itemSize]);
+
   // 行高实测校准：窗口移动（start 变化）或估算值变化（密度 / URL 副标题开关）后重测。
   // 实测的是 wrapper 内 li 的自然高度（wrapper 只定高不裁剪，li 可溢出）；
   // 与当前生效值一致时不 setState（防「测→改→再测」反馈循环）。

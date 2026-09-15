@@ -30,6 +30,16 @@ const FOCUSABLE_SELECTOR =
 const modalStack: symbol[] = [];
 
 /**
+ * 是否有模态正在打开。
+ *
+ * 供全局快捷键短路：DialogShell 只拦 Tab/Esc，背景未 inert，
+ * ⌘K/⌘P/⌘J 会把焦点移到遮罩后的搜索框、滚动背景列表或叠开命令面板。
+ */
+export function isModalOpen(): boolean {
+  return modalStack.length > 0;
+}
+
+/**
  * 弹窗行为契约 hook：打开聚焦首项、Tab 焦点陷阱、Esc 关闭、关闭后焦点恢复。
  * DialogShell / CommandPalette / OnboardingTour 共用，保证所有浮层行为一致。
  * onClose 用 ref 持有最新值：effect 只在挂载/卸载执行一次，避免父组件因后台

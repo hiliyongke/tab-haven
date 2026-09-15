@@ -29,14 +29,19 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
   return {
     toggleSiteCollapsed: (siteKey, collapsed) =>
       serialize(async () => {
-        const next = collapsed
-          ? ctx.get().collapsedSites.includes(siteKey)
-            ? ctx.get().collapsedSites
-            : [...ctx.get().collapsedSites, siteKey]
-          : ctx.get().collapsedSites.filter((key) => key !== siteKey);
+        let next: string[] = ctx.get().collapsedSites;
         // 与 updateSettings 同口径：折叠状态是整表写，options / sidepanel 各有独立
-        // 内存副本，锁外写会把另一页刚改的折叠项整表抹掉。
-        const ok = await withCrossPageLock(COLLAPSE_RMW_LOCK, () => ctx.repos.collapse.write(next));
+        // 内存副本。必须「锁内重读磁盘 → 合并 → 写」—— 只把内存基线包进锁不构成
+        // 互斥，另一页刚写入的折叠项仍会被本页的旧基线整表抹掉。
+        const ok = await withCrossPageLock(COLLAPSE_RMW_LOCK, async () => {
+          const disk = await ctx.repos.collapse.read();
+          next = collapsed
+            ? disk.includes(siteKey)
+              ? disk
+              : [...disk, siteKey]
+            : disk.filter((key) => key !== siteKey);
+          return ctx.repos.collapse.write(next);
+        });
         if (!ok)
           ctx.reportPersistenceFailure('dataStore', '站点折叠状态写入失败（仅影响分组展开状态）');
         ctx.set({ collapsedSites: next });
