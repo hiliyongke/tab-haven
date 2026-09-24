@@ -1367,6 +1367,7 @@ html.theme-transition *::after {
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out);
   cursor: grab;
+  pointer-events: none;
 }
 /* 宽松密度：增加行内边距，信息更舒展 */
 .row-item.density-cozy {
@@ -1406,6 +1407,7 @@ body.dnd-just-dropped .row-item .drag-grip {
    注：.is-selected 类从未被任何组件添加，属于死条件，一并移除。 */
 .row-item:hover .drag-grip {
   opacity: 1;
+  pointer-events: auto;
 }
 .row-item .drag-grip:active {
   cursor: grabbing;

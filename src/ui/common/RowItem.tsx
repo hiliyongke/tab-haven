@@ -147,13 +147,13 @@ export const RowItem = memo(
         className={className}
         style={style}
         data-split-role={splitGroupRole ?? undefined}
+        onClick={onClick}
         {...(container?.listeners || {})}
       >
         <button
           type="button"
           ref={container?.activatorRef}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          onClick={onClick}
           onAuxClick={onAuxClick}
           onMouseEnter={onMouseEnter}
           onKeyDown={(event) => {
@@ -191,7 +191,11 @@ export const RowItem = memo(
              拖拽监听挂在整行容器（RowItem 外层 div），PointerSensor 距离 4px 即可激活，
              在此区域内按下并轻微移动会把一次点击吞成拖拽 → 关闭/固定/静音等按钮
              “点一下没反应”。与 SectionHead 的 .section-head-actions 同一拦截方案。 */
-          <span className="contents" onPointerDown={(event) => event.stopPropagation()}>
+          <span
+            className="contents"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
             {actions}
           </span>
         ) : null}
