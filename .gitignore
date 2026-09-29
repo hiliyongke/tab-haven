@@ -42,5 +42,10 @@ Thumbs.db
 *.swp
 
 # ---------- 助手工作区 ----------
-.codebuddy
+# .codebuddy 下的 rules/agents/skills/commands/README 是团队共享的 AI 工作流规范，随库跟踪；
+# 仅忽略本机私有产物（跨会话记忆、插件市场缓存）：
+.codebuddy/memory/
+.codebuddy/marketplace/
+.codebuddy/plan/
+.codebuddy/plans/
 .workbuddy

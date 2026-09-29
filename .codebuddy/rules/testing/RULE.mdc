@@ -1,0 +1,30 @@
+---
+description: 测试规范——Vitest 行为规格写法、目录映射、覆盖率 ratchet 与 fake-browser 偏差注意；编写或修改 tests/ 时适用
+alwaysApply: false
+enabled: true
+---
+
+# 测试规范
+
+## 基本法
+
+- 框架 Vitest（jsdom + @testing-library/react）；配置见 `vitest.config.ts`，全局 setup 在 `tests/setup.ts`。
+- `core/**` 是纯函数层，**改动必须有对应行为测试**；行为规格写法：Given/When/Then 语义（describe 命名场景，it 断言结果，注释分隔三段）。
+- 测试目录按层镜像：`tests/core/`、`tests/platform/`、`tests/stores/`、`tests/ui/`、`tests/background/`、`tests/perf/`。
+
+## 分层测试要点
+
+| 层 | 测什么 | 怎么测 |
+| --- | --- | --- |
+| core | 领域决策全分支 | 纯函数直接断言输入输出，无 mock |
+| platform | chrome 适配行为 | `fake-browser` 模拟；注意它与真实 Chrome 的偏差，各测试文件头部注释有说明 |
+| stores | store 事务与订阅 | 操作序列后断言状态与持久化副作用 |
+| ui | 渲染与交互 | testing-library 按角色/文案查询，断言行与可访问性，不断言实现细节 |
+| perf | 性能回归 | 阈值断言，改动拉慢须说明并征得同意 |
+
+## 硬性门槛
+
+- **覆盖率 ratchet**：阈值只许收紧不许放松；改动拉低覆盖率 → 补测试，禁止调阈值。
+- 跑测试：`pnpm test`（含覆盖率）；盯单文件：`pnpm test:watch tests/core/xxx.test.ts`。
+- UI 快照（`tests/ui/*.snap`）只在渲染结构确实有意变更时更新，并在汇报中说明。
+- 设计令牌守卫单独跑：`pnpm check:ui`（未受控色板/字号/对比度会失败）。

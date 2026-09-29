@@ -2,6 +2,8 @@
 
 感谢你愿意为 Tabs 出力。本文说明如何提交改动，以及哪些约定是硬性的。
 
+> 使用 AI 辅助开发：本仓库内置完整的 CodeBuddy 工作流规范（规则/智能体/技能/命令），见 [.codebuddy/README.md](./.codebuddy/README.md)；项目速览见 [CODEBUDDY.md](./CODEBUDDY.md)。
+
 ## 快速开始
 
 ```bash

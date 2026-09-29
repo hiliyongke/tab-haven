@@ -1,0 +1,52 @@
+---
+description: 代码风格与命名规范——TypeScript/React/Tailwind/zustand 的统一约定，与 ESLint/Prettier 互补不冲突
+alwaysApply: true
+enabled: true
+---
+
+# 代码风格与命名规范
+
+格式化一律交给 Prettier（`pnpm format`，pre-commit 自动跑），本规则只管 Prettier/ESLint 不管的部分。
+
+## 复用优先（动手前先查）
+
+- **UI 组件**：`src/ui/common/` 已有 Button / IconButton / TextField / Select / Toggle / Icon / Favicon / EmptyState / StatusToast / SectionHead / RowItem / ErrorBoundary / CommandPalette 等，`src/ui/dialog/Dialog.tsx` 提供 ConfirmDialog——新 UI 先查复用，禁止重复造轮子；完整清单见 `.codebuddy/skills/ui-component`。
+- **领域工具**：URL 判定唯一事实来源是 `core/url` 的 UrlInspector；同域名判定走 `core/site`；不另写 URL/域名解析工具函数。
+- **导入别名**：`@/` 指向 `src/`（wxt.config.ts 配置），跨层引用用别名，不用深层相对路径。
+- **高频变更**（加设置项/快捷键/右键菜单/存储字段）先查 `.codebuddy/skills/change-recipes` 的文件地图，避免漏改联动文件。
+
+## 命名
+
+- 组件文件用 PascalCase（`TabRow.tsx`）；多导出的辅助组件集合文件用 camelCase（`settingControls.tsx`）。
+- 其余 `.ts` 文件 camelCase；`entrypoints/*/` 入口固定 `main.tsx`。
+- 目录一律小写单词（`core/url`、`core/dup`）；core 领域目录沿用现有命名，不随意更名。
+- 类型/接口 PascalCase，动词开头命名函数，布尔用 `is/has/can` 前缀。
+- core 层导出领域对象沿用现有命名传统（`UrlInspector`、`DuplicateIndex`、`SiteKey` 风格）。
+
+## TypeScript
+
+- 严格类型：禁止 `any`（测试桩除外，需注释说明）；优先 `unknown` + 收窄。
+- 持久化数据的类型必须与 `core/schema` 的 zod schema 同源（`z.infer`），不另立重复定义。
+- 优先纯函数与不可变数据；副作用收敛到 `platform/**`。
+
+## React
+
+- 函数组件 + hooks；遵守 `react-hooks/rules-of-hooks`，`exhaustive-deps` 警告必须清零（`pnpm lint` 为 0 警告门禁）。
+- 组件保持展示职责；浏览器 API、存储读写一律经 `platform/**` / `stores/**`，组件内不出现 `chrome.*`。
+- 跨组件状态用 zustand store（`src/stores/`）；局部状态留在组件内，不上移。
+
+## 样式
+
+- Tailwind CSS 4 + CSS 变量；颜色/字号只允许设计令牌，`check:ui` 会拦未受控调色板与字号。
+- 不新增行内 `style={{ }}` 硬编码色值；主题三态（跟随系统/亮/暗）不得假设单一主题。
+
+## 文案
+
+- UI 文案一律走 `react-i18next` 的 `t()`，新增键同时补 `src/i18n` 的 `zh-CN` 与 `en` 两份 locale。
+- 禁止在 JSX 中写死中文/英文展示文案。
+
+## 禁止项（CONTRIBUTING 明确不接受）
+
+- 文件中添加 `lint-disable` 注释。
+- 为绕过门禁修改 ESLint / Prettier / 覆盖率配置。
+- 引入新依赖前先说明理由并征得同意（本项目刻意保持依赖精简）。

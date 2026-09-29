@@ -1,0 +1,34 @@
+---
+description: 分层架构红线——core/platform/stores/ui/entrypoints 的依赖方向与各层职责，改动任何 src 代码前必须对照
+alwaysApply: true
+enabled: true
+---
+
+# 分层架构红线
+
+依赖方向不可逆：`core ← platform ← stores / ui / entrypoints`。
+
+## 各层职责与禁令
+
+| 层 | 职责 | 禁令 |
+| --- | --- | --- |
+| `src/core/**` | 纯领域逻辑（URL 规约、重复索引、聚合、撤销栈、schema） | 不得出现 `chrome.*` / `browser.*` / DOM / React；不得 import `platform/**` |
+| `src/platform/**` | 唯一触碰 `chrome.*` 的适配层（tabs、storage、snapshot、undo、messages） | 不含领域决策，决策上收 core |
+| `src/stores/**` | zustand store 族（tab / undo / data / snapshot） | 不直接写存储，经 `platform/storage` 的 DataRepository |
+| `src/ui/**` | React 组件库 | 不得绕过 `platform/**` 直连浏览器 API |
+| `src/entrypoints/**` | 形态薄壳（sidepanel / popup / options / background / about） | 只组装，不沉淀可复用逻辑 |
+
+## 关键机制约定
+
+- **校验唯一口径在 schema 层**：凡是会落盘或编译成浏览器规则的数据，校验写 `core/schema` 的 zod schema，不做"只在 UI 输入处校验"（历史事故：备份导入绕过 UI 归一化生成全量 DNR 规则）。
+- **消息协议**：跨上下文通信走 `platform/messages.ts` 的类型安全协议（zod 校验），不自造消息格式。
+- **单一备份格式**：导出文件用 `z.literal(EXPORT_FILE_VERSION)` 校验，版本不同即拒绝，不做跨版本兼容解析。
+- **新增持久化数据**：必须走 `.codebuddy/skills/schema-evolution` 的完整流程（schema + PRIVACY.md 第 3 节 + 测试）。
+
+## 改动前的自检三问
+
+1. 这段逻辑是否含 chrome/DOM/React？——无 → 放 core；有 → 放 platform 或 ui。
+2. 是否新增/变更持久化数据？——是 → 先改 `core/schema`，再同步 `PRIVACY.md`。
+3. 是否新增 UI 文案？——是 → 双语 locale 同补。
+
+拿不准放哪层时，先问，不要先写。
