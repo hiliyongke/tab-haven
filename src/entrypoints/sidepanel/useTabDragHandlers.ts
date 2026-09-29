@@ -13,6 +13,7 @@ import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
+import { logDegraded } from '@/platform/diagnostics';
 import {
   DragType,
   FIXED_AREA_DROPPABLE,
@@ -90,7 +91,12 @@ export function useTabDragHandlers() {
       .then((ok) => {
         if (!ok) tabSyncService.requestRefresh();
       })
-      .catch(() => {});
+      // 异常 rejection（非 false 返回）同样不产生 tabs 事件：必须矫正 + 留痕，
+      // 否则乐观排序与浏览器长期分叉且无从排查。
+      .catch((error: unknown) => {
+        logDegraded('tabs', '拖拽移动标签失败', error);
+        tabSyncService.requestRefresh();
+      });
   }, []);
 
   /** 键盘重排（Alt+↑/↓）：把标签向相邻展示位置移动。 */
@@ -188,7 +194,10 @@ export function useTabDragHandlers() {
           .then((ok) => {
             if (!ok) tabSyncService.requestRefresh();
           })
-          .catch(() => {});
+          .catch((error: unknown) => {
+            logDegraded('tabs', '拖拽移动分组失败', error);
+            tabSyncService.requestRefresh();
+          });
         return;
       }
       // 与 handleReorder 同理：失败无事件、不自愈，需主动刷新校正。
@@ -196,7 +205,10 @@ export function useTabDragHandlers() {
         .then((ok) => {
           if (!ok) tabSyncService.requestRefresh();
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          logDegraded('tabs', '拖拽整组移动标签失败', error);
+          tabSyncService.requestRefresh();
+        });
     },
     []
   );

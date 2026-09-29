@@ -1,5 +1,6 @@
 import { createTabsWithUrls } from '@/platform/tabs';
 import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
+import { t } from '@/i18n/headless';
 import { hostnameOf, openSidePanel, queueAction } from './shared';
 
 interface OmniSuggestion {
@@ -34,7 +35,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     if (!q || folder.name.toLowerCase().includes(q)) {
       out.push({
         content: `folder:${folder.id}`,
-        description: `Open folder: ${escapeSuggestionText(folder.name)}`
+        description: t('bg.omniboxOpenFolder', { name: escapeSuggestionText(folder.name) })
       });
     }
   }
@@ -45,14 +46,14 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     if (!q || host.includes(q) || pin.title.toLowerCase().includes(q)) {
       out.push({
         content: `pin:${pin.url}`,
-        description: `Open pinned: ${escapeSuggestionText(pin.title)}`
+        description: t('bg.omniboxOpenPin', { name: escapeSuggestionText(pin.title) })
       });
     }
   }
   if (q) {
     out.push({
       content: `search:${q}`,
-      description: `Search tabs for: ${escapeSuggestionText(q)}`
+      description: t('bg.omniboxSearch', { query: escapeSuggestionText(q) })
     });
   }
   return out;

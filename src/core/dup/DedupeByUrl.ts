@@ -1,25 +1,14 @@
 import type { TabRecord } from '@/core/tab-types';
-import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
- * 同 URL 唯一化（设置「同一网址只保留一个标签」的决策内核）。
+ * 同 URL 保留者排序（设置「同一网址只保留一个标签」的决策内核）。
  *
- * 纯决策层，不触碰 browser.*：
- *  - 按比较键（inspectUrl.comparisonKey）对标签分组；
- *  - 每组保留「最近访问」的一个（lastAccessed 最新；平局：激活 > 固定 > 位置靠前 > id 大）；
- *  - 其余（含新建标签）标记为待关闭。
+ * 纯决策层，不触碰 browser.*：每组保留「最近访问」的一个
+ * （lastAccessed 最新；平局：激活 > 固定 > 位置靠前 > id 大）。
  *
- * 使用场景：
- *  - 新建标签导航到已存在网址 → 对「既有」集合选保留者，激活它并关闭其余+新建；
- *  - 开关开启时对窗口内全部标签执行一次清理。
+ * 消费方：复用引擎（platform/reuse）在「新建标签导航到已存在网址」时
+ * 对「既有」集合选保留者，激活它并关闭其余副本。
  */
-
-interface UrlDedupePlan {
-  /** 保留者（最近访问）。 */
-  keep: TabRecord;
-  /** 待关闭的其余标签（不含 keep）。 */
-  close: TabRecord[];
-}
 
 /**
  * 从一组同 URL 标签中选出保留者。
@@ -35,24 +24,4 @@ export function rankForKeep(tabs: readonly TabRecord[]): TabRecord | undefined {
     if (a.index !== b.index) return a.index - b.index;
     return b.id - a.id;
   })[0];
-}
-
-/** 按比较键分组，每组超过一个时给出唯一化计划。 */
-export function planUrlDedupe(tabs: readonly TabRecord[]): UrlDedupePlan[] {
-  const buckets = new Map<string, TabRecord[]>();
-  for (const tab of tabs) {
-    const key = webComparisonKey(tab.url, tab.pendingUrl);
-    if (!key) continue;
-    const list = buckets.get(key);
-    if (list) list.push(tab);
-    else buckets.set(key, [tab]);
-  }
-  const plans: UrlDedupePlan[] = [];
-  for (const group of buckets.values()) {
-    if (group.length < 2) continue;
-    const keep = rankForKeep(group);
-    if (!keep) continue;
-    plans.push({ keep, close: group.filter((tab) => tab.id !== keep.id) });
-  }
-  return plans;
 }

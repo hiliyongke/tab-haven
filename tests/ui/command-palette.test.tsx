@@ -196,3 +196,42 @@ describe('CommandPalette 过滤', () => {
     expect(input.getAttribute('aria-activedescendant')).toBe('palette-item-tab-1');
   });
 });
+
+describe('CommandPalette 空查询截断', () => {
+  /** 造 25 个标签（超过空查询截断上限 20）。 */
+  const manyTabs = () => Array.from({ length: 25 }, (_, i) => tab({ id: i + 1 }));
+
+  it('21+ 标签时空查询仅挂载前 20 个标签项，并出现截断提示', () => {
+    renderPalette(manyTabs());
+
+    // 12 条命令 + 20 个标签（截断），第 21 个起不挂载
+    expect(screen.getAllByRole('option')).toHaveLength(32);
+    expect(screen.queryByText('标签-21')).not.toBeInTheDocument();
+    expect(screen.getByText(i18n.t('palette.tabsTruncated', { count: 20 }))).toBeInTheDocument();
+  });
+
+  it('截断提示不是 option，键盘漫游的末项是截断边界的标签', () => {
+    const { input } = renderPalette(manyTabs());
+
+    const hint = screen.getByText(i18n.t('palette.tabsTruncated', { count: 20 }));
+    expect(hint).not.toHaveAttribute('role', 'option');
+    // ↑ 环绕到末项：必须是截断边界的第 20 个标签，而非提示行
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    const active = document.getElementById(input.getAttribute('aria-activedescendant')!);
+    expect(active).toHaveAttribute('role', 'option');
+    expect(active).toHaveTextContent('标签-20');
+  });
+
+  it('输入关键词后截断提示消失，原本被截掉的匹配项可达', () => {
+    const { input } = renderPalette(manyTabs());
+
+    fireEvent.change(input, { target: { value: '标签-2' } });
+
+    expect(
+      screen.queryByText(i18n.t('palette.tabsTruncated', { count: 20 }))
+    ).not.toBeInTheDocument();
+    // 「标签-2」命中 标签-2 / 标签-20…25（含空查询时被截掉的 21-25）
+    const options = screen.getAllByRole('option');
+    expect(options.some((option) => option.textContent?.includes('标签-25'))).toBe(true);
+  });
+});

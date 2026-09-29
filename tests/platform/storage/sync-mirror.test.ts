@@ -79,4 +79,52 @@ describe('SyncMirror', () => {
     const mirror = await syncMirror.pull();
     expect(mirror?.folders[0]).toMatchObject({ id: 'new' });
   });
+
+  it('clearAll 清除全部镜像块（关闭同步 / 清空数据后不得有残留）', async () => {
+    syncMirror.schedule(payload('x'));
+    await vi.advanceTimersByTimeAsync(600);
+
+    await syncMirror.clearAll();
+
+    const all = await fakeBrowser.storage.sync.get(null);
+    expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);
+  });
+
+  it('clearAll 排在在途写之后：在途写落盘不得让已清除的镜像复活', async () => {
+    const sync = fakeBrowser.storage.sync;
+    // 让在途写的 set 挂起：模拟去抖 flush 刚触发、用户立即关闭同步的竞态窗口。
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const setSpy = vi.spyOn(sync, 'set').mockImplementationOnce(() => gate);
+
+    void syncMirror.write(payload('inflight'));
+    const clearing = syncMirror.clearAll();
+
+    // 放行在途写：其 set 先落盘，clearAll 的 remove 必须排在它之后执行。
+    release();
+    await clearing;
+    setSpy.mockRestore();
+
+    const all = await sync.get(null);
+    expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);
+    expect(await syncMirror.pull()).toBeNull();
+  });
+
+  it('在途写失败排入的重试不得让 clearAll 之后的镜像复活', async () => {
+    const sync = fakeBrowser.storage.sync;
+    // 在途写失败：其 catch 会在 clearAll 的链头 cancelPending 之后才排入 30s 重试。
+    const setSpy = vi.spyOn(sync, 'set').mockRejectedValueOnce(new Error('quota'));
+
+    void syncMirror.write(payload('inflight-fails'));
+    await syncMirror.clearAll();
+    setSpy.mockRestore();
+
+    // 越过全部重试退避：若 performClear 未在链内补撤，旧 payload 会被重试写回。
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    const all = await sync.get(null);
+    expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);
+    expect(await syncMirror.pull()).toBeNull();
+  });
 });

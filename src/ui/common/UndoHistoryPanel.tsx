@@ -7,6 +7,7 @@ import {
   restoreRecentClosed,
   type RecentClosedEntry
 } from '@/platform/sessions';
+import { logDegraded } from '@/platform/diagnostics';
 import { formatTime } from '@/ui/common/format';
 
 /**
@@ -61,7 +62,9 @@ export function UndoHistoryPanel({
       .then((entries) => {
         if (!cancelled) setRecent(entries);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        // 失败会被渲染成与「无最近关闭」相同的空态：必须留痕，否则故障不可分辨。
+        logDegraded('sessions', '读取浏览器最近关闭列表失败', error);
         if (!cancelled) setRecent([]);
       });
     return () => {

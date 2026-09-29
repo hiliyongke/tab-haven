@@ -107,7 +107,18 @@
   "groups": {
     "label": "域名分组",
     "edit": "编辑标签组",
-    "namePlaceholder": "组名称"
+    "namePlaceholder": "组名称",
+    "color": {
+      "grey": "灰色",
+      "blue": "蓝色",
+      "red": "红色",
+      "yellow": "黄色",
+      "green": "绿色",
+      "pink": "粉色",
+      "purple": "紫色",
+      "cyan": "青色",
+      "orange": "橙色"
+    }
   },
   "search": {
     "title": "搜索标签",
@@ -121,7 +132,6 @@
     "historyToggleOff": "仅搜索当前标签",
     "historySection": "历史命中（快照与归档）",
     "historyHits": "{{count}} 条历史记录",
-    "historyEmpty": "历史中无匹配记录",
     "historyOpenUrl": "打开该页面",
     "historyOpened": "已打开该页面",
     "historyRestoreSnapshot": "恢复该快照",
@@ -449,7 +459,8 @@
     "openFolderHint": "打开该文件夹的全部 {{count}} 个条目",
     "sectionTabs": "切换到标签",
     "current": "当前",
-    "empty": "没有匹配的命令或标签"
+    "empty": "没有匹配的命令或标签",
+    "tabsTruncated": "仅显示前 {{count}} 个标签，输入关键词以过滤更多"
   },
   "insights": {
     "title": "习惯洞察",
@@ -554,7 +565,11 @@
     "discardNotSafe": "该标签当前无法休眠。",
     "discardDone": "标签已休眠。",
     "alreadyInFolder": "该网址已在固定文件夹中（已去重）。",
-    "addToFolderFailed": "保存到文件夹失败，请重试。"
+    "addToFolderFailed": "保存到文件夹失败，请重试。",
+    "omniboxDefault": "输入关键词以搜索标签、固定与文件夹",
+    "omniboxOpenFolder": "打开文件夹：{{name}}",
+    "omniboxOpenPin": "打开固定：{{name}}",
+    "omniboxSearch": "搜索标签：{{query}}"
   },
   "about": {
     "title": "关于 Tabs",

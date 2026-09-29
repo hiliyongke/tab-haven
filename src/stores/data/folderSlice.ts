@@ -218,8 +218,14 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
       // 排除已绑定其他条目的标签：否则同一标签同时服务两个条目，违反
       // 「一个 tab 只服务一个条目」不变量，直到下次 reconcile 才按插入序修复。
       const boundTabIds = new Set(Object.values(bindings));
+      // 排除 pinned：与本文件 addTabsToFolder 的绑定判定、core/fixed/Reconcile
+      // 同一口径（pinned 标签不服务固定条目绑定）。
       const exact = tabs.find(
-        (tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito && !boundTabIds.has(tab.id)
+        (tab) =>
+          itemUrlMatchesTab(item.url, tab) &&
+          !tab.pinned &&
+          !tab.incognito &&
+          !boundTabIds.has(tab.id)
       );
       if (exact) {
         const result = await mutateSession((session) => ({

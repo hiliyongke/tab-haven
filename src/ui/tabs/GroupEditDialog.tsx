@@ -71,8 +71,8 @@ export function GroupEditDialog({
             checked={draftColor === c}
             className="swatch appearance-none"
             style={{ backgroundColor: groupAccentVar(c) }}
-            title={c}
-            aria-label={c}
+            title={t(`groups.color.${c}`)}
+            aria-label={t(`groups.color.${c}`)}
             onChange={() => setDraftColor(c)}
           />
         ))}

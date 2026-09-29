@@ -7,6 +7,7 @@ import {
 } from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { DEFAULT_SETTINGS, SettingsSchema } from '@/core/schema/models';
+import { restoreFromMirrorOnEnable } from './mirrorRestore';
 import type { DataContext, DataState } from './types';
 
 /** 设置切片：站点折叠、设置读写与重置、清空全部本地数据、跨页设置刷新。 */
@@ -48,11 +49,12 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
       }),
 
     updateSettings: (partial) =>
-      serialize(async () =>
+      serialize(async () => {
+        let mirrorJustEnabled = false;
         // 跨页锁内「重读 → 合并 → 写」：各页面 dataStore 实例独立，以本页内存为
         // 基线整对象写会覆盖其他页面刚写入的字段（watcher 回放收敛到胜方，
         // 败方修改静默消失）。磁盘基线保证并发页的字段级更新互存。
-        withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
+        await withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
           const disk = await ctx.repos.settings.read();
           const parsed = SettingsSchema.safeParse({ ...disk, ...partial });
           if (!parsed.success) throw new Error('invalid-settings');
@@ -63,16 +65,28 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
             throw new Error('settings-write-failed');
           }
           const wasMirrorEnabled = disk.syncMirrorEnabled;
+          mirrorJustEnabled = partial.syncMirrorEnabled === true && !wasMirrorEnabled;
           ctx.set({ settings: parsed.data });
-          ctx.scheduleMirror(ctx.get());
+          // 首次开启同步的路径先不镜像：需先在锁外做反向恢复（恢复要取
+          // FOLDERS/PINS 锁，嵌套在 SETTINGS 锁内有锁序风险），否则本地空态
+          // 会被推上云，覆盖旧设备的镜像。
+          if (!mirrorJustEnabled) ctx.scheduleMirror(ctx.get());
           ctx.broadcastSettingsSynced();
           // 关闭镜像时必须清掉已上传的块：否则浏览器账号通道里那份会一直留着，
           // 用户以为「关了同步」，数据其实仍在厂商侧，且下次开启会被回灌。
+          // 必须 await：与 resetSettings 同口径，调用方返回时云端数据已确认删除。
           if (partial.syncMirrorEnabled === false && wasMirrorEnabled) {
-            void syncMirror.clearAll();
+            await syncMirror.clearAll();
           }
-        })
-      ),
+        });
+        if (mirrorJustEnabled) {
+          // 恢复失败（写盘/镜像解析失败）时不得推首次镜像：本地仍是空态，
+          // 推上云会覆盖旧设备的镜像。此时 seeded 未置位，下次启动由
+          // initSlice 的镜像拉取分支重试自愈。
+          const outcome = await restoreFromMirrorOnEnable(ctx);
+          if (outcome !== 'failed') ctx.scheduleMirror(ctx.get());
+        }
+      }),
 
     tryUpdateSettings: async (partial) => {
       try {
@@ -140,8 +154,8 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
             ready: true
           });
           applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
-          // 把「空态」镜像回 sync（去抖落盘），保持 local/sync 终态一致。
-          ctx.scheduleMirror(ctx.get());
+          // 无需把空态镜像回 sync：此时设置已是默认值（syncMirrorEnabled=false），
+          // scheduleMirror 是 no-op；云端镜像已由上面的 syncMirror.clearAll 删除。
           ctx.broadcastSettingsSynced();
         } finally {
           ctx.setClearing(false);

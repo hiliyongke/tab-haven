@@ -201,9 +201,14 @@ export class ReuseCoordinator {
         if (latest && webComparisonKey(latest.url, latest.pendingUrl) !== key) {
           return { action: 'keep' };
         }
+        // 新标签自身在 drain 在途期间被用户固定：固定即「明确要留下」，
+        // 与既有标签的 pinned 豁免同口径——继续合并关闭是破坏性意外。
+        if (latest?.pinned ?? tab.pinned) return { action: 'keep' };
         await this.deps.activate(keep.id);
         for (const candidate of existing) {
-          if (candidate.id !== keep.id) await this.deps.close(candidate.id);
+          // 固定标签豁免关闭（与重复清理面板 KeeperPolicy.pinnedExempt 同口径）：
+          // 用户主动固定的标签被自动合并关掉是破坏性意外。
+          if (candidate.id !== keep.id && !candidate.pinned) await this.deps.close(candidate.id);
         }
         await this.deps.close(tab.id);
         this.deps.notifyReuse();

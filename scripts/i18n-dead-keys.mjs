@@ -25,8 +25,15 @@ const LOCALES = {
   en: join(ROOT, 'src/i18n/locales/en/translation.json')
 };
 
-/** 动态拼接键白名单：OnboardingTour.tsx 用 `onboarding.step${step}Title/Body` 模板串构造。 */
-const DYNAMIC_KEY_PATTERNS = [/^onboarding\.step\d+(Title|Body)$/];
+/**
+ * 动态拼接键白名单（新增动态拼接点时必须同步登记）：
+ *  - OnboardingTour.tsx 用 `onboarding.step${step}Title/Body` 模板串构造；
+ *  - GroupEditDialog.tsx 用 `groups.color.${c}` 模板串构造（tabGroups 标准色枚举）。
+ */
+const DYNAMIC_KEY_PATTERNS = [
+  /^onboarding\.step\d+(Title|Body)$/,
+  /^groups\.color\.(grey|blue|red|yellow|green|pink|purple|cyan|orange)$/
+];
 
 const SCANNABLE = new Set(['.ts', '.tsx']);
 

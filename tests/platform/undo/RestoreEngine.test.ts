@@ -86,14 +86,46 @@ describe('restoreTabRecordsDetailed', () => {
 
   it('原组已删除时按组名重建', async () => {
     const { group, update } = stubGroupApis();
+    // 显式模拟「组不存在」：get 抛错 → 视为原组失效，直接按名重建
+    const getStub = vi.fn(async () => {
+      throw new Error('group gone');
+    });
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
     await restoreTabRecordsDetailed(
       [record({ url: 'https://g.com/', groupId: 5, groupName: '工作' })],
       WINDOW_ID
     );
-    // 第一次带 groupId（失败），第二次只带 tabIds（新建组）
-    expect(group).toHaveBeenCalledTimes(2);
-    expect(group.mock.calls[1]![0]).toEqual({ tabIds: [expect.any(Number)] });
+    // get 校验即发现失效：不再尝试带 groupId 入组，只新建组一次
+    expect(group).toHaveBeenCalledTimes(1);
+    expect(group.mock.calls[0]![0]).toEqual({ tabIds: [expect.any(Number)] });
     expect(update).toHaveBeenCalledWith(77, { title: '工作' });
+  });
+
+  it('旧 groupId 被浏览器复用为无关组（标题不符）：不入他组，按名重建', async () => {
+    const { group, update } = stubGroupApis();
+    const getStub = vi.fn(async () => ({ id: 5, title: '无关组' }));
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+    await restoreTabRecordsDetailed(
+      [record({ url: 'https://g.com/', groupId: 5, groupName: '工作' })],
+      WINDOW_ID
+    );
+    // 标题不符：绝不带旧 groupId 入组（否则标签误入「无关组」）
+    expect(group).not.toHaveBeenCalledWith(expect.objectContaining({ groupId: 5 }));
+    expect(update).toHaveBeenCalledWith(77, { title: '工作' });
+  });
+
+  it('旧 groupId 与组名一致：直接入原组（不重建）', async () => {
+    const group = vi.fn(async () => 5);
+    const tabs = fakeBrowser.tabs as unknown as { group: typeof group };
+    tabs.group = group as unknown as typeof tabs.group;
+    const getStub = vi.fn(async () => ({ id: 5, title: '工作' }));
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+    await restoreTabRecordsDetailed(
+      [record({ url: 'https://g.com/', groupId: 5, groupName: '工作' })],
+      WINDOW_ID
+    );
+    expect(group).toHaveBeenCalledTimes(1);
+    expect(group).toHaveBeenCalledWith({ tabIds: [expect.any(Number)], groupId: 5 });
   });
 
   it('无组名且组已删除时保持未分组（不抛错、计入成功）', async () => {

@@ -429,7 +429,7 @@ export default defineBackground(() => {
   browser.omnibox?.onInputStarted.addListener(() => {
     if (!cachedSettings.omniboxEnabled) return;
     void browser.omnibox.setDefaultSuggestion({
-      description: 'Tabs: type to search tabs, pins and folders'
+      description: t('bg.omniboxDefault')
     });
   });
 
@@ -466,5 +466,8 @@ export default defineBackground(() => {
       await syncAutoDiscardAlarm(settings);
       await syncAutoSnapshotAlarm(settings);
     })
-    .catch(() => {});
+    // 与同文件其它启动路径同口径：静默吞错会让「闹钟没对齐」完全无从排查。
+    .catch((error: unknown) => {
+      logDegraded('background', '启动时闹钟对齐失败（自动休眠/自动快照本轮不生效）', error);
+    });
 });

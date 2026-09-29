@@ -271,10 +271,14 @@ export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Pr
         const groupId = await browser.tabs.group(
           sameTitle?.id !== undefined ? { tabIds, groupId: sameTitle.id } : { tabIds }
         );
-        const color = groupColors.get(title);
-        await tabGroups
-          .update(groupId, { title, ...(color !== undefined ? { color } : {}) })
-          .catch(() => {});
+        // 并入既有同名组时跳过 meta 回写：用户可能在快照之后改过该组的标题/颜色，
+        // 无条件 update 会用快照里的旧值覆盖用户的后续修改。
+        if (sameTitle === undefined) {
+          const color = groupColors.get(title);
+          await tabGroups
+            .update(groupId, { title, ...(color !== undefined ? { color } : {}) })
+            .catch(() => {});
+        }
       } catch {
         // 组恢复失败：标签保持未分组，不影响已创建的标签
       }

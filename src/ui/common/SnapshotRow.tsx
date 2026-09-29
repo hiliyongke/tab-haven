@@ -102,6 +102,7 @@ export function SnapshotRow({
           <button
             type="button"
             title={t('snapshots.detail')}
+            aria-label={t('snapshots.detail')}
             aria-expanded={isDetailOpen}
             className="rounded p-1 text-gray-500 hover:bg-gray-100"
             onClick={() => onToggleDetail(snap.id)}
@@ -114,6 +115,7 @@ export function SnapshotRow({
           <button
             type="button"
             title={t('snapshots.restore')}
+            aria-label={t('snapshots.restore')}
             disabled={restoring}
             className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600 disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={() => void onRestore(snap.id, snap.tabCount)}
@@ -123,6 +125,7 @@ export function SnapshotRow({
           <button
             type="button"
             title={t('snapshots.rename')}
+            aria-label={t('snapshots.rename')}
             className="rounded p-1 text-gray-500 hover:bg-gray-100"
             onClick={() => onBeginRename(snap.id, snap.name)}
           >
@@ -131,6 +134,7 @@ export function SnapshotRow({
           <button
             type="button"
             title={t('snapshots.delete')}
+            aria-label={t('snapshots.delete')}
             className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
             onClick={() => void onDelete(snap.id)}
           >

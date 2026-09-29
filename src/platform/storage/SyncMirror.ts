@@ -185,6 +185,19 @@ class SyncMirror {
   async clearAll(): Promise<void> {
     // 先撤销待写：顺序颠倒会让去抖窗口内的旧数据在清除之后落盘，云端数据复活。
     this.cancelPending();
+    // 挂到写串行链尾部：在途 performWrite 是 get→remove→set 非原子三步，clearAll
+    // 若与之并发，在途写的 set 会落在清除之后，让刚删掉的镜像复活。
+    const run = this.writeChain.then(() => this.performClear());
+    this.writeChain = run.catch(() => {});
+    return run;
+  }
+
+  /** clearAll 的实际执行体（串行链内运行）。 */
+  private async performClear(): Promise<void> {
+    // 链内再撤一次待写/重试：排在本清除之前的在途写若失败，其 catch 会在
+    // cancelPending（链头）之后才同步排入 retryTimer——不在此处补撤，
+    // 30s 后旧 payload 会被重试写回，「关闭即删除已上传数据」被击穿。
+    this.cancelPending();
     const area = browser.storage?.sync;
     if (!area) return;
     try {

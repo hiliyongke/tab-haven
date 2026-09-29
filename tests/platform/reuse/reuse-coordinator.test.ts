@@ -156,6 +156,56 @@ describe('ReuseCoordinator', () => {
     expect(h.calls.notifications).toBe(1);
   });
 
+  it('固定标签豁免关闭：同址既有为 pinned 时只关新建标签', async () => {
+    const h = createHarness();
+    h.setWindowTabs([
+      // pinned 但访问更早：保留者排序输给新访问的普通标签时也不许被关掉
+      makeTab({ id: 1, index: 0, url: 'https://a.com/', pinned: true, lastAccessed: 100 }),
+      makeTab({ id: 2, index: 1, url: 'https://a.com/', lastAccessed: 300 })
+    ]);
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 2, url: 'https://a.com/', status: 'complete' })
+    );
+    await h.flush();
+
+    expect(h.calls.activate).toEqual([2]);
+    expect(h.calls.close).toEqual([10]); // pinned 的 id=1 不在关闭之列
+    expect(h.calls.notifications).toBe(1);
+  });
+
+  it('pinned 成为保留者：激活 pinned、关闭新建标签', async () => {
+    const h = createHarness();
+    h.setWindowTabs([
+      makeTab({ id: 1, index: 0, url: 'https://a.com/', pinned: true, lastAccessed: 300 })
+    ]);
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' })
+    );
+    await h.flush();
+
+    expect(h.calls.activate).toEqual([1]);
+    expect(h.calls.close).toEqual([10]);
+  });
+
+  it('新标签在结算前被用户固定：放弃合并（pinned 即明确要留下）', async () => {
+    const h = createHarness();
+    h.setWindowTabs([makeTab({ id: 1, index: 0, url: 'https://a.com/' })]);
+    h.coordinator.handleCreated(
+      makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete' })
+    );
+    // drain 在途期间用户把新标签固定（pinned 变化伴随 url/status 之外的事件，
+    // 但 latest 快照会被任一 handleUpdated 刷新为最新值）
+    h.coordinator.handleUpdated(
+      10,
+      { status: true },
+      makeTab({ id: 10, index: 1, url: 'https://a.com/', status: 'complete', pinned: true })
+    );
+    await h.flush();
+
+    expect(h.calls.close).toEqual([]); // 新标签不得被合并关闭
+    expect(h.calls.notifications).toBe(0);
+  });
+
   it('开关关闭后不再追踪合并（允许同 URL 多开）', async () => {
     const h = createHarness();
     h.setWindowTabs([makeTab({ id: 1, index: 0, url: 'https://a.com/' })]);

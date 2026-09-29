@@ -99,13 +99,12 @@ export default function App() {
     };
   }, [engine]);
 
-  const hits = useMemo(
-    () => engine.search(query, 20),
-    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
-    // lint 规则看不见它在回调里的用途，故显式豁免。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, query, pinyinTick]
-  );
+  const hits = useMemo(() => {
+    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变。
+    // 回调内显式引用它，让依赖数组语义自足（不写豁免注释）。
+    void pinyinTick;
+    return engine.search(query, 20);
+  }, [engine, query, pinyinTick]);
 
   /**
    * 命中项 → 标签记录的查找表。

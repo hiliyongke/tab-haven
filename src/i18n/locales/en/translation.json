@@ -107,7 +107,18 @@
   "groups": {
     "label": "Domain groups",
     "edit": "Edit group",
-    "namePlaceholder": "Group name"
+    "namePlaceholder": "Group name",
+    "color": {
+      "grey": "Grey",
+      "blue": "Blue",
+      "red": "Red",
+      "yellow": "Yellow",
+      "green": "Green",
+      "pink": "Pink",
+      "purple": "Purple",
+      "cyan": "Cyan",
+      "orange": "Orange"
+    }
   },
   "search": {
     "title": "Search tabs",
@@ -121,7 +132,6 @@
     "historyToggleOff": "Current tabs only",
     "historySection": "History hits (snapshots & archives)",
     "historyHits": "{{count}} history entries",
-    "historyEmpty": "No matching history",
     "historyOpenUrl": "Open this page",
     "historyOpened": "Page opened",
     "historyRestoreSnapshot": "Restore this snapshot",
@@ -448,7 +458,8 @@
     "openFolderHint": "Open all {{count}} items of this folder",
     "sectionTabs": "Switch to tab",
     "current": "Current",
-    "empty": "No matching command or tab"
+    "empty": "No matching command or tab",
+    "tabsTruncated": "Showing the first {{count}} tabs — type to filter more"
   },
   "insights": {
     "title": "Tab insights",
@@ -553,7 +564,11 @@
     "discardNotSafe": "This tab can't be discarded right now.",
     "discardDone": "Tab discarded.",
     "alreadyInFolder": "Already in a folder (deduped).",
-    "addToFolderFailed": "Couldn't save to folder. Please try again."
+    "addToFolderFailed": "Couldn't save to folder. Please try again.",
+    "omniboxDefault": "Type to search tabs, pins and folders",
+    "omniboxOpenFolder": "Open folder: {{name}}",
+    "omniboxOpenPin": "Open pinned: {{name}}",
+    "omniboxSearch": "Search tabs for: {{query}}"
   },
   "about": {
     "title": "About Tabs",

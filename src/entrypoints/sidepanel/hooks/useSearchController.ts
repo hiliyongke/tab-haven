@@ -184,19 +184,21 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     };
   }, [engine]);
 
-  const searchHits = useMemo(
-    () => engine.search(query, Math.max(effectiveTabs.length, 50)),
-    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变，
-    // lint 规则看不见它在回调里的用途，故显式豁免。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, query, effectiveTabs.length, pinyinTick]
-  );
+  const searchHits = useMemo(() => {
+    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变。
+    // 回调内显式引用它，让依赖数组语义自足（不写豁免注释）。
+    void pinyinTick;
+    return engine.search(query, Math.max(effectiveTabs.length, 50));
+  }, [engine, query, effectiveTabs.length, pinyinTick]);
 
   /**
    * 历史命中（P-01）：合成 id 命中后立即解码为结构化信息（快照名/来源/时间/条目）。
    * 解码需要与构造时同序的快照列表，故依赖 snapshots 原引用而非排序副本。
    */
   const historyHits = useMemo(() => {
+    // historyPinyinTick 同 pinyinTick：异步补齐后引用未变，靠 tick 触发重算，
+    // 回调内显式引用它（不写豁免注释）。
+    void historyPinyinTick;
     if (!historyEngine || !isFiltering) return [];
     const raw = historyEngine.search(query, 20);
     const decoded: HistorySearchHit[] = [];
@@ -206,8 +208,6 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
       decoded.push({ ...info, titleSegments: hit.titleSegments });
     }
     return decoded;
-    // historyPinyinTick 同 pinyinTick：异步补齐后引用未变，靠 tick 触发重算。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyEngine, query, isFiltering, snapshots, historyPinyinTick]);
 
   const filteredTabs = useMemo(() => {

@@ -135,6 +135,10 @@ export function syncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<number>
  * 与 syncAutoGroups 不同，**不做 filterStalePlans**：本操作的语义就是
  * 「忽略当前分组状态全部重新聚合」（planRegroup 已把标签视为未分组重新派生），
  * 按真实状态过滤会把已入组标签剔除，恰好破坏重新整理的语义。
+ *
+ * 快速整理创建的组**有意不记入 autoGroupsRepository**：那是「自动分组开关」
+ * 关闭时要解散的记账，而快速整理是用户显式触发的手动操作——若记入，关闭开关
+ * 会把用户亲手整理的组一并解散，属破坏性意外。两条路径的组生命周期各自独立。
  */
 async function runRegroupTempArea(
   ungroupTabIds: readonly number[],

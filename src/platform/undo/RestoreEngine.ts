@@ -97,17 +97,32 @@ export async function restoreTabRecordsDetailed(
         }
 
         if (!record.pinned && record.groupId !== NO_GROUP) {
-          try {
-            await browser.tabs.group({ tabIds: [createdId], groupId: record.groupId });
-          } catch {
-            // 原组已删除：按名重建
-            if (record.groupName) {
-              try {
-                const newGroupId = await browser.tabs.group({ tabIds: [createdId] });
-                await browser.tabGroups.update(newGroupId, { title: record.groupName });
-              } catch {
-                // 组重建失败：保持未分组
-              }
+          // 旧 groupId 在浏览器重启后可能已被复用为无关组：入组前校验组标题，
+          // 与记录不符即视为原组已失效，走按名重建——否则标签会误入他组。
+          // （旧批次无 groupName 时无从校验，保持原样直接尝试入组。）
+          let reuseGroupId = true;
+          if (record.groupName) {
+            try {
+              const existing = await browser.tabGroups.get(record.groupId);
+              reuseGroupId = existing.title === record.groupName;
+            } catch {
+              reuseGroupId = false;
+            }
+          }
+          if (reuseGroupId) {
+            try {
+              await browser.tabs.group({ tabIds: [createdId], groupId: record.groupId });
+            } catch {
+              reuseGroupId = false;
+            }
+          }
+          if (!reuseGroupId && record.groupName) {
+            // 原组已删除或 id 被复用：按名重建
+            try {
+              const newGroupId = await browser.tabs.group({ tabIds: [createdId] });
+              await browser.tabGroups.update(newGroupId, { title: record.groupName });
+            } catch {
+              // 组重建失败：保持未分组
             }
           }
         }

@@ -41,6 +41,9 @@ interface CommandItem {
   run: () => void;
 }
 
+/** 空查询时标签项的挂载上限（含 Favicon 的行有真实渲染成本；输入后过滤路径不受限）。 */
+const EMPTY_QUERY_TAB_LIMIT = 20;
+
 /** listbox 内的单个选项（命令 / 标签通用）：图标（favicon 优先）+ 截断标签 + 选中态。 */
 function PaletteOption({
   cmd,
@@ -137,7 +140,7 @@ export function CommandPalette({
   // 仅在视觉上插入分组标题，让混排的数十项结果可按类别扫读。
   // 文件夹命令（P-04）：每个固定文件夹一个「打开全部条目」命令 ——
   // 「文件夹即空间」的命令面板入口，键入空间名直达。
-  const { folderItems, commandItems, tabItems } = useMemo(() => {
+  const { folderItems, commandItems, tabItems, tabTruncated } = useMemo(() => {
     const folderCmds: CommandItem[] = folders.map((folder) => ({
       id: `folder-${folder.id}`,
       label: folder.name,
@@ -230,12 +233,21 @@ export function CommandPalette({
         run: () => actions.onSwitchTab(tab.id)
       }));
     const q = query.trim().toLowerCase();
-    if (!q) return { folderItems: folderCmds, commandItems: base, tabItems: tabCmds };
+    if (!q) {
+      // 空查询截断：数百标签用户按 ⌘P 不应一次性挂载全部行（含 Favicon）。
+      return {
+        folderItems: folderCmds,
+        commandItems: base,
+        tabItems: tabCmds.slice(0, EMPTY_QUERY_TAB_LIMIT),
+        tabTruncated: tabCmds.length > EMPTY_QUERY_TAB_LIMIT
+      };
+    }
     const match = (c: CommandItem) => c.label.toLowerCase().includes(q);
     return {
       folderItems: folderCmds.filter(match),
       commandItems: base.filter(match),
-      tabItems: tabCmds.filter(match)
+      tabItems: tabCmds.filter(match),
+      tabTruncated: false
     };
   }, [query, tabs, folders, t, actions]);
 
@@ -400,6 +412,12 @@ export function CommandPalette({
               }}
             />
           ))}
+          {tabTruncated && (
+            /* 截断提示：非 option（role=presentation），不进键盘漫游序列。 */
+            <div role="presentation" className="px-4 py-1.5 text-2xs text-gray-400">
+              {t('palette.tabsTruncated', { count: EMPTY_QUERY_TAB_LIMIT })}
+            </div>
+          )}
         </div>
       </dialog>
     </div>,

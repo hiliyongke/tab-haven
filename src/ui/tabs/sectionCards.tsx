@@ -24,6 +24,17 @@ const VIRTUAL_THRESHOLD = 60;
 /** 排序开启时的强制虚拟化阈值（见 RowList 内说明）。 */
 const FORCE_VIRTUAL_THRESHOLD = 120;
 
+/** 跟踪视口高度：虚拟列表高度随面板可用高度自适应，渲染期直读 window.innerHeight 不会在面板尺寸变化后更新。 */
+function useViewportHeight(): number {
+  const [height, setHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const onResize = () => setHeight(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return height;
+}
+
 /**
  * 重复份数查询：键与 `DuplicateIndex.build` 同口径（webComparisonKey）。
  * 用原始 tab.url 查表会因归一化差异（导航中取 pendingUrl、主机小写、去默认端口）
@@ -101,6 +112,7 @@ function RowList({
   // 因超阈值被强制暂停排序时给出行内说明；用户主动关闭排序开关的虚拟化
   // 不提示——那是用户自己的选择，无行为突变。
   const sortPaused = reorderEnabled && tabs.length > FORCE_VIRTUAL_THRESHOLD;
+  const viewportHeight = useViewportHeight();
 
   if (useVirtual) {
     // itemSize 为估算起步值：VirtualRowList 首行挂载后会实测校准，
@@ -112,7 +124,7 @@ function RowList({
       (showUrl ? (density === 'large' ? 16 : 13) : 0);
     // 虚拟列表高度随面板可用高度自适应（上限 720px）：固定 480px 会让大分区
     // 变成「列表里套列表」的第三层滚动区，滚轮停在上面时页面滚不动的误判。
-    const virtualMaxHeight = Math.max(240, Math.min(720, window.innerHeight - 240));
+    const virtualMaxHeight = Math.max(240, Math.min(720, viewportHeight - 240));
     return (
       <>
         {sortPaused && <p className="virtual-notice">{t('tabs.largeListNotice')}</p>}

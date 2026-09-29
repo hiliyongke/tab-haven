@@ -118,7 +118,9 @@ export class TabSyncService {
         querying = false;
         // stopped 时不得再排新的 timer：清理已跑完却仍挂上定时器，
         // 会在 stop 之后发起一次无人接收的孤儿查询。
-        if (pending && !stopped) {
+        // 失败时即使无 pending 也排兜底重试（指数退避，上限 ~1.3s）：否则
+        // 浏览器启动早期打开面板撞上瞬时失败，会停在空态直到下一次标签事件。
+        if (!stopped && (pending || failures > 0)) {
           pending = false;
           const factor = failures > 0 ? Math.min(2 ** failures, MAX_BACKOFF_FACTOR) : 1;
           timer = setTimeout(() => {

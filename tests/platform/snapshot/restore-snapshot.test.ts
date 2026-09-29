@@ -157,7 +157,9 @@ describe('restoreSnapshot（FR-D5.1 加法恢复）', () => {
     await restoreSnapshot(snap, WINDOW_ID);
 
     expect(groupMock).toHaveBeenCalledWith({ tabIds: [expect.any(Number)], groupId: 42 });
-    expect(updateMock).toHaveBeenCalledWith(42, { title: '研究' });
+    // 并入既有同名组时**不**回写快照里的标题/颜色：用户可能在快照之后改过该组，
+    // 旧 meta 会覆盖用户的后续修改。
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });
 

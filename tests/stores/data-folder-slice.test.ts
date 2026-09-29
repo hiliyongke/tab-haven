@@ -285,6 +285,21 @@ describe('openSavedItem 优先级链', () => {
     expect(mocks.activateTab).not.toHaveBeenCalledWith(9);
   });
 
+  it('排除固定（pinned）标签：与 addTabsToFolder / Reconcile 同一口径', async () => {
+    const { itemIds } = await seedFolder('工作', [{ url: 'https://a.com/' }]);
+    mocks.queryCurrentWindowTabs.mockResolvedValueOnce([
+      tab({ id: 7, url: 'https://a.com/', pinned: true })
+    ]);
+
+    await useDataStore.getState().openSavedItem({
+      id: itemIds[0]!,
+      url: 'https://a.com/'
+    });
+
+    // pinned 标签不服务固定条目绑定（精确匹配不得命中它）
+    expect(mocks.activateTab).not.toHaveBeenCalledWith(7);
+  });
+
   it('无匹配时新建标签，豁免早于导航，并写入绑定', async () => {
     const { itemIds } = await seedFolder('工作', [{ url: 'https://a.com/' }]);
     mocks.queryCurrentWindowTabs.mockResolvedValueOnce([tab({ id: 1, windowId: 11 })]);

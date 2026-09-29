@@ -66,9 +66,6 @@ export function HistoryHitsSection({
           {t('search.historyHits', { count: hits.length })}
         </span>
       </header>
-      {hits.length === 0 && (
-        <p className="px-2 py-1 text-2xs text-gray-400">{t('search.historyEmpty')}</p>
-      )}
       <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100 bg-surface">
         {hits.map((hit) => (
           <li

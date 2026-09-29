@@ -142,7 +142,8 @@ export function pinFromTab(input: {
   const identity = pinIdentity(input.url);
   if (!identity) return null;
   return {
-    id: crypto.randomUUID(),
+    // 全域 id 唯一口径是 newId（含非安全上下文退化路径），不直用 crypto.randomUUID。
+    id: newId('pin'),
     identity,
     url: input.url,
     title: input.title,
