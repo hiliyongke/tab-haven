@@ -4,6 +4,7 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 import { canSafelyDiscardTab } from '@/core/tab-types';
 import { createFolderItem } from '@/core/fixed/FolderOps';
 import { mapTab } from '@/platform/tabs';
+import { applyAddItem, mutateReadLater } from '@/platform/readlater/readLaterOps';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
 import { FOLDERS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { logDegraded } from '@/platform/diagnostics';
@@ -16,8 +17,10 @@ export const MENU_IDS = {
   pageSearchSite: 'th:page:search-site',
   pageFolderParent: 'th:page:folder-parent',
   linkFolderParent: 'th:link:folder-parent',
+  pageReadLater: 'th:page:read-later',
   tabDiscard: 'th:tab:discard',
   tabSearchSite: 'th:tab:search-site',
+  tabReadLater: 'th:tab:read-later',
   actionOpenPanel: 'th:action:open-panel',
   actionDiscardInactive: 'th:action:discard-inactive',
   actionSettings: 'th:action:settings'
@@ -30,6 +33,7 @@ type MenuMessageKey =
   | 'menuSearchSite'
   | 'menuAddPageToFolder'
   | 'menuAddLinkToFolder'
+  | 'menuReadLater'
   | 'menuDiscardTab'
   | 'menuOpenPanel'
   | 'menuDiscardInactive'
@@ -96,6 +100,11 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
         });
       }
     }
+    await menus.create({
+      id: MENU_IDS.pageReadLater,
+      title: menuText('menuReadLater'),
+      contexts: ['page']
+    });
     // 链接右键
     if (folders.length > 0) {
       await menus.create({
@@ -123,6 +132,11 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
       title: menuText('menuSearchSite'),
       contexts: ['tab']
     });
+    await menus.create({
+      id: MENU_IDS.tabReadLater,
+      title: menuText('menuReadLater'),
+      contexts: ['tab']
+    });
     // 工具栏图标右键
     await menus.create({
       id: MENU_IDS.actionOpenPanel,
@@ -140,6 +154,19 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
       contexts: ['action']
     });
   });
+}
+
+/** 把标签加入稍后读（background 右键入口；去重与重暂存语义见 platform/readlater）。 */
+export async function addTabToReadLater(entry: {
+  url: string;
+  title: string;
+  favIconUrl?: string;
+}): Promise<boolean> {
+  // 走 platform 层而非面板 store：SW 不该依赖 React/zustand；
+  // 面板侧由 readLaterRepository.watch 自动感知刷新。
+  const ok = await mutateReadLater((current) => applyAddItem(current, entry));
+  if (!ok) notifyUser('Tabs', t('bg.readLaterFailed'));
+  return ok;
 }
 
 /** 把单个条目加入固定文件夹（URL 全局唯一；绑定由面板 reconcile 自动建立）。 */

@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { DEFAULT_SETTINGS } from '@/core/schema/models';
+import { DEFAULT_SETTINGS, EXPORT_FILE_VERSION } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
-import { pinsRepository, snapshotsRepository } from '@/platform/storage/repositories';
+import {
+  pinsRepository,
+  readLaterRepository,
+  snapshotsRepository
+} from '@/platform/storage/repositories';
 import {
   COLLAPSE_RMW_LOCK,
   FOLDERS_RMW_LOCK,
@@ -148,6 +152,38 @@ describe('dataStore 固定空间事务', () => {
     await expect(useDataStore.getState().importData({ format: 'bad' })).rejects.toThrow(
       'invalid-tabs-export'
     );
+  });
+
+  it('importData：版本不匹配的备份单独报错（UI 据此给出可操作提示）', async () => {
+    await expect(
+      useDataStore.getState().importData({
+        format: 'tabs.export',
+        version: EXPORT_FILE_VERSION - 1,
+        exportedAt: new Date().toISOString(),
+        fixedFolders: [],
+        persistentPins: [],
+        siteCollapse: [],
+        settings: DEFAULT_SETTINGS
+      })
+    ).rejects.toThrow('export-version-mismatch');
+  });
+
+  it('exportData/importData：稍后读随备份迁移（v2 新分区）', async () => {
+    await readLaterRepository.write([
+      { id: 'rl-1', url: 'https://later.com/', title: 'Later', addedAt: 1 }
+    ]);
+
+    const file = await useDataStore.getState().exportData();
+    expect(file.version).toBe(EXPORT_FILE_VERSION);
+    expect(file.readLater).toHaveLength(1);
+
+    // 清空后导入：分区应被还原
+    await readLaterRepository.write([]);
+    await useDataStore.getState().importData(file);
+
+    expect((await readLaterRepository.read()).map((item) => item.url)).toEqual([
+      'https://later.com/'
+    ]);
   });
 
   it('importData：部分分区写入失败时整体回滚（不留下半套数据）', async () => {

@@ -13,13 +13,13 @@ disable: false
 
 ## 第一步：查复用（禁止跳过）
 
-| 域 | 路径 | 现成组件 |
-| --- | --- | --- |
-| 通用 | `src/ui/common/` | Button、IconButton、TextField、Select、Toggle、Icon、Favicon、EmptyState、StatusToast、StatusBadges、SectionHead、RowItem、RowActions、ErrorBoundary、CommandPalette、OnboardingTour、SettingsSync |
-| 弹窗 | `src/ui/dialog/Dialog.tsx` | Dialog、ConfirmDialog |
-| 拖拽 | `src/ui/dnd/DndRoot.tsx` | DndRoot（dnd-kit 封装） |
-| 列表 | `src/ui/tabs/VirtualRowList.tsx` | 虚拟滚动长列表 |
-| 业务域 | `src/ui/tabs|fixed|search/` | TabRow、FolderRow、PinnedTile、SearchBar 等 |
+| 域     | 路径                             | 现成组件                                                                                                                                                                                           |
+| ------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 通用   | `src/ui/common/`                 | Button、IconButton、TextField、Select、Toggle、Icon、Favicon、EmptyState、StatusToast、StatusBadges、SectionHead、RowItem、RowActions、ErrorBoundary、CommandPalette、OnboardingTour、SettingsSync |
+| 弹窗   | `src/ui/dialog/Dialog.tsx`       | Dialog、ConfirmDialog                                                                                                                                                                              |
+| 拖拽   | `src/ui/dnd/DndRoot.tsx`         | DndRoot（dnd-kit 封装）                                                                                                                                                                            |
+| 列表   | `src/ui/tabs/VirtualRowList.tsx` | 虚拟滚动长列表                                                                                                                                                                                     |
+| 业务域 | `src/ui/tabs                     | fixed                                                                                                                                                                                              | search/` | TabRow、FolderRow、PinnedTile、SearchBar 等 |
 
 行为与需求有出入时优先扩展现成组件（加 props），不新开近似组件。
 

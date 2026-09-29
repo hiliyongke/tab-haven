@@ -28,6 +28,7 @@ import { UndoHistoryPanel } from '@/ui/common/UndoHistoryPanel';
 import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
 import { OnboardingTour } from '@/ui/common/OnboardingTour';
 import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
+import { SpaceStrip } from '@/ui/common/SpaceStrip';
 import { DndRoot } from '@/ui/dnd/DndRoot';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { FixedArea } from '@/ui/fixed/FixedArea';
@@ -40,6 +41,14 @@ import { useSearchController } from '@/entrypoints/sidepanel/hooks/useSearchCont
 import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
 import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
+import { useSpaces } from '@/entrypoints/sidepanel/hooks/useSpaces';
+import { useOtherWindows } from '@/entrypoints/sidepanel/hooks/useOtherWindows';
+import { OtherWindowsSection } from '@/ui/tabs/OtherWindowsSection';
+import { ReadLaterSection } from '@/ui/readlater/ReadLaterSection';
+import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
+import type { Snapshot } from '@/core/schema/models';
+import { useReadLaterStore } from '@/stores/readLaterStore';
+import type { ReadLaterItem } from '@/core/schema/models';
 import { useListNavigation } from '@/entrypoints/sidepanel/hooks/useListNavigation';
 import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
@@ -138,6 +147,62 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  // 工作空间切换（C1）：编排逻辑抽在 hook，App 只消费结果。
+  const { spaces, activeSpaceId, switching, switchSpace, exitSpace, saveAsSpace } = useSpaces();
+  // 其他窗口分段（A4）的 hook 在 useSearchController 之后调用（依赖 isFiltering）。
+  const handleOtherWindowFocus = useCallback((tab: TabRecord) => {
+    void activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
+  }, []);
+  const handleOtherWindowClose = useCallback((tab: TabRecord) => {
+    // 走统一撤销批次：误关其他窗口标签与误关当前标签同一找回体验。
+    void useUndoStore.getState().closeWithUndo([tab], [tab.id]);
+  }, []);
+
+  // 历史命中恢复的待确认快照（与快照面板/命令面板同一闸门）。
+  const [pendingHistoryRestore, setPendingHistoryRestore] = useState<Snapshot | null>(null);
+  // 稍后读（C3）：分区数据与操作。
+  const readLaterItems = useReadLaterStore((state) => state.items);
+  const handleReadLaterMarkRead = useCallback((item: ReadLaterItem) => {
+    void useReadLaterStore.getState().markRead(item.id);
+  }, []);
+  const handleReadLaterMarkAllRead = useCallback(() => {
+    void useReadLaterStore.getState().markAllRead();
+  }, []);
+  const handleReadLaterRemove = useCallback((item: ReadLaterItem) => {
+    void useReadLaterStore.getState().removeItem(item.id);
+  }, []);
+  /** 归档过期未读：先进快照（不丢数据）再清出暂存区。 */
+  const handleReadLaterArchiveStale = useCallback(
+    (stale: readonly ReadLaterItem[]) => {
+      if (stale.length === 0) return;
+      void (async () => {
+        try {
+          const count = await useSnapshotStore.getState().archiveItems(
+            t('readlater.archiveName'),
+            stale.map((item) => ({
+              url: item.url,
+              title: item.title,
+              favIconUrl: item.favIconUrl,
+              pinned: false,
+              muted: false
+            }))
+          );
+          // 归档成功但清出暂存区失败：必须提示（条目残留，再次点击会重复归档）。
+          const removed = await useReadLaterStore
+            .getState()
+            .removeItems(stale.map((item) => item.id));
+          if (!removed) {
+            notifyError(t('errors.operationFailed'));
+            return;
+          }
+          notify(t('readlater.archived', { count }));
+        } catch {
+          notifyError(t('errors.operationFailed'));
+        }
+      })();
+    },
+    [notify, notifyError, t]
+  );
   // 引导延迟挂载：让用户先看到真实列表一眼，再弹出介绍（边看边学）。
   const [showTour, setShowTour] = useState(false);
   // 数据初始化自动重试仍失败：从骨架屏转为错误态（说明 + 手动重试），
@@ -282,11 +347,13 @@ export default function App() {
     discardBatch: showDiscardUndoToast
   });
 
-  // 面板全局快捷键：⌘/Ctrl + P 命令面板、+ J 定位激活标签、+ K 搜索。
+  // 面板全局快捷键：⌘/Ctrl + P 命令面板、+ J 定位激活标签、+ K 搜索、+ Z 撤销最近关闭。
   useGlobalHotkeys({
     openPalette,
     locateActive: locateActiveViaRef,
-    focusSearch: focusSearchInput
+    focusSearch: focusSearchInput,
+    // undo 内部有 undoInFlight 互斥与空栈静默，键盘连按安全。
+    undoLast: () => void useUndoStore.getState().undo()
   });
 
   // 同步服务：事件 → 快照 → store 订阅自动重渲染。
@@ -309,6 +376,7 @@ export default function App() {
     });
     void loadUndo();
     void useSnapshotStore.getState().load();
+    void useReadLaterStore.getState().load();
     const stopSync = startTabSync();
     return () => {
       cancelled = true;
@@ -796,6 +864,10 @@ export default function App() {
     [notify, notifyError, t]
   );
 
+  // 其他窗口分段（A4）：独立数据源，不进 tabStore（契约见 hook 注释）。
+  // 开关关闭或搜索态时不查询、不订阅（搜索态由历史命中区接管回溯语义）。
+  const { otherWindows } = useOtherWindows(settings.showOtherWindows && !isFiltering);
+
   // 命令面板动作集合（⌘P）：复用既有 handler。必须 memo 化：面板打开期间每次
   // 标签快照都重建 actions 引用，会让 CommandPalette 的 commands 重算、索引钳制与
   // scrollIntoView effect 反复执行。
@@ -823,6 +895,22 @@ export default function App() {
           .saveSpace(t('snapshots.space'))
           .then(() => notify(t('snapshots.saved')))
           .catch(() => notifyError(t('errors.operationFailed'))),
+      onReadLaterActive: () => {
+        const active = useTabStore.getState().tabs.find((tab) => tab.active);
+        if (!active?.url) return;
+        void useReadLaterStore
+          .getState()
+          .addItem({
+            url: active.url,
+            title: active.title ?? active.url,
+            favIconUrl: active.favIconUrl
+          })
+          .then((ok) => {
+            // 落盘失败必须如实反馈：报「已加入」而重启即丢，比不提示更糟。
+            if (ok) notify(t('readlater.added'));
+            else notifyError(t('errors.operationFailed'));
+          });
+      },
       onArchiveWindow: () =>
         void useSnapshotStore
           .getState()
@@ -856,18 +944,26 @@ export default function App() {
     [notify, notifyError, t]
   );
 
-  /** 历史命中「恢复该快照」：复用快照面板整份恢复管线与提示文案。 */
+  /** 历史命中「恢复该快照」：恢复不在撤销栈覆盖范围，同样先弹影响面确认。 */
   const handleHistoryRestoreSnapshot = useCallback(
     (snapshotId: string, tabCount: number) => {
       if (tabCount === 0) {
-        notify(t('snapshots.emptySnapshot'));
+        notify(t('snapshots.empty'));
         return;
       }
-      void useSnapshotStore
+      const snapshot = useSnapshotStore
         .getState()
-        .restore(snapshotId)
-        .then((count) => notify(t('snapshots.restored', { count })))
-        .catch(() => notifyError(t('errors.operationFailed')));
+        .snapshots.find((entry) => entry.id === snapshotId);
+      // 快照已不在列表（被删除）时无从给出影响面，直接按原路径恢复。
+      if (!snapshot) {
+        void useSnapshotStore
+          .getState()
+          .restore(snapshotId)
+          .then((count) => notify(t('snapshots.restored', { count })))
+          .catch(() => notifyError(t('errors.operationFailed')));
+        return;
+      }
+      setPendingHistoryRestore(snapshot);
     },
     [notify, notifyError, t]
   );
@@ -929,6 +1025,15 @@ export default function App() {
             </button>
           </div>
         )}
+        {/* 工作空间切换条（C1）：无空间快照时整条隐藏。 */}
+        <SpaceStrip
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          switching={switching}
+          onSwitch={switchSpace}
+          onExit={exitSpace}
+          onSaveAs={saveAsSpace}
+        />
         {settings.showPinnedStrip && <PinnedStrip />}
         {/* 浏览器原生固定标签区 — 同样受 showPinnedStrip 控制，与顶部固定空间条联动隐藏，避免
           用户关闭开关后磁贴区仍残留造成"开关没作用"的困惑。pinnedSection 本身为空（用户没原生
@@ -975,6 +1080,17 @@ export default function App() {
           onWheel={markUserScroll}
           onTouchMove={markUserScroll}
         >
+          {/* 稍后读分区（C3）：与「当前有几个标签」正交，故放在状态三元之外
+              （数据与搜索态守卫即可）；位置在主体列表之前——先把存的看了。 */}
+          {dataReady && !isFiltering && (
+            <ReadLaterSection
+              items={readLaterItems}
+              onMarkRead={handleReadLaterMarkRead}
+              onMarkAllRead={handleReadLaterMarkAllRead}
+              onRemove={handleReadLaterRemove}
+              onArchiveStale={handleReadLaterArchiveStale}
+            />
+          )}
           {!dataReady ? (
             loadFailed ? (
               /* 自动重试仍失败：给出说明与手动出口，不留无出口的骨架屏 */
@@ -988,24 +1104,35 @@ export default function App() {
           ) : isFiltering && filteredTabs.length === 0 ? (
             <NoSearchResults onClear={() => setQuery('')} />
           ) : (
-            <SectionList
-              sections={restSections}
-              collapsedGroups={displayCollapsedGroups}
-              collapsedSites={displayCollapsedSites}
-              duplicateCounts={duplicateCounts}
-              activeTabId={activeTabId}
-              splitPartners={partners}
-              reorderEnabled={settings.tabOrderSync}
-              showUrl={settings.showUrl}
-              autoScrollActive={settings.autoScrollActive && !userScrollActive}
-              closeOnMiddleClick={settings.closeOnMiddleClick}
-              density={settings.density}
-              rowActionsVisible={settings.rowActionsVisible}
-              showSplitBadges={settings.showSplitBadges}
-              highlightedIds={highlightedIds}
-              searchActiveTabId={selectedNavTabId}
-              noCacheTabIds={noCacheTabIds}
-              callbacks={sectionCallbacks}
+            <>
+              <SectionList
+                sections={restSections}
+                collapsedGroups={displayCollapsedGroups}
+                collapsedSites={displayCollapsedSites}
+                duplicateCounts={duplicateCounts}
+                activeTabId={activeTabId}
+                splitPartners={partners}
+                reorderEnabled={settings.tabOrderSync}
+                showUrl={settings.showUrl}
+                autoScrollActive={settings.autoScrollActive && !userScrollActive}
+                closeOnMiddleClick={settings.closeOnMiddleClick}
+                density={settings.density}
+                rowActionsVisible={settings.rowActionsVisible}
+                showSplitBadges={settings.showSplitBadges}
+                highlightedIds={highlightedIds}
+                searchActiveTabId={selectedNavTabId}
+                noCacheTabIds={noCacheTabIds}
+                callbacks={sectionCallbacks}
+              />
+            </>
+          )}
+          {/* A4 其他窗口分段：非搜索态展示（搜索态由历史命中区接管回溯语义），
+              主体列表之下、新增标签条之上。 */}
+          {!isFiltering && settings.showOtherWindows && (
+            <OtherWindowsSection
+              otherWindows={otherWindows}
+              onFocusTab={handleOtherWindowFocus}
+              onCloseTab={handleOtherWindowClose}
             />
           )}
         </div>
@@ -1059,6 +1186,21 @@ export default function App() {
               setShowSnapshots(true);
             }}
             onClose={() => setShowHistory(false)}
+          />
+        )}
+        {pendingHistoryRestore !== null && (
+          <RestoreConfirmDialog
+            snapshot={pendingHistoryRestore}
+            onConfirm={() => {
+              const snapshot = pendingHistoryRestore;
+              setPendingHistoryRestore(null);
+              void useSnapshotStore
+                .getState()
+                .restore(snapshot.id)
+                .then((count) => notify(t('snapshots.restored', { count })))
+                .catch(() => notifyError(t('errors.operationFailed')));
+            }}
+            onCancel={() => setPendingHistoryRestore(null)}
           />
         )}
         {showSnapshots && (

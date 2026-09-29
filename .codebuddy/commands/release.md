@@ -1,6 +1,6 @@
 ---
 description: 发布前串联流程：门禁全绿→版本一致性→双变体构建→隐私审计→打包清单汇报
-argument-hint: "[版本号，如 1.2.0]"
+argument-hint: '[版本号，如 1.2.0]'
 allowed-tools: Read, Grep, Glob, ListDir, Edit, Bash
 ---
 

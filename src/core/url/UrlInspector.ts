@@ -73,6 +73,21 @@ function toComparisonKey(raw: string): string {
  *  3. 已提交为 web 页 → web；
  *  4. 其余（内部页/无法解析）→ internal。
  */
+/**
+ * 提取 URL 的主机名；解析失败返回空串。
+ *
+ * 唯一事实来源在此：此前 background/shared 与 ui/tabs/OtherWindowsSection
+ * 各写一份 `new URL(url).hostname`，两处口径容易漂移。
+ */
+export function hostnameOf(url: string | undefined): string {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
 export function inspectUrl(
   committedUrl: string | undefined,
   pendingUrl: string | undefined

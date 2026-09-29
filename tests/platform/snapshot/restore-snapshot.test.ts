@@ -2,7 +2,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
-import { collectSnapshotTabs, restoreSnapshot } from '@/platform/snapshot/snapshots';
+import {
+  collectSnapshotTabs,
+  replaceSpaceSnapshot,
+  restoreSnapshot
+} from '@/platform/snapshot/snapshots';
+import { snapshotsRepository } from '@/platform/storage/repositories';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 
 /**
@@ -216,5 +221,76 @@ describe('collectSnapshotTabs（采集端）', () => {
       groupTitle: '研究',
       groupColor: 'blue'
     });
+  });
+});
+
+describe('replaceSpaceSnapshot（空间原地更新，C1）', () => {
+  it('把最新现场写回目标空间快照：tabs/tabCount/createdAt 更新，id 与 name 不变', async () => {
+    const space: Snapshot = {
+      ...snapshotOf([snapTab({ url: 'https://old.com/' })]),
+      id: 'space-1',
+      name: '工作',
+      origin: 'space'
+    };
+    const other: Snapshot = {
+      ...snapshotOf([snapTab({ url: 'https://keep.com/' })]),
+      id: 'snap-2',
+      name: '普通快照',
+      origin: 'manual'
+    };
+    await snapshotsRepository.write([space, other]);
+
+    const result = await replaceSpaceSnapshot(
+      'space-1',
+      [snapTab({ url: 'https://new.com/' }), snapTab({ url: 'https://new2.com/' })],
+      7
+    );
+
+    expect(result.replaced).toBe(true);
+    const next = result.snapshots;
+    const updated = next.find((snapshot) => snapshot.id === 'space-1')!;
+    expect(updated.origin).toBe('space');
+    expect(updated.name).toBe('工作'); // 名称等身份字段保持
+    expect(updated.tabCount).toBe(2);
+    expect(updated.tabs.map((tab) => tab.url)).toEqual(['https://new.com/', 'https://new2.com/']);
+    expect(updated.windowId).toBe(7);
+    // 其余快照不受影响，也不新增条目
+    expect(next).toHaveLength(2);
+    expect(next.find((snapshot) => snapshot.id === 'snap-2')!.tabs[0]!.url).toBe(
+      'https://keep.com/'
+    );
+  });
+
+  it('目标不是 space 快照：幂等返回原列表且 replaced=false', async () => {
+    await snapshotsRepository.write([{ ...snapshotOf([]), id: 'manual-1', origin: 'manual' }]);
+    const before = await snapshotsRepository.read();
+
+    const result = await replaceSpaceSnapshot('manual-1', [snapTab({ url: 'https://x.com/' })], 1);
+
+    expect(result.replaced).toBe(false);
+    expect(result.snapshots).toEqual(before); // manual 快照不得被原地改写
+  });
+
+  it('目标空间已不存在：replaced=false（调用方据此中止切换）', async () => {
+    await snapshotsRepository.write([{ ...snapshotOf([]), id: 'space-1', origin: 'space' }]);
+
+    const result = await replaceSpaceSnapshot('deleted', [snapTab({ url: 'https://x.com/' })], 1);
+
+    expect(result.replaced).toBe(false);
+  });
+
+  it('现场为空时不回写（保留原空间内容，避免抹成空现场）', async () => {
+    const space: Snapshot = {
+      ...snapshotOf([snapTab({ url: 'https://old.com/' })]),
+      id: 'space-1',
+      origin: 'space'
+    };
+    await snapshotsRepository.write([space]);
+
+    const result = await replaceSpaceSnapshot('space-1', [], 1);
+
+    expect(result.replaced).toBe(false);
+    // 原内容仍在（用户手工关光标签后切空间不会丢现场）
+    expect(result.snapshots.find((snapshot) => snapshot.id === 'space-1')!.tabCount).toBe(1);
   });
 });

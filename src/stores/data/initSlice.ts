@@ -46,6 +46,7 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
           // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）。
           // 开关关闭时不拉取——「不上传」与「不下载」必须同开同关，
           // 否则关掉同步的用户在换机时仍会被旧镜像回灌。
+          let mirrorParseOk = true;
           const mirror = await syncMirror.pull();
           if (mirror) {
             // 镜像来自浏览器账号通道，属外部可控输入（与备份文件同级）：集合必须
@@ -57,6 +58,9 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
               .safeParse(mirror.folders);
             const parsedPins = PersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
             const parsedSettings = SettingsSchema.safeParse(mirror.settings);
+            // 单边解析失败（如未来版本 schema 偏斜）：该分区跳过恢复，且不置 seeded ——
+            // 置位会让它永久失去重试机会（与 stores/data/mirrorRestore 同口径）。
+            mirrorParseOk = parsedFolders.success && parsedPins.success && parsedSettings.success;
             if (parsedFolders.success && folders.length === 0)
               effectiveFolders = parsedFolders.data;
             if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
@@ -108,8 +112,9 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
           }
           // seeded 必须在恢复数据全部落盘成功之后写：若先置位而回写失败，
           // 下次启动不再拉取镜像，新设备的恢复数据永久丢失。pull 为 null
-          // （通道不可用/镜像损坏）时同样不置位——保持下次启动重试的机会。
-          if (mirror && restoreWritesOk) await ctx.repos.seeded.write(true);
+          // （通道不可用/镜像损坏）或镜像解析失败时同样不置位——保持下次
+          // 启动重试的机会。
+          if (mirror && restoreWritesOk && mirrorParseOk) await ctx.repos.seeded.write(true);
         }
         ctx.set({
           folders: effectiveFolders,

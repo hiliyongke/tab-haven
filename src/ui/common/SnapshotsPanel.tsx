@@ -8,6 +8,7 @@ import { snapshotDiff } from '@/core/snapshot/snapshotDiff';
 import { computeInsights } from '@/core/insights/tabInsights';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { ConfirmDialog, DialogShell } from '@/ui/dialog/Dialog';
+import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
 import { SnapshotRow } from '@/ui/common/SnapshotRow';
@@ -59,6 +60,9 @@ export function SnapshotsPanel({
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  /** 待恢复确认的快照 id：恢复会一次性新建整批标签且不在撤销栈覆盖范围内
+      （撤销栈只覆盖「关闭」），决策前必须看到影响面摘要。 */
+  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
   /** 正在恢复的快照 id：恢复会新建大量标签（耗时数百 ms），期间禁用该行按钮防双击并发。 */
   const [restoringId, setRestoringId] = useState<string | null>(null);
   /** 正在删除的快照 id：删除确认按钮连点防护（与 restoringId 同口径）。 */
@@ -226,6 +230,15 @@ export function SnapshotsPanel({
     } catch {
       notifyError(t('errors.operationFailed'));
     }
+  };
+
+  /** 行内「恢复」入口：先弹影响面确认（N 标签 + M 组），确认后才真正恢复。 */
+  const requestRestore = (id: string, tabCount: number) => {
+    if (tabCount === 0) {
+      notify(t('snapshots.empty'));
+      return;
+    }
+    setConfirmRestoreId(id);
   };
 
   const handleRestore = async (id: string, tabCount: number) => {
@@ -602,7 +615,7 @@ export function SnapshotsPanel({
                           setEditingName('');
                         }}
                         onToggleDetail={toggleDetail}
-                        onRestore={handleRestore}
+                        onRestore={requestRestore}
                         onDelete={handleDelete}
                         restoring={restoringId === snap.id}
                         diff={detailId === snap.id ? detailDiff : undefined}
@@ -645,6 +658,21 @@ export function SnapshotsPanel({
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
+      {confirmRestoreId !== null &&
+        (() => {
+          const snap = snapshots.find((entry) => entry.id === confirmRestoreId);
+          if (!snap) return null;
+          return (
+            <RestoreConfirmDialog
+              snapshot={snap}
+              onConfirm={() => {
+                setConfirmRestoreId(null);
+                void handleRestore(snap.id, snap.tabCount);
+              }}
+              onCancel={() => setConfirmRestoreId(null)}
+            />
+          );
+        })()}
     </DialogShell>
   );
 }

@@ -43,6 +43,10 @@
     "message": "将链接加入收藏夹",
     "description": "右键菜单父项：将链接加入某个固定文件夹"
   },
+  "menuReadLater": {
+    "message": "稍后读",
+    "description": "页面/标签栏右键菜单项：把当前页面加入稍后读"
+  },
   "menuDiscardTab": {
     "message": "休眠此标签",
     "description": "标签栏右键菜单项"

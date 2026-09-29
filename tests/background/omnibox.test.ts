@@ -126,6 +126,49 @@ describe('queryOmnibox 建议生成', () => {
 
     expect(out[0]!.description).toContain('A &amp; B &gt; C');
   });
+
+  it('有输入时命中已打开标签并置顶（tab: 直达），当前激活标签排最后', async () => {
+    await foldersRepository.write([createFolder('Work')]);
+    await pinsRepository.write([]);
+    // fake-browser 的 tabs.query 对 windowType 过滤不可靠，与 tabs-adapters 测试
+    // 同口径直接打桩返回值。
+    const raw = (id: number, active: boolean, lastAccessed: number) => ({
+      id,
+      windowId: 1,
+      index: id,
+      title: `Work tab ${id}`,
+      url: `https://work.example.com/${id}`,
+      active,
+      pinned: false,
+      incognito: false,
+      groupId: -1,
+      lastAccessed
+    });
+    Object.assign(fakeBrowser.tabs, {
+      query: vi.fn(async () => [raw(1, false, 100), raw(2, true, 200)])
+    });
+
+    const out = await queryOmnibox('work.example');
+
+    const tabSuggestions = out.filter((s) => s.content.startsWith('tab:'));
+    expect(tabSuggestions).toHaveLength(2);
+    // 直达建议先于文件夹与搜索项（地址栏高频意图是「切回去」）
+    expect(out[0]!.content).toBe('tab:1');
+    // 用户正看着的激活标签排最后
+    expect(tabSuggestions.at(-1)!.content).toBe('tab:2');
+    // 描述语言随浏览器语言回退（测试环境 en），只断言携带标签标题
+    expect(tabSuggestions[0]!.description).toContain('Work tab 1');
+  });
+
+  it('无输入时不给标签建议（避免空态噪音）', async () => {
+    await foldersRepository.write([]);
+    await pinsRepository.write([]);
+    await fakeBrowser.tabs.create({ url: 'https://a.com/', active: false });
+
+    const out = await queryOmnibox('');
+
+    expect(out.some((s) => s.content.startsWith('tab:'))).toBe(false);
+  });
 });
 
 describe('handleOmniboxEnter 回车路径', () => {
@@ -182,5 +225,24 @@ describe('handleOmniboxEnter 回车路径', () => {
     await handleOmniboxEnter('pin:https://ok.com/', 'newForegroundTab');
 
     expect(create.mock.calls[0]![0]).toMatchObject({ active: true });
+  });
+
+  it('tab: 回车激活对应标签（先聚焦其所在窗口）', async () => {
+    const created = await fakeBrowser.tabs.create({ url: 'https://a.com/', active: false });
+    const updateSpy = vi.spyOn(fakeBrowser.tabs, 'update');
+    const windowSpy = vi.spyOn(fakeBrowser.windows, 'update');
+
+    await handleOmniboxEnter(`tab:${created.id}`);
+
+    expect(windowSpy).toHaveBeenCalledWith(created.windowId, { focused: true });
+    expect(updateSpy).toHaveBeenCalledWith(created.id, { active: true });
+  });
+
+  it('tab: 指向已关闭的标签：不抛错、不激活，兜底开面板', async () => {
+    const updateSpy = vi.spyOn(fakeBrowser.tabs, 'update');
+
+    await expect(handleOmniboxEnter('tab:99999')).resolves.toBeUndefined();
+
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 });

@@ -44,6 +44,8 @@ export const DEFAULT_UNDO_STACK_LIMIT = 10;
 export const SNAPSHOT_TABS_LIMIT = 1_000;
 /** 快照族总条数上限（含归档与自动快照）。 */
 export const SNAPSHOTS_LIMIT = 200;
+/** 稍后读条目数上限。 */
+export const READLATER_LIMIT = 200;
 
 export const FixedFolderItemSchema = z.object({
   id: z.string(),
@@ -215,7 +217,14 @@ export const SettingsSchema = z.object({
    * 与「本地优先」的定位相悖，且此前无任何开关、用户完全无感知。
    * 关闭时 `dataStore` 不调度镜像，并在关闭动作发生时清除已上传的镜像。
    */
-  syncMirrorEnabled: z.boolean().default(false)
+  syncMirrorEnabled: z.boolean().default(false),
+  /**
+   * 当前激活的工作空间（origin=space 快照的 id；缺省 = 未激活，面板为「全部标签」态）。
+   * 仅是 id 引用：空间被删除后该值失效，消费方须按「找不到即视为未激活」容错。
+   */
+  activeSpaceId: z.string().optional(),
+  /** 面板展示其他窗口的分段（只读 + 聚焦/关闭，当前窗口的全部交互不变）。 */
+  showOtherWindows: z.boolean().default(true)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -287,6 +296,22 @@ export const SnapshotTabSchema = z.object({
 });
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
 
+/**
+ * 稍后读条目：把标签暂存到独立分区（与固定文件夹正交——稍后读是「一次性消费」
+ * 语义：读完成灰、7 天未读提示归档进快照），纯本地持久化、不参与同步镜像。
+ */
+export const ReadLaterItemSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  title: z.string(),
+  favIconUrl: z.string().optional(),
+  /** 暂存时间戳（ms）。 */
+  addedAt: z.number(),
+  /** 标记已读的时间戳（ms）；缺省 = 未读。 */
+  readAt: z.number().optional()
+});
+export type ReadLaterItem = z.infer<typeof ReadLaterItemSchema>;
+
 /** 会话快照（命名快照 + 关窗自动保存），本地优先、零账号。 */
 export const SnapshotSchema = z
   .object({
@@ -315,14 +340,18 @@ export type Snapshot = z.infer<typeof SnapshotSchema>;
  *
  * 演进方式：新增 version 常量 → 保留旧结构为 `ExportFileV{n}Schema` →
  * `parseExportFile` 按 version 分发并把旧结构升到最新结构。
+ *
+ * v2：新增 readLater（稍后读）分区。字段是纯新增且旧版会忽略未知键，但版本号必须
+ * 递增——版本号要唯一标识格式，否则同一 v1 会存在「有/无 readLater」两种形态，
+ * 导入端无法按版本分发，只能靠猜字段（正是本版本号想消灭的兼容泥潭）。
  */
-export const EXPORT_FILE_VERSION = 1;
+export const EXPORT_FILE_VERSION = 2;
 
 /**
  * 导出文件格式。
  *
- * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族
- * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 轻量空间）。
+ * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族 + 稍后读
+ * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区）。
  *
  * `version` 缺省时按 1 处理（容错未带版本号的早期备份）；
  * 未来版本会被字面量拒绝 —— 旧版扩展不认识新版数据结构，
@@ -336,8 +365,10 @@ export const ExportFileSchema = z.object({
   persistentPins: z.array(PersistentPinSchema).max(PINS_LIMIT),
   siteCollapse: SiteCollapseSchema,
   settings: SettingsSchema,
-  /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 轻量空间。 */
-  snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
+  /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区。 */
+  snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([]),
+  /** 稍后读分区（v2 起纳入备份；老备份缺省为空数组）。 */
+  readLater: z.array(ReadLaterItemSchema).max(READLATER_LIMIT).default([])
 });
 
 export type ExportFile = z.infer<typeof ExportFileSchema>;
@@ -345,10 +376,20 @@ export type ExportFile = z.infer<typeof ExportFileSchema>;
 /**
  * 导出文件统一读取口径：单一格式，不匹配即拒绝（不静默降级）。
  * 当前只识别 `EXPORT_FILE_VERSION`；版本不同即拒绝，避免跨版本数据被误读。
+ *
+ * 失败时区分「版本不匹配」与「文件本身有问题」：版本不匹配是**可解释的**
+ * （用户手上这份由另一个版本的 Tabs 导出），提示必须指向可操作的下一步，
+ * 而不是笼统一句「导入失败」。
  */
 export function parseExportFile(
   raw: unknown
-): { success: true; data: ExportFile } | { success: false } {
+):
+  { success: true; data: ExportFile } | { success: false; reason: 'version-mismatch' | 'invalid' } {
   const parsed = ExportFileSchema.safeParse(raw);
-  return parsed.success ? { success: true, data: parsed.data } : { success: false };
+  if (parsed.success) return { success: true, data: parsed.data };
+  const header = z.object({ format: z.literal('tabs.export'), version: z.number() }).safeParse(raw);
+  if (header.success && header.data.version !== EXPORT_FILE_VERSION) {
+    return { success: false, reason: 'version-mismatch' };
+  }
+  return { success: false, reason: 'invalid' };
 }

@@ -3,7 +3,10 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
+import type { Snapshot, UndoBatch } from '@/core/schema/models';
 import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
+import { useSnapshotStore } from '@/stores/snapshotStore';
+import { useUndoStore } from '@/stores/undoStore';
 import i18n from '@/i18n';
 
 /**
@@ -50,6 +53,7 @@ function makeActions(): PaletteActions & { calls: string[] } {
     onSaveSnapshot: record('saveSnapshot'),
     onArchiveWindow: record('archive'),
     onSaveSpace: record('saveSpace'),
+    onReadLaterActive: record('readLater'),
     onOpenFolder: () => undefined,
     onSwitchTab: (id) => calls.push(`switch:${id}`)
   };
@@ -66,6 +70,8 @@ function renderPalette(tabs: TabRecord[] = [tab({ id: 1 }), tab({ id: 2 })]) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  useUndoStore.setState({ batches: [] });
+  useSnapshotStore.setState({ snapshots: [], ready: false });
 });
 
 describe('CommandPalette 无障碍契约', () => {
@@ -95,8 +101,8 @@ describe('CommandPalette 无障碍契约', () => {
     const { input } = renderPalette();
 
     const options = screen.getAllByRole('option');
-    // 12 条命令 + 2 个标签
-    expect(options).toHaveLength(14);
+    // 13 条命令 + 2 个标签
+    expect(options).toHaveLength(15);
     expect(options[0]).toHaveTextContent(i18n.t('discard.allInactive'));
     expect(options.at(-1)).toHaveTextContent('标签-2');
     expect(input).toBeInTheDocument();
@@ -204,8 +210,8 @@ describe('CommandPalette 空查询截断', () => {
   it('21+ 标签时空查询仅挂载前 20 个标签项，并出现截断提示', () => {
     renderPalette(manyTabs());
 
-    // 12 条命令 + 20 个标签（截断），第 21 个起不挂载
-    expect(screen.getAllByRole('option')).toHaveLength(32);
+    // 13 条命令 + 20 个标签（截断），第 21 个起不挂载
+    expect(screen.getAllByRole('option')).toHaveLength(33);
     expect(screen.queryByText('标签-21')).not.toBeInTheDocument();
     expect(screen.getByText(i18n.t('palette.tabsTruncated', { count: 20 }))).toBeInTheDocument();
   });
@@ -233,5 +239,106 @@ describe('CommandPalette 空查询截断', () => {
     // 「标签-2」命中 标签-2 / 标签-20…25（含空查询时被截掉的 21-25）
     const options = screen.getAllByRole('option');
     expect(options.some((option) => option.textContent?.includes('标签-25'))).toBe(true);
+  });
+});
+
+describe('CommandPalette 拼音搜索（与 SearchBar 同内核）', () => {
+  it('拼音首字母命中中文标签标题（jrrb 命中「今日热榜」）', async () => {
+    const { input } = renderPalette([
+      tab({ id: 1, title: '今日热榜', url: 'https://example.com/hot' })
+    ]);
+
+    fireEvent.change(input, { target: { value: 'jrrb' } });
+
+    // 拼音词典异步加载：命中会在词典就绪后补齐，用 findBy 等待
+    expect(await screen.findByText('今日热榜', undefined, { timeout: 15000 })).toBeInTheDocument();
+    expect(screen.getByRole('option')).toHaveAttribute('id', 'palette-item-tab-1');
+  }, 20000); // 首次动态 import('pinyin-pro') 在沙箱内偶发 2–6s（与 search-engine 测试同口径放宽）
+
+  it('文件夹名支持拼音首字母（gz 命中「工作」文件夹）', async () => {
+    render(
+      <CommandPalette
+        tabs={[]}
+        folders={[{ id: 'f1', name: '工作', collapsed: false, items: [] }]}
+        actions={makeActions()}
+        onClose={() => {}}
+      />
+    );
+    const input = screen.getByRole('combobox');
+
+    fireEvent.change(input, { target: { value: 'gz' } });
+
+    expect(await screen.findByText('工作', undefined, { timeout: 15000 })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /工作/ })).toHaveAttribute(
+      'id',
+      'palette-item-folder-f1'
+    );
+  }, 20000);
+});
+
+describe('CommandPalette 空查询 dashboard', () => {
+  function undoBatch(id: string, count: number): UndoBatch {
+    return {
+      id,
+      kind: 'close',
+      createdAt: count,
+      entries: Array.from({ length: count }, (_, i) => ({
+        url: `https://site-${id}-${i}.com/`,
+        index: i,
+        pinned: false,
+        muted: false,
+        groupId: NO_GROUP
+      }))
+    };
+  }
+
+  function snap(id: string, name: string, createdAt: number): Snapshot {
+    return {
+      id,
+      name,
+      origin: 'manual',
+      createdAt,
+      tabCount: 1,
+      tabs: [{ url: 'https://a.com/', title: 'A', pinned: false, muted: false }]
+    };
+  }
+
+  it('空查询展示最近关闭批次与最近快照，漫游序列在命令之后、标签之前', () => {
+    useUndoStore.setState({ batches: [undoBatch('b1', 1), undoBatch('b2', 2)] });
+    useSnapshotStore.setState({ snapshots: [snap('s1', '周末阅读', 100)], ready: true });
+    const { input } = renderPalette();
+
+    // 最近组标题出现（测试环境 en）
+    expect(screen.getByText(i18n.t('palette.sectionRecent'))).toBeInTheDocument();
+    // 批次条目：最新批次（b2，栈尾）在前
+    expect(screen.getByText(/site-b2-0/)).toBeInTheDocument();
+    // 快照条目
+    expect(screen.getByText('周末阅读')).toBeInTheDocument();
+    // 扁平顺序：文件夹(0) + 命令(13) + 最近(3) + 标签(2) = 18；最近组首项下标 13
+    expect(screen.getAllByRole('option')).toHaveLength(18);
+    fireEvent.keyDown(input, { key: 'ArrowUp' }); // 环绕到末项仍是标签
+    const active = document.getElementById(input.getAttribute('aria-activedescendant')!);
+    expect(active).toHaveAttribute('id', 'palette-item-tab-2');
+  });
+
+  it('点击最近关闭条目执行 undoBatch（栈内最新批次优先展示）', () => {
+    const undoBatchFn = vi.fn();
+    useUndoStore.setState({ batches: [undoBatch('b1', 1)], undoBatch: undoBatchFn });
+    renderPalette();
+
+    fireEvent.click(screen.getByText(/site-b1-0/));
+
+    expect(undoBatchFn).toHaveBeenCalledWith('b1');
+  });
+
+  it('输入关键词后 dashboard 组消失（回到纯过滤模式）', () => {
+    useUndoStore.setState({ batches: [undoBatch('b1', 1)] });
+    useSnapshotStore.setState({ snapshots: [snap('s1', '周末阅读', 100)], ready: true });
+    const { input } = renderPalette();
+
+    fireEvent.change(input, { target: { value: '标签' } });
+
+    expect(screen.queryByText(i18n.t('palette.sectionRecent'))).not.toBeInTheDocument();
+    expect(screen.queryByText('周末阅读')).not.toBeInTheDocument();
   });
 });

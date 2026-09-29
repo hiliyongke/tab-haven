@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import i18n from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
@@ -80,5 +80,63 @@ describe('SnapshotsPanel 分组', () => {
     expect(screen.queryByText('Archives (closed and kept)')).toBeNull();
     expect(screen.queryByText('Auto-saved on window close')).toBeNull();
     expect(i18n.isInitialized).toBe(true);
+  });
+});
+
+describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必须先见影响面）', () => {
+  it('行内恢复先弹摘要确认（名称 + 标签数 + 分组数），确认后才执行', () => {
+    const restore = vi.fn(async () => 2);
+    useSnapshotStore.setState({
+      snapshots: [
+        makeSnap({
+          id: 'm1',
+          name: '我的快照',
+          createdAt: 300,
+          tabCount: 2,
+          tabs: [
+            { url: 'https://a.com/', title: 'A', pinned: false, muted: false, groupTitle: '工作' },
+            { url: 'https://b.com/', title: 'B', pinned: false, muted: false }
+          ]
+        })
+      ],
+      ready: true,
+      restore
+    });
+    renderPanel();
+
+    // 点行内恢复按钮：弹确认，不直接执行
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('snapshots.restore') }));
+    expect(restore).not.toHaveBeenCalled();
+    // 摘要含快照名 / 标签数 / 分组数（测试环境文案为 en；完整句只出现在弹窗里）
+    expect(
+      screen.getByText(/Restoring "我的快照" will open 2 tabs \(1 groups\)/)
+    ).toBeInTheDocument();
+
+    // 确认后才真正恢复（弹窗内与行内按钮同名，取最后一个即弹窗确认键）
+    fireEvent.click(screen.getAllByRole('button', { name: i18n.t('snapshots.restore') }).at(-1)!);
+    expect(restore).toHaveBeenCalledWith('m1');
+  });
+
+  it('取消确认弹窗：不执行恢复', () => {
+    const restore = vi.fn(async () => 2);
+    useSnapshotStore.setState({
+      snapshots: [
+        makeSnap({
+          id: 'm1',
+          name: '我的快照',
+          createdAt: 300,
+          tabCount: 1,
+          tabs: [{ url: 'https://a.com/', title: 'A', pinned: false, muted: false }]
+        })
+      ],
+      ready: true,
+      restore
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('snapshots.restore') }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.cancel') }));
+
+    expect(restore).not.toHaveBeenCalled();
   });
 });

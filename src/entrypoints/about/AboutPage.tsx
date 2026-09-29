@@ -10,7 +10,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
  * 这份是**说明**（完整罗列产品能力与入口，供评估与回顾）。
  *
  * 组织方式按「用户能做什么」而非「代码里有什么」：
- *  - 能力域：11 个域，每域 3-4 个具体能力点（标题 + 一句话说明）；
+ *  - 能力域：12 个域，每域 3-4 个具体能力点（标题 + 一句话说明）；
  *  - 快捷入口：把散落在右键菜单 / 地址栏 / 工具栏角标 / 命令面板的入口集中说明
  *    —— 这批能力此前只出现在一次性提示条与 README 里，用户在关于页根本找不到；
  *  - 快捷键：面板内 + 浏览器级全局两组（全局那组可在浏览器扩展页自行修改）；
@@ -55,6 +55,15 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
       { titleKey: 'about.domSearch2Title', bodyKey: 'about.domSearch2Body' },
       { titleKey: 'about.domSearch3Title', bodyKey: 'about.domSearch3Body' },
       { titleKey: 'about.domSearch4Title', bodyKey: 'about.domSearch4Body' }
+    ]
+  },
+  {
+    icon: Icons.toNativeGroup,
+    titleKey: 'about.domContextTitle',
+    items: [
+      { titleKey: 'about.domContext1Title', bodyKey: 'about.domContext1Body' },
+      { titleKey: 'about.domContext2Title', bodyKey: 'about.domContext2Body' },
+      { titleKey: 'about.domContext3Title', bodyKey: 'about.domContext3Body' }
     ]
   },
   {
@@ -153,6 +162,7 @@ const PANEL_SHORTCUTS: { key: string; keys: string[] }[] = [
   { key: 'about.shortcutSearch', keys: ['⌘/Ctrl', 'K'] },
   { key: 'about.shortcutPalette', keys: ['⌘/Ctrl', 'P'] },
   { key: 'about.shortcutLocate', keys: ['⌘/Ctrl', 'J'] },
+  { key: 'about.shortcutUndo', keys: ['⌘/Ctrl', 'Z'] },
   { key: 'about.shortcutRoam', keys: ['↑', '↓', 'Enter'] },
   { key: 'about.shortcutReorder', keys: ['Alt', '↑/↓'] },
   { key: 'about.shortcutDrag', keys: ['Space'] }

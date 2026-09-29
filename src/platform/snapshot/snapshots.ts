@@ -141,6 +141,44 @@ export async function persistSnapshot(snapshot: Snapshot): Promise<Snapshot[]> {
 }
 
 /**
+ * 把最新现场写回既有空间快照（原地更新，不新增条目）。
+ *
+ * 空间切换的高频路径：若每次「存回」都走 persistSnapshot 新建，SNAPSHOTS_LIMIT
+ * 会被反复切换迅速耗尽（裁剪语义按「保留最新」会挤掉真正的历史快照）。
+ *
+ * 两种「不写」的情形由 `replaced` 告知调用方，调用方必须据此决定后续步骤：
+ *  - 目标空间已不存在（被删除）或不是 space 快照；
+ *  - **现场为空**：用户手工关光标签后切空间会把它抹成空现场，且这次覆盖
+ *    不在撤销批次里——宁可保留旧内容。
+ */
+export async function replaceSpaceSnapshot(
+  id: string,
+  snapTabs: readonly SnapshotTab[],
+  windowId: number | undefined
+): Promise<{ replaced: boolean; snapshots: Snapshot[] }> {
+  return withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
+    const existing = await snapshotsRepository.read();
+    if (snapTabs.length === 0) return { replaced: false, snapshots: existing };
+    let replaced = false;
+    const next = existing.map((snapshot) => {
+      if (snapshot.id !== id || snapshot.origin !== 'space') return snapshot;
+      replaced = true;
+      return {
+        ...snapshot,
+        tabs: [...snapTabs],
+        tabCount: snapTabs.length,
+        createdAt: Date.now(),
+        windowId
+      };
+    });
+    if (!replaced) return { replaced: false, snapshots: existing };
+    const ok = await snapshotsRepository.write(next);
+    if (!ok) throw new Error('replaceSpaceSnapshot: storage write failed');
+    return { replaced: true, snapshots: next };
+  });
+}
+
+/**
  * 由窗口标签 + 原生组构建快照条目列表（UI 与 SW 关窗自动保存共用的采集端）。
  * 仅 http(s) 页面可恢复（chrome:// 等内部页浏览器不允许以 URL 创建），其余跳过；
  * 同时记录静音状态与所在原生组标题/颜色，供恢复时还原（旧快照无这些字段则不还原）。

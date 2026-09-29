@@ -544,6 +544,38 @@ export function onTabHighlighted(handler: (tabIds: readonly number[]) => void): 
 }
 
 /**
+ * 监听任意窗口的标签增删/更新（多窗口分段的数据刷新信号）。
+ * 事件不携带窗口过滤——Chrome 的 tabs 事件本身是全局的，消费方自行判断
+ * 是否与自己有关（onUpdated 高频，消费方必须自行节流）。
+ */
+export function onAllTabsChanged(handler: () => void): () => void {
+  const listener = (): void => handler();
+  browser.tabs.onCreated.addListener(listener);
+  browser.tabs.onRemoved.addListener(listener);
+  browser.tabs.onUpdated.addListener(listener);
+  // 跨窗口移动（拖拽把标签拖到另一个窗口）也要刷新，否则分段归属陈旧。
+  // 这两个事件在部分环境（含测试用的 fake-browser）未实现且会抛错，
+  // 属可选增强：订阅失败不影响主路径，故整体吞掉。
+  try {
+    browser.tabs.onAttached?.addListener(listener);
+    browser.tabs.onDetached?.addListener(listener);
+  } catch {
+    // 环境不支持跨窗口移动事件
+  }
+  return () => {
+    browser.tabs.onCreated.removeListener(listener);
+    browser.tabs.onRemoved.removeListener(listener);
+    browser.tabs.onUpdated.removeListener(listener);
+    try {
+      browser.tabs.onAttached?.removeListener(listener);
+      browser.tabs.onDetached?.removeListener(listener);
+    } catch {
+      // 同上
+    }
+  };
+}
+
+/**
  * 解析「恢复」类操作的目标窗口：优先回到记录中的原窗口，原窗口已关闭则退回当前聚焦窗口。
  *
  * 撤销/快照恢复必须回到当初关掉标签的那个窗口。只记录「关了什么」而不记录

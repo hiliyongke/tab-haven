@@ -12,6 +12,7 @@ import {
   collectSnapshotTabs,
   parseOneTab,
   persistSnapshot,
+  replaceSpaceSnapshot,
   restoreSnapshot,
   SNAPSHOTS_RMW_LOCK
 } from '@/platform/snapshot/snapshots';
@@ -52,8 +53,15 @@ interface SnapshotState {
   deleteSnapshot: (id: string) => Promise<void>;
   /** 重命名指定快照。 */
   renameSnapshot: (id: string, name: string) => Promise<void>;
-  /** 恢复指定快照（在当前窗口重新打开全部标签），返回打开的标签数。 */
-  restore: (id: string) => Promise<number>;
+  /** 恢复指定快照，返回打开的标签数；可指定目标窗口（缺省取聚焦窗口）。 */
+  restore: (id: string, windowId?: number) => Promise<number>;
+  /** 把当前窗口最新现场写回既有空间快照（原地更新，空间切换用）。返回是否写入成功。 */
+  updateSpace: (id: string) => Promise<boolean>;
+  /**
+   * 按条目归档（稍后读过期归档等「非当前窗口」来源）：构造 origin=archive
+   * 快照落盘，返回归档条数。与 archiveCurrentWindow 的差别：条目由调用方给定。
+   */
+  archiveItems: (name: string, tabs: readonly SnapshotTab[]) => Promise<number>;
   /**
    * 选择性恢复（P-02）：只恢复勾选的条目，返回实际新建标签数。
    * 勾选集为空返回 0；其余语义与 restore 一致（缺失才新建、分组还原等）。
@@ -256,10 +264,35 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     set({ snapshots: next });
   },
 
-  restore: async (id) => {
+  restore: async (id, windowId) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
     if (!snap) return 0;
-    return restoreSnapshot(snap);
+    return restoreSnapshot(snap, windowId);
+  },
+
+  updateSpace: async (id) => {
+    const tabs = await queryCurrentWindowTabs();
+    const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
+    const snapTabs = collectSnapshotTabs(tabs, groups);
+    const result = await replaceSpaceSnapshot(id, snapTabs, tabs[0]?.windowId);
+    set({ snapshots: result.snapshots });
+    // false = 空间已不存在或现场为空（未覆盖），调用方必须据此决定后续步骤。
+    return result.replaced;
+  },
+
+  archiveItems: async (name, tabs) => {
+    if (tabs.length === 0) return 0;
+    const snapshot = buildSnapshot({
+      name,
+      fallbackName: i18n.t('snapshots.defaultArchiveName'),
+      origin: 'archive',
+      windowId: undefined,
+      tabs
+    });
+    const next = await persistSnapshot(snapshot);
+    set({ snapshots: next });
+    // 返回实际归档条数：buildSnapshot 会过滤无 url 条目，与传入数可能不同。
+    return snapshot.tabCount;
   },
 
   restoreSelected: async (id, selectedTabs) => {

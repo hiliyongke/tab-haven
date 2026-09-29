@@ -43,6 +43,10 @@
     "message": "Add link to collection",
     "description": "Context menu parent item: add the link to a fixed folder"
   },
+  "menuReadLater": {
+    "message": "Read later",
+    "description": "Context menu item on page/tab strip: add the current page to the read-later list"
+  },
   "menuDiscardTab": {
     "message": "Discard this tab",
     "description": "Context menu item on the tab strip"

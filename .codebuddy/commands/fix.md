@@ -1,6 +1,6 @@
 ---
 description: 最小改动修 bug：定位根因→最小修复→回归测试→汇报，不顺手改既有约定
-argument-hint: "<问题描述或报错信息>"
+argument-hint: '<问题描述或报错信息>'
 allowed-tools: Read, Grep, Glob, ListDir, Write, Edit, Bash
 ---
 
@@ -9,6 +9,7 @@ allowed-tools: Read, Grep, Glob, ListDir, Write, Edit, Bash
 $ARGUMENTS
 
 流程：
+
 1. **定位根因**：以当前代码现状为准（不翻 git 历史猜因），用搜索与阅读定位，给出 `file:line` 与根因一句话说明。
 2. **最小修复**：只修根因，不改变既有设计约定（阈值、窗口、状态集、接口形状等）。增强项/顺手优化/计划外发现的同类隐患——记入汇报末尾，不直接改。
 3. **分层自检**：修复落在哪一层，是否符合 architecture 规则的依赖方向。

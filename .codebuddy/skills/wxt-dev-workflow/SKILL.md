@@ -34,12 +34,12 @@ pnpm crx            # 离线分发 CRX3（复用 .output/tabs.pem 签名；上�
 
 ### 3. 常见坑速查
 
-| 现象 | 原因与处理 |
-| --- | --- |
-| 改动不生效 | 确认跑的是 `pnpm dev`；改的是 entrypoints 入口结构时需重启 dev |
-| 权限报错 | `wxt.config.ts` 权限变更后必须重启 dev 并重新加载扩展 |
-| 类型找不到 `chrome` | 跑 `pnpm postinstall`（即 `wxt prepare`）重新生成 `.wxt/` 类型 |
-| 兼容变体行为差异 | 该变体用 popup 替代 sidepanel，查 `platform/capabilities.ts` 的形态检测 |
+| 现象                | 原因与处理                                                              |
+| ------------------- | ----------------------------------------------------------------------- |
+| 改动不生效          | 确认跑的是 `pnpm dev`；改的是 entrypoints 入口结构时需重启 dev          |
+| 权限报错            | `wxt.config.ts` 权限变更后必须重启 dev 并重新加载扩展                   |
+| 类型找不到 `chrome` | 跑 `pnpm postinstall`（即 `wxt prepare`）重新生成 `.wxt/` 类型          |
+| 兼容变体行为差异    | 该变体用 popup 替代 sidepanel，查 `platform/capabilities.ts` 的形态检测 |
 
 ## 输入 / 输出
 

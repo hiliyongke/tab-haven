@@ -2,8 +2,14 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { LucideIcon } from 'lucide-react';
-import type { FixedFolder } from '@/core/schema/models';
+import type { FixedFolder, Snapshot } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
+import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
+import { SearchEngine } from '@/core/search/SearchEngine';
+import { useDataStore } from '@/stores/dataStore';
+import { useSnapshotStore } from '@/stores/snapshotStore';
+import { useUndoStore } from '@/stores/undoStore';
+import { logDegraded } from '@/platform/diagnostics';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { Favicon } from '@/ui/common/Favicon';
 import { useModalA11y } from '@/ui/dialog/Dialog';
@@ -24,6 +30,8 @@ export interface PaletteActions {
   onSaveSnapshot: () => void;
   onArchiveWindow: () => void;
   onSaveSpace: () => void;
+  /** 把当前激活标签加入稍后读（C3）。 */
+  onReadLaterActive: () => void;
   /** 打开指定固定文件夹的全部条目（P-04：文件夹即空间）。 */
   onOpenFolder: (folderId: string) => void;
 }
@@ -136,11 +144,65 @@ export function CommandPalette({
     };
   }, []);
 
-  // 命令与标签分组（P2-5）：键盘漫游顺序保持「文件夹 → 命令 → 标签」不变，
+  // 标签项过滤与 SearchBar 同一内核（标题/URL/拼音首字母/全拼模糊匹配）——
+  // 此前面板用裸 includes，中文标题输拼音首字母命中不了，同一产品两套搜索口径。
+  // 命令（i18n 固定文案）与文件夹保持子串过滤。
+  const pinyinSearch = useDataStore((state) => state.settings.pinyinSearch);
+  const engine = useMemo(
+    () =>
+      new SearchEngine(
+        tabs.map((tab) => ({
+          id: tab.id,
+          title: tab.title ?? '',
+          url: tab.url ?? '',
+          active: tab.active
+        })),
+        { pinyin: pinyinSearch }
+      ),
+    [tabs, pinyinSearch]
+  );
+  // 文件夹名同样走拼音内核（用户命名内容与标签同口径）；id 用数组下标合成。
+  const folderEngine = useMemo(
+    () =>
+      new SearchEngine(
+        folders.map((folder, index) => ({
+          id: index,
+          title: folder.name,
+          url: '',
+          active: false
+        })),
+        { pinyin: pinyinSearch }
+      ),
+    [folders, pinyinSearch]
+  );
+  // 拼音词典异步就绪后触发重算（与 popup / useSearchController 同口径）。
+  const [pinyinTick, setPinyinTick] = useState(0);
+  useEffect(() => {
+    if (engine.pinyinReady && folderEngine.pinyinReady) return;
+    let cancelled = false;
+    void Promise.all([engine.ensurePinyin(), folderEngine.ensurePinyin()])
+      .then(() => {
+        if (!cancelled) setPinyinTick((tick) => tick + 1);
+      })
+      .catch((error: unknown) => {
+        logDegraded('search', '拼音词典加载失败，命令面板拼音匹配暂不可用', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [engine, folderEngine]);
+
+  // 空查询 dashboard 数据源（栈尾为最新批次；快照按时间降序取前 3）。
+  const undoBatches = useUndoStore((state) => state.batches);
+  const snapshots = useSnapshotStore((state) => state.snapshots);
+  /** 待确认恢复的快照（恢复影响面闸门，与快照面板共用同一组件）。 */
+  const [pendingRestore, setPendingRestore] = useState<Snapshot | null>(null);
+
+  // 命令与标签分组（P2-5）：键盘漫游顺序保持「文件夹 → 命令 → 最近 → 标签」不变，
   // 仅在视觉上插入分组标题，让混排的数十项结果可按类别扫读。
   // 文件夹命令（P-04）：每个固定文件夹一个「打开全部条目」命令 ——
   // 「文件夹即空间」的命令面板入口，键入空间名直达。
-  const { folderItems, commandItems, tabItems, tabTruncated } = useMemo(() => {
+  const { folderItems, commandItems, recentItems, tabItems, tabTruncated } = useMemo(() => {
     const folderCmds: CommandItem[] = folders.map((folder) => ({
       id: `folder-${folder.id}`,
       label: folder.name,
@@ -180,6 +242,12 @@ export function CommandPalette({
         label: t('undo.historyTitle'),
         icon: Icons.history,
         run: actions.onOpenHistory
+      },
+      {
+        id: 'readLater',
+        label: t('readlater.addActive'),
+        icon: Icons.bookmarkAdd,
+        run: actions.onReadLaterActive
       },
       {
         id: 'snapshots',
@@ -233,28 +301,77 @@ export function CommandPalette({
         run: () => actions.onSwitchTab(tab.id)
       }));
     const q = query.trim().toLowerCase();
+    // pinyinTick 是词典异步就绪后的重算触发器，引用它让依赖数组语义自足（不写豁免注释）。
+    void pinyinTick;
     if (!q) {
-      // 空查询截断：数百标签用户按 ⌘P 不应一次性挂载全部行（含 Favicon）。
+      // 空查询 = dashboard：最近关闭批次 + 最近快照（各前 3 条）+ 截断的标签直达。
+      const recentItems: CommandItem[] = undoBatches
+        .slice(-3)
+        .reverse()
+        .map((batch) => {
+          // 撤销条目不含标题（UndoTabRecord 只有 url/位置/组信息），展示用主机名。
+          const firstUrl = batch.entries[0]?.url ?? '';
+          let firstName = firstUrl;
+          try {
+            firstName = new URL(firstUrl).hostname || firstUrl;
+          } catch {
+            // 非标准 URL：原样展示
+          }
+          return {
+            id: `undo-${batch.id}`,
+            label:
+              batch.entries.length > 1
+                ? t('palette.recentClosedMany', { count: batch.entries.length, name: firstName })
+                : t('palette.recentClosedOne', { name: firstName }),
+            icon: Icons.history,
+            // undoBatch 自带互斥与成功/失败 toast，无需额外反馈。
+            run: () => void useUndoStore.getState().undoBatch(batch.id)
+          };
+        });
+      for (const snap of [...snapshots].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3)) {
+        recentItems.push({
+          id: `snap-${snap.id}`,
+          label: snap.name,
+          icon: Icons.snapshot,
+          hint: t('palette.recentSnapshotHint', { count: snap.tabCount }),
+          // 不直接恢复：恢复会新建整批标签且不在撤销栈覆盖范围内，
+          // 必须先弹影响面确认（与快照面板同一闸门），确认由下方弹窗执行。
+          run: () => setPendingRestore(snap)
+        });
+      }
       return {
         folderItems: folderCmds,
         commandItems: base,
+        recentItems,
         tabItems: tabCmds.slice(0, EMPTY_QUERY_TAB_LIMIT),
         tabTruncated: tabCmds.length > EMPTY_QUERY_TAB_LIMIT
       };
     }
     const match = (c: CommandItem) => c.label.toLowerCase().includes(q);
+    // 标签项走 SearchEngine（拼音/模糊命中，按相关度排序）；文件夹同内核（下标合成 id）；
+    // 命令是 i18n 固定文案，保持子串过滤。
+    const tabCmdById = new Map(tabCmds.map((cmd) => [cmd.id, cmd]));
+    const matchedTabs = engine
+      .search(q, tabCmds.length)
+      .map((hit) => tabCmdById.get(`tab-${hit.tabId}`))
+      .filter((cmd): cmd is CommandItem => cmd !== undefined);
+    const matchedFolders = folderEngine
+      .search(q, folderCmds.length)
+      .map((hit) => folderCmds[hit.tabId])
+      .filter((cmd): cmd is CommandItem => cmd !== undefined);
     return {
-      folderItems: folderCmds.filter(match),
+      folderItems: matchedFolders,
       commandItems: base.filter(match),
-      tabItems: tabCmds.filter(match),
+      recentItems: [],
+      tabItems: matchedTabs,
       tabTruncated: false
     };
-  }, [query, tabs, folders, t, actions]);
+  }, [query, tabs, folders, t, actions, engine, folderEngine, pinyinTick, undoBatches, snapshots]);
 
-  /** 扁平顺序 = 键盘漫游顺序（文件夹组在前，与分组渲染顺序一致）。 */
+  /** 扁平顺序 = 键盘漫游顺序（文件夹 → 命令 → 最近 → 标签，与分组渲染顺序一致）。 */
   const commands = useMemo(
-    () => [...folderItems, ...commandItems, ...tabItems],
-    [folderItems, commandItems, tabItems]
+    () => [...folderItems, ...commandItems, ...recentItems, ...tabItems],
+    [folderItems, commandItems, recentItems, tabItems]
   );
 
   useEffect(() => {
@@ -355,7 +472,15 @@ export function CommandPalette({
           className="max-h-72 overflow-y-auto py-1"
         >
           {commands.length === 0 && (
-            <div className="px-4 py-3 text-center text-2xs text-gray-500">{t('palette.empty')}</div>
+            /* 与截断提示同口径：listbox 语义内只允许 option，说明性文本放外面
+               （读屏可达，且不混入键盘漫游序列）。 */
+            <div
+              role="presentation"
+              className="px-4 py-3 text-center text-2xs text-gray-500"
+              aria-live="polite"
+            >
+              {t('palette.empty')}
+            </div>
           )}
           {folderItems.length > 0 && (
             <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
@@ -394,6 +519,24 @@ export function CommandPalette({
               }}
             />
           ))}
+          {recentItems.length > 0 && (
+            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
+              {t('palette.sectionRecent')}
+            </div>
+          )}
+          {recentItems.map((cmd, i) => (
+            <PaletteOption
+              key={cmd.id}
+              cmd={cmd}
+              /* 该项下标 = 文件夹组 + 命令组长度 + 组内序号 */
+              selected={folderItems.length + commandItems.length + i === index}
+              onSelect={() => setIndex(folderItems.length + commandItems.length + i)}
+              onRun={() => {
+                cmd.run();
+                onClose();
+              }}
+            />
+          ))}
           {tabItems.length > 0 && (
             <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
               {t('palette.sectionTabs')}
@@ -403,22 +546,48 @@ export function CommandPalette({
             <PaletteOption
               key={cmd.id}
               cmd={cmd}
-              /* 该项在扁平漫游序列中的下标 = 前两组长度 + 组内序号 */
-              selected={folderItems.length + commandItems.length + groupIndex === index}
-              onSelect={() => setIndex(folderItems.length + commandItems.length + groupIndex)}
+              /* 该项在扁平漫游序列中的下标 = 前三组长度 + 组内序号 */
+              selected={
+                folderItems.length + commandItems.length + recentItems.length + groupIndex === index
+              }
+              onSelect={() =>
+                setIndex(folderItems.length + commandItems.length + recentItems.length + groupIndex)
+              }
               onRun={() => {
                 cmd.run();
                 onClose();
               }}
             />
           ))}
-          {tabTruncated && (
-            /* 截断提示：非 option（role=presentation），不进键盘漫游序列。 */
-            <div role="presentation" className="px-4 py-1.5 text-2xs text-gray-400">
-              {t('palette.tabsTruncated', { count: EMPTY_QUERY_TAB_LIMIT })}
-            </div>
-          )}
         </div>
+        {tabTruncated && (
+          /* 截断提示放在 listbox 外：listbox 语义内只允许 option，提示行若藏进
+             listbox 只能 role=presentation，读屏用户无从得知列表被截断。 */
+          <div className="border-t border-gray-100 px-4 py-1.5 text-2xs text-gray-400">
+            {t('palette.tabsTruncated', { count: EMPTY_QUERY_TAB_LIMIT })}
+          </div>
+        )}
+        {/* 快照恢复闸门：与快照面板同一组件（恢复不在撤销栈覆盖范围）。
+            放在 dialog 内、listbox 外，不干扰键盘漫游序列。 */}
+        {pendingRestore !== null && (
+          <RestoreConfirmDialog
+            snapshot={pendingRestore}
+            onConfirm={() => {
+              const snap = pendingRestore;
+              setPendingRestore(null);
+              void useSnapshotStore
+                .getState()
+                .restore(snap.id)
+                .then((count) => {
+                  if (count > 0) useUndoStore.getState().notify(t('snapshots.restored', { count }));
+                  else useUndoStore.getState().notify(t('snapshots.empty'));
+                })
+                .catch(() => useUndoStore.getState().notifyError(t('errors.operationFailed')));
+              onClose();
+            }}
+            onCancel={() => setPendingRestore(null)}
+          />
+        )}
       </dialog>
     </div>,
     document.body

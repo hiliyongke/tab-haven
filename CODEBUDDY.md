@@ -28,12 +28,12 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 
 ## 常用命令
 
-| 命令 | 作用 |
-| --- | --- |
-| `pnpm dev` | 开发模式（HMR，加载 `.output/chrome-mv3`） |
-| `pnpm check` | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
-| `pnpm test` / `pnpm test:watch` | Vitest 行为规格测试（含覆盖率 ratchet） |
-| `pnpm format` | Prettier 格式化（pre-commit 钩子自动跑 lint-staged） |
+| 命令                            | 作用                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `pnpm dev`                      | 开发模式（HMR，加载 `.output/chrome-mv3`）                                        |
+| `pnpm check`                    | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
+| `pnpm test` / `pnpm test:watch` | Vitest 行为规格测试（含覆盖率 ratchet）                                           |
+| `pnpm format`                   | Prettier 格式化（pre-commit 钩子自动跑 lint-staged）                              |
 
 提交信息用 Conventional Commits、描述用中文；**AI 默认不执行任何 git 操作**（详见 `.codebuddy/rules/git-commit`）。
 

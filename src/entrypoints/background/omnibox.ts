@@ -1,4 +1,5 @@
-import { createTabsWithUrls } from '@/platform/tabs';
+import { browser } from 'wxt/browser';
+import { activateTabAcrossWindows, createTabsWithUrls, queryAllWindowTabs } from '@/platform/tabs';
 import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
 import { t } from '@/i18n/headless';
 import { hostnameOf, openSidePanel, queueAction } from './shared';
@@ -26,11 +27,38 @@ function isOpenableUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
-/** 实时建议：文件夹 / 固定条目 / 站内搜索。 */
+/** 实时建议：已打开标签直达 / 文件夹 / 固定条目 / 站内搜索。 */
 async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
   const q = text.trim().toLowerCase();
-  const [folders, pins] = await Promise.all([foldersRepository.read(), pinsRepository.read()]);
+  const [folders, pins, tabs] = await Promise.all([
+    foldersRepository.read(),
+    pinsRepository.read(),
+    queryAllWindowTabs()
+  ]);
   const out: OmniSuggestion[] = [];
+  // 已打开标签直达并置顶：地址栏的高频意图是「切回去」而非再开一个。
+  // 当前激活标签排最后（用户正看着它）；上限 5 条，给下方建议留展示位。
+  if (q) {
+    const matchedTabs = tabs
+      .filter(
+        (tab) =>
+          tab.title?.toLowerCase().includes(q) === true ||
+          tab.url?.toLowerCase().includes(q) === true
+      )
+      .sort((a, b) => {
+        if (a.active !== b.active) return a.active ? 1 : -1;
+        return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0);
+      })
+      .slice(0, 5);
+    for (const tab of matchedTabs) {
+      out.push({
+        content: `tab:${tab.id}`,
+        description: t('bg.omniboxSwitchTab', {
+          name: escapeSuggestionText(tab.title || tab.url || '')
+        })
+      });
+    }
+  }
   for (const folder of folders) {
     if (!q || folder.name.toLowerCase().includes(q)) {
       out.push({
@@ -63,6 +91,24 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
 async function handleOmniboxEnter(text: string, disposition?: string): Promise<void> {
   const raw = text.trim();
   const foreground = disposition === 'newForegroundTab';
+  // 已打开标签直达：重新取窗口归属（建议生成后标签可能已跨窗口移动），
+  // 标签已关闭时兜底开面板。
+  if (raw.startsWith('tab:')) {
+    const tabId = Number(raw.slice('tab:'.length));
+    if (Number.isInteger(tabId)) {
+      try {
+        const tab = await browser.tabs.get(tabId);
+        if (tab.id !== undefined) {
+          await activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
+          return;
+        }
+      } catch {
+        // 标签在建议生成后已被关闭：落到开面板兜底
+      }
+    }
+    await openSidePanel().catch(() => undefined);
+    return;
+  }
   if (raw.startsWith('folder:')) {
     const id = raw.slice('folder:'.length);
     const folders = await foldersRepository.read();

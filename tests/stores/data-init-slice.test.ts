@@ -272,7 +272,7 @@ describe('首次启动的镜像恢复', () => {
     expect(h.seeded.write).not.toHaveBeenCalled();
   });
 
-  it('镜像中形状非法的分区被忽略，不影响其余分区恢复', async () => {
+  it('镜像中形状非法的分区被忽略，不影响其余分区恢复，且不置 seeded（留下次重试）', async () => {
     mocks.pull.mockResolvedValueOnce({
       folders: [{ wrong: 'shape' }],
       pins: [],
@@ -289,6 +289,8 @@ describe('首次启动的镜像恢复', () => {
     // 非法 folders 被丢弃，但合法 settings 照常恢复
     expect(applied.folders).toHaveLength(0);
     expect(applied.settings!.colorTheme).toBe('violet');
+    // 单边解析失败不置位：否则该分区永久失去重试机会（与 mirrorRestore 同口径）
+    expect(h.seeded.write).not.toHaveBeenCalled();
   });
 
   it('镜像恢复成功后才置 seeded（顺序：写盘 → 置位）', async () => {

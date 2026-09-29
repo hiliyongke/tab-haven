@@ -43,12 +43,12 @@
 
 ## 各模块配置格式速查
 
-| 模块 | 文件形式 | 必填 frontmatter | 可选 frontmatter | 触发/调用方式 |
-| --- | --- | --- | --- | --- |
-| Rule | `rules/<名>/RULE.mdc` | `description`、`alwaysApply` | `enabled` | always=true 每会话全文加载；false 由 AI 按 description 相关性加载，或对话中 `@规则名` 手动附加 |
-| Agent | `agents/<名>.md` | `name`、`description` | `model`、`tools`、`agentMode`、`enabled`、`enabledAutoRun` | `agentic`：主 Agent 按 description 自动委派（独立上下文）；`manual`：Agent 选择框手动选用 |
-| Skill | `skills/<名>/SKILL.md` | `name`、`description` | `allowed-tools`、`disable` | AI 按 description 自动触发；三级加载（元数据常驻 → 主体触发加载 → references/scripts/assets 按需） |
-| Command | `commands/<名>.md` | `description` | `argument-hint`、`allowed-tools`、`model` | 输入框为空时输 `/` 选择；参数占位符 `$ARGUMENTS`（全部）与 `$1 $2…`（按位）；子目录形成命名空间 `dir/name.md → /dir:name` |
+| 模块    | 文件形式               | 必填 frontmatter             | 可选 frontmatter                                           | 触发/调用方式                                                                                                             |
+| ------- | ---------------------- | ---------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Rule    | `rules/<名>/RULE.mdc`  | `description`、`alwaysApply` | `enabled`                                                  | always=true 每会话全文加载；false 由 AI 按 description 相关性加载，或对话中 `@规则名` 手动附加                            |
+| Agent   | `agents/<名>.md`       | `name`、`description`        | `model`、`tools`、`agentMode`、`enabled`、`enabledAutoRun` | `agentic`：主 Agent 按 description 自动委派（独立上下文）；`manual`：Agent 选择框手动选用                                 |
+| Skill   | `skills/<名>/SKILL.md` | `name`、`description`        | `allowed-tools`、`disable`                                 | AI 按 description 自动触发；三级加载（元数据常驻 → 主体触发加载 → references/scripts/assets 按需）                        |
+| Command | `commands/<名>.md`     | `description`                | `argument-hint`、`allowed-tools`、`model`                  | 输入框为空时输 `/` 选择；参数占位符 `$ARGUMENTS`（全部）与 `$1 $2…`（按位）；子目录形成命名空间 `dir/name.md → /dir:name` |
 
 约束要点：
 
@@ -96,17 +96,17 @@
 
 ## 全流程覆盖矩阵
 
-| 阶段 | 入口 | 主要模块 | 质量保障 |
-| --- | --- | --- | --- |
-| 功能交付（主线） | `/feature` | 串联下列全部模块 | 计划确认制；五阶段流水线 |
-| 需求分析 | `/spec` | requirements-analyst、architecture/privacy-security 规则 | 宪法冲突前置拦截；影响面点名 schema/权限/文案三类流程 |
-| 编码 | 自然语言 / 手动 @规则 | 4 条 always 规则、change-recipes、ui-component、schema-evolution、wxt-dev-workflow | 分层红线 + 最小改动 + 复用优先 |
-| 测试 | `/test` | test-engineer、testing 规则、behavior-spec-testing | 覆盖率 ratchet；fake-browser 偏差声明 |
-| 评审 | `/review` | code-reviewer | Blocker 分级；全称判断先核验 |
-| 门禁 | `/check` | quality-gates | 禁改配置绕过门禁 |
-| 合规 | `/privacy-audit` | privacy-auditor | 逐项证据化核验 |
-| 提交 | `/commit` | git-commit 规则 | 草稿确认制；AI 无 git 写权限 |
-| 发布 | `/release` | quality-gates、privacy-auditor、wxt-dev-workflow | 审计通过才打包；不 tag 不上传 |
+| 阶段             | 入口                  | 主要模块                                                                           | 质量保障                                              |
+| ---------------- | --------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 功能交付（主线） | `/feature`            | 串联下列全部模块                                                                   | 计划确认制；五阶段流水线                              |
+| 需求分析         | `/spec`               | requirements-analyst、architecture/privacy-security 规则                           | 宪法冲突前置拦截；影响面点名 schema/权限/文案三类流程 |
+| 编码             | 自然语言 / 手动 @规则 | 4 条 always 规则、change-recipes、ui-component、schema-evolution、wxt-dev-workflow | 分层红线 + 最小改动 + 复用优先                        |
+| 测试             | `/test`               | test-engineer、testing 规则、behavior-spec-testing                                 | 覆盖率 ratchet；fake-browser 偏差声明                 |
+| 评审             | `/review`             | code-reviewer                                                                      | Blocker 分级；全称判断先核验                          |
+| 门禁             | `/check`              | quality-gates                                                                      | 禁改配置绕过门禁                                      |
+| 合规             | `/privacy-audit`      | privacy-auditor                                                                    | 逐项证据化核验                                        |
+| 提交             | `/commit`             | git-commit 规则                                                                    | 草稿确认制；AI 无 git 写权限                          |
+| 发布             | `/release`            | quality-gates、privacy-auditor、wxt-dev-workflow                                   | 审计通过才打包；不 tag 不上传                         |
 
 ## 扩展指南（新增配置怎么做）
 

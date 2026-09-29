@@ -1,6 +1,6 @@
 ---
 description: 新功能全流程：需求分析→计划确认→分层落码→测试→自评审→门禁→提交草稿，一键串联
-argument-hint: "<功能需求描述>"
+argument-hint: '<功能需求描述>'
 allowed-tools: Read, Grep, Glob, ListDir, Write, Edit, Bash, WebFetch
 ---
 

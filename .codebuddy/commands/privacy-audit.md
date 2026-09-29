@@ -1,12 +1,13 @@
 ---
 description: 隐私与安全红线自查：权限冻结、零网络、存储口径、输入信任边界逐项核验
-argument-hint: "[可选：重点范围，如 权限/网络/存储/依赖]"
+argument-hint: '[可选：重点范围，如 权限/网络/存储/依赖]'
 allowed-tools: Read, Grep, Glob, ListDir, Bash
 ---
 
 对项目做隐私与安全合规自查。重点范围（可空，空则全量）：$ARGUMENTS
 
 逐项核验（禁止凭印象下结论，每项给证据）：
+
 1. **权限冻结**：比对 `wxt.config.ts` 的 permissions/host_permissions 与 `PRIVACY.md` 权限表。
 2. **零网络**：grep `src/` 中 `fetch(`、`XMLHttpRequest`、`WebSocket`、`sendBeacon`、外链资源；执行 `pnpm build && pnpm check:privacy`。
 3. **存储口径**：`core/schema` 持久化类型与 `PRIVACY.md` 第 3 节逐项对齐。

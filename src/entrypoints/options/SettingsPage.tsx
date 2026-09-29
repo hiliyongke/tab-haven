@@ -122,7 +122,14 @@ export function SettingsPage() {
     if (pendingImport === null) return;
     void importData(pendingImport)
       .then(() => setTransferStatus(t('settings.importSuccess')))
-      .catch(() => setTransferStatus(t('settings.importFailed')));
+      .catch((error: unknown) => {
+        // 版本不兼容要说得清下一步：笼统「导入失败」会让用户以为备份坏了。
+        const message =
+          error instanceof Error && error.message === 'export-version-mismatch'
+            ? t('settings.importVersionMismatch')
+            : t('settings.importFailed');
+        setTransferStatus(message);
+      });
     setPendingImport(null);
   };
 

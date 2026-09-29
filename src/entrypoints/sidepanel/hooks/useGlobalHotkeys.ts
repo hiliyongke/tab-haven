@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { isModalOpen } from '@/ui/dialog/Dialog';
 
 /**
- * 面板全局快捷键：`⌘/Ctrl + P` 命令面板、`⌘/Ctrl + J` 定位激活标签、`⌘/Ctrl + K` 搜索。
+ * 面板全局快捷键：`⌘/Ctrl + P` 命令面板、`⌘/Ctrl + J` 定位激活标签、`⌘/Ctrl + K` 搜索、
+ * `⌘/Ctrl + Z` 撤销最近一批关闭。
  *
  * 从 `App.tsx` 抽出（原先与 runtime 消息监听挤在同一个 useEffect 里）。抽出的直接收益是
  * **监听器只注册一次**：原实现把快捷键与消息分发写在同一个 effect，依赖数组里带着
@@ -19,6 +20,8 @@ export interface GlobalHotkeyHandlers {
   locateActive: () => void;
   /** ⌘K：聚焦并全选搜索框。 */
   focusSearch: () => void;
+  /** ⌘Z：撤销最近一批关闭（文本编辑场景不拦截，原生文本撤销优先）。 */
+  undoLast: () => void;
 }
 
 export function useGlobalHotkeys(handlers: GlobalHotkeyHandlers): void {
@@ -48,6 +51,19 @@ export function useGlobalHotkeys(handlers: GlobalHotkeyHandlers): void {
           event.preventDefault();
           handlersRef.current.focusSearch();
           return;
+        case 'z': {
+          // ⌘⇧Z 是重做语义：不判成撤销。
+          if (event.shiftKey) return;
+          // 不抢文本编辑场景：输入框/可编辑区内的 ⌘Z 是原生文本撤销。
+          const target = event.target;
+          if (target instanceof HTMLElement) {
+            const tag = target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+          }
+          event.preventDefault();
+          handlersRef.current.undoLast();
+          return;
+        }
         default:
           return;
       }

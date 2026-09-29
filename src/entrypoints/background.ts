@@ -27,6 +27,7 @@ import {
   rebuildContextMenus,
   clearContextMenus,
   addEntryToFolder,
+  addTabToReadLater,
   discardTabSafely,
   setupMenus
 } from './background/contextMenus';
@@ -365,6 +366,16 @@ export default defineBackground(() => {
         break;
       case MENU_IDS.tabDiscard:
         void discardTabSafely(targetTab);
+        break;
+      case MENU_IDS.pageReadLater:
+      case MENU_IDS.tabReadLater:
+        if (targetTab?.url && targetTab.id !== undefined) {
+          void addTabToReadLater({
+            url: targetTab.url,
+            title: targetTab.title || targetTab.url,
+            favIconUrl: targetTab.favIconUrl
+          });
+        }
         break;
       case MENU_IDS.pagePin: {
         if (targetTab?.url && targetTab.id !== undefined) {

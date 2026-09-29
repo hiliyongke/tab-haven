@@ -1,12 +1,13 @@
 ---
 description: 基于当前改动生成 Conventional Commits 中文提交信息草稿（只生成草稿，不执行 git 提交）
-argument-hint: "[可选：提交主题提示]"
+argument-hint: '[可选：提交主题提示]'
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
 为当前改动生成提交信息草稿。用户提示（可空）：$ARGUMENTS
 
 流程：
+
 1. 用只读 git 命令了解改动：`git status`、`git diff --stat`、`git diff`（未暂存）与 `git diff --cached`（已暂存）。
 2. 加载 `.codebuddy/rules/git-commit`，按 Conventional Commits 生成中文描述：`<type>(<scope>): <描述>`，scope 取层级目录或入口名。
 3. 检查单核对：

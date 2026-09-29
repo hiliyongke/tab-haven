@@ -40,6 +40,7 @@ export type BooleanSettingKey =
   | 'uniqueUrlTabs'
   | 'searchAllWindows'
   | 'searchHistory'
+  | 'showOtherWindows'
   | 'discardNotifyEnabled'
   | 'reuseNotifyEnabled'
   | 'contextMenusEnabled'
@@ -323,6 +324,12 @@ export function buildSections(
           key: 'closeOnMiddleClick',
           labelKey: 'settings.closeOnMiddleClick',
           hintKey: 'settings.closeOnMiddleClickHint'
+        },
+        {
+          kind: 'toggle',
+          key: 'showOtherWindows',
+          labelKey: 'settings.showOtherWindows',
+          hintKey: 'settings.showOtherWindowsHint'
         },
         {
           kind: 'select',
