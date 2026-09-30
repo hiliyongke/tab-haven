@@ -143,7 +143,9 @@
   "sections": {
     "pinned": "Pinned tabs",
     "openerTree": "Opener tree",
-    "unknownLanguage": "Unknown language"
+    "unknownLanguage": "Unknown language",
+    "closeAll": "Close all tabs from this domain (undoable)",
+    "closeGroupAll": "Close all tabs in this group (undoable)"
   },
   "undo": {
     "action": "Undo",

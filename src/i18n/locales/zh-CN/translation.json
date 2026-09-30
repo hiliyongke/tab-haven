@@ -143,7 +143,9 @@
   "sections": {
     "pinned": "固定标签",
     "openerTree": "来源树",
-    "unknownLanguage": "未知语言"
+    "unknownLanguage": "未知语言",
+    "closeAll": "关闭该域名的全部标签（可撤销）",
+    "closeGroupAll": "关闭该分组的全部标签（可撤销）"
   },
   "undo": {
     "action": "撤销",

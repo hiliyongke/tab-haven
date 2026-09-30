@@ -4,6 +4,7 @@ import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
+import type { TemporarySection } from '@/core/site/Sections';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import {
   activateTabAcrossWindows,
@@ -209,21 +210,19 @@ export default function App() {
   // 否则用户会永久停在一个没有出口的骨架屏上。
   const [loadFailed, setLoadFailed] = useState(false);
   /**
-   * 用户主动滚动后的一段静默期（防"抢滚"）：静默中不自动跟随激活标签滚动。
+   * 用户是否已接管滚动（防"抢滚"）：一旦手动滚动浏览，就**不再**把视图自动拉回
+   * 激活标签，直到用户显式表达「我要看激活标签」（点击标签切换 / ⌘J 定位）为止。
    *
-   * 必须用 state 而非 ref：ref 变化不触发重渲染，而本值需要在滚动结束后
-   * 被重新求值并下传给 SectionList——用 ref 会导致「滚动后 800ms 内禁用跟随」
-   * 只能靠其他 state 碰巧变化才生效，语义失效。
+   * 此前是 800ms 静默期：静默一过就会再次跟随，而用户往往正停在半路找另一个
+   * 标签——被拉回去是纯粹的干扰。改为「接管 / 交还」语义后，跟随只在用户明确
+   * 切换或定位时恢复。
+   *
+   * 必须用 state 而非 ref：ref 变化不触发重渲染，而本值需要下传给 SectionList。
    */
   const [userScrollActive, setUserScrollActive] = useState(false);
-  const userScrollTimerRef = useRef(0);
-  const markUserScroll = useCallback(() => {
-    setUserScrollActive(true);
-    window.clearTimeout(userScrollTimerRef.current);
-    userScrollTimerRef.current = window.setTimeout(() => setUserScrollActive(false), 800);
-  }, []);
-  // 卸载时清理定时器，避免对已卸载组件 setState。
-  useEffect(() => () => window.clearTimeout(userScrollTimerRef.current), []);
+  const markUserScroll = useCallback(() => setUserScrollActive(true), []);
+  /** 交还滚动跟随权（用户主动切换或定位激活标签时调用）。 */
+  const releaseScrollControl = useCallback(() => setUserScrollActive(false), []);
 
   /**
    * 智能激活：目标标签在其他窗口时先聚焦窗口再激活（全窗口搜索用）。
@@ -234,6 +233,8 @@ export default function App() {
    */
   const smartActivate = useCallback(
     (tabId: number) => {
+      // 用户主动切换标签 = 明确想看这个标签，交还滚动跟随权。
+      releaseScrollControl();
       const { tabs: liveTabs, currentWindowId: liveWindowId } = useTabStore.getState();
       const tab = (liveTabs as TabRecord[]).find((candidate) => candidate.id === tabId);
       if (tab && tab.windowId !== liveWindowId) {
@@ -241,7 +242,7 @@ export default function App() {
       }
       return activateTab(tabId);
     },
-    [activateTab]
+    [activateTab, releaseScrollControl]
   );
 
   // 常驻搜索：查询状态 / 引擎 / 命中 / 禁缓存角标集 / 历史命中（P-01）。
@@ -330,8 +331,14 @@ export default function App() {
     },
     [setQuery, searchInputRef]
   );
-  /** 定位激活标签（快捷键、挂起动作、命令面板共用）。 */
-  const locateActiveViaRef = useCallback(() => locateActiveRef.current(), []);
+  /**
+   * 定位激活标签（快捷键、挂起动作、命令面板共用）。
+   * 定位是用户显式「把激活标签带到眼前」，故同时交还滚动跟随权。
+   */
+  const locateActiveViaRef = useCallback(() => {
+    releaseScrollControl();
+    locateActiveRef.current();
+  }, [releaseScrollControl]);
   /** 重复标签复用提示。 */
   const notifyDuplicateReused = useCallback(() => notify(i18n.t('duplicates.reused')), [notify]);
   /** 打开命令面板。 */
@@ -795,6 +802,23 @@ export default function App() {
     t
   ]);
 
+  /**
+   * 关闭整个分区（同一域名的标签一次全关）。
+   *
+   * 走统一撤销批次 closeWithUndo：整批一次入栈，撤销一次即可全部找回
+   * （逐个关闭会产生 N 条批次、N 次提示，撤回要点 N 次）。
+   * 分区内的 pinned / 隐身标签由分区构造阶段排除（见 core/site/Sections），
+   * 这里不再重复过滤，避免两处口径漂移。
+   */
+  const handleCloseSection = useCallback((section: TemporarySection) => {
+    const closable = section.tabs;
+    if (closable.length === 0) return;
+    void useUndoStore.getState().closeWithUndo(
+      closable,
+      closable.map((tab) => tab.id)
+    );
+  }, []);
+
   // SectionList 为 memo 组件：callbacks 必须保持引用稳定（仅语言与 store 函数变化时重建），
   // 否则每次渲染都会导致整个列表树重渲染。所有 handler 均从 store getState 读取最新数据。
   const sectionCallbacks = useMemo(
@@ -815,10 +839,12 @@ export default function App() {
         void toggleSiteCollapsed(siteKey, collapsed);
       },
       onReorder: handleReorder,
-      onMoveTab: handleMoveTab
+      onMoveTab: handleMoveTab,
+      onCloseSection: handleCloseSection
     }),
     [
       smartActivate,
+      handleCloseSection,
       toggleMute,
       handleTogglePin,
       setGroupCollapsed,
@@ -877,7 +903,7 @@ export default function App() {
       onWakeAll: handleWakeAll,
       onQuickRegroup: handleQuickRegroup,
       onCleanDuplicates: handleCloseDuplicates,
-      onLocateActive: handleLocateActive,
+      onLocateActive: locateActiveViaRef,
       onOpenHistory: () => setShowHistory(true),
       onOpenSettings: openOptionsPage,
       onToggleAllSections: handleToggleAllSections,
@@ -924,7 +950,7 @@ export default function App() {
       handleWakeAll,
       handleQuickRegroup,
       handleCloseDuplicates,
-      handleLocateActive,
+      locateActiveViaRef,
       handleToggleAllSections,
       handleOpenFolder,
       smartActivate,
@@ -1170,7 +1196,7 @@ export default function App() {
           onQuickRegroup={handleQuickRegroup}
           onCleanDuplicates={handleCloseDuplicates}
           onCloseHighlighted={handleCloseHighlighted}
-          onLocateActive={handleLocateActive}
+          onLocateActive={locateActiveViaRef}
           onOpenHistory={() => setShowHistory(true)}
           onOpenSettings={openOptionsPage}
           onOpenSnapshots={() => setShowSnapshots(true)}

@@ -22,6 +22,13 @@ export interface SectionCallbacks {
   onGroupMove: (groupId: number, index: number) => void;
   /** 与浏览器多选选区同步。 */
   onHighlightSelected?: () => void;
+  /**
+   * 关闭整个分区（如「同一域名的标签全部关闭」）。
+   *
+   * 必须整批一次调用而非逐个 onCloseTab：逐个会生成 N 条撤销批次与 N 次提示，
+   * 用户想撤回时得点 N 次撤销。
+   */
+  onCloseSection?: (section: TemporarySection) => void;
 }
 
 /** SectionCard 全部输入（跨子组件共享）。 */

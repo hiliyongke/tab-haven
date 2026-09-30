@@ -54,7 +54,8 @@ const callbacks = {
   onGroupRecolor: vi.fn(),
   onGroupMove: vi.fn(),
   onToggleGroupCollapsed: vi.fn(),
-  onToggleSiteCollapsed: vi.fn()
+  onToggleSiteCollapsed: vi.fn(),
+  onCloseSection: vi.fn()
 };
 
 beforeAll(() => {
@@ -98,6 +99,89 @@ function renderSectionList(count: number, reorderEnabled: boolean) {
 function mountedRows(view: ReturnType<typeof render>): NodeListOf<HTMLElement> {
   return view.container.querySelectorAll<HTMLElement>('li[data-tabs-tab-id]');
 }
+
+/**
+ * 站点聚合组（同一域名）头部提供「整批关闭」入口：逐个点关闭要 N 次，
+ * 且会生成 N 条撤销批次（撤回要点 N 次）——整批一次入栈才可用。
+ * 未分组分区不应出现该入口（它没有域名语义）。
+ */
+describe('SectionList 分区整批关闭（同一域名）', () => {
+  function siteSection(count: number): TemporarySection {
+    return {
+      kind: 'site',
+      key: 'site:example.com',
+      siteKey: 'example.com',
+      title: 'example.com',
+      tabs: tabsOf(count)
+    };
+  }
+
+  it('站点分区头部有「关闭全部」按钮，点击整批回调（一次调用而非逐条）', () => {
+    const view = render(
+      <DndRoot onDragEnd={() => undefined}>
+        <SectionList
+          sections={[siteSection(3)]}
+          collapsedGroups={new Set<number>()}
+          collapsedSites={new Set<string>()}
+          duplicateCounts={new Map<string, number>()}
+          activeTabId={undefined}
+          splitPartners={new Set<number>()}
+          reorderEnabled={false}
+          callbacks={callbacks}
+        />
+      </DndRoot>
+    );
+
+    const closeAll = view.container.querySelector<HTMLElement>('button.close-site');
+    expect(closeAll).not.toBeNull();
+    closeAll!.click();
+
+    expect(callbacks.onCloseSection).toHaveBeenCalledTimes(1);
+    // 整批：传整个分区（3 条标签），而不是逐条 onCloseTab
+    expect(callbacks.onCloseSection.mock.calls[0]![0]).toMatchObject({ kind: 'site' });
+    expect((callbacks.onCloseSection.mock.calls[0]![0] as TemporarySection).tabs).toHaveLength(3);
+    expect(callbacks.onCloseTab).not.toHaveBeenCalled();
+  });
+
+  it('原生组分区同样有整批关闭入口（自动分组同步为原生组的域名分组走这条路径）', () => {
+    const native: TemporarySection = {
+      kind: 'native',
+      key: 'group-5',
+      title: 'buy.cloud.tencent.com',
+      tabs: tabsOf(2),
+      groupId: 5,
+      collapsed: false
+    };
+    const view = render(
+      <DndRoot onDragEnd={() => undefined}>
+        <SectionList
+          sections={[native]}
+          collapsedGroups={new Set<number>()}
+          collapsedSites={new Set<string>()}
+          duplicateCounts={new Map<string, number>()}
+          activeTabId={undefined}
+          splitPartners={new Set<number>()}
+          reorderEnabled={false}
+          callbacks={callbacks}
+        />
+      </DndRoot>
+    );
+
+    const closeAll = view.container.querySelector<HTMLElement>('button.close-site');
+    expect(closeAll).not.toBeNull();
+    closeAll!.click();
+    expect(callbacks.onCloseSection.mock.calls[0]![0]).toMatchObject({
+      kind: 'native',
+      groupId: 5
+    });
+  });
+
+  it('未分组分区不给「关闭全部」入口（无域名语义，避免误关全窗口）', () => {
+    const view = renderSectionList(3, false);
+
+    expect(view.container.querySelector('button.close-site')).toBeNull();
+  });
+});
 
 describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
   it('默认配置（排序开启）250 标签仍强制虚拟化：挂载行 < 40 且显示排序暂停提示', async () => {

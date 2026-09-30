@@ -443,6 +443,16 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
         onToggle={onToggle}
         mediaIndicator={mediaIndicator}
         action={headerAction}
+        // 「×」= 整批关闭该分组的全部标签（一次撤销批次，可一键找回）。
+        // 开了「自动分组同步为原生组」的用户，域名分组实际是 native 组
+        // （标题即域名）——只挂 site 会让这批用户完全找不到入口。
+        // 关闭组内全部标签后空组由浏览器回收，不额外解散浏览器分组结构。
+        onClose={
+          rowProps.callbacks.onCloseSection
+            ? () => rowProps.callbacks.onCloseSection?.(section)
+            : undefined
+        }
+        closeTitle={t(section.kind === 'site' ? 'sections.closeAll' : 'sections.closeGroupAll')}
         collapsed={isCollapsed}
       >
         {isCollapsed ? null : renderBody()}

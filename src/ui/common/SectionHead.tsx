@@ -95,7 +95,9 @@ export function SectionHead({
       {onClose && (
         <button
           type="button"
-          className="row-action close-site"
+          // is-danger：悬停/键盘聚焦转砖红（静默态保持中性灰，与行内「关闭」同语义），
+          // 让「整批关闭」在密集分组头部可被一眼认出是破坏性操作。
+          className="row-action close-site is-danger"
           title={closeTitle}
           aria-label={closeTitle}
           onClick={onClose}
