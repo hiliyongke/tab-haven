@@ -41,6 +41,14 @@ interface ToastState {
   /** 自定义动作按钮（自动休眠撤销等非关闭类操作）。 */
   action?: ToastAction;
   /**
+   * 附属信息（与回执同槽展示）：淘汰告知用。
+   *
+   * 淘汰发生在操作回执之前（appendBatch 内淘汰 → 调用方随后设「已关闭 N 个」），
+   * 若淘汰单独占一条提示，回执会立刻把它顶掉；而 key 已被记为「已提示」，
+   * 本会话内再也不会提示 —— 淘汰告知因此永久漏发。故回执把它接过来同槽展示。
+   */
+  note?: string;
+  /**
    * 语义强度：error 走 role="alert"（打断读屏、立刻播报），info 走
    * role="status"（排队播报）。此前所有提示一律 status/polite，失败提示
    * 与「已保存」同权重——对依赖读屏的用户，操作失败是最不该被延后的信息。
@@ -111,6 +119,15 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
  */
 const notifiedEvictions = new Set<string>();
 /**
+ * 已展示、等待被回执接走的淘汰告知（消息文本）。
+ *
+ * 淘汰告知先于回执展示，回执随即覆盖它 —— 若不把它接进回执的 note，用户一条
+ * 都看不到（且 key 已标记已提示，不会再提示第二次）。这里记文本而非布尔值：
+ * 只有当「当前提示条仍是那条淘汰告知」时才并入，避免把过期很久的告知挂到
+ * 之后某次不相关的回执上。
+ */
+let pendingEvictionToast: string | undefined;
+/**
  * 撤销执行互斥。
  *
  * 恢复一个批次要为每个标签走一次 `tabs.create`（几十~几百 ms）。若期间允许再次撤销，
@@ -139,6 +156,8 @@ const UNDO_EXEC_LOCK = 'tabs.undo-exec';
 let loadInFlight: Promise<void> | null = null;
 /** 仓库 watcher 注册守卫（跨页撤销栈同步，只注册一次）。 */
 let undoWatcherStarted = false;
+/** 同上，重做栈一份：两个仓库各自整表写，各需一个 watcher。 */
+let redoWatcherStarted = false;
 
 /**
  * undoRepository 写盘串行链（追加顺序）。
@@ -221,6 +240,26 @@ export const useUndoStore = create<UndoState>()((set, get) => {
   };
 
   /**
+   * 提示条统一出口：把「刚展示的淘汰告知」并入本次提示的 note。
+   *
+   * 回执（「已关闭 N 个」等）一定晚于淘汰告知设置，若各自直接 set，回执会把
+   * 淘汰告知顶掉 —— 而淘汰 key 已记为已提示，本会话内不会再提示，告知就此永久
+   * 漏发。经本出口的提示都会把尚未被接走的淘汰告知带出来同槽展示。
+   */
+  const showToast = (toast: ToastState): void => {
+    const current = get().toast;
+    const note =
+      toast.note ??
+      (pendingEvictionToast !== undefined && current?.message === pendingEvictionToast
+        ? pendingEvictionToast
+        : undefined);
+    // 无论是否并入都清空：过期的告知不得挂到之后不相关的提示上。
+    pendingEvictionToast = undefined;
+    set({ toast: note === undefined ? toast : { ...toast, note } });
+    scheduleToastClear();
+  };
+
+  /**
    * 撤销「快照恢复」批次（kind='restore'）的执行体。
    *
    * 这类批次记的是**仍开着**的标签（快照恢复是新建，不是关闭），所以撤销它
@@ -289,14 +328,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       { windowId }
     );
     await appendBatch(closedBatch);
-    set({
-      toast: {
-        message: i18n.t('undo.closed', { count: closed.length }),
-        canUndo: true,
-        batchId: closedBatch.id
-      }
+    showToast({
+      message: i18n.t('undo.closed', { count: closed.length }),
+      canUndo: true,
+      batchId: closedBatch.id
     });
-    scheduleToastClear();
   };
 
   /**
@@ -437,6 +473,16 @@ export const useUndoStore = create<UndoState>()((set, get) => {
             set({ batches: value });
           });
         }
+        // 重做栈同样需要跨页回流：另一页撤销写入的重做项在本页内存看不到时，
+        // 「入栈即清重做栈」的守卫（仅看内存）就不会触发，陈旧的重做项会留到
+        // 下次重做 —— 重做按 URL 反查，可能关掉与本次撤销无关的标签。
+        if (!redoWatcherStarted) {
+          redoWatcherStarted = true;
+          redoRepository.watch((value) => {
+            if (structuralSignature(value) === structuralSignature(get().redoBatches)) return;
+            set({ redoBatches: value });
+          });
+        }
         const before = get().batches;
         const settings = await settingsRepository.read();
         const batches = settings.persistUndo ? await undoRepository.read() : [];
@@ -504,17 +550,14 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       await appendBatch(batch);
 
       const skipped = requested.length - closed.length;
-      set({
-        toast: {
-          message:
-            skipped > 0
-              ? i18n.t('undo.closedPartial', { count: closed.length, skipped })
-              : i18n.t('undo.closed', { count: closed.length }),
-          canUndo: true,
-          batchId: batch.id
-        }
+      showToast({
+        message:
+          skipped > 0
+            ? i18n.t('undo.closedPartial', { count: closed.length, skipped })
+            : i18n.t('undo.closed', { count: closed.length }),
+        canUndo: true,
+        batchId: batch.id
       });
-      scheduleToastClear();
     },
 
     undo: async () => {
@@ -612,7 +655,15 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       set({ redoing: true });
       try {
         await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
-          const targets = selectRedoTargets(useTabStore.getState().tabs, latest.entries);
+          // 目标窗口必须与「撤销时恢复到哪个窗口」同口径：撤销回的是原窗口（可能是
+          // 另一个窗口），按 tabStore 的当前窗口反查会关掉本窗口里同 URL 的无关标签。
+          // 与 closeRestoredBatch 的取窗口径保持一致（失败时退回当前窗口快照）。
+          const redoWindowId = await resolveRestoreWindowId(latest.windowId);
+          const tabs =
+            redoWindowId === undefined
+              ? useTabStore.getState().tabs
+              : await queryWindowTabs(redoWindowId).catch(() => useTabStore.getState().tabs);
+          const targets = selectRedoTargets(tabs, latest.entries);
           if (targets.length === 0) {
             // 目标标签已不在（用户手动关掉了）：重做没有对象，清栈并明确告知。
             // 不能静默 return —— 否则用户会以为「点了重做没反应」。
@@ -655,14 +706,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
             { windowId: closed[0]?.windowId ?? useTabStore.getState().currentWindowId }
           );
           await appendBatch(batch);
-          set({
-            toast: {
-              message: i18n.t('undo.redone', { count: closed.length }),
-              canUndo: true,
-              batchId: batch.id
-            }
+          showToast({
+            message: i18n.t('undo.redone', { count: closed.length }),
+            canUndo: true,
+            batchId: batch.id
           });
-          scheduleToastClear();
         });
       } finally {
         undoInFlight = false;
@@ -686,19 +734,26 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     },
 
     notify: (message, action) => {
-      set({ toast: { message, canUndo: false, batchId: undefined, action, tone: 'info' } });
-      scheduleToastClear();
+      showToast({ message, canUndo: false, batchId: undefined, action, tone: 'info' });
     },
 
     notifyError: (message) => {
-      set({ toast: { message, canUndo: false, batchId: undefined, tone: 'error' } });
-      scheduleToastClear();
+      showToast({ message, canUndo: false, batchId: undefined, tone: 'error' });
     },
 
     notifyEviction: (key, message) => {
       // 合并：同一类淘汰本会话内只提示一次。容量语义没变，重复提示只会刷屏。
       if (notifiedEvictions.has(key)) return;
       notifiedEvictions.add(key);
+      // 先独立展示，同时登记为「待回执接走」：淘汰发生在回执之前（appendBatch 内
+      // 淘汰 → 调用方随后设「已关闭 N 个」），回执经 showToast 会把它并入 note；
+      // 若本次操作没有回执（如后台归档登记），它就以独立提示条的形式留在界面上。
+      //
+      // 已知取舍：极少数场景（同一操作内两类淘汰先后发生）下，后一条会覆盖尚未
+      // 被接走的前一条。三类淘汰分别发生在「暂存稍后读 / 保存快照 / 关闭标签」，
+      // 路径不重叠，且覆盖只影响「少提示一条」，故不为此拼接文案。
+      pendingEvictionToast = message;
+      // 刻意不经 showToast：否则本次展示会把自己登记的那条又消费掉。
       set({ toast: { message, canUndo: false, batchId: undefined, tone: 'info' } });
       scheduleToastClear();
     },

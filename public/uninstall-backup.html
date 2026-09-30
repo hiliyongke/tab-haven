@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>卸载前请先导出备份 · Tabs</title>
+    <!-- 双语并列：本页是扩展页（MV3 CSP 禁止内联脚本），无法按 navigator.language
+         切换，故中英两段同时呈现，英文段用 lang="en" 标记供读屏正确发音。 -->
+    <title>卸载前请先导出备份 / Export a backup before uninstalling · Tabs</title>
     <!-- 样式全部内联：本页不得引用任何外部字体 / CDN / 图片，
          否则会击穿「零出站网络请求」的隐私门禁（scripts/privacy-check.mjs）。 -->
     <style>
@@ -42,6 +44,7 @@
         font-size: 13px;
       }
       footer { margin-top: 28px; font-size: 12px; opacity: 0.6; }
+      hr { margin: 28px 0; border: 0; border-top: 1px solid rgba(128, 128, 128, 0.3); }
     </style>
   </head>
   <body>
@@ -68,6 +71,46 @@
       <footer>
         本页是随扩展一起打包到本地的静态页面，不含任何网络请求，也不会记录你是否卸载。
       </footer>
+
+      <hr />
+
+      <section lang="en">
+        <h1>Export a backup before you uninstall</h1>
+        <p class="sub">Thanks for trying Tabs.</p>
+
+        <div class="warn">
+          <strong>Uninstalling permanently deletes all Tabs data on this device</strong>, including
+          fixed folders, pinned tiles, every snapshot and archive, your read-later queue and the
+          undo stack. This data <strong>lives only in your own browser</strong> — Tabs has no
+          server, so nothing can be recovered after uninstalling.
+        </div>
+
+        <h2>How to keep your data</h2>
+        <ol>
+          <li>
+            <strong>Do not</strong> confirm the uninstall yet. Open <code>chrome://extensions</code>
+            (<code>edge://extensions</code> on Edge).
+          </li>
+          <li>
+            Find Tabs, open <strong>Details</strong> → <strong>Extension options</strong> (or
+            right-click the icon and choose Options).
+          </li>
+          <li>
+            In the <strong>Data</strong> section of the settings page, click
+            <strong>Export backup</strong> and save the JSON file.
+          </li>
+          <li>Confirm the file is saved, then come back and finish uninstalling.</li>
+        </ol>
+        <p style="font-size: 14px">
+          If you reinstall Tabs later, <strong>Import backup</strong> in the same place restores
+          everything (the import is transactional — a failure rolls back completely).
+        </p>
+
+        <footer>
+          This page ships inside the extension as a local static page. It makes no network requests
+          and does not record whether you uninstalled.
+        </footer>
+      </section>
     </main>
   </body>
 </html>

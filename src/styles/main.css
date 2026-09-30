@@ -159,6 +159,9 @@
 
   /* 模态遮罩：此前三处各写 bg-black/30，既绕过令牌也绕过调色板守卫。 */
   --overlay-scrim: rgb(0 0 0 / 30%);
+  /* 滚动区底部渐隐（固定空间嵌套滚动的边界提示）：此前硬编码 rgba(0,0,0,.06)，
+     既绕过令牌，深色主题下也没有对应值。 */
+  --scroll-fade: rgb(0 0 0 / 6%);
 }
 
 /* 阴影工具类：供组件以 className 引用（替代 shadow-sm/lg/xl）。
@@ -184,6 +187,8 @@
   color-scheme: dark;
   /* 深色下 30% 黑遮罩几乎看不出层次，加深到 55% 才能让模态从背景中分离。 */
   --overlay-scrim: rgb(0 0 0 / 55%);
+  /* 深色底上 6% 的渐隐几乎不可见，加深到 24% 才能读出「还有更多内容」。 */
+  --scroll-fade: rgb(0 0 0 / 24%);
 
   --c-gray-50: #1d2220;
   --c-gray-100: #282e2b;
@@ -1140,7 +1145,7 @@ html.theme-transition *::after {
   /* 滚动边界提示（R15 / P-1）：固定空间是列表内的嵌套滚动区（max-height 截断），
      内容溢出时若没有底部内阴影，用户会以为「已经到底了」而漏看后面的文件夹。
      阴影随滚动位置由 JS 切换 .is-scrolled-to-end 显隐（见 FixedArea.tsx）。 */
-  background-image: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.06));
+  background-image: linear-gradient(to bottom, transparent, var(--scroll-fade));
   background-size: 100% 12px;
   background-repeat: no-repeat;
   background-position: bottom;

@@ -35,11 +35,6 @@ export function openAboutPage(): void {
   void openUrlInTab(browser.runtime.getURL('/about.html'));
 }
 
-/** 带日期的导出文件名（如 `tabs-backup-2026-09-30.json`）。 */
-export function datedJsonFilename(prefix: string): string {
-  return `${prefix}-${new Date().toISOString().slice(0, 10)}.json`;
-}
-
 /**
  * 把一段 JSON 文本下载为本地文件（保存位置由用户在浏览器下载对话框中决定）。
  *

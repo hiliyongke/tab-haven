@@ -70,13 +70,8 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
  * 再保证总快照不超过 snapshotLimit（保留最新 N 条）。返回新数组（不修改入参）。
  */
 export function trimSnapshots(list: readonly Snapshot[], settings: Settings): Snapshot[] {
-  const sorted = [...list].sort((a, b) => b.createdAt - a.createdAt);
-  const maxAuto = Math.max(1, settings.maxAutoSnapshots);
-  const autoKept = sorted.filter((s) => s.origin === 'auto').slice(0, maxAuto);
-  const manualKept = sorted.filter((s) => s.origin !== 'auto');
-  const merged = [...autoKept, ...manualKept].sort((x, y) => y.createdAt - x.createdAt);
-  const limit = Math.max(1, settings.snapshotLimit);
-  return merged.slice(0, limit);
+  // 委托 trimSnapshotsWithEvicted（单一实现），避免两份裁剪逻辑日后分叉。
+  return trimSnapshotsWithEvicted(list, settings).kept;
 }
 
 /**

@@ -11,9 +11,8 @@ export function trimReadLater(
   items: readonly ReadLaterItem[],
   limit: number = READLATER_LIMIT
 ): ReadLaterItem[] {
-  if (items.length <= limit) return [...items];
-  const sorted = [...items].sort((a, b) => a.addedAt - b.addedAt);
-  return sorted.slice(sorted.length - limit);
+  // 委托 trimReadLaterWithEvicted（单一实现），避免两份裁剪逻辑日后分叉。
+  return trimReadLaterWithEvicted(items, limit).kept;
 }
 
 /**

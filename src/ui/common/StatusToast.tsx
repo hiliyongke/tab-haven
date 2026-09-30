@@ -24,7 +24,11 @@ export function StatusToast() {
       role={isError ? 'alert' : 'status'}
       aria-live={isError ? 'assertive' : 'polite'}
     >
-      <span className="flex-1 truncate">{toast.message}</span>
+      {/* note 是附属信息（淘汰告知）：与回执同槽展示，避免被回执顶掉后永久漏发。 */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{toast.message}</span>
+        {toast.note && <span className="truncate text-gray-500">{toast.note}</span>}
+      </div>
       {toast.canUndo && (
         <Button variant="soft" size="sm" onClick={() => void undo()}>
           {t('undo.action')}

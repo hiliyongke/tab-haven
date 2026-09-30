@@ -11,12 +11,8 @@ import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { TextField } from '@/ui/common/TextField';
 import { clearDiagnostics, exportDiagnostics, readAllDiagnostics } from '@/platform/diagnostics';
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
-import {
-  datedJsonFilename,
-  downloadJsonFile,
-  openAboutPage,
-  openUrlInTab
-} from '@/platform/navigation';
+import { downloadJsonFile, openAboutPage, openUrlInTab } from '@/platform/navigation';
+import { datedJsonFilename } from '@/core/util/filename';
 import { SettingsOutline, type OutlineItem } from '@/entrypoints/options/SettingsOutline';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';

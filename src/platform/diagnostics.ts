@@ -46,14 +46,6 @@ let pending: DiagnosticEntry[] = [];
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
- * 抹掉文本中夹带的 URL。
- *
- * 部分 chrome API 的错误消息会原样带上调用参数（典型如 `Invalid URL:
- * https://...`），而诊断环形缓冲是**可导出**的 —— 落进去等于把浏览内容写进
- * 用户会随手发给我们的文件，直接违背本模块「只含技术上下文、不记录标签标题与
- * URL」的承诺（platform/reuse/persistedLedger 已为同一承诺单独规避过一次）。
- */
-/**
  * 日志脱敏（R17 / S-2）。
  *
  * 原实现只匹配 `http(s)://` 开头的串 —— 于是以下三种形式会**原样落盘**：
@@ -89,13 +81,13 @@ const FILE_LINE_TOKEN =
 
 function redactUrls(text: string): string {
   // 先占位保护文件名:行号，脱敏后还原 —— 比写一条巨型负向断言更易读也更易验证。
-  const protected_tokens: string[] = [];
+  const protectedTokens: string[] = [];
   let out = text.replace(FILE_LINE_TOKEN, (m) => {
-    protected_tokens.push(m);
-    return `\uE000${protected_tokens.length - 1}\uE000`;
+    protectedTokens.push(m);
+    return `\uE000${protectedTokens.length - 1}\uE000`;
   });
   for (const pattern of REDACT_PATTERNS) out = out.replace(pattern, '<url>');
-  return out.replace(/\uE000(\d+)\uE000/g, (_m, i) => protected_tokens[Number(i)] ?? '');
+  return out.replace(/\uE000(\d+)\uE000/g, (_m, i) => protectedTokens[Number(i)] ?? '');
 }
 
 /** 供行为测试断言脱敏结果（R17 / S-2）。内部函数，不参与产品路径。 */

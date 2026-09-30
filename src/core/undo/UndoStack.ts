@@ -29,15 +29,17 @@ export function toUndoTabRecord(
   };
 }
 
-/** 入栈，超限按 FIFO 淘汰。 */
+/**
+ * 入栈，超限按 FIFO 淘汰。语义委托 `pushBatchWithEvicted`（单一实现），
+ * 避免两份裁剪逻辑日后分叉成两种口径。
+ */
 export function pushBatch(
   batches: UndoBatch[],
   batch: UndoBatch,
   limit = DEFAULT_UNDO_STACK_LIMIT
 ): UndoBatch[] {
   // slice(-0) 等价于 slice(0)（保留全量），limit 须钳到 ≥1 才能维持淘汰语义。
-  const cap = Math.max(1, Math.floor(limit));
-  return [...batches, batch].slice(-cap);
+  return pushBatchWithEvicted(batches, batch, limit).kept;
 }
 
 /**
@@ -105,20 +107,36 @@ export function createUndoBatch(
  *
  * 固定标签豁免：与 `closeWithUndo` 的关闭口径一致（用户显式固定的标签不被
  * 批量动作关闭），避免重做误关用户刚固定的页面。
+ *
+ * 一对一配对而非「按 URL 全量命中」：窗口里可能另有用户本来就开着、从未被本次
+ * 撤销恢复出来的同 URL 副本，全量匹配会把它们一并关掉 —— redo 的语义只是
+ * 「关掉刚恢复的那批」。
  */
 export function selectRedoTargets(
   tabs: readonly TabRecord[],
   records: readonly UndoTabRecord[]
 ): TabRecord[] {
-  const keys = new Set<string>();
+  const taken = new Set<number>();
+  const targets: TabRecord[] = [];
   for (const record of records) {
-    const key = webComparisonKey(record.url, undefined);
-    if (key !== null) keys.add(key);
+    const index = tabs.findIndex(
+      (tab, position) => !taken.has(position) && !tab.pinned && matchesRecord(tab, record)
+    );
+    if (index === -1) continue;
+    taken.add(index);
+    targets.push(tabs[index]!);
   }
-  if (keys.size === 0) return [];
-  return tabs.filter((tab) => {
-    if (tab.pinned) return false;
-    const key = webComparisonKey(tab.url, tab.pendingUrl);
-    return key !== null && keys.has(key);
-  });
+  return targets;
+}
+
+/** 单条标签是否对应单条撤销记录。 */
+function matchesRecord(tab: TabRecord, record: UndoTabRecord): boolean {
+  const key = webComparisonKey(record.url, undefined);
+  if (key !== null) {
+    return webComparisonKey(tab.url, tab.pendingUrl) === key;
+  }
+  // 内部页（chrome://、about:blank、扩展页）没有 web 比较键：按原始 URL 兜底
+  // 比较，否则整批内部页会被判成「重做无对象」——而标签其实还开着。
+  // 空 URL 不参与兜底（记录里 URL 缺失不等价于「关掉没有 URL 的标签」）。
+  return record.url !== '' && (tab.url ?? '') === record.url;
 }

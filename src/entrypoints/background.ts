@@ -314,16 +314,16 @@ export default defineBackground(() => {
    * 任何提示，是一条单向的、不可挽回的数据丢失路径。
    *
    * 两条硬约束（与「零出站网络 / 无遥测」的承诺一致）：
-   *   1. 目标页必须随扩展打包到本地（public/uninstall.html 会被原样拷进产物），
-   *      样式全部内联 —— 任何外部字体/CDN/图片都会击穿隐私门禁；
+   *   1. 目标页必须随扩展打包到本地（public/uninstall-backup.html 会被原样拷进
+   *      产物），样式全部内联 —— 任何外部字体/CDN/图片都会击穿隐私门禁；
    *   2. URL 不带任何查询参数回传 —— 否则「用户卸载了」这件事本身就被上报，
    *      构成事实上的遥测。
    */
   const registerUninstallUrl = (): void => {
     try {
-      // 注意：必须是扩展内相对 URL，由浏览器解析为 chrome-extension://<id>/uninstall.html，
-      // 不指向任何外部站点。
-      browser.runtime.setUninstallURL('uninstall.html');
+      // 注意：必须是扩展内相对 URL，由浏览器解析为
+      // chrome-extension://<id>/uninstall-backup.html，不指向任何外部站点。
+      browser.runtime.setUninstallURL('uninstall-backup.html');
     } catch {
       // 该 API 在个别环境下不可用（非 Chrome/Edge 内核）：挽留是尽力而为，失败不影响主流程。
     }

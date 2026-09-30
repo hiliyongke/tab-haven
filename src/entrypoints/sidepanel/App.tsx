@@ -13,7 +13,8 @@ import {
   onTabHighlighted,
   reloadTabs
 } from '@/platform/tabs';
-import { datedJsonFilename, downloadJsonFile, openOptionsPage } from '@/platform/navigation';
+import { downloadJsonFile, openOptionsPage } from '@/platform/navigation';
+import { datedJsonFilename } from '@/core/util/filename';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -45,6 +45,17 @@ export function FixedArea() {
     id: FIXED_AREA_DROPPABLE,
     data: { type: 'fixed-area' }
   });
+  // 滚动边界提示要监听容器节点，而 CategoryModule 只透传 dnd 的 setNodeRef
+  // （不提供独立 ref）：这里把它包一层，顺带把节点留在本地 ref 里，
+  // 免去全局 querySelector（那会取到页面上任意一处 .fixed-area）。
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const attachNodeRef = useCallback(
+    (node: HTMLElement | null) => {
+      scrollRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef]
+  );
 
   useEffect(() => {
     const handleCreateRequest = (event: Event) => {
@@ -65,9 +76,8 @@ export function FixedArea() {
    * 到底时给容器加 .is-scrolled-to-end（样式见 main.css .fixed-area）。
    */
   useEffect(() => {
-    // GroupCard 只暴露 sortable 的 setNodeRef（不提供滚动容器 ref），
-    // 故按类名在本组件挂载的 DOM 内取该元素 —— 作用域已限定到本组件的子树。
-    const el = document.querySelector<HTMLElement>('.fixed-area');
+    // 作用域限定在本组件挂载的节点上（经 attachNodeRef 拿到），不是全局查询。
+    const el = scrollRef.current;
     if (!el) return;
     const update = () => {
       const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
@@ -107,7 +117,7 @@ export function FixedArea() {
           count={folders.length}
           aria-label={t('fixed.areaLabel')}
           className="module-shell fixed-area"
-          setNodeRef={setNodeRef}
+          setNodeRef={attachNodeRef}
           isOver={isOver}
           /* 身份标识不用容器边框（会与密集列表的扁平语言冲突），
              改用标题前的品牌色条 —— 与原生组/站点组的强调色条同一套语言，

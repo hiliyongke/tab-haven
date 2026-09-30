@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { TabRecord } from '@/core/tab-types';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
+import i18n from '@/i18n';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -73,19 +74,30 @@ describe('notifyEviction 会话内合并', () => {
     expect(useUndoStore.getState().toast?.tone).toBe('info');
   });
 
-  it('撤销栈连续淘汰只提示一次（真实路径：连续关闭撑爆小栈）', async () => {
-    // 栈深设到最小档 5：连续入栈 8 批会触发 3 次淘汰，只应留下第一次的提示。
+  it('撤销栈淘汰告知并入操作回执，且本会话内只提示一次', async () => {
+    // 栈深设到最小档 5：入栈 6 批即触发首次淘汰，继续入栈会一次次再淘汰。
     await settingsRepository.write({ ...DEFAULT_SETTINGS, undoStackLimit: 5 });
     await useUndoStore.getState().load();
 
-    for (let i = 1; i <= 8; i += 1) {
+    for (let i = 1; i <= 6; i += 1) {
       await useUndoStore.getState().closeWithUndo([makeTab({ id: i })], [i]);
     }
 
-    const state = useUndoStore.getState();
-    expect(state.batches).toHaveLength(5);
-    expect(state.toast).not.toBeNull();
-    // 首次淘汰发生在第 6 批入栈时（淘汰 1 条），后续淘汰不得再改动提示内容
-    expect(state.toast?.message).toContain('1');
+    // 回归（R18）：淘汰发生在 appendBatch 内、回执在其后设置。若两者各占一条
+    // 提示条，回执会覆盖淘汰告知，而 key 已标记为已提示 → 本会话内永久漏发。
+    // 正确结果：回执是主消息，淘汰告知挂在 note 上同槽展示。
+    const first = useUndoStore.getState();
+    expect(first.batches).toHaveLength(5);
+    expect(first.toast?.message).toBe(i18n.t('undo.closed', { count: 1 }));
+    expect(first.toast?.note).toBe(i18n.t('undo.stackEvicted', { count: 1 }));
+
+    // 继续关闭仍会淘汰，但同类淘汰本会话内不再提示（逐次提示会互相顶掉且刷屏）
+    for (let i = 7; i <= 8; i += 1) {
+      await useUndoStore.getState().closeWithUndo([makeTab({ id: i })], [i]);
+    }
+
+    const later = useUndoStore.getState();
+    expect(later.batches).toHaveLength(5);
+    expect(later.toast?.note).toBeUndefined();
   });
 });

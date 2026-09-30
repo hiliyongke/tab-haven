@@ -78,6 +78,41 @@ describe('selectRedoTargets', () => {
     expect(selectRedoTargets(tabs, [record('')])).toEqual([]);
   });
 
+  it('内部页按原始 URL 兜底命中（无 web 比较键不得被整体丢弃）', () => {
+    const tabs = [
+      makeTab({ id: 1, url: 'chrome://newtab/' }),
+      makeTab({ id: 2, url: 'about:blank' })
+    ];
+
+    expect(selectRedoTargets(tabs, [record('chrome://newtab/')]).map((t) => t.id)).toEqual([1]);
+    expect(selectRedoTargets(tabs, [record('about:blank')]).map((t) => t.id)).toEqual([2]);
+  });
+
+  it('混合批次：web 与内部页各自命中，不因内部页丢键而漏掉 web 那批', () => {
+    const tabs = [
+      makeTab({ id: 1, url: 'https://a.com/' }),
+      makeTab({ id: 2, url: 'chrome://newtab/' })
+    ];
+
+    const targets = selectRedoTargets(tabs, [record('https://a.com/'), record('chrome://newtab/')]);
+
+    expect(targets.map((tab) => tab.id)).toEqual([1, 2]);
+  });
+
+  it('一对一配对：只关掉记录条数那么多个，不误关用户原有的同 URL 副本', () => {
+    const tabs = [
+      makeTab({ id: 1, url: 'https://a.com/' }),
+      makeTab({ id: 2, url: 'https://a.com/' })
+    ];
+
+    // 只恢复了一份 → 重做只关一份
+    expect(selectRedoTargets(tabs, [record('https://a.com/')]).map((t) => t.id)).toEqual([1]);
+    // 恢复了两份 → 两份都关
+    expect(
+      selectRedoTargets(tabs, [record('https://a.com/'), record('https://a.com/')]).map((t) => t.id)
+    ).toEqual([1, 2]);
+  });
+
   it('多条记录可命中多个标签（整批重做）', () => {
     const tabs = [
       makeTab({ id: 1, url: 'https://a.com/' }),

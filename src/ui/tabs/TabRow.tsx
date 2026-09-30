@@ -194,6 +194,10 @@ export const TabRow = memo(function TabRow({
     setMenu({ x: event.clientX, y: event.clientY });
   }, []);
 
+  // 关闭回调必须稳定：ContextMenu 的 effect 依赖 onClose，内联箭头每次渲染都是
+  // 新引用，会让监听反复解绑重挂（与本文件「行内回调必须稳定」的约定同因）。
+  const closeMenu = useCallback(() => setMenu(null), []);
+
   const menuItems = useMemo<ContextMenuItem[]>(
     () => [
       { label: t('tabs.copyUrl'), onSelect: () => void copyTabUrl(tab) },
@@ -228,6 +232,13 @@ export const TabRow = memo(function TabRow({
           event.preventDefault();
           onMoveTab(tab.id, 1);
         }
+      }
+      // 键盘等价入口：右键菜单不能只有鼠标一条路 —— 部分平台/键盘布局与远程
+      // 桌面下 Shift+F10 不派发 contextmenu 事件，行聚焦时也要能打开菜单。
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        const rect = liRef.current?.getBoundingClientRect();
+        setMenu({ x: rect ? rect.right - 12 : 0, y: rect ? rect.top + 8 : 0 });
       }
     },
     [reorderEnabled, onMoveTab, tab.id]
@@ -340,7 +351,13 @@ export const TabRow = memo(function TabRow({
     () => ({
       ref: setNodeRef,
       activatorRef: setActivatorNodeRef,
-      buttonAttributes: attributes,
+      // 主按钮是行内唯一的交互元素：菜单可弹出/已展开的状态挂在这里（读屏可播报），
+      // 而不是挂在不参与交互的 li 上。
+      buttonAttributes: {
+        ...attributes,
+        'aria-haspopup': 'menu',
+        'aria-expanded': menu !== null
+      },
       listeners: sortablePointerListeners,
       buttonListeners,
       style: {
@@ -356,6 +373,7 @@ export const TabRow = memo(function TabRow({
       setNodeRef,
       setActivatorNodeRef,
       attributes,
+      menu,
       sortablePointerListeners,
       buttonListeners,
       transformX,
@@ -391,7 +409,13 @@ export const TabRow = memo(function TabRow({
         container={rowContainer}
       />
       {menu && (
-        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          anchorRef={liRef}
+          onClose={closeMenu}
+        />
       )}
     </li>
   );
