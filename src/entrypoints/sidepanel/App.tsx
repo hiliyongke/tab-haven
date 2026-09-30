@@ -13,7 +13,7 @@ import {
   onTabHighlighted,
   reloadTabs
 } from '@/platform/tabs';
-import { openOptionsPage } from '@/platform/navigation';
+import { datedJsonFilename, downloadJsonFile, openOptionsPage } from '@/platform/navigation';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
@@ -55,6 +55,7 @@ import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActio
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
+import { computeInsights } from '@/core/insights/tabInsights';
 import {
   EmptyTabs,
   LoadErrorState,
@@ -88,6 +89,23 @@ function planDuplicateCleanup(
     }
   }
   return { removable, keepIds };
+}
+
+/**
+ * 可安全休眠的标签（口径唯一来源）：非激活、未休眠、未被固定空间绑定、可安全休眠。
+ *
+ * 抽成模块级纯函数的原因同 planDuplicateCleanup：底栏「休眠」入口提示的数量
+ * 与实际执行的目标必须来自同一份计算，否则会出现「提示可休眠 5 个、按下后
+ * 说没有」的不一致。
+ */
+function selectSleepableTabs(
+  tabs: readonly TabRecord[],
+  boundTabIds: readonly number[]
+): TabRecord[] {
+  const bound = new Set(boundTabIds);
+  return tabs.filter(
+    (tab) => !tab.active && !tab.discarded && !bound.has(tab.id) && canSafelyDiscardTab(tab)
+  );
 }
 
 export default function App() {
@@ -148,6 +166,12 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  /**
+   * 快照面板的初始视图（F-1 习惯洞察直达）：
+   * 'list' = 常规打开（快照列表）；'report' = 从底栏洞察入口打开，直接落在周报 /
+   * 洞察区块，省掉「打开面板 → 切页签」这一步。
+   */
+  const [snapshotView, setSnapshotView] = useState<'list' | 'report'>('list');
   // 工作空间切换（C1）：编排逻辑抽在 hook，App 只消费结果。
   const { spaces, activeSpaceId, switching, switchSpace, exitSpace, saveAsSpace } = useSpaces();
   // 其他窗口分段（A4）的 hook 在 useSearchController 之后调用（依赖 isFiltering）。
@@ -360,7 +384,10 @@ export default function App() {
     locateActive: locateActiveViaRef,
     focusSearch: focusSearchInput,
     // undo 内部有 undoInFlight 互斥与空栈静默，键盘连按安全。
-    undoLast: () => void useUndoStore.getState().undo()
+    undoLast: () => void useUndoStore.getState().undo(),
+    // redo 内部与 undo 共用执行互斥；空重做栈时由 store 自行 notify(undo.redoNone)，
+    // 不会出现「按了没反应」。
+    redoLast: () => void useUndoStore.getState().redo()
   });
 
   // 同步服务：事件 → 快照 → store 订阅自动重渲染。
@@ -555,6 +582,19 @@ export default function App() {
 
   const partners = useMemo(() => splitPartnerIds(tabs, activeTabId), [tabs, activeTabId]);
 
+  /**
+   * 习惯洞察条数（R16 / F-1）。
+   *
+   * 与 SnapshotsPanel 内 computeInsights 同源同参：徽章显示的数量必须等于打开后
+   * 看到的条目数，否则「点进去发现是空的」—— 和「清理重复」徽章与执行共用
+   * planDuplicateCleanup 是同一条不变量。
+   */
+  const insights = useMemo(() => computeInsights(tabs, new Set(boundTabIds)), [tabs, boundTabIds]);
+  const insightCount =
+    insights.duplicateHotspots.length +
+    (insights.discardableCount > 0 ? 1 : 0) +
+    insights.staleTabs.length;
+
   // 与浏览器多选高亮同步（tabs.onHighlighted）。
   useEffect(() => onTabHighlighted(setHighlighted), [setHighlighted]);
 
@@ -620,12 +660,19 @@ export default function App() {
   );
 
   /**
-   * 一键清理重复标签：每个网址保留「激活 > 固定 > 位置靠前」的一个（固定标签豁免），
+   * 一键清理重复标签：每个网址保留「最近访问 > 激活 > 固定 > 位置靠前 > id 大」的一个
+   * （固定标签豁免），
    * 关闭其余可清理者。走既有 closeWithUndo 管线 —— 清理同样进撤销栈、可一键反悔。
    * 固定空间绑定的标签额外豁免：那是用户显式保存的资产，不能被自动清理。
    *
    * 清理后对「保留项」播放一次脉冲高亮：结果不再只是一个数量，
    * 用户能看到每个域名留下了哪一个（否则只能靠撤销后反推）。
+   *
+   * 产品决策 D2（2026-09-30）：批量动作用「**影响面提示**」而非「强制确认弹窗」——
+   * 点击即执行，不给高频用户加摩擦。影响面由两处承载：
+   *   ① 执行前：底栏入口徽章/`title` 上的待清理数量（见 sleepableCount 同款口径）；
+   *   ② 执行后：`closeWithUndo` 的回执（已关闭数）与保留项脉冲。
+   * 清理本身进撤销栈、可一键反悔，因此不需要阻断式确认。
    */
   const handleCloseDuplicates = useCallback(() => {
     runBatch(() => {
@@ -696,9 +743,8 @@ export default function App() {
       const allInactive = useTabStore
         .getState()
         .tabs.filter((tab) => !tab.active && !tab.discarded);
-      const targets = allInactive.filter(
-        (tab) => !boundTabIds.includes(tab.id) && canSafelyDiscardTab(tab)
-      );
+      // 与底栏入口提示同一口径（selectSleepableTabs）：避免「提示 N 个、实际休眠 M 个」。
+      const targets = selectSleepableTabs(allInactive, boundTabIds);
       // 无任何候选时必须给反馈（FooterToolbar / 命令面板按钮恒可用）：
       // 静默空跑会被当成「按钮坏了」。
       if (targets.length === 0 && allInactive.length === 0) {
@@ -738,7 +784,29 @@ export default function App() {
       );
     });
   }, [runBatch, notify, t]);
+  /**
+   * 导出备份并下载（首启引导终步与「数据只在本机、卸载即清除」的提醒配套）。
+   * 与设置页共用 platform 的下载实现，结果同样走 toast：导出失败必须可见
+   * （宁可明确报错，也不能让用户以为已经备份了）。
+   */
+  const handleExportBackup = useCallback(() => {
+    void useDataStore
+      .getState()
+      .exportData()
+      .then((payload) => {
+        downloadJsonFile(datedJsonFilename('tabs-backup'), JSON.stringify(payload, null, 2));
+        notify(t('settings.exportSuccess'));
+      })
+      .catch(() => notifyError(t('settings.exportFailed')));
+  }, [notify, notifyError, t]);
+
   const discardedCount = tabs.filter((tab) => tab.discarded).length;
+  // 休眠入口的影响面提示（与执行口径同源 selectSleepableTabs）：
+  // 让用户在按下前就知道会休眠多少个，而不是执行后才知道。
+  const sleepableCount = useMemo(
+    () => selectSleepableTabs(tabs, boundTabIds).length,
+    [tabs, boundTabIds]
+  );
   // 原生标签组 → 固定文件夹（桥接反向）。
   const handleSaveGroupAsFolder = useCallback(
     (groupId: number) => {
@@ -781,6 +849,10 @@ export default function App() {
       notify(t('footer.quickRegroupNone'));
       return;
     }
+    // 产品决策 D2（2026-09-30）：点击即执行，不弹确认。
+    // 快速整理是三者中唯一**不可撤销**的动作（打散并重建浏览器原生组，不进撤销栈），
+    // 因此它的影响面必须提前可见：底栏入口的 `title` 已写明「重排不进撤销栈、不可撤销」，
+    // 这里是执行后的回执。
     setQuickRegrouping(true);
     void regroupTempArea(plan.ungroupTabIds, plan.plans)
       .then((count) => {
@@ -892,7 +964,11 @@ export default function App() {
 
   // 其他窗口分段（A4）：独立数据源，不进 tabStore（契约见 hook 注释）。
   // 开关关闭或搜索态时不查询、不订阅（搜索态由历史命中区接管回溯语义）。
-  const { otherWindows } = useOtherWindows(settings.showOtherWindows && !isFiltering);
+  const {
+    otherWindows,
+    status: otherWindowsStatus,
+    retry: retryOtherWindows
+  } = useOtherWindows(settings.showOtherWindows && !isFiltering);
 
   // 命令面板动作集合（⌘P）：复用既有 handler。必须 memo 化：面板打开期间每次
   // 标签快照都重建 actions 引用，会让 CommandPalette 的 commands 重算、索引钳制与
@@ -1126,7 +1202,15 @@ export default function App() {
               <LoadingSkeleton />
             )
           ) : tabs.length === 0 ? (
-            <EmptyTabs />
+            <EmptyTabs
+              // 空窗口 + 有快照：崩溃/误关是「窗口突然空了」的高频成因，
+              // 此时「从快照恢复」比「新建标签」更贴合意图（与 UndoHistoryPanel 同一引导语义）。
+              hasSnapshots={snapshotCount > 0}
+              onOpenSnapshots={() => {
+                setSnapshotView('list');
+                setShowSnapshots(true);
+              }}
+            />
           ) : isFiltering && filteredTabs.length === 0 ? (
             <NoSearchResults onClear={() => setQuery('')} />
           ) : (
@@ -1157,6 +1241,8 @@ export default function App() {
           {!isFiltering && settings.showOtherWindows && (
             <OtherWindowsSection
               otherWindows={otherWindows}
+              status={otherWindowsStatus}
+              onRetry={retryOtherWindows}
               onFocusTab={handleOtherWindowFocus}
               onCloseTab={handleOtherWindowClose}
             />
@@ -1187,7 +1273,13 @@ export default function App() {
           allCollapsed={allSectionsCollapsed}
           activeTabId={activeTabId}
           discardedCount={discardedCount}
+          sleepableCount={sleepableCount}
           duplicateCount={duplicateRemovableCount}
+          insightCount={insightCount}
+          onOpenInsights={() => {
+            setSnapshotView('report');
+            setShowSnapshots(true);
+          }}
           highlightedCount={highlightedIds.size}
           quickRegrouping={quickRegrouping}
           onToggleAllSections={handleToggleAllSections}
@@ -1199,7 +1291,10 @@ export default function App() {
           onLocateActive={locateActiveViaRef}
           onOpenHistory={() => setShowHistory(true)}
           onOpenSettings={openOptionsPage}
-          onOpenSnapshots={() => setShowSnapshots(true)}
+          onOpenSnapshots={() => {
+            setSnapshotView('list');
+            setShowSnapshots(true);
+          }}
           undoBatchCount={undoBatchCount}
           snapshotCount={snapshotCount}
           onOpenPalette={() => setShowPalette(true)}
@@ -1231,6 +1326,7 @@ export default function App() {
         )}
         {showSnapshots && (
           <SnapshotsPanel
+            initialView={snapshotView}
             onClose={() => setShowSnapshots(false)}
             onCleanDuplicates={handleCloseDuplicates}
             onDiscardInactive={handleDiscardInactive}
@@ -1253,6 +1349,7 @@ export default function App() {
               void tryUpdateSettings({ onboarded: true, tipSeen: true, conceptsSeen: true });
             }}
             onDismiss={() => setShowTour(false)}
+            onExport={handleExportBackup}
           />
         )}
         {showPalette && (

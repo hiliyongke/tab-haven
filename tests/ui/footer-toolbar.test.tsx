@@ -22,7 +22,10 @@ function renderFooter(overrides: Partial<FooterProps> = {}) {
     allCollapsed: false,
     activeTabId: 1,
     discardedCount: 0,
+    sleepableCount: 0,
     duplicateCount: 0,
+    insightCount: 0,
+    onOpenInsights: vi.fn(),
     highlightedCount: 0,
     undoBatchCount: 0,
     snapshotCount: 0,
@@ -111,5 +114,50 @@ describe('FooterToolbar 多选批量关闭入口', () => {
     expect(
       screen.queryByRole('button', { name: i18n.t('selection.closeSelected', { count: 1 }) })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('FooterToolbar 习惯洞察直达入口（R16 / F-1）', () => {
+  /**
+   * 缺陷 F-1：三类洞察（重复重灾区 / 休眠候选 / 7 天滞留预警）此前只渲染在快照
+   * 面板的「周报」页签里 —— 用户要先打开面板、再切页签才看得到，等于没有入口。
+   * 这组断言把「底栏 1 次点击直达」固化下来：有洞察时出现入口并带命中条数徽章，
+   * 点击触发 onOpenInsights；无洞察时不渲染（与「清理重复」同款条件出现模式）。
+   */
+  it('有洞察项时出现入口、徽章显示条数、点击直达洞察', () => {
+    const props = renderFooter({ insightCount: 3 });
+
+    const button = screen.getByRole('button', { name: i18n.t('insights.open', { count: 3 }) });
+    expect(button).toHaveTextContent('3');
+
+    fireEvent.click(button);
+    expect(props.onOpenInsights).toHaveBeenCalledTimes(1);
+  });
+
+  it('无洞察项时不渲染入口（窗口健康时不制造噪音）', () => {
+    renderFooter({ insightCount: 0 });
+
+    expect(screen.queryByRole('button', { name: /insights/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('FooterToolbar 休眠入口影响面提示', () => {
+  /**
+   * 产品决策（2026-09-30）：批量动作用「影响面提示」而非「强制确认弹窗」——
+   * 一键执行不变，但影响面必须在按下前可见。休眠入口是三者中唯一常驻的
+   * （无候选时也显示），因此提示数量与回落文案都要有断言守住。
+   */
+  it('有可休眠标签时，提示带上待休眠数量', () => {
+    renderFooter({ sleepableCount: 4 });
+
+    expect(
+      screen.getByRole('button', { name: i18n.t('discard.allInactiveCount', { count: 4 }) })
+    ).toBeInTheDocument();
+  });
+
+  it('无可休眠标签时回落到通用文案（不显示 0 个）', () => {
+    renderFooter({ sleepableCount: 0 });
+
+    expect(screen.getByRole('button', { name: i18n.t('discard.allInactive') })).toBeInTheDocument();
   });
 });

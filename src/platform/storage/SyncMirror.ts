@@ -11,7 +11,10 @@ import { logDegraded } from '@/platform/diagnostics';
  *  - 新设备首次安装（无 seeded 标志）时从镜像拉取恢复；
  *  - 超出 sync 配额时静默降级（仅丢失镜像，本地数据不受影响）。
  *
- * 同步范围：设置 + 文件夹。归档/快照等大数据不镜像。
+ * 同步范围：设置 + 文件夹 + 常驻磁贴（pins）。归档/快照等大数据不镜像。
+ *
+ * 注：磁贴也在镜像范围内 —— 对外文案（设置项说明、PRIVACY.md、SECURITY.md）
+ * 必须与之保持一致，否则会出现「说明书少写了已上传的数据」。
  */
 
 const CHUNK_PREFIX = 'tabs.sync.v1.';

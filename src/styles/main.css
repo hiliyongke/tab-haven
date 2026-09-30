@@ -1137,6 +1137,23 @@ html.theme-transition *::after {
   overscroll-behavior: contain;
   padding: 8px 0 7px;
   border-bottom: 1px solid var(--border-subtle);
+  /* 滚动边界提示（R15 / P-1）：固定空间是列表内的嵌套滚动区（max-height 截断），
+     内容溢出时若没有底部内阴影，用户会以为「已经到底了」而漏看后面的文件夹。
+     阴影随滚动位置由 JS 切换 .is-scrolled-to-end 显隐（见 FixedArea.tsx）。 */
+  background-image: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.06));
+  background-size: 100% 12px;
+  background-repeat: no-repeat;
+  background-position: bottom;
+  background-attachment: local;
+}
+/* 已滚到底：撤掉底部阴影，避免「到底了还提示有更多」的反向误导。 */
+.fixed-area.is-scrolled-to-end {
+  background-image: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fixed-area {
+    background-attachment: scroll;
+  }
 }
 /* 分组模块（站点分组大壳）：同样一条中性分隔线，与下方未分组区断开 */
 .module-shell {

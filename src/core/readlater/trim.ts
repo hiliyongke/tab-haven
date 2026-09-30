@@ -15,3 +15,20 @@ export function trimReadLater(
   const sorted = [...items].sort((a, b) => a.addedAt - b.addedAt);
   return sorted.slice(sorted.length - limit);
 }
+
+/**
+ * 同上，但**返回被淘汰的条目**（R18 / S-3）。
+ *
+ * 纯函数层没有 notify 通道（core 不得依赖 UI/store），所以「告知用户」只能由调用方
+ * 完成：这里把淘汰项交出去，由 store 决定如何提示。此前超限时旧条目被静默丢弃 ——
+ * 用户以为一直在存，实际最早的那些已经没了。
+ */
+export function trimReadLaterWithEvicted(
+  items: readonly ReadLaterItem[],
+  limit: number = READLATER_LIMIT
+): { kept: ReadLaterItem[]; evicted: ReadLaterItem[] } {
+  if (items.length <= limit) return { kept: [...items], evicted: [] };
+  const sorted = [...items].sort((a, b) => a.addedAt - b.addedAt);
+  const cut = sorted.length - limit;
+  return { kept: sorted.slice(cut), evicted: sorted.slice(0, cut) };
+}

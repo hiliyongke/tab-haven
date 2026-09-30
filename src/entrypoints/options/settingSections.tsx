@@ -510,6 +510,26 @@ export function buildSections(
           hintKey: 'settings.omniboxHint'
         },
         {
+          /**
+           * 跨设备镜像开关（R6 / IA-2）。
+           *
+           * 此前它是 SettingsPage 里**手写**的 Toggle，不在 buildSections 的规格数组内，
+           * 于是设置页搜索（只匹配 spec.labelKey / spec.hintKey）**搜不到它**——
+           * 一个会影响「数据是否被上传到浏览器账号通道」的开关，却无法被搜索到。
+           * 改为 custom 行后进入搜索索引，同时保留原有渲染与语义不变。
+           */
+          kind: 'custom',
+          labelKey: 'settings.syncMirror',
+          hintKey: 'settings.syncMirrorHint',
+          render: ({ settings, update, t }) => (
+            <Toggle
+              checked={settings.syncMirrorEnabled}
+              onChange={(checked) => update('syncMirrorEnabled', checked)}
+              ariaLabel={t('settings.syncMirror')}
+            />
+          )
+        },
+        {
           kind: 'custom',
           labelKey: 'settings.noCache',
           hintKey: 'settings.noCacheHint',

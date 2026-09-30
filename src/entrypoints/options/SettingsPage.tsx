@@ -9,10 +9,14 @@ import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { TextField } from '@/ui/common/TextField';
-import { Toggle } from '@/ui/common/Toggle';
 import { clearDiagnostics, exportDiagnostics, readAllDiagnostics } from '@/platform/diagnostics';
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
-import { openAboutPage, openUrlInTab } from '@/platform/navigation';
+import {
+  datedJsonFilename,
+  downloadJsonFile,
+  openAboutPage,
+  openUrlInTab
+} from '@/platform/navigation';
 import { SettingsOutline, type OutlineItem } from '@/entrypoints/options/SettingsOutline';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
@@ -87,12 +91,8 @@ export function SettingsPage() {
   const handleExport = async () => {
     try {
       const payload = JSON.stringify(await exportData(), null, 2);
-      const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `tabs-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      // 下载实现统一走 platform（与首启引导共用一份），入口层不自己拼 <a download>。
+      downloadJsonFile(datedJsonFilename('tabs-backup'), payload);
       setTransferStatus(t('settings.exportSuccess'));
     } catch {
       // 快照读取或序列化失败：宁可明确报错，也不能给出一份内容不全的备份。
@@ -361,13 +361,12 @@ export function SettingsPage() {
               {t('settings.importBookmarksAction')}
             </Button>
           </Row>
-          <Row label={t('settings.syncMirror')} hint={t('settings.syncMirrorHint')}>
-            <Toggle
-              checked={settings.syncMirrorEnabled}
-              onChange={(checked) => update('syncMirrorEnabled', checked)}
-              ariaLabel={t('settings.syncMirror')}
-            />
-          </Row>
+          {/* 导出引导（R4 / S-1）：**不依赖 onboarded** —— 引导只在首次运行时出现，
+              而「卸载即丢数据」的风险对每个用户、每次打开设置页都存在。 */}
+          <div className="mx-4 mb-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            <p className="font-medium text-gray-700">{t('settings.exportReminderTitle')}</p>
+            <p className="mt-0.5">{t('settings.exportReminder')}</p>
+          </div>
           <Row label={t('settings.exportDiagnostics')} hint={t('settings.exportDiagnosticsHint')}>
             <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
               {t('settings.export')}

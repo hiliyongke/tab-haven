@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -13,6 +13,9 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
 import { SnapshotRow } from '@/ui/common/SnapshotRow';
 
+/** 习惯洞察区块的锚点 id：底栏洞察入口直达后滚动定位到这里。 */
+const INSIGHTS_ANCHOR_ID = 'snapshots-insights';
+
 /**
  * 会话快照面板：命名快照、归档中心与 OneTab / Workona 导入。
  * 把当前窗口存为命名快照/空间，归档关闭并留档，从 OneTab / Workona 导入，
@@ -20,6 +23,12 @@ import { SnapshotRow } from '@/ui/common/SnapshotRow';
  */
 export interface SnapshotsPanelProps {
   onClose: () => void;
+  /**
+   * 初始视图：默认 'list'（快照列表）。
+   * 习惯洞察入口（F-1）传 'report' —— 洞察此前埋在周报页签里，需「打开面板 →
+   * 切页签」两步才可见；从底栏徽章直达时直接落在洞察所在的周报视图。
+   */
+  initialView?: 'list' | 'import' | 'report';
   /** 习惯洞察行动出口（P-05）：由 App 注入既有 handler，面板内不重复实现。 */
   onCleanDuplicates: () => void;
   /** 一键休眠全部非激活标签（洞察「休眠候选」出口）。 */
@@ -30,6 +39,7 @@ export interface SnapshotsPanelProps {
 
 export function SnapshotsPanel({
   onClose,
+  initialView = 'list',
   onCleanDuplicates,
   onDiscardInactive,
   onArchiveWindow
@@ -51,7 +61,8 @@ export function SnapshotsPanel({
   const [name, setName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  const [view, setView] = useState<'list' | 'import' | 'report'>('list');
+  /** 视图切换：initialView 由入口指定（洞察直达为 'report'，见 Props 注释）。 */
+  const [view, setView] = useState<'list' | 'import' | 'report'>(initialView);
   /** 导入源切换（OneTab 文本 / Workona JSON，P-09 迁移矩阵）。 */
   const [importSource, setImportSource] = useState<'onetab' | 'workona'>('onetab');
   const [importText, setImportText] = useState('');
@@ -340,6 +351,20 @@ export function SnapshotsPanel({
    */
   const insights = useMemo(() => computeInsights(tabs, new Set(boundTabIds)), [tabs, boundTabIds]);
 
+  /**
+   * 洞察直达：从底栏入口进来时（initialView='report'）把洞察区块滚入视野。
+   * 周报统计在其上方，不滚动的话用户仍可能看到的是统计而非洞察 —— 直达要落到
+   * 真正想看的东西。只在首次进入 report 视图时做一次，之后用户手动切页签不再干预。
+   */
+  const insightsFocusedRef = useRef(false);
+  useEffect(() => {
+    if (initialView !== 'report' || insightsFocusedRef.current) return;
+    if (view !== 'report') return;
+    insightsFocusedRef.current = true;
+    const anchor = document.getElementById(INSIGHTS_ANCHOR_ID);
+    anchor?.scrollIntoView({ block: 'start' });
+  }, [initialView, view]);
+
   return (
     <DialogShell title={t('snapshots.title')} onClose={onClose} widthClassName="dialog-md">
       {view === 'import' ? (
@@ -445,7 +470,11 @@ export function SnapshotsPanel({
           </div>
           {/* 习惯洞察（P-05）：从当前窗口实时推导行动建议，全部本地计算。
               出口指向已有动作（清理重复 / 一键休眠 / 归档窗口），形成闭环。 */}
-          <div className="flex flex-col gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2.5">
+          <div
+            id={INSIGHTS_ANCHOR_ID}
+            tabIndex={-1}
+            className="flex flex-col gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2.5"
+          >
             <p className="text-2xs font-semibold text-accent-700">{t('insights.title')}</p>
             <p className="text-3xs leading-relaxed text-accent-700/90">{t('insights.subtitle')}</p>
             {insights.duplicateHotspots.length > 0 && (

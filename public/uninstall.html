@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>卸载前请先导出备份 · Tabs</title>
+    <!-- 样式全部内联：本页不得引用任何外部字体 / CDN / 图片，
+         否则会击穿「零出站网络请求」的隐私门禁（scripts/privacy-check.mjs）。 -->
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0;
+        padding: 32px 20px;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: #1f2328;
+        background: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { color: #e6edf3; background: #16181d; }
+      }
+      main { max-width: 640px; margin: 0 auto; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { margin: 0 0 20px; font-size: 14px; opacity: 0.7; }
+      .warn {
+        padding: 14px 16px;
+        border-radius: 10px;
+        background: #fff6e5;
+        border: 1px solid #f0d6a8;
+        font-size: 14px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .warn { background: #3a2f18; border-color: #6b5525; }
+      }
+      h2 { font-size: 15px; margin: 24px 0 8px; }
+      ol { margin: 0; padding-left: 22px; font-size: 14px; }
+      li { margin: 6px 0; }
+      code {
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: rgba(128, 128, 128, 0.16);
+        font-size: 13px;
+      }
+      footer { margin-top: 28px; font-size: 12px; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>卸载前，请先导出一份备份</h1>
+      <p class="sub">感谢你试用 Tabs。</p>
+
+      <div class="warn">
+        <strong>卸载会永久删除本机的全部 Tabs 数据</strong>，包括固定空间、常驻磁贴、全部快照与归档、稍后读和撤销栈。
+        这些数据<strong>只存在于你自己的浏览器里</strong>——Tabs 没有服务器，因此卸载后无法为你找回。
+      </div>
+
+      <h2>如何保留数据</h2>
+      <ol>
+        <li>先<strong>不要</strong>确认卸载，在浏览器里打开 <code>chrome://extensions</code>（Edge 为 <code>edge://extensions</code>）。</li>
+        <li>找到 Tabs，点击「详情」→ 打开「扩展程序选项」（或右键图标选择「选项」）。</li>
+        <li>在设置页的「数据」分区点击<strong>导出备份</strong>，保存得到的 JSON 文件。</li>
+        <li>确认备份文件已保存好，再回来完成卸载。</li>
+      </ol>
+      <p style="font-size: 14px">
+        日后重装 Tabs 后，可在同一位置<strong>导入备份</strong>恢复全部数据（导入是事务式的，失败会整体回滚）。
+      </p>
+
+      <footer>
+        本页是随扩展一起打包到本地的静态页面，不含任何网络请求，也不会记录你是否卸载。
+      </footer>
+    </main>
+  </body>
+</html>

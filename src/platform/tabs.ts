@@ -80,6 +80,17 @@ export async function queryCurrentWindowTabs(): Promise<TabRecord[]> {
 }
 
 /**
+ * 查询**指定窗口**的全部标签并按 index 排序（映射与排序同 queryCurrentWindowTabs）。
+ *
+ * 存在理由：恢复类操作的目标窗口未必是侧边栏所在窗口（快照可恢复到另一窗口），
+ * 之后要按「恢复前/后差了哪些 tabId」记账时，按当前窗口查会一个都匹配不到。
+ */
+export async function queryWindowTabs(windowId: number): Promise<TabRecord[]> {
+  const queriedTabs = await browser.tabs.query({ windowId });
+  return queriedTabs.map(mapTab).sort((a, b) => a.index - b.index);
+}
+
+/**
  * 查询当前窗口全部原生标签组。
  *
  * 已知 windowId 时直接传入：否则内部要再跑一次全窗口 tabs.query 只为拿 windowId，

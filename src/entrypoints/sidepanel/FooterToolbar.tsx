@@ -14,8 +14,16 @@ export interface FooterToolbarProps {
   activeTabId: number | undefined;
   /** 休眠中的标签数（>0 时显示唤醒全部按钮）。 */
   discardedCount: number;
+  /** 可休眠的标签数（>0 时休眠入口的提示带数量，让影响面在按下前可见）。 */
+  sleepableCount: number;
   /** 可清理的重复标签数（>0 时显示清理重复入口，徽章显示待清理数）。 */
   duplicateCount: number;
+  /**
+   * 存在待处理的习惯洞察（重复 / 休眠候选 / 滞留预警任一命中）时显示洞察入口。
+   * F-1：洞察此前只渲染在快照面板的「周报」页签里，需两步才可见；
+   * 这里给出 1 次点击直达入口，聚焦到 insight 区块。
+   */
+  insightCount: number;
   /** 浏览器多选（Ctrl+Click）的标签数（≥2 时显示批量关闭入口）。 */
   highlightedCount: number;
   /** 撤销栈中可恢复的批次数量（>0 时护盾显示计数，强化「一切可反悔」的信任感）。 */
@@ -37,6 +45,8 @@ export interface FooterToolbarProps {
   onOpenHistory: () => void;
   onOpenSettings: () => void;
   onOpenSnapshots: () => void;
+  /** 直达习惯洞察（打开快照面板并落在周报 / 洞察视图）。 */
+  onOpenInsights: () => void;
   /** 底部工具区文字模式：开启后图标旁显示功能名称。 */
   footerLabels: boolean;
   onOpenPalette: () => void;
@@ -56,7 +66,9 @@ export function FooterToolbar(props: FooterToolbarProps) {
     allCollapsed,
     activeTabId,
     discardedCount,
+    sleepableCount,
     duplicateCount,
+    insightCount,
     highlightedCount,
     undoBatchCount,
     snapshotCount,
@@ -70,6 +82,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
     onLocateActive,
     onOpenHistory,
     onOpenSnapshots,
+    onOpenInsights,
     onOpenSettings,
     onOpenPalette,
     footerLabels
@@ -129,6 +142,19 @@ export function FooterToolbar(props: FooterToolbarProps) {
             onClick={onCleanDuplicates}
           />
         )}
+        {/* 习惯洞察入口（R16 / F-1）：有洞察项时出现。
+            此前洞察只存在于快照面板的「周报」页签里 —— 用户要先打开快照面板、
+            再切页签才能看到，等于没有入口。这里让「清理重复 / 休眠」这两个
+            与洞察直接对应的动作旁边就有直达入口。 */}
+        {insightCount > 0 && (
+          <IconButton
+            icon={Icons.sparkles}
+            title={t('insights.open', { count: insightCount })}
+            label={footerLabels ? t('footer.labelInsights') : undefined}
+            badge={insightCount}
+            onClick={onOpenInsights}
+          />
+        )}
         {/* 关闭选中的标签：浏览器 Ctrl+Click 多选 ≥2 个时出现 ——
             此前多选只有视觉高亮、没有操作出口（半成品承诺）。 */}
         {highlightedCount >= 2 && (
@@ -144,7 +170,11 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {/* 组 2 · 内存管理：休眠全部 / 唤醒全部（条件出现） */}
         <IconButton
           icon={Icons.snowflake}
-          title={t('discard.allInactive')}
+          title={
+            sleepableCount > 0
+              ? t('discard.allInactiveCount', { count: sleepableCount })
+              : t('discard.allInactive')
+          }
           label={footerLabels ? t('footer.labelDiscard') : undefined}
           onClick={onDiscardInactive}
         />

@@ -9,6 +9,7 @@ import {
 } from '@/platform/sessions';
 import { logDegraded } from '@/platform/diagnostics';
 import { formatTime } from '@/ui/common/format';
+import { Button } from '@/ui/common/Button';
 
 /**
  * 撤销历史面板：
@@ -35,6 +36,10 @@ function hostnameOf(url: string | undefined): string {
  */
 function kindLabel(kind: string, t: (key: string) => string): string | null {
   if (kind === 'archive') return t('undo.kindArchive');
+  // 'restore'（R8）：快照恢复新建的标签。撤销它 = 关闭这批标签，可再撤销回来。
+  if (kind === 'restore') return t('undo.kindRestore');
+  // 'restore-undo'：撤销一次快照恢复时关闭的那批标签（可再撤销把它们开回来）。
+  if (kind === 'restore-undo') return t('undo.kindRestoreUndo');
   if (kind === 'close') return t('undo.kindClose');
   return null;
 }
@@ -53,6 +58,16 @@ export function UndoHistoryPanel({
   const undoBatch = useUndoStore((state) => state.undoBatch);
   const notify = useUndoStore((state) => state.notify);
   const notifyError = useUndoStore((state) => state.notifyError);
+  /**
+   * 重做栈与执行入口。
+   *
+   * 重做此前只有「撤销成功后 toast 上的一次性按钮」这一个出口，而 toast 默认 7 秒
+   * 后消失（settings.toastDurationSec）—— 功能建成却几乎触达不到。这里补常驻出口：
+   * redoing 期间禁用，与撤销共用执行互斥（store 内 undoInFlight 串行化）。
+   */
+  const redoBatches = useUndoStore((state) => state.redoBatches);
+  const redo = useUndoStore((state) => state.redo);
+  const redoing = useUndoStore((state) => state.redoing);
   const [recent, setRecent] = useState<RecentClosedEntry[] | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
@@ -93,7 +108,8 @@ export function UndoHistoryPanel({
       });
   };
 
-  const hasAny = batches.length > 0 || (recent !== null && recent.length > 0);
+  const hasAny =
+    batches.length > 0 || redoBatches.length > 0 || (recent !== null && recent.length > 0);
 
   return (
     <DialogShell title={t('undo.historyTitle')} onClose={onClose} widthClassName="dialog-md">
@@ -120,9 +136,24 @@ export function UndoHistoryPanel({
 
         {batches.length > 0 && (
           <section className="mb-3">
-            <h3 className="mb-1 text-2xs font-semibold tracking-wide text-gray-500">
-              {t('undo.historyOwn')} · {batches.length}
-            </h3>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <h3 className="text-2xs font-semibold tracking-wide text-gray-500">
+                {t('undo.historyOwn')} · {batches.length}
+              </h3>
+              {/* 重做常驻出口：仅在有可重做项时出现（与「清理重复」同款条件出现模式）。
+                  文案带数量，让「这次会再关掉几个」在按下前可见。 */}
+              {redoBatches.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={redoing}
+                  onClick={() => void redo()}
+                  title={t('undo.redoHint', { count: redoBatches[0]?.entries.length ?? 0 })}
+                >
+                  {t('undo.redo')}
+                </Button>
+              )}
+            </div>
             <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {[...batches].reverse().map((batch) => (
                 <li key={batch.id}>

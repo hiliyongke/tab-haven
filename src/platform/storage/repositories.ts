@@ -20,6 +20,7 @@ export const foldersRepository = current.folders;
 export const pinsRepository = current.pins;
 export const settingsRepository = current.settings;
 export const undoRepository = current.undo;
+export const redoRepository = current.redo;
 export const autoGroupsRepository = current.autoGroups;
 export const autoDiscardRepository = current.autoDiscard;
 export const snapshotsRepository = current.snapshots;

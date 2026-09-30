@@ -211,7 +211,7 @@ export const SettingsSchema = z.object({
   /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
   conceptsSeen: z.boolean().default(false),
   /**
-   * 是否把文件夹与设置镜像到浏览器账号同步通道（chrome.storage.sync）。
+   * 是否把文件夹、常驻磁贴与设置镜像到浏览器账号同步通道（chrome.storage.sync）。
    *
    * **默认关闭**。开启后这些数据会经由浏览器厂商的同步通道离开本机——
    * 与「本地优先」的定位相悖，且此前无任何开关、用户完全无感知。

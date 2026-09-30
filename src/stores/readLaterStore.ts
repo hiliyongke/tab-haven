@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 import type { ReadLaterItem } from '@/core/schema/models';
 import { readLaterRepository } from '@/platform/storage/repositories';
-import { applyAddItem, mutateReadLater } from '@/platform/readlater/readLaterOps';
+import {
+  applyAddItem,
+  mutateReadLater,
+  setReadLaterEvictionListener
+} from '@/platform/readlater/readLaterOps';
 import { logFailure } from '@/platform/diagnostics';
+import { useUndoStore } from '@/stores/undoStore';
+import i18n from '@/i18n';
 
 /**
  * 稍后读 store：独立于固定文件夹的「一次性消费」暂存区。
@@ -57,6 +63,16 @@ export function __resetReadLaterWatcherForTest(): void {
   watcherDispose = undefined;
   watcherStarted = false;
 }
+
+/**
+ * 注册淘汰提示（R18 / S-3）：稍后读超限时最旧的条目会被移除，此前完全静默 ——
+ * 用户以为一直在存，实际最早的那些已经没了。这里把它变成一次可见的提示。
+ */
+setReadLaterEvictionListener((count) => {
+  // 走 notifyEviction 而非 notify：超限时「每加一条就淘汰一条」，若逐次提示，
+  // 用户连续暂存多条会连弹同样的提示条。同类淘汰本会话内合并成一次。
+  useUndoStore.getState().notifyEviction('read-later', i18n.t('readlater.evicted', { count }));
+});
 
 export const useReadLaterStore = create<ReadLaterState>()((set) => ({
   items: [],

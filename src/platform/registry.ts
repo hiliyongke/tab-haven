@@ -37,6 +37,12 @@ export interface Repositories {
   collapse: DataRepository<SiteCollapseState>;
   settings: DataRepository<Settings>;
   undo: DataRepository<UndoBatch[]>;
+  /**
+   * 重做栈：撤销成功后压入「本次被恢复回来的批次」，供「重做」再次关闭。
+   * 结构与撤销栈完全相同（复用 UndoBatch），只是生命周期不同：
+   * 任何新的关闭批次入栈即清空重做栈（重做只对最近一次撤销有意义）。
+   */
+  redo: DataRepository<UndoBatch[]>;
   autoGroups: DataRepository<number[]>;
   autoDiscard: DataRepository<AutoDiscardBatch | null>;
   seeded: DataRepository<boolean>;
@@ -63,6 +69,8 @@ function createRepositories(): Repositories {
     ),
     settings: new DataRepository<Settings>('tabs.settings.v1', SettingsSchema, DEFAULT_SETTINGS),
     undo: new DataRepository<UndoBatch[]>('tabs.undo-stack.v1', UndoBatchSchema.array(), []),
+    // 重做栈（与撤销栈同结构）；不参与备份导出，也不参与同步镜像。
+    redo: new DataRepository<UndoBatch[]>('tabs.redo-stack.v1', UndoBatchSchema.array(), []),
     // 自动组 id 记录只增靠 disband 清理，但上限仍须显式（全项目集合的既定原则）：
     // 无界数组是唯一不受限的存储放大面。500 远超真实规模（组数 ≤ 标签数）。
     autoGroups: new DataRepository<number[]>(

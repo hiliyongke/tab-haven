@@ -32,11 +32,53 @@ const modalStack: symbol[] = [];
 /**
  * 是否有模态正在打开。
  *
- * 供全局快捷键短路：DialogShell 只拦 Tab/Esc，背景未 inert，
- * ⌘K/⌘P/⌘J 会把焦点移到遮罩后的搜索框、滚动背景列表或叠开命令面板。
+ * 供全局快捷键短路：DialogShell 只拦 Tab/Esc；背景已由 background-inert 机制
+ * 移出可访问树（见 applyBackgroundInert），⌘K/⌘P/⌘J 不会再把焦点移到遮罩后。
  */
 export function isModalOpen(): boolean {
   return modalStack.length > 0;
+}
+
+/**
+ * 背景惰性化（R13 / A-1）。
+ *
+ * 此前弹窗打开时遮罩外的背景仍在可访问树里：读屏能朗读到背景内容，Tab 循环也
+ * 可能把焦点带出去（焦点陷阱拦的是 Tab 走向，但读屏的虚拟光标不受其约束）。
+ * `inert` 一步解决两件事 —— 移出可访问树 + 屏蔽交互与焦点。
+ *
+ * 用「记录并恢复原值」而不是卸载时无条件置 false：嵌套弹窗（快照面板内嵌删除
+ * 确认框）会让内层关闭时误把外层仍需的 inert 解掉。
+ *
+ * 兜底：不支持 inert 的旧内核退化为 aria-hidden（只解决读屏，不解决焦点）。
+ */
+const INERT_TARGET_SELECTOR = '.app, main, #root > *:not(.modal-overlay)';
+
+/**
+ * `inert` 支持性检测：必须用 `in`，**不能**读原型上的值。
+ *
+ * `inert` 是 WebIDL 访问器属性，读 `HTMLElement.prototype.inert` 会以
+ * `HTMLElement.prototype` 自身作为 this —— 它不是平台对象，Blink 直接抛
+ * `Illegal invocation`（与 `Element.prototype.innerHTML` 同类的坑）。
+ * jsdom 未实现 `inert`，读到的是 `undefined`，因此这条在单测里始终走
+ * 降级分支、永远全绿，只有在真实 Chrome 里打开任意弹窗才会崩。
+ */
+function supportsInert(): boolean {
+  return typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype;
+}
+
+function applyBackgroundInert(inert: boolean): void {
+  if (typeof document === 'undefined') return;
+  const targets = document.querySelectorAll<HTMLElement>(INERT_TARGET_SELECTOR);
+  const useInert = supportsInert();
+  for (const el of targets) {
+    if (useInert) {
+      el.inert = inert;
+    } else if (inert) {
+      el.setAttribute('aria-hidden', 'true');
+    } else {
+      el.removeAttribute('aria-hidden');
+    }
+  }
 }
 
 /**
@@ -87,6 +129,8 @@ export function useModalA11y(
     }
 
     const self = Symbol('modal');
+    // 首个弹窗打开时才惰性化背景；嵌套弹窗沿用已有的 inert（见 applyBackgroundInert）。
+    if (modalStack.length === 0) applyBackgroundInert(true);
     modalStack.push(self);
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -128,6 +172,8 @@ export function useModalA11y(
       document.removeEventListener('keydown', onKeyDown, true);
       const index = modalStack.indexOf(self);
       if (index !== -1) modalStack.splice(index, 1);
+      // 栈顶清空（所有嵌套层都已关闭）才解除背景惰性。
+      if (modalStack.length === 0) applyBackgroundInert(false);
       if (modalStack.length === 0 && previousOverflow !== undefined) {
         root.style.overflow = previousOverflow;
         root.style.paddingRight = previousPaddingRight ?? '';

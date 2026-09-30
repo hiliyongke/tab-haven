@@ -74,9 +74,30 @@ export function trimSnapshots(list: readonly Snapshot[], settings: Settings): Sn
   const maxAuto = Math.max(1, settings.maxAutoSnapshots);
   const autoKept = sorted.filter((s) => s.origin === 'auto').slice(0, maxAuto);
   const manualKept = sorted.filter((s) => s.origin !== 'auto');
-  const merged = [...autoKept, ...manualKept].sort((a, b) => b.createdAt - a.createdAt);
+  const merged = [...autoKept, ...manualKept].sort((x, y) => y.createdAt - x.createdAt);
   const limit = Math.max(1, settings.snapshotLimit);
   return merged.slice(0, limit);
+}
+
+/**
+ * 同上，但**返回被淘汰的快照**（R18 / S-3）。
+ *
+ * platform 层可以写日志，但「告知用户」属于 UI 反馈，应由 store/UI 完成；这里只
+ * 负责把淘汰项精确交出去。此前超过 snapshotLimit 时最旧的快照被静默丢弃。
+ */
+export function trimSnapshotsWithEvicted(
+  list: readonly Snapshot[],
+  settings: Settings
+): { kept: Snapshot[]; evicted: Snapshot[] } {
+  const sorted = [...list].sort((a, b) => b.createdAt - a.createdAt);
+  const maxAuto = Math.max(1, settings.maxAutoSnapshots);
+  const autoSorted = sorted.filter((s) => s.origin === 'auto');
+  const autoEvicted = autoSorted.slice(maxAuto);
+  const autoKept = autoSorted.slice(0, maxAuto);
+  const manualKept = sorted.filter((s) => s.origin !== 'auto');
+  const merged = [...autoKept, ...manualKept].sort((x, y) => y.createdAt - x.createdAt);
+  const limit = Math.max(1, settings.snapshotLimit);
+  return { kept: merged.slice(0, limit), evicted: [...autoEvicted, ...merged.slice(limit)] };
 }
 
 /** OneTab 导入文本的体积上限（1MB，远超正常使用规模）。 */
@@ -123,6 +144,18 @@ export function parseOneTab(text: string): SnapshotTab[] {
 }
 
 /**
+ * 淘汰监听（R18 / S-3）。由 store 注册，用于把「因超限淘汰了 N 份」告知用户。
+ *
+ * 为什么用回调而不是改返回值：persistSnapshot 返回 `Snapshot[]` 是既有公开契约
+ * （store 直接 `set({ snapshots: next })`，测试也有桩），改成对象会波及全部调用方；
+ * 而淘汰提示只有面板需要。与 readLaterOps 的 setReadLaterEvictionListener 同款。
+ */
+let onEvicted: ((count: number) => void) | undefined;
+export function setSnapshotEvictionListener(fn: (count: number) => void): void {
+  onEvicted = fn;
+}
+
+/**
  * 写入一条快照（与现有列表合并、裁剪后落盘）。返回落盘后的快照列表。
  * 写盘失败（quota 超限/存储不可用）显式抛错：快照是「恢复入口」，
  * 静默丢失会被用户误认为已保存，必须由调用方提示。
@@ -133,10 +166,14 @@ export async function persistSnapshot(snapshot: Snapshot): Promise<Snapshot[]> {
   return withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
     const settings = await settingsRepository.read();
     const existing = await snapshotsRepository.read();
-    const next = trimSnapshots([snapshot, ...existing], settings);
-    const ok = await snapshotsRepository.write(next);
+    // 走 WithEvicted 变体：裁剪会静默丢掉最旧的快照（自动快照超 maxAutoSnapshots、
+    // 总数超 snapshotLimit），此前用户完全没有感知 —— 只在列表里发现旧快照不见了。
+    // platform 层不做 UI 反馈（那是 store/UI 的职责），只把数字交给注册的监听方。
+    const { kept, evicted } = trimSnapshotsWithEvicted([snapshot, ...existing], settings);
+    const ok = await snapshotsRepository.write(kept);
     if (!ok) throw new Error('persistSnapshot: storage write failed');
-    return next;
+    if (evicted.length > 0) onEvicted?.(evicted.length);
+    return kept;
   });
 }
 

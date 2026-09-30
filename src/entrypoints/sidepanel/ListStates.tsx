@@ -29,8 +29,21 @@ export function LoadingSkeleton() {
   );
 }
 
-/** 窗口内没有标签的空态（教学型：说明能做什么 + 一步动作）。 */
-export function EmptyTabs() {
+/**
+ * 窗口内没有标签的空态（教学型：说明能做什么 + 一步动作）。
+ *
+ * hasSnapshots 为真时追加「从快照恢复」引导块：窗口为空的最可能成因之一是
+ * 崩溃/误关，此时「新建标签」不是用户想要的动作 —— 找回整窗才是。此前这条
+ * 更相关的路只在撤销历史面板里出现（snapshots.crashGuidance），空态看不到。
+ * 两个 prop 均可选：没有快照来源的调用方保持原样。
+ */
+export function EmptyTabs({
+  hasSnapshots = false,
+  onOpenSnapshots
+}: {
+  hasSnapshots?: boolean;
+  onOpenSnapshots?: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <EmptyState
@@ -38,13 +51,28 @@ export function EmptyTabs() {
       title={t('empty.title')}
       hint={t('empty.hint')}
       action={
-        <button
-          type="button"
-          className="mt-1 rounded-lg border border-accent-300 bg-accent-50 px-3 py-1.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
-          onClick={() => void createPlainNewTab()}
-        >
-          {t('empty.openNewTab')}
-        </button>
+        <div className="flex flex-col items-center gap-1.5">
+          <button
+            type="button"
+            className="mt-1 rounded-lg border border-accent-300 bg-accent-50 px-3 py-1.5 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+            onClick={() => void createPlainNewTab()}
+          >
+            {t('empty.openNewTab')}
+          </button>
+          {/* 与 UndoHistoryPanel 同款引导块：强调色块 + 文案 + 一步跳转 */}
+          {hasSnapshots && onOpenSnapshots && (
+            <div className="mx-1 max-w-56 rounded-lg border border-accent-200 bg-accent-50 px-2.5 py-2 text-3xs leading-relaxed text-accent-700">
+              <p>{t('snapshots.emptyWindowGuidance')}</p>
+              <button
+                type="button"
+                className="mt-1 rounded font-medium underline underline-offset-2 transition-base hover:bg-accent-100 hover:text-accent-700"
+                onClick={onOpenSnapshots}
+              >
+                {t('snapshots.openSnapshots')}
+              </button>
+            </div>
+          )}
+        </div>
       }
     />
   );

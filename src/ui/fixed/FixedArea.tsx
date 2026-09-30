@@ -57,6 +57,34 @@ export function FixedArea() {
     return () => window.removeEventListener(CREATE_FOLDER_REQUEST_EVENT, handleCreateRequest);
   }, []);
 
+  /**
+   * 滚动边界提示（R15 / P-1）。
+   *
+   * 固定空间是嵌套滚动区（max-height: min(34vh, 280px)），内容溢出时没有明确的
+   * 底部边界 —— 用户滚到一半会以为到底了，漏看后面的文件夹。这里监听滚动位置，
+   * 到底时给容器加 .is-scrolled-to-end（样式见 main.css .fixed-area）。
+   */
+  useEffect(() => {
+    // GroupCard 只暴露 sortable 的 setNodeRef（不提供滚动容器 ref），
+    // 故按类名在本组件挂载的 DOM 内取该元素 —— 作用域已限定到本组件的子树。
+    const el = document.querySelector<HTMLElement>('.fixed-area');
+    if (!el) return;
+    const update = () => {
+      const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+      el.classList.toggle('is-scrolled-to-end', atEnd);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    // 内容变化（增删文件夹/条目）会改变 scrollHeight，用 ResizeObserver 兜底。
+    // 该类在 jsdom 下不存在（测试环境）：这是纯增强，缺失时只退化为「滚动时才更新」。
+    const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update);
+    ro?.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro?.disconnect();
+    };
+  }, []);
+
   const handleConfirmDrop = (name: string) => {
     const request = dropRequest;
     setDropRequest(null);

@@ -31,10 +31,11 @@ afterEach(() => {
 });
 
 /** 渲染面板（P-05 后 props 增加三个洞察行动出口，测试统一注入 noop）。 */
-function renderPanel(): void {
+function renderPanel(initialView?: 'list' | 'import' | 'report'): void {
   render(
     <SnapshotsPanel
       onClose={() => {}}
+      initialView={initialView}
       onCleanDuplicates={() => {}}
       onDiscardInactive={() => {}}
       onArchiveWindow={() => {}}
@@ -138,5 +139,36 @@ describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必�
     fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.cancel') }));
 
     expect(restore).not.toHaveBeenCalled();
+  });
+});
+
+describe('SnapshotsPanel 习惯洞察直达（R16 / F-1）', () => {
+  /**
+   * 缺陷 F-1：洞察渲染在「周报」页签里，常规打开面板默认停在快照列表，
+   * 用户还得再切一次页签。initialView='report' 让底栏徽章 1 次点击即落在洞察。
+   * 这组断言锁住两件事：直达落在周报视图、洞察区块确实已渲染（不是空壳）。
+   */
+  it("initialView='report' 时直接落在周报 / 洞察视图", () => {
+    renderPanel('report');
+
+    // 周报视图独占的四个统计格与洞察标题都应当可见
+    expect(screen.getByText(i18n.t('snapshots.reportHint'))).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('insights.title'))).toBeInTheDocument();
+  });
+
+  it('默认（initialView 未传）停在快照列表，不暴露周报', () => {
+    renderPanel();
+
+    expect(screen.queryByText(i18n.t('snapshots.reportHint'))).not.toBeInTheDocument();
+    // 列表视图的导入入口仍在（视图确实渲染了，不是空面板）
+    expect(
+      screen.getByRole('button', { name: i18n.t('snapshots.importOneTab') })
+    ).toBeInTheDocument();
+  });
+
+  it('洞察区块带可定位锚点（直达后滚动定位用）', () => {
+    renderPanel('report');
+
+    expect(document.getElementById('snapshots-insights')).not.toBeNull();
   });
 });

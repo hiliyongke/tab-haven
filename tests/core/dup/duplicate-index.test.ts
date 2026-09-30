@@ -16,9 +16,10 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
 }
 
 /**
- * 行为规格（PRD 附录 C-8）：
+ * 行为规格（PRD 附录 C-8 + 缺陷 IA-3 口径统一）：
  *  - 同一完整网址 ≥ 2 份视为重复；
- *  - 一键清理保留：当前激活 > 已固定 > 位置靠前；
+ *  - 一键清理保留：最近访问 > 当前激活 > 已固定 > 位置靠前 > id 大
+ *    （与「同网址唯一化」rankForKeep 同口径，见 keeper-parity.test.ts）；
  *  - 固定标签豁免清理。
  */
 describe('DuplicateIndex', () => {
@@ -64,6 +65,18 @@ describe('KeeperPolicy', () => {
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
     expect(keeper.id).toBe(2);
     expect(removable.map((tab) => tab.id)).toEqual([1, 3]);
+  });
+
+  it('保留最近访问者（优先于激活 / 固定 / 位置）', () => {
+    // 口径统一到 rankForKeep 后的行为变更：lastAccessed 是第一位比较键。
+    const group = [
+      makeTab({ id: 1, index: 0, url: 'https://a.com/', lastAccessed: 100 }),
+      makeTab({ id: 2, index: 1, url: 'https://a.com/', lastAccessed: 900 }),
+      makeTab({ id: 3, index: 2, url: 'https://a.com/', lastAccessed: 500, active: true })
+    ];
+    const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
+    expect(keeper.id).toBe(2);
+    expect(removable.map((tab) => tab.id).sort()).toEqual([1, 3]);
   });
 
   it('无激活时保留固定标签', () => {

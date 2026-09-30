@@ -6,8 +6,10 @@ import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys
 /**
  * 面板全局快捷键（`hooks/useGlobalHotkeys.ts`）。
  *
- * ⌘/Ctrl+Z 撤销是本轮新增，其关键契约是**不抢文本编辑场景的原生撤销**——
+ * ⌘/Ctrl+Z 撤销的关键契约是**不抢文本编辑场景的原生撤销**——
  * 输入框里的 ⌘Z 必须撤文本而不是恢复标签批次。
+ *
+ * ⌘/Ctrl+⇧+Z 重做：此前该分支直接 return（无键盘入口），本轮接上 store 的 redo()。
  */
 
 function setup() {
@@ -15,7 +17,8 @@ function setup() {
     openPalette: vi.fn(),
     locateActive: vi.fn(),
     focusSearch: vi.fn(),
-    undoLast: vi.fn()
+    undoLast: vi.fn(),
+    redoLast: vi.fn()
   };
   renderHook(() => useGlobalHotkeys(handlers));
   return handlers;
@@ -65,6 +68,26 @@ describe('useGlobalHotkeys', () => {
     fireEvent.keyDown(document, { key: 'z' });
 
     expect(handlers.undoLast).not.toHaveBeenCalled();
+  });
+
+  it('⌘/Ctrl+⇧+Z 触发重做（此前无键盘入口）', () => {
+    const handlers = setup();
+
+    fireEvent.keyDown(document, { key: 'z', metaKey: true, shiftKey: true });
+
+    expect(handlers.redoLast).toHaveBeenCalledTimes(1);
+    expect(handlers.undoLast).not.toHaveBeenCalled();
+  });
+
+  it('⌘/Ctrl+⇧+Z 在输入框内不拦截（原生文本重做优先）', () => {
+    const handlers = setup();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    fireEvent.keyDown(input, { key: 'z', metaKey: true, shiftKey: true });
+
+    expect(handlers.redoLast).not.toHaveBeenCalled();
+    input.remove();
   });
 
   it('既有快捷键不回退：⌘P 仍开命令面板', () => {

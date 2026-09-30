@@ -16,11 +16,17 @@ const TOTAL = 3;
  */
 export function OnboardingTour({
   onDone,
-  onDismiss
+  onDismiss,
+  onExport
 }: {
   onDone: () => void;
   /** Esc 关闭（不写回 onboarded 标记）。 */
   onDismiss: () => void;
+  /**
+   * 可选：终步的「立即导出备份」。
+   * 不传则只显示提示文案（保持组件在无导出能力场景下可用）。
+   */
+  onExport?: () => void;
 }) {
   const { t } = useTranslation();
   const [step, setStep] = useState(1);
@@ -79,6 +85,21 @@ export function OnboardingTour({
               <li>• {t('onboarding.feature3')}</li>
               <li>• {t('onboarding.feature4')}</li>
             </ul>
+          </div>
+        )}
+
+        {/* 终步的备份提醒：数据只存在本机，卸载即清除 —— 在用户最有耐心看完的
+            引导终局给出一次导出机会，而不是等他踩到损失后才发现没有出口。 */}
+        {last && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-accent-200 px-3 py-2">
+            <p className="min-w-0 flex-1 text-3xs leading-relaxed text-accent-700">
+              {t('onboarding.exportTip')}
+            </p>
+            {onExport && (
+              <Button variant="secondary" size="sm" onClick={onExport}>
+                {t('onboarding.exportAction')}
+              </Button>
+            )}
           </div>
         )}
 

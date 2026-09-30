@@ -452,7 +452,12 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
             ? () => rowProps.callbacks.onCloseSection?.(section)
             : undefined
         }
-        closeTitle={t(section.kind === 'site' ? 'sections.closeAll' : 'sections.closeGroupAll')}
+        // 影响面写进 title/aria-label：整批关闭是分区头唯一的破坏性操作，
+        // 此前只写「关闭该域名的全部标签」而无数量，误点等于一次关掉整个分组。
+        // 让用户在点之前就知道会关掉几个（可撤销，故只需数量预览不需二次确认）。
+        closeTitle={t(section.kind === 'site' ? 'sections.closeAll' : 'sections.closeGroupAll', {
+          count
+        })}
         collapsed={isCollapsed}
       >
         {isCollapsed ? null : renderBody()}

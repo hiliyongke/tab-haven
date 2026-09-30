@@ -20,6 +20,10 @@
     "duplicate": "Duplicate tab",
     "discard": "Discard tab (free memory)",
     "closeTab": "Close tab",
+    "contextMenu": "More actions",
+    "copyUrl": "Copy URL",
+    "addToReadLater": "Add to read later",
+    "urlCopied": "URL copied",
     "dragToMove": "Drag to reorder (hold here to drag into the fixed space)",
     "locateActive": "Locate current tab",
     "largeListNotice": "Too many tabs here — this section switched to scroll-optimized mode: smoother scrolling, but drag sorting is paused",
@@ -33,6 +37,7 @@
     "labelExpandAll": "Expand",
     "labelQuickRegroup": "Rebuild",
     "labelCleanDuplicates": "Dedupe",
+    "labelInsights": "Insights",
     "labelCloseSelected": "Close selected",
     "labelLocate": "Locate",
     "labelDiscard": "Discard",
@@ -43,18 +48,19 @@
     "collapseAll": "Collapse all groups",
     "expandAll": "Expand all groups",
     "quickRegroup": "Rebuild temporary groups",
-    "quickRegroupHint": "Break up the temporary area and rebuild it: existing groups are disbanded and all non-pinned tabs are regrouped by the current mode; the fixed space stays untouched",
+    "quickRegroupHint": "Break up the temporary area and rebuild it: existing groups are disbanded and all non-pinned tabs are regrouped by the current mode; the fixed space stays untouched. Note: regrouping is not added to the undo stack and cannot be undone",
     "quickRegroupNone": "No tabs need regrouping",
     "quickRegroupDone": "Re-grouped {{count}} groups"
   },
   "duplicates": {
     "reused": "Duplicate tab detected and merged into an existing tab",
     "clean": "Clean up duplicate tabs",
-    "cleanHint": "Close duplicates, keeping one per URL (active > pinned > earliest position; pinned tabs and fixed-space items are exempt). Undoable.",
+    "cleanHint": "Close duplicates, keeping one tab per URL — the most recently visited one (ties: active > pinned > earliest position). Pinned tabs and fixed-space items are exempt. Undoable.",
     "cleanNone": "No duplicate tabs to clean up"
   },
   "discard": {
     "allInactive": "Discard all inactive tabs (free memory)",
+    "allInactiveCount": "Discard {{count}} inactive tabs (free memory)",
     "allInactiveNone": "No inactive tabs to discard",
     "autoDiscarded": "Auto-discarded {{count}} tabs",
     "wakeAll": "Wake all",
@@ -144,8 +150,8 @@
     "pinned": "Pinned tabs",
     "openerTree": "Opener tree",
     "unknownLanguage": "Unknown language",
-    "closeAll": "Close all tabs from this domain (undoable)",
-    "closeGroupAll": "Close all tabs in this group (undoable)"
+    "closeAll": "Close all {{count}} tabs from this domain (undoable)",
+    "closeGroupAll": "Close all {{count}} tabs in this group (undoable)"
   },
   "undo": {
     "action": "Undo",
@@ -163,7 +169,14 @@
     "recentRestored": "Restored from recently closed",
     "recentWindow": "Window ({{count}} tabs)",
     "kindClose": "Manual close",
-    "kindArchive": "Window archive"
+    "kindRestore": "Snapshot restore",
+    "kindRestoreUndo": "Undo snapshot restore",
+    "stackEvicted": "Undo stack is full; the oldest {{count}} batches can no longer be restored (raise the undo stack limit in settings)",
+    "kindArchive": "Window archive",
+    "redo": "Redo",
+    "redoHint": "Close the {{count}} tabs just restored again (you can undo again)",
+    "redone": "Redone: closed {{count}} tabs again (you can undo again)",
+    "redoNone": "Those tabs are no longer in the window — nothing to redo"
   },
   "selection": {
     "closeSelected": "Close {{count}} selected tabs"
@@ -222,9 +235,11 @@
     "importBookmarksHint": "Imports top-level bookmark-bar folders as folders in the fixed space (merged by name, URLs deduped)",
     "importBookmarksAction": "Import",
     "importBookmarksDone": "Imported {{folders}} folders / {{items}} items",
+    "exportReminderTitle": "Export a backup regularly",
+    "exportReminder": "Tabs has no server: your data lives only in this browser on this device. Removing the extension, clearing browsing data, or resetting your browser profile deletes it too, and it cannot be recovered. Export a backup file regularly.",
     "clearData": "Clear all data",
     "syncMirror": "Sync across devices",
-    "syncMirrorHint": "Off by default. When on, your folders and settings are mirrored to your browser account's sync channel (Tabs has no server of its own). Turning it off deletes the data already uploaded",
+    "syncMirrorHint": "Off by default. When on, your folders, always-on tiles and settings are mirrored to your browser account's sync channel (Tabs has no server of its own). Turning it off deletes the data already uploaded",
     "clearDataHint": "Delete fixed folders, pinned items, all snapshots & archives, the undo stack and the cross-device sync mirror; settings are reset to defaults. This cannot be undone",
     "clearDataTitle": "Clear all data",
     "clearDataDesc": "The following data will be permanently deleted:",
@@ -436,7 +451,9 @@
     "prev": "Back",
     "skip": "Skip",
     "finish": "Get started",
-    "goToStep": "Go to step {{step}}"
+    "goToStep": "Go to step {{step}}",
+    "exportTip": "Your data lives only in this browser and is erased when the extension is uninstalled. Export a backup now.",
+    "exportAction": "Export now"
   },
   "presets": {
     "title": "Quick presets",
@@ -473,6 +490,7 @@
   "insights": {
     "title": "Tab insights",
     "subtitle": "Computed entirely on your machine, zero reporting — action suggestions derived from the current window in real time",
+    "open": "View {{count}} habit insights (duplicates / sleep candidates / stale)",
     "duplicatesTitle": "Duplicate hotspots",
     "duplicatesEntry": "{{count}} redundant tabs",
     "discardableTitle": "Sleep candidates",
@@ -511,6 +529,7 @@
     "delete": "Delete",
     "deleteConfirm": "Delete this snapshot? This cannot be undone.",
     "crashGuidance": "No undo records this session, but you have auto-saved snapshots — restore a whole window from them.",
+    "emptyWindowGuidance": "This window is empty right now. If it just crashed or was closed by accident, you can bring the whole window back from a snapshot.",
     "openSnapshots": "View my snapshots",
     "archive": "Archive",
     "archived": "Archived {{count}} tabs",
@@ -547,7 +566,8 @@
     "reportHint": "Local aggregation only — no network or account involved",
     "reportSnapshots": "Snapshots / Workspaces",
     "reportArchives": "Archived",
-    "reportTabs": "Tabs preserved"
+    "reportTabs": "Tabs preserved",
+    "evicted": "Snapshot limit reached; the {{count}} oldest were removed (adjust snapshot retention in settings)"
   },
   "tips": {
     "discoverTitle": "Unlock all of Tabs in three steps",
@@ -580,6 +600,7 @@
     "archiveName": "Read-later archive",
     "archived": "Archived {{count}} stale read-later items into a snapshot",
     "added": "Added to read later",
+    "evicted": "Read later is full (200 items); the {{count}} oldest were removed",
     "addActive": "Read later: current tab"
   },
   "windows": {
@@ -589,7 +610,8 @@
     "focusTab": "Focus this tab (switch to its window)",
     "closeTab": "Close this tab",
     "active": "Active",
-    "ungrouped": "Ungrouped"
+    "ungrouped": "Ungrouped",
+    "loadFailed": "Other windows could not be read right now (the browser query failed). Your tabs are unaffected — you can retry."
   },
   "spaces": {
     "stripLabel": "Workspaces",
@@ -698,7 +720,7 @@
     "domData1Title": "Complete backup",
     "domData1Body": "Fixed space, settings and every snapshot and archive exported as a single JSON; import is transactional and rolls back on failure.",
     "domData2Title": "Mirror via your browser account",
-    "domData2Body": "Folders and settings can sync across devices through your own browser account — never through a Tabs server.",
+    "domData2Body": "Folders, always-on tiles and settings can sync across devices through your own browser account — never through a Tabs server.",
     "domData3Title": "Bad data is quarantined",
     "domData3Body": "All persisted data is schema-validated; corrupted entries are isolated rather than silently dropped or spread.",
     "domData4Title": "Diagnostics export",
@@ -800,7 +822,9 @@
     "footerLicense": "Open source under the MIT license."
   },
   "popup": {
-    "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close"
+    "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close",
+    "loadFailedHint": "Tabs for this window could not be read right now, so search may return nothing. You can retry, or close and reopen this popup.",
+    "loading": "Reading tabs…"
   },
   "dnd": {
     "instructions": "Press Space to pick up, use arrow keys to move, press Space again to drop, press Esc to cancel",

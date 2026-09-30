@@ -2,7 +2,13 @@ import { create } from 'zustand';
 import i18n from '@/i18n';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
-import { closeTabs, queryCurrentWindowTabs, queryCurrentWindowGroups } from '@/platform/tabs';
+import {
+  closeTabs,
+  queryCurrentWindowTabs,
+  queryCurrentWindowGroups,
+  queryWindowTabs,
+  resolveRestoreWindowId
+} from '@/platform/tabs';
 import { sendMessageWithAck } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import { logFailure } from '@/platform/diagnostics';
@@ -14,12 +20,49 @@ import {
   persistSnapshot,
   replaceSpaceSnapshot,
   restoreSnapshot,
+  setSnapshotEvictionListener,
   SNAPSHOTS_RMW_LOCK
 } from '@/platform/snapshot/snapshots';
 import { parseWorkona } from '@/core/insights/workonaImport';
 import { newId } from '@/core/util/id';
 import { buildPartialSnapshot } from '@/core/snapshot/snapshotDiff';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+
+/**
+ * 把「本次快照恢复新建出来的标签」记为一批可撤销项（R8 / IX-3）。
+ *
+ * 采用**前后差分**而不是「恢复后按条件筛选」：后者会把窗口里原本就在的标签一并
+ * 误判成「恢复出来的」，撤销时就会把它们全部关掉 —— 那比「恢复不可撤销」更糟。
+ * 差分取「恢复后多出来的 tabId」，是唯一精确且不必改动 platform 层契约的做法
+ * （restoreSnapshot 目前只返回数量，改返回值会影响其公开契约与既有测试）。
+ */
+async function recordRestoreForUndo(
+  beforeIds: ReadonlySet<number>,
+  windowId: number
+): Promise<void> {
+  try {
+    const after = await queryWindowTabs(windowId);
+    const created = after.filter((tab) => !beforeIds.has(tab.id));
+    if (created.length === 0) return;
+    await useUndoStore.getState().recordClosedBatch(created, 'restore');
+  } catch {
+    // 记录失败不得影响恢复结果本身（恢复已成功，用户只是少了一个反悔入口）。
+  }
+}
+
+/**
+ * 注册淘汰提示（R18 / S-3）：快照超限时最旧的快照会被移除，此前完全静默 ——
+ * 用户以为一直留着，实际最早的那些已经没了。这里把它变成一次可见的提示。
+ *
+ * 重要性高于撤销栈那类：撤销栈深度是**已披露且用户可调**的设置，而这里的两条
+ * 上限（maxAutoSnapshots / snapshotLimit）此前没有任何运行时告知 —— 用户只在
+ * 打开快照列表时才发现旧快照不见了。
+ */
+setSnapshotEvictionListener((count) => {
+  // 走 notifyEviction 合并：逐份导入 Workona（每份各走一次 persistSnapshot）会
+  // 连续淘汰，逐次提示会互相顶掉且刷屏。同类淘汰本会话内只提示一次。
+  useUndoStore.getState().notifyEviction('snapshots', i18n.t('snapshots.evicted', { count }));
+});
 
 /**
  * 快照 store：命名快照的读取、保存、恢复、删除、重命名，以及归档与 OneTab 导入。
@@ -264,10 +307,43 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     set({ snapshots: next });
   },
 
+  /**
+   * 恢复快照（R8 / IX-3）。
+   *
+   * 恢复会一次性**新建**整批标签，此前它完全不可反悔 —— RestoreConfirmDialog 的
+   * 注释明确写着「恢复不在撤销栈覆盖范围内」，用户只能手动一个个关。
+   *
+   * 采用方案 B：恢复完成后，把本次新建出来的标签记为一批「可关闭项」入撤销栈
+   * （kind='restore'）。「撤销本次恢复」= 关闭这批标签，由 undoStore 的 restore
+   * 分支执行（撤销栈的常规分支是「重新打开」，对本批次不适用 —— 它们根本没被关掉）；
+   * 关闭后生成的普通关闭批次仍可再被撤销，于是能再开回来。
+   *
+   * 为什么不是方案 A（独立的一次性「撤销本次恢复」入口）：那需要新建一套与撤销栈
+   * 平行的状态机，且无法享受既有的跨页锁、持久化与重做栈。方案 B 复用全部既有管线。
+   *
+   * 注意 kind 在 schema 里是 z.string()（models.ts:259），新增 'restore' 无需改 schema。
+   */
   restore: async (id, windowId) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
     if (!snap) return 0;
-    return restoreSnapshot(snap, windowId);
+    // 差分必须落在恢复的**目标窗口**上：restoreSnapshot 在 windowId 缺省时恢复到
+    // 最近聚焦窗口，而侧边栏所在窗口未必是它 —— 按当前窗口取「恢复前现场」，
+    // 跨窗恢复时会一个新建项都匹配不到。resolveRestoreWindowId 与 restoreSnapshot
+    // 的窗口解析口径一致（指定优先，缺省回退最近聚焦）。
+    const targetWindowId = await resolveRestoreWindowId(windowId);
+    // 拿不到恢复前现场就**不记账**：那等价于「窗口里所有标签都是新建的」，
+    // 之后的撤销会把用户原有标签一并关掉 —— 比「这次恢复不可撤销」糟得多。
+    const beforeIds =
+      targetWindowId === undefined
+        ? undefined
+        : await queryWindowTabs(targetWindowId)
+            .then((tabs) => new Set(tabs.map((tab) => tab.id)))
+            .catch(() => undefined);
+    const count = await restoreSnapshot(snap, windowId);
+    if (count > 0 && beforeIds && targetWindowId !== undefined) {
+      await recordRestoreForUndo(beforeIds, targetWindowId);
+    }
+    return count;
   },
 
   updateSpace: async (id) => {

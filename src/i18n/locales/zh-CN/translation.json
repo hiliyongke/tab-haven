@@ -20,6 +20,10 @@
     "duplicate": "复制标签",
     "discard": "休眠标签（释放内存）",
     "closeTab": "关闭标签",
+    "contextMenu": "更多操作",
+    "copyUrl": "复制网址",
+    "addToReadLater": "加入稍后读",
+    "urlCopied": "已复制网址",
     "dragToMove": "拖拽调整顺序（按住此处可拖到固定空间）",
     "locateActive": "定位当前标签",
     "largeListNotice": "标签太多，本区已切换为滚动优化模式：滚动更流畅，但暂时不能拖拽排序",
@@ -33,6 +37,7 @@
     "labelExpandAll": "展开",
     "labelQuickRegroup": "重排",
     "labelCleanDuplicates": "清理重复",
+    "labelInsights": "洞察",
     "labelCloseSelected": "关闭选中",
     "labelLocate": "定位",
     "labelDiscard": "休眠",
@@ -43,18 +48,19 @@
     "collapseAll": "收起所有分组",
     "expandAll": "展开所有分组",
     "quickRegroup": "重排临时区分组",
-    "quickRegroupHint": "把临时区的分组全部打散重排：按当前分组方式重新归拢所有未固定的标签；固定空间不受影响",
+    "quickRegroupHint": "把临时区的分组全部打散重排：按当前分组方式重新归拢所有未固定的标签；固定空间不受影响。注意：重排不进撤销栈，不可撤销",
     "quickRegroupNone": "没有需要重新分组的标签",
     "quickRegroupDone": "已重新分组 {{count}} 个组"
   },
   "duplicates": {
     "reused": "检测到重复标签，已自动合并到现有标签",
     "clean": "清理重复标签",
-    "cleanHint": "关闭重复标签：每个网址保留激活 / 固定 / 位置靠前的一个（固定标签与固定空间内的条目豁免），清理可撤销",
+    "cleanHint": "关闭重复标签：每个网址只留一个，保留最近访问过的那个（时间相同则依次看激活 / 固定 / 位置靠前）；固定标签与固定空间内的条目豁免，清理可撤销",
     "cleanNone": "没有可清理的重复标签"
   },
   "discard": {
     "allInactive": "休眠全部非激活标签（释放内存）",
+    "allInactiveCount": "休眠 {{count}} 个非激活标签（释放内存）",
     "allInactiveNone": "没有可休眠的非激活标签",
     "autoDiscarded": "已自动休眠 {{count}} 个标签",
     "wakeAll": "全部唤醒",
@@ -144,8 +150,8 @@
     "pinned": "固定标签",
     "openerTree": "来源树",
     "unknownLanguage": "未知语言",
-    "closeAll": "关闭该域名的全部标签（可撤销）",
-    "closeGroupAll": "关闭该分组的全部标签（可撤销）"
+    "closeAll": "关闭该域名的全部 {{count}} 个标签（可撤销）",
+    "closeGroupAll": "关闭该分组的全部 {{count}} 个标签（可撤销）"
   },
   "undo": {
     "action": "撤销",
@@ -163,7 +169,14 @@
     "recentRestored": "已从浏览器最近关闭中恢复",
     "recentWindow": "窗口（{{count}} 个标签）",
     "kindClose": "手动关闭",
-    "kindArchive": "窗口归档"
+    "kindRestore": "快照恢复",
+    "kindRestoreUndo": "撤销快照恢复",
+    "stackEvicted": "撤销栈已达上限，最早的 {{count}} 批已不可恢复（可在设置中调大「撤销栈深度」）",
+    "kindArchive": "窗口归档",
+    "redo": "重做",
+    "redoHint": "再次关闭刚恢复的 {{count}} 个标签（可再次撤销）",
+    "redone": "已重做：再次关闭 {{count}} 个标签（可再次撤销）",
+    "redoNone": "这些标签已不在窗口中，无需重做"
   },
   "selection": {
     "closeSelected": "关闭选中的 {{count}} 个标签"
@@ -222,9 +235,11 @@
     "importBookmarksHint": "将书签栏顶层文件夹导入为固定空间的文件夹（同名合并、网址全局去重）",
     "importBookmarksAction": "导入",
     "importBookmarksDone": "已导入 {{folders}} 个文件夹 / {{items}} 条",
+    "exportReminderTitle": "建议定期导出备份",
+    "exportReminder": "Tabs 没有服务器：数据只存在这台设备的浏览器里。卸载扩展、清除浏览数据或重置浏览器配置都会一并删除它们，且无法找回。建议定期导出一份备份文件。",
     "clearData": "清除所有数据",
     "syncMirror": "跨设备同步",
-    "syncMirrorHint": "默认关闭。开启后，文件夹与设置会镜像到你浏览器账号的同步通道（Tabs 没有自己的服务器）；关闭时会一并删除已上传的数据",
+    "syncMirrorHint": "默认关闭。开启后，文件夹、常驻磁贴与设置会镜像到你浏览器账号的同步通道（Tabs 没有自己的服务器）；关闭时会一并删除已上传的数据",
     "clearDataHint": "删除固定空间、固定图标、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复",
     "clearDataTitle": "清除所有数据",
     "clearDataDesc": "以下数据将被永久删除：",
@@ -437,7 +452,9 @@
     "prev": "上一步",
     "skip": "跳过",
     "finish": "开始使用",
-    "goToStep": "转到第 {{step}} 步"
+    "goToStep": "转到第 {{step}} 步",
+    "exportTip": "数据只保存在这台设备的浏览器里，卸载扩展会一并清除。建议现在导出一份备份。",
+    "exportAction": "立即导出"
   },
   "presets": {
     "title": "快速预设",
@@ -474,6 +491,7 @@
   "insights": {
     "title": "习惯洞察",
     "subtitle": "全部本地计算，零上报——从当前窗口实时推导的行动建议",
+    "open": "查看 {{count}} 条习惯洞察（重复 / 休眠候选 / 滞留）",
     "duplicatesTitle": "重复重灾区",
     "duplicatesEntry": "{{count}} 份冗余标签",
     "discardableTitle": "休眠候选",
@@ -512,6 +530,7 @@
     "delete": "删除",
     "deleteConfirm": "确定删除这份快照吗？删除后无法恢复。",
     "crashGuidance": "本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。",
+    "emptyWindowGuidance": "这个窗口现在是空的。如果你刚遇到崩溃或误关，可以从快照把整个窗口找回来。",
     "openSnapshots": "查看我的快照",
     "archive": "归档",
     "archived": "已归档 {{count}} 个标签",
@@ -548,7 +567,8 @@
     "reportHint": "本地聚合，不涉及任何网络或账号",
     "reportSnapshots": "快照 / 工作区",
     "reportArchives": "归档留档",
-    "reportTabs": "累计留档标签"
+    "reportTabs": "累计留档标签",
+    "evicted": "快照已达上限，最早的 {{count}} 份已被移除（可在设置中调整快照保留数量）"
   },
   "tips": {
     "discoverTitle": "三步解锁 Tabs 的全部能力",
@@ -581,6 +601,7 @@
     "archiveName": "稍后读归档",
     "archived": "已把 {{count}} 条过期稍后读归档为快照",
     "added": "已加入稍后读",
+    "evicted": "稍后读已达上限（200 条），最早的 {{count}} 条已被移除",
     "addActive": "稍后读：当前标签"
   },
   "windows": {
@@ -590,7 +611,8 @@
     "focusTab": "聚焦该标签（切到它所在窗口）",
     "closeTab": "关闭该标签",
     "active": "激活",
-    "ungrouped": "未分组"
+    "ungrouped": "未分组",
+    "loadFailed": "其他窗口暂时读不出来（浏览器查询失败）。标签数据不受影响，可重试。"
   },
   "spaces": {
     "stripLabel": "工作区",
@@ -699,7 +721,7 @@
     "domData1Title": "完整备份",
     "domData1Body": "固定空间 + 设置 + 全部快照与归档导出为单个 JSON；导入是事务，失败整体回滚。",
     "domData2Title": "浏览器账号通道镜像",
-    "domData2Body": "文件夹与设置可经你自己的浏览器账号跨设备同步，不经 Tabs 的服务器。",
+    "domData2Body": "文件夹、常驻磁贴与设置可经你自己的浏览器账号跨设备同步，不经 Tabs 的服务器。",
     "domData3Title": "坏数据隔离",
     "domData3Body": "所有持久化数据都过 schema 校验，损坏条目被隔离，既不静默丢弃也不扩散。",
     "domData4Title": "诊断导出",
@@ -800,7 +822,9 @@
     "footerLicense": "MIT 许可证开源。"
   },
   "popup": {
-    "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭"
+    "keyboardHint": "↑↓ 选择 · Enter 切换 · Esc 关闭",
+    "loadFailedHint": "本窗口数据暂时读不出来，搜索可能不出结果。可重试，或关掉弹窗再打开。",
+    "loading": "正在读取标签…"
   },
   "dnd": {
     "instructions": "按空格键开始拖拽，用方向键移动，再次按空格键放置，按 Esc 取消",

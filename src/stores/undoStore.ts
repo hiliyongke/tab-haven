@@ -1,13 +1,24 @@
 import { create } from 'zustand';
-import { createUndoBatch, popBatch, pushBatch, toUndoTabRecord } from '@/core/undo/UndoStack';
+import {
+  createUndoBatch,
+  popBatch,
+  pushBatch,
+  pushBatchWithEvicted,
+  selectRedoTargets,
+  toUndoTabRecord
+} from '@/core/undo/UndoStack';
 import type { UndoBatch } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
-import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
+import {
+  redoRepository,
+  settingsRepository,
+  undoRepository
+} from '@/platform/storage/repositories';
 import { UNDO_PERSIST_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
-import { resolveRestoreWindowId } from '@/platform/tabs';
+import { queryWindowTabs, resolveRestoreWindowId } from '@/platform/tabs';
 import { logFailure } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -39,10 +50,17 @@ interface ToastState {
 
 interface UndoState {
   batches: UndoBatch[];
+  /**
+   * 重做栈：撤销成功后压入「本次被恢复回来的条目」，结构与撤销栈相同。
+   * 生命周期与撤销栈不同——任何新的关闭批次入栈即清空（重做只对最近一次撤销有意义）。
+   */
+  redoBatches: UndoBatch[];
   toast: ToastState | null;
   ready: boolean;
   /** 撤销进行中：UI 据此禁用入口，避免并发撤销。 */
   undoing: boolean;
+  /** 重做进行中（与撤销共用执行互斥）。 */
+  redoing: boolean;
 
   load: () => Promise<void>;
   /** 统一关闭入口：记录 + 执行 + 提示。 */
@@ -51,6 +69,11 @@ interface UndoState {
   undo: () => Promise<void>;
   /** 撤销指定批次（撤销历史面板用）。 */
   undoBatch: (batchId: string) => Promise<void>;
+  /**
+   * 重做最近一次撤销：把刚被恢复回来的标签再次关闭。
+   * 关闭结果会**重新入撤销栈**（可再次撤销），因此重做不会把用户锁死在某一状态。
+   */
+  redo: () => Promise<void>;
   /**
    * 外部关闭路径登记撤销（如窗口归档）。
    * 归档此前不进撤销栈：标签已关闭却无处可撤，恢复只能靠快照列表，违背「可信关闭」。
@@ -65,11 +88,28 @@ interface UndoState {
   notify: (message: string, action?: ToastAction) => void;
   /** 失败提示：读屏即刻播报（role="alert"），不与其他提示排队。 */
   notifyError: (message: string) => void;
+  /**
+   * 淘汰提示（R18 / S-3）：同一 key 在本会话内只提示一次。
+   *
+   * 三类淘汰（稍后读超限、快照超限、撤销栈超限）都是「每次触发容量的操作都会
+   * 再淘汰一条」——批量关 50 个标签、连续保存快照都会连着触发几十次。若每次都弹
+   * toast，提示条会互相顶掉且刷屏，用户反而看不到任何一条。故按 key 合并：
+   * 同类淘汰在本会话内只提示一次（内容与数量以首次为准）。
+   */
+  notifyEviction: (key: string, message: string) => void;
   /** 清空撤销栈（内存 + 持久化）。清除所有数据时调用——被清除的数据不参与撤销。 */
   clearBatches: () => Promise<void>;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * 已提示过的淘汰 key（R18 / S-3）。
+ *
+ * 模块级而非 store 内：它是「本会话内提示过没有」的记录，不属于可序列化的 UI 状态，
+ * 放进 store 会被快照测试与 setState 复位连带清掉。副作用仅是重复淘汰不再提示
+ * （用户已被告知一次，容量语义没有变化）。
+ */
+const notifiedEvictions = new Set<string>();
 /**
  * 撤销执行互斥。
  *
@@ -141,6 +181,35 @@ function enqueueUndoPersist(
   return step;
 }
 
+/**
+ * redoRepository 写盘串行链（与撤销栈同构，独立一条链：两个栈的写入互不阻塞，
+ * 各自整表写 + 串行即可保证终态正确）。
+ *
+ * 跨页锁复用 UNDO_PERSIST_LOCK：重做栈的写入与撤销栈同源（都由撤销/重做动作
+ * 驱动），共用一把锁即可串行化，不新增锁名以免锁清单漂移。
+ */
+let redoPersistChain: Promise<void> = Promise.resolve();
+
+function enqueueRedoPersist(
+  apply: (disk: UndoBatch[]) => UndoBatch[],
+  opts?: { alwaysWrite?: boolean }
+): Promise<void> {
+  const step = redoPersistChain.then(async () => {
+    if (!opts?.alwaysWrite) {
+      const settings = await settingsRepository.read();
+      // 与撤销栈同开关：关闭「撤销记录跨重启持久化」时，重做也仅会话内有效。
+      if (!settings.persistUndo) return;
+    }
+    await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
+      const disk = await redoRepository.read();
+      const ok = await redoRepository.write(apply(disk));
+      if (!ok) logFailure('undoStore', '重做栈写入失败，本次重做状态可能未持久化');
+    });
+  });
+  redoPersistChain = step.catch((error) => logFailure('undoStore', '重做栈写入失败', error));
+  return step;
+}
+
 export const useUndoStore = create<UndoState>()((set, get) => {
   const scheduleToastClear = (): void => {
     clearTimeout(toastTimer);
@@ -149,6 +218,85 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     toastTimer = setTimeout(() => {
       set({ toast: null });
     }, durationSec * 1000);
+  };
+
+  /**
+   * 撤销「快照恢复」批次（kind='restore'）的执行体。
+   *
+   * 这类批次记的是**仍开着**的标签（快照恢复是新建，不是关闭），所以撤销它
+   * 只能是「把这批标签关掉」，绝不能走常规分支的 restoreTabRecordsDetailed：
+   * 那些标签还在窗口里，重开路径会因「已打开去重」全部判为成功（count=N、
+   * 无失败），结果批次被出栈、提示「已恢复 N 个」而界面毫无变化 —— 既空转
+   * 又给了假回执。
+   *
+   * 关闭后照例生成一条普通关闭批次入栈（kind='restore-undo'）：用户仍可再撤销
+   * 它把标签开回来，与 redo 的「关闭后重新入栈」同构。
+   */
+  const closeRestoredBatch = async (
+    batch: UndoBatch,
+    windowId: number,
+    onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void
+  ): Promise<void> => {
+    clearTimeout(toastTimer);
+    set({ toast: null });
+
+    // 目标窗口的标签快照：恢复可能落在非当前窗口，按 tabStore（当前窗口）匹配会全漏。
+    const tabs = await queryWindowTabs(windowId).catch(() => useTabStore.getState().tabs);
+    const targets = selectRedoTargets(tabs, batch.entries);
+
+    if (targets.length === 0) {
+      // 标签已被用户手动关掉：没有可撤销的对象。批次出栈（不留悬空条目）并明确告知，
+      // 不能静默 return ——「点了撤销没反应」会被当成扩展卡住。
+      onCommitted(get().batches, undefined);
+      await enqueueUndoPersist((disk) => disk.filter((entry) => entry.id !== batch.id));
+      set({
+        toast: {
+          message: i18n.t('undo.redoNone'),
+          canUndo: false,
+          batchId: undefined
+        }
+      });
+      scheduleToastClear();
+      return;
+    }
+
+    // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
+    const groupNameById = new Map(
+      useTabStore.getState().groups.map((group) => [group.id, group.title])
+    );
+    const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
+    const closed = targets.filter((tab) => closedIds.includes(tab.id));
+    if (closed.length === 0) {
+      // 一个都没关掉：保留批次让用户重试，不吞掉这次撤销。
+      set({
+        toast: {
+          message: i18n.t('errors.operationFailed'),
+          canUndo: false,
+          batchId: undefined,
+          tone: 'error'
+        }
+      });
+      scheduleToastClear();
+      return;
+    }
+
+    onCommitted(get().batches, undefined);
+    await enqueueUndoPersist((disk) => disk.filter((entry) => entry.id !== batch.id));
+
+    const closedBatch = createUndoBatch(
+      'restore-undo',
+      closed.map((tab) => toUndoTabRecord(tab, groupNameById)),
+      { windowId }
+    );
+    await appendBatch(closedBatch);
+    set({
+      toast: {
+        message: i18n.t('undo.closed', { count: closed.length }),
+        canUndo: true,
+        batchId: closedBatch.id
+      }
+    });
+    scheduleToastClear();
   };
 
   /**
@@ -185,6 +333,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       scheduleToastClear();
       return;
     }
+    // kind='restore' 记的是「快照恢复新建出来、此刻仍开着」的标签 —— 撤销它要
+    // 走关闭分支，常规分支（重新打开）对它只会空转并给出假回执。
+    if (batch.kind === 'restore') {
+      await closeRestoredBatch(batch, windowId, onCommitted);
+      return;
+    }
     clearTimeout(toastTimer);
     set({ toast: null });
 
@@ -195,6 +349,16 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 出栈基于「此刻的栈」而非入口快照：恢复期间可能有新批次入栈（如同步关闭），
     // 用入口快照会把它们整批抹掉。
     onCommitted(get().batches, retryBatch);
+
+    // 撤销成功后压入重做栈：只压「本次真正恢复成功」的条目 —— 失败项仍留在
+    // 撤销栈等重试，把它们也压进重做栈会让「重做」去关一批从未被恢复的标签。
+    const restoredEntries = batch.entries.filter((entry) => !result.failed.includes(entry));
+    if (restoredEntries.length > 0) {
+      const redoBatch: UndoBatch = { ...batch, entries: restoredEntries };
+      const settings = await settingsRepository.read();
+      set({ redoBatches: pushBatch(get().redoBatches, redoBatch, settings.undoStackLimit) });
+      await enqueueRedoPersist((disk) => pushBatch(disk, redoBatch, settings.undoStackLimit));
+    }
 
     // 出栈后入队持久化：链内以磁盘栈为基线按 id 精确移除本批次（恢复期间
     // 可能有新批次入栈，也可能是另一窗口写入的批次），失败项放回栈顶。
@@ -210,7 +374,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
             ? i18n.t('undo.restoredPartial', { count: result.count, failed: failedCount })
             : i18n.t('undo.restored', { count: result.count }),
         canUndo: false,
-        batchId: undefined
+        batchId: undefined,
+        // 重做出口挂在本次撤销的回执上：撤销刚发生，正是用户最可能反悔的时刻。
+        action:
+          get().redoBatches.length > 0
+            ? { label: i18n.t('undo.redo'), run: () => void get().redo() }
+            : undefined
       }
     });
     scheduleToastClear();
@@ -222,8 +391,22 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 在途入栈的批次会被整批抹掉（面板秒开秒操作可确定性复现）。
     if (!get().ready) await get().load();
     const settings = await settingsRepository.read();
-    const next = pushBatch(get().batches, batch, settings.undoStackLimit);
-    set({ batches: next });
+    const { kept, evicted } = pushBatchWithEvicted(get().batches, batch, settings.undoStackLimit);
+    set({ batches: kept });
+    // 淘汰告知（R18 / S-3）：栈深上限是已披露且用户可调的，缺的是「淘汰发生那一刻」
+    // 的一次提示。此前用户只在打开撤销历史时才发现旧批次不见了。
+    // 只在真正淘汰时提示，且由 toast（非 alert）承载 —— 这是信息而非错误。
+    if (evicted.length > 0) {
+      // 走 notifyEviction 合并：连续关闭会一次次淘汰，逐次提示会互相顶掉。
+      get().notifyEviction('undo-stack', i18n.t('undo.stackEvicted', { count: evicted.length }));
+    }
+    // 新的关闭批次入栈即清空重做栈：重做只对「最近一次撤销」有意义，用户一旦
+    // 开始新的关闭动作，旧的重做项已不再对应当前状态（否则重做会去关无关的标签）。
+    // 仅栈非空时才写盘：绝大多数关闭路径不产生额外写。
+    if (get().redoBatches.length > 0) {
+      set({ redoBatches: [] });
+      await enqueueRedoPersist(() => [], { alwaysWrite: true });
+    }
     // 入队持久化：链内以磁盘栈为基线追加本批次（磁盘可能已含另一窗口写入的
     // 批次或已发生的撤销出栈）；persistUndo 关闭时不写库（链内检查）。
     await enqueueUndoPersist((disk) => pushBatch(disk, batch, settings.undoStackLimit));
@@ -231,9 +414,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
   return {
     batches: [],
+    redoBatches: [],
     toast: null,
     ready: false,
     undoing: false,
+    redoing: false,
 
     load: async () => {
       loadInFlight ??= (async () => {
@@ -255,13 +440,17 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         const before = get().batches;
         const settings = await settingsRepository.read();
         const batches = settings.persistUndo ? await undoRepository.read() : [];
-        if (!settings.persistUndo) await enqueueUndoPersist(() => [], { alwaysWrite: true });
+        const redoBatches = settings.persistUndo ? await redoRepository.read() : [];
+        if (!settings.persistUndo) {
+          await enqueueUndoPersist(() => [], { alwaysWrite: true });
+          await enqueueRedoPersist(() => [], { alwaysWrite: true });
+        }
         // read 在途期间 watcher 已回放更新的值（引用变化）时以其为准，只补 ready。
         if (get().batches !== before) {
-          set({ ready: true });
+          set({ ready: true, redoBatches });
           return;
         }
-        set({ batches, ready: true });
+        set({ batches, redoBatches, ready: true });
       })().finally(() => {
         loadInFlight = null;
       });
@@ -408,6 +597,79 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       }
     },
 
+    /**
+     * 重做：把刚被撤销（恢复）回来的标签再次关闭。
+     *
+     * 为什么按 URL 匹配当前窗口标签：撤销记录只有 URL / 位置 / 状态五元组，
+     * 没有浏览器 tabId（关闭后即失效，恢复出来的是新 id），因此重做只能按
+     * URL 反查——固定标签豁免，与关闭路径同口径。
+     */
+    redo: async () => {
+      if (undoInFlight) return;
+      const [latest] = popBatch(get().redoBatches);
+      if (!latest) return;
+      undoInFlight = true;
+      set({ redoing: true });
+      try {
+        await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
+          const targets = selectRedoTargets(useTabStore.getState().tabs, latest.entries);
+          if (targets.length === 0) {
+            // 目标标签已不在（用户手动关掉了）：重做没有对象，清栈并明确告知。
+            // 不能静默 return —— 否则用户会以为「点了重做没反应」。
+            set({ redoBatches: [] });
+            await enqueueRedoPersist(() => [], { alwaysWrite: true });
+            set({
+              toast: {
+                message: i18n.t('undo.redoNone'),
+                canUndo: false,
+                batchId: undefined
+              }
+            });
+            scheduleToastClear();
+            return;
+          }
+
+          // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
+          const groups = useTabStore.getState().groups;
+          const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
+          const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
+          const closed = targets.filter((tab) => closedIds.includes(tab.id));
+          if (closed.length === 0) {
+            set({
+              toast: {
+                message: i18n.t('errors.operationFailed'),
+                canUndo: false,
+                batchId: undefined,
+                tone: 'error'
+              }
+            });
+            scheduleToastClear();
+            return;
+          }
+
+          // 关闭结果重新入撤销栈：重做不是单向门，用户仍可再次撤销回到「已恢复」状态。
+          // appendBatch 内部会清空重做栈，本次已消费的重做项无需额外清理。
+          const batch = createUndoBatch(
+            'redo-close',
+            closed.map((tab) => toUndoTabRecord(tab, groupNameById)),
+            { windowId: closed[0]?.windowId ?? useTabStore.getState().currentWindowId }
+          );
+          await appendBatch(batch);
+          set({
+            toast: {
+              message: i18n.t('undo.redone', { count: closed.length }),
+              canUndo: true,
+              batchId: batch.id
+            }
+          });
+          scheduleToastClear();
+        });
+      } finally {
+        undoInFlight = false;
+        set({ redoing: false });
+      }
+    },
+
     recordClosedBatch: async (tabs, kind, groupNameById) => {
       if (tabs.length === 0) return;
       const batch = createUndoBatch(
@@ -433,11 +695,20 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       scheduleToastClear();
     },
 
+    notifyEviction: (key, message) => {
+      // 合并：同一类淘汰本会话内只提示一次。容量语义没变，重复提示只会刷屏。
+      if (notifiedEvictions.has(key)) return;
+      notifiedEvictions.add(key);
+      set({ toast: { message, canUndo: false, batchId: undefined, tone: 'info' } });
+      scheduleToastClear();
+    },
+
     clearBatches: async () => {
       clearTimeout(toastTimer);
-      set({ batches: [], toast: null });
+      set({ batches: [], redoBatches: [], toast: null });
       // 持久层通常已被 storage.local.clear 清空，此处入队写空数组兜底（并消除文件缺失歧义）。
       await enqueueUndoPersist(() => [], { alwaysWrite: true });
+      await enqueueRedoPersist(() => [], { alwaysWrite: true });
     }
   };
 });

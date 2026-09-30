@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { openOptionsPage } from '@/platform/navigation';
 import { SearchEngine } from '@/core/search/SearchEngine';
@@ -7,6 +7,7 @@ import { activateTabAcrossWindows } from '@/platform/tabs';
 import { logDegraded } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
+import { PopupLoadingSkeleton, PopupLoadErrorState } from '@/entrypoints/popup/PopupListStates';
 import { EmptyState } from '@/ui/common/EmptyState';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
@@ -31,15 +32,28 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * 初始化三态（与侧边栏同构）：loading → ready / error。
+   *
+   * 此前初始化失败只落诊断日志、界面照常渲染搜索框与「输入以搜索」——用户看到
+   * 的是「产品坏了但说不清哪里坏」：搜索无结果、设置不生效，全都是静默的。
+   * 同理，「数据加载中」与「真的没有标签 / 该输入点什么」此前渲染成同一屏。
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
-    // 初始化失败不能成为 unhandled rejection；popup 无 toast 通道且失焦即销毁，
-    // 侧边栏的「toast + 1s 重试」在此无意义，收口到诊断日志（数据层已回滚守卫）。
+  const runInitialize = useCallback(() => {
+    setLoadFailed(false);
+    // 失败仍要留痕：错误态是给用户的出口，诊断是给排障的路径，二者不可互相替代。
     void initializeData().catch((error: unknown) => {
       logDegraded('popup', '数据初始化失败', error);
+      setLoadFailed(true);
     });
+  }, [initializeData]);
+
+  useEffect(() => {
+    runInitialize();
     return startTabSync();
-  }, [initializeData, startTabSync]);
+  }, [runInitialize, startTabSync]);
 
   // 快照联动：挂起转正 + 绑定维护（固定空间一致性）。
   // dataReady + tabSyncReady 双守卫同侧边栏：folders 未加载、首帧标签快照未回
@@ -211,7 +225,14 @@ export default function App() {
         {query.trim() ? t('search.hits', { count: renderableHits.length }) : ''}
       </output>
       <div id="popup-hits" className="mt-1 max-h-[360px] overflow-y-auto">
-        {renderableHits.length === 0 ? (
+        {/* 三态：初始化失败 → 错误态（含重试）；未就绪 → 骨架屏；
+             就绪后无命中才落到「无结果 / 输入引导」空态。
+             此前加载中与「真的没有标签」渲染成同一屏，用户无从分辨。 */}
+        {loadFailed ? (
+          <PopupLoadErrorState onRetry={runInitialize} />
+        ) : !dataReady || !tabSyncReady ? (
+          <PopupLoadingSkeleton />
+        ) : renderableHits.length === 0 ? (
           <EmptyState
             icon={<Icon d={Icons.search} className="h-4.5 w-4.5" />}
             title={query ? t('search.noResults') : t('search.typeHint')}

@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
@@ -13,7 +14,10 @@ import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { RowActions } from '@/ui/common/RowActions';
 import { RowItem } from '@/ui/common/RowItem';
+import { ContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { StatusBadges } from '@/ui/common/StatusBadges';
+import { useReadLaterStore } from '@/stores/readLaterStore';
+import { useUndoStore } from '@/stores/undoStore';
 import { DragType } from '@/ui/dnd/types';
 
 /**
@@ -149,6 +153,64 @@ export const TabRow = memo(function TabRow({
   // 行内事件回调同样必须稳定：RowItem 是 memo 组件，此前内联箭头函数每次渲染
   // 都是新引用，浅比较必然失败 —— 任何 prop 变化（如 isSearchActive）都会让
   // 全部可见行多做一轮 reconcile，memo 收益被抵消。
+  /**
+   * 复制网址（R12）。
+   * clipboard 在非安全上下文可能不可用：失败时降级为「选中提示」而非静默无反应。
+   */
+  const copyTabUrl = useCallback(
+    async (target: TabRecord) => {
+      const url = target.url ?? '';
+      try {
+        await navigator.clipboard.writeText(url);
+        useUndoStore.getState().notify(t('tabs.urlCopied'));
+      } catch {
+        // 失败必须报错：与成功同文案会让用户以为已复制，粘贴时才发现剪贴板没变。
+        useUndoStore.getState().notifyError(t('errors.operationFailed'));
+      }
+    },
+    [t]
+  );
+
+  /** 加入稍后读（R12）。 */
+  const addToReadLater = useCallback(
+    async (target: TabRecord) => {
+      if (!target.url) return;
+      const ok = await useReadLaterStore.getState().addItem({
+        url: target.url,
+        title: target.title ?? '',
+        favIconUrl: target.favIconUrl
+      });
+      // 只在失败时提示：成功路径由 store 自行反馈，避免重复 toast。
+      if (!ok) useUndoStore.getState().notifyError(t('errors.operationFailed'));
+    },
+    [t]
+  );
+
+  /** 右键菜单（R12 / IX-4）：面板内标签行此前无任何上下文菜单。 */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = useCallback((event: ReactMouseEvent) => {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY });
+  }, []);
+
+  const menuItems = useMemo<ContextMenuItem[]>(
+    () => [
+      { label: t('tabs.copyUrl'), onSelect: () => void copyTabUrl(tab) },
+      { label: t('tabs.addToReadLater'), onSelect: () => void addToReadLater(tab) },
+      {
+        label: tab.pinned ? t('tabs.unpin') : t('tabs.pin'),
+        onSelect: () => onTogglePin(tab)
+      },
+      ...(onDiscard && !tab.discarded && !tab.active
+        ? [{ label: t('tabs.discard'), onSelect: () => onDiscard(tab) }]
+        : []),
+      ...(onDuplicate ? [{ label: t('tabs.duplicate'), onSelect: () => onDuplicate(tab) }] : []),
+      { label: t('tabs.closeTab'), onSelect: () => onClose(tab), danger: true }
+    ],
+    [tab, t, onTogglePin, onDiscard, onDuplicate, onClose, copyTabUrl, addToReadLater]
+  );
+
   const handleActivate = useCallback(() => onActivate(tab.id), [onActivate, tab.id]);
   const handleAuxClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -304,7 +366,7 @@ export const TabRow = memo(function TabRow({
   );
 
   return (
-    <li ref={liRef} data-tabs-tab-id={tab.id}>
+    <li ref={liRef} data-tabs-tab-id={tab.id} onContextMenu={handleContextMenu}>
       <RowItem
         faviconSrc={tab.favIconUrl}
         faviconTitle={tab.title || ''}
@@ -328,6 +390,9 @@ export const TabRow = memo(function TabRow({
         actions={tabActions}
         container={rowContainer}
       />
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      )}
     </li>
   );
 });

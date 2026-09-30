@@ -53,9 +53,53 @@ let persistTimer: ReturnType<typeof setTimeout> | undefined;
  * 用户会随手发给我们的文件，直接违背本模块「只含技术上下文、不记录标签标题与
  * URL」的承诺（platform/reuse/persistedLedger 已为同一承诺单独规避过一次）。
  */
+/**
+ * 日志脱敏（R17 / S-2）。
+ *
+ * 原实现只匹配 `http(s)://` 开头的串 —— 于是以下三种形式会**原样落盘**：
+ *   ① 裸域名 + 路径：`example.com/private/path`
+ *   ② 带端口：`localhost:8080/admin`（无点分级，① 的 TLD 规则抓不到）
+ *   ③ 含用户信息：`https://user:pass@example.com/`（旧正则只替换 `https://` 之后的
+ *      整段，看似命中，但裸写 `user:pass@example.com` 时不带协议头就会漏）
+ *
+ * 诊断日志的定位是「本地排障」，且本产品无遥测、日志只在用户主动导出时离开设备；
+ * 但导出文件常被用户贴到 issue 里求援 —— 脱漏 URL 等于把浏览记录公开出去。
+ * 因此宁可**过度脱敏**（把可疑的主机名一并替换为 <url>），也不漏一条。
+ */
+const REDACT_PATTERNS: RegExp[] = [
+  // ① 带协议头的完整 URL（含 user:pass@ / 端口 / 查询串）
+  /[a-z][a-z0-9+.-]*:\/\/[^\s'")\]}]+/gi,
+  // ② 裸域名 + 可选端口 + 可选路径：至少一个点分级，避免把普通英文词误判成域名。
+  //    TLD 取 2-24 位字母。
+  /\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,24}(?::\d{1,5})?(?:\/[^\s'")\]}]*)?/gi,
+  // ③ 无点分级的主机名 + 端口（如 `localhost:8080/admin`）。
+  //    ② 要求点分级，抓不到 localhost:8080，故单列。
+  /(?<![.\w-])[a-z0-9-]*[a-z][a-z0-9-]*:\d{1,5}(?:\/[^\s'")\]}]*)?/gi,
+  // ④ 含 @ 的凭据段（兜底）
+  /\b[a-z0-9._%+-]+:[^\s@]+@[^\s'")\]}]+/gi
+];
+
+/**
+ * ② 会误伤「文件名:行号」（如 `file.ts:42` —— `ts` 被当成 TLD）。
+ * 源码/文档扩展名不会是真实域名的 TLD，故在脱敏前先保护这类 token。
+ * 代价：一个真实域名若以这些串结尾且后面紧跟 `:数字`，会漏掉 —— 现实中不成立。
+ */
+const FILE_LINE_TOKEN =
+  /\b[\w.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|html|htm|xml|yml|yaml|svg|png|jpg|jpeg|gif|webp|py|rb|go|rs|java|kt|c|h|cpp|sh|txt|csv|log|map|lock):\d+(?::\d+)?\b/gi;
+
 function redactUrls(text: string): string {
-  return text.replace(/https?:\/\/[^\s'")\]}]+/gi, '<url>');
+  // 先占位保护文件名:行号，脱敏后还原 —— 比写一条巨型负向断言更易读也更易验证。
+  const protected_tokens: string[] = [];
+  let out = text.replace(FILE_LINE_TOKEN, (m) => {
+    protected_tokens.push(m);
+    return `\uE000${protected_tokens.length - 1}\uE000`;
+  });
+  for (const pattern of REDACT_PATTERNS) out = out.replace(pattern, '<url>');
+  return out.replace(/\uE000(\d+)\uE000/g, (_m, i) => protected_tokens[Number(i)] ?? '');
 }
+
+/** 供行为测试断言脱敏结果（R17 / S-2）。内部函数，不参与产品路径。 */
+export const redactUrlsForTest = redactUrls;
 
 /** 提取错误详情：只取 message（不取 stack，避免缓冲膨胀），并做 URL 脱敏。 */
 function detailOf(error: unknown): string | undefined {
