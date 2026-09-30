@@ -192,7 +192,6 @@ export function FooterToolbar(props: FooterToolbarProps) {
           icon={Icons.snapshot}
           title={t('snapshots.title')}
           label={footerLabels ? t('footer.labelSnapshots') : undefined}
-          labelKeep
           badge={snapshotCount > 0 ? snapshotCount : undefined}
           onClick={onOpenSnapshots}
         />
@@ -204,7 +203,6 @@ export function FooterToolbar(props: FooterToolbarProps) {
               : t('undo.historyTitle')
           }
           label={footerLabels ? t('footer.labelHistory') : undefined}
-          labelKeep
           badge={undoBatchCount > 0 ? undoBatchCount : undefined}
           onClick={onOpenHistory}
         />
@@ -213,7 +211,6 @@ export function FooterToolbar(props: FooterToolbarProps) {
           icon={Icons.settings}
           title={t('settings.title')}
           label={footerLabels ? t('footer.labelSettings') : undefined}
-          labelKeep
           box="md"
           tone="accent"
           onClick={onOpenSettings}

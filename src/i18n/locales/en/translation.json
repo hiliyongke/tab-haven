@@ -279,7 +279,7 @@
     "densityLarge": "Large",
     "showUrl": "Show URL",
     "footerLabels": "Show text labels in footer",
-    "footerLabelsHint": "When on, icon buttons show a function name beside them for quick recognition (narrow panels fall back to icons only, keeping Snapshots/History/Settings)",
+    "footerLabelsHint": "When on, icon buttons show a function name beside them for quick recognition (narrow panels fall back to icons only, so the toolbar stays on one line)",
     "searchEmpty": "No matching settings found",
     "outline": "Outline",
     "replayTour": "Replay onboarding tour",

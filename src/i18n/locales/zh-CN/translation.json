@@ -279,7 +279,7 @@
     "densityLarge": "大字号",
     "showUrl": "显示网址",
     "footerLabels": "底部工具区显示文字标签",
-    "footerLabelsHint": "开启后图标旁显示功能名称，便于快速识别（窄面板自动退回纯图标，仅保留快照/历史/设置）",
+    "footerLabelsHint": "开启后图标旁显示功能名称，便于快速识别（面板过窄时自动退回纯图标，避免底栏换行）",
     "searchEmpty": "没有找到匹配的设置",
     "outline": "目录",
     "replayTour": "重新观看引导",

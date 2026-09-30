@@ -18,17 +18,17 @@ export function IconButton({
   badge,
   onClick,
   /** 可选文字标签：传入后在图标右侧显示功能名称（工具条可选文字模式）。 */
-  label,
-  /** 窄面板降级时保留文字（核心入口），需与 .icon-btn-label-keep 配合使用。 */
-  labelKeep
+  label
 }: {
   icon: LucideIcon;
   /** tooltip + aria-label（icon-only 按钮的可达性必须项）。 */
   title: string;
-  /** 可选文字标签（text-3xs），与图标横排；不传则纯图标。 */
+  /**
+   * 可选文字标签（text-3xs），与图标横排；不传则纯图标。
+   * 窄面板由 CSS 统一隐藏文字（不再区分核心入口：保留三个入口的文字会把底栏
+   * 挤到换行，窄档一律退回纯图标，语义由 title / aria-label 承载）。
+   */
   label?: string;
-  /** 窄面板降级时保留文字（核心入口，配合 .icon-btn-label-keep CSS）。 */
-  labelKeep?: boolean;
   /** 图标尺寸类（默认 16px）。 */
   iconClass?: string;
   /** 按钮盒子大小：sm = p-1（16px 图标），md = p-1.5。 */
@@ -65,13 +65,7 @@ export function IconButton({
       onClick={onClick}
     >
       <Icon d={icon} className={iconClass} />
-      {label && (
-        <span
-          className={`icon-btn-label text-3xs leading-none${labelKeep ? ' icon-btn-label-keep' : ''}`}
-        >
-          {label}
-        </span>
-      )}
+      {label && <span className="icon-btn-label text-3xs leading-none">{label}</span>}
       {badge !== undefined && badge > 0 && (
         <span className="count-badge absolute -right-1 -top-1" aria-hidden="true">
           {badge}

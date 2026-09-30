@@ -1897,21 +1897,15 @@ body.dnd-dragging .row-item .row-actions {
    旧规则「≤560px 全部隐藏」让 footerLabels 设置在默认侧边栏宽度（Chrome 侧边栏
    上限约 500px）下永远看不到效果 —— 设置形同虚设。新策略：
    - 常规宽度：按设置显示，nav 已有 flex-wrap，文字放不下自然换行到第二行；
-   - 窄档（≤360px）：与 .section-media-label 同档退化，仅隐藏非核心标签，
-     保留「快照 / 历史 / 设置」三个记录恢复与设置入口的文字，其余退回纯图标
-     （提示文案 footerLabelsHint 已同步改写）；
-   - 极窄档（≤300px）：全部退回纯图标，与 .add-tab-btn 同档。 */
+   - 窄档（≤360px）：与 .section-media-label 同档退化，全部退回纯图标
+     （提示文案 footerLabelsHint 已同步改写）。
+
+   此前这一档特意保留「快照 / 历史 / 设置」三个入口的文字（.icon-btn-label-keep），
+   理由是它们是记录恢复与设置的核心入口。实际效果相反：底栏宽度有限，留住三个
+   文字标签后其余图标被挤到第二行，整条底栏换行 —— 视觉噪音比「少看到三个词」
+   更贵。窄档因此不再区分核心入口，语义一律由 title / aria-label 承载。 */
 @container (max-width: 360px) {
   .icon-btn-label {
-    display: none;
-  }
-  .icon-btn-label-keep {
-    display: inline;
-  }
-}
-@container (max-width: 300px) {
-  .icon-btn-label,
-  .icon-btn-label-keep {
     display: none;
   }
 }
