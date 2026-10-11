@@ -29,23 +29,25 @@ import { buildDragOverlay, dragCollisionDetection, markJustDropped } from '@/ui/
  * Section 的 `sectionKey`、FolderItem 的 `title`…），逐处手写必然漏字段，
  * 而漏掉的那个字段恰好是算法要读的时候，测试就会验错对象。
  */
-const dndTab = (
-  tabId: number,
-  containerKey: string,
-  title = 'T',
-  favIconUrl?: string
-): DragData => ({ type: DragType.Tab, tabId, containerKey, canReorder: true, title, favIconUrl });
+const dndTab = (tabId: number, containerKey: string, title = 'T', url?: string): DragData => ({
+  type: DragType.Tab,
+  tabId,
+  containerKey,
+  canReorder: true,
+  title,
+  url
+});
 const dndSection = (sectionKey: string, title = 'A'): DragData => ({
   type: DragType.Section,
   sectionKey,
   title,
   tabIds: []
 });
-const dndPin = (pinId: string, title = 'P', favIconUrl?: string): DragData => ({
+const dndPin = (pinId: string, title = 'P', url?: string): DragData => ({
   type: DragType.Pin,
   pinId,
   title,
-  favIconUrl
+  url
 });
 const dndFolder = (folderId: string, name = 'X'): DragData => ({
   type: DragType.Folder,

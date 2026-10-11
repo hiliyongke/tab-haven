@@ -17,7 +17,7 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 
 - `src/core/**`：唯一必须单测的层；所有持久化数据经 `src/core/schema` 的 zod schema 校验，坏数据隔离。
 - `src/platform/**`：chrome 适配层；`ui/**` 不得绕过它直连浏览器 API。
-- 测试在 `tests/` 下按层镜像（`tests/core|platform|stores|ui|background`），行为规格（Given/When/Then）风格。
+- 测试在 `tests/` 下按层镜像（`tests/core|platform|stores|ui|background|entrypoints|perf`），行为规格（Given/When/Then）风格。
 
 ## 四条硬红线（违反即门禁失败 / 拒绝合并）
 
@@ -41,6 +41,6 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 
 - `.codebuddy/rules/` — 编码/架构/隐私/协作规则（4 条 always + 2 条按需）
 - `.codebuddy/agents/` — 需求分析、测试、评审、隐私审计 4 个专属 Agent
-- `.codebuddy/skills/` — WXT 工作流、行为规格测试、schema 演进、门禁修复 4 项技能
+- `.codebuddy/skills/` — WXT 工作流、行为规格测试、schema 演进、门禁修复、UI 组件复用、高频变更地图 6 项自研技能 + Chrome 官方 `chrome-extensions` 技能
 - `.codebuddy/commands/` — `/spec` `/fix` `/test` `/review` `/check` `/commit` `/privacy-audit`
 - `.codebuddy/README.md` — 配置总览（结构、格式、协作关系、优先级、扩展指南）

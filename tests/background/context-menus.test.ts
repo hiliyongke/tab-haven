@@ -11,7 +11,7 @@ import {
   discardTabSafely,
   rebuildContextMenus,
   setupMenus
-} from '@/entrypoints/background/contextMenus';
+} from '@/platform/background/contextMenus';
 
 /**
  * 右键菜单编排。
@@ -166,7 +166,7 @@ describe('setupMenus / rebuildContextMenus', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it('菜单写失败留痕且不阻塞后续写（串行链不被污染）', async () => {
+  it('单个菜单创建失败只丢该项：留痕且后续菜单照常创建（串行链不被污染）', async () => {
     const create = vi
       .fn<(details?: unknown) => Promise<number>>()
       .mockRejectedValueOnce(new Error('duplicate id'))
@@ -178,18 +178,20 @@ describe('setupMenus / rebuildContextMenus', () => {
     clearContextMenus();
 
     await vi.waitFor(() =>
-      expect(readDiagnostics().some((e) => e.message.includes('右键菜单写入失败'))).toBe(true)
+      expect(readDiagnostics().some((e) => e.message.includes('右键菜单创建失败'))).toBe(true)
     );
+    // 逐项兜底：首项抛错后其余菜单仍被创建（整批串行 await 时会全军覆没）
+    await vi.waitFor(() => expect(create.mock.calls.length).toBeGreaterThan(1));
     // 链未被污染：后续 removeAll 仍执行
     await vi.waitFor(() => expect(removeAll).toHaveBeenCalled());
   });
 });
 
 describe('addEntryToFolder 安全与落盘真实性', () => {
-  it('文件夹不存在返回 false', async () => {
+  it('文件夹不存在返回 failed', async () => {
     await seedFolders();
     await expect(addEntryToFolder('nope', { url: 'https://x.com/', title: 'X' })).resolves.toBe(
-      false
+      'failed'
     );
   });
 
@@ -199,42 +201,42 @@ describe('addEntryToFolder 安全与落盘真实性', () => {
 
     await expect(
       addEntryToFolder(folderId, { url: 'javascript:alert(1)', title: 'Evil' })
-    ).resolves.toBe(false);
+    ).resolves.toBe('failed');
 
     const folders = await foldersRepository.read();
     expect(folders[0]!.items.some((item) => item.url?.startsWith('javascript:'))).toBe(false);
   });
 
-  it('URL 已在（任一文件夹中）存在时返回 false（全局唯一）', async () => {
+  it('URL 已在（任一文件夹中）存在时返回 exists（全局唯一）', async () => {
     await seedFolders();
     const folderId = (await foldersRepository.read())[0]!.id;
 
     await expect(addEntryToFolder(folderId, { url: 'https://a.com/', title: 'dup' })).resolves.toBe(
-      false
+      'exists'
     );
   });
 
-  it('新增成功：条目落库、文件夹展开、返回 true', async () => {
+  it('新增成功：条目落库、文件夹展开、返回 added', async () => {
     await foldersRepository.write([{ ...createFolder('Work'), collapsed: true, items: [] }]);
     const folderId = (await foldersRepository.read())[0]!.id;
 
     await expect(
       addEntryToFolder(folderId, { url: 'https://new.com/', title: 'New' })
-    ).resolves.toBe(true);
+    ).resolves.toBe('added');
 
     const folder = (await foldersRepository.read())[0]!;
     expect(folder.collapsed).toBe(false);
     expect(folder.items.map((item) => item.url)).toEqual(['https://new.com/']);
   });
 
-  it('落盘失败（quota 超限）返回 false 并提示，不谎报「已添加」', async () => {
+  it('落盘失败（quota 超限）返回 failed 并提示，不谎报「已添加」', async () => {
     await seedFolders();
     const folderId = (await foldersRepository.read())[0]!.id;
     vi.spyOn(foldersRepository, 'write').mockResolvedValue(false);
 
     await expect(
       addEntryToFolder(folderId, { url: 'https://new.com/', title: 'New' })
-    ).resolves.toBe(false);
+    ).resolves.toBe('failed');
 
     const notifications = fakeBrowser as unknown as {
       notifications: { create: ReturnType<typeof vi.fn> };

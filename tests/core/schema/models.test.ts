@@ -63,15 +63,15 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.safeParse({ language: 'x' }).success).toBe(false);
   });
 
-  it('已移除的旧字段不会导致解析失败（未知键被剥离而非报错）', () => {
-    // noCacheBannerEnabled 已随「页面内横幅」能力下线而移除（横幅改由侧边栏角标呈现）。
-    // 旧安装的存储值与旧备份文件里仍可能带该键：这里必须**解析成功**并把该键剥离，
-    // 否则用户升级后整块设置会被 DataRepository 判为坏数据隔离，回退成默认值。
-    const legacy = { ...DEFAULT_SETTINGS, noCacheBannerEnabled: false };
-    const parsed = SettingsSchema.safeParse(legacy);
+  it('未知键（非本版本字段）被剥离而非报错', () => {
+    // 本产品未发布过正式版，不存在需要兼容的旧字段；这里守的是 zod 的通用行为：
+    // 存储里出现任何当前 schema 未声明的键时解析仍成功并剥离该键，
+    // 避免脏写入让整块设置被 DataRepository 判为坏数据而回退默认值。
+    const withUnknownKey = { ...DEFAULT_SETTINGS, notAFieldOfThisVersion: false };
+    const parsed = SettingsSchema.safeParse(withUnknownKey);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect('noCacheBannerEnabled' in parsed.data).toBe(false);
+      expect('notAFieldOfThisVersion' in parsed.data).toBe(false);
       expect(parsed.data.themePreference).toBe(DEFAULT_SETTINGS.themePreference);
       expect(parsed.data.noCachePatterns).toEqual(DEFAULT_SETTINGS.noCachePatterns);
     }

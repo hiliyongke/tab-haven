@@ -5,8 +5,8 @@
 **对象**：`Tabs` —— 本地优先、无账号无云端的浏览器标签工作台（Chrome / Edge MV3 侧边栏扩展）
 
 > **⚠️ 同步范围口径提示（2026-09-30 补记）**：本文成文早于同步镜像范围的口径统一，文中若出现「文件夹与设置」一类表述，**实际同步范围为「文件夹 + 常驻磁贴（pins）+ 设置」**（`MirrorPayloadSchema = { at, folders, pins, settings }`，见 `src/platform/storage/SyncMirror.ts`）。本文未直接陈述同步范围；如从其他文档引用到旧表述，一律以 [PRIVACY.md](../PRIVACY.md) 第 4 节为准。
-**代码基线**：本仓库根目录（路径一律相对引用；`src/` 共 168 文件：102 `.ts` + 59 `.tsx` + 4 `.html` + 2 `.json` + 1 `.css`；`tests/` 99 文件，含 95+ 个 `*.test.ts/tsx`）
-**配套文档**：
+> **代码基线**：本仓库根目录（路径一律相对引用；`src/` 共 168 文件：102 `.ts` + 59 `.tsx` + 4 `.html` + 2 `.json` + 1 `.css`；`tests/` 99 文件，含 95+ 个 `*.test.ts/tsx`）
+> **配套文档**：
 
 - `docs/product-design-analysis.md` —— 分析报告（优势 / 缺陷 / 优先级排序）
 - `docs/product-improvement-plan.md` —— 优化与修复计划（本文 §11 待办清单的实施方案、验收与排期）
@@ -62,7 +62,7 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 | 任何出站网络请求（埋点、CDN、崩溃上报、远程脚本） | `pnpm check:privacy` 扫描源码与构建产物，命中即发布失败（`scripts/privacy-check.mjs:162-172`） |
 | 阅读 / 上传浏览历史                               | 扩展只读取当前窗口标签元数据（`PRIVACY.md:42`）；`history` 权限**未**申请                      |
 | 跨窗口全量管理                                    | 产品刻意只管理当前窗口；「搜索所有窗口」默认关闭（`models.ts:179`）                            |
-| 备份格式的向后兼容解析                            | 单一格式 `EXPORT_FILE_VERSION=2`，版本不同即拒绝（`models.ts:348,384-395`）                    |
+| 备份格式的向后兼容解析                            | 单一格式 `EXPORT_FILE_VERSION=1`，版本不同即拒绝（`models.ts:337`、`parseExportFile:464-475`） |
 | 引入新依赖的随意性                                | 依赖精简是刻意选择，新增须说明理由并征得同意（项目规则）                                       |
 
 ---
@@ -84,15 +84,15 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 
 ## 4. 形态矩阵（同一套 core，多种壳）
 
-| 形态           | 入口与可达性                                                                                                         | 能力范围                                                         | 定位                           |
-| -------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------ |
-| **sidepanel**  | 侧边栏；点击工具栏图标打开（`openPanelOnActionClick`）                                                               | **全量**                                                         | 主工作台（`App.tsx:997-1259`） |
-| **popup**      | 标准变体下**删除** `default_popup`（`wxt.config.ts:75`），仅 Chrome 右键图标可达；兼容变体绑定（`wxt.config.ts:88`） | 仅搜索 + 切换（420px，最多 20 条）                               | 降级形态 / 快速切换器          |
-| **options**    | 设置页 `open_in_tab: true`（`wxt.config.ts:26,69`）                                                                  | 设置 5 分区 + 导入导出 + 诊断导出 + 清除数据                     | 配置中心                       |
-| **about**      | 独立页                                                                                                               | 能力总览 12 域 + 快捷键 + **信任面板**                           | 信任凭证                       |
-| **background** | Service Worker，无 UI                                                                                                | 复用引擎 / 自动快照 / 自动休眠 / 右键菜单 / omnibox / 角标 / DNR | 后台能力                       |
+| 形态           | 入口与可达性                                                                                                                   | 能力范围                                                         | 定位                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------ |
+| **sidepanel**  | 侧边栏；点击工具栏图标打开（`openPanelOnActionClick`）                                                                         | **全量**                                                         | 主工作台（`App.tsx:997-1259`） |
+| **popup**      | `default_popup` 在产物中无条件删除（`wxt.config.ts:70`），点击图标走侧边栏；**当前产物无可达入口**，入口与测试保留待 V2.0 决策 | 仅搜索 + 切换（420px，最多 20 条）                               | 快速切换器                     |
+| **options**    | 设置页 `open_in_tab: true`（`wxt.config.ts:26,69`）                                                                            | 设置 5 分区 + 导入导出 + 诊断导出 + 清除数据                     | 配置中心                       |
+| **about**      | 独立页                                                                                                                         | 能力总览 12 域 + 快捷键 + **信任面板**                           | 信任凭证                       |
+| **background** | Service Worker，无 UI                                                                                                          | 复用引擎 / 自动快照 / 自动休眠 / 右键菜单 / omnibox / 角标 / DNR | 后台能力                       |
 
-构建变体：标准版（`pnpm build`）+ 兼容版（`pnpm build:compat`，剥离 `sidePanel` 权限与 `side_panel` 字段，降级为弹窗形态，`wxt.config.ts:79-89`）；兼容版管道已建成，随 V2.0 交付（`README.md:78`）。
+构建变体：**仅一种**（`pnpm build`）。兼容变体（`TABS_VARIANT=compat` / `pnpm build:compat`）已删除——本产品尚未发布正式版，不为旧内核保留降级构建管道。
 
 ---
 
@@ -154,16 +154,16 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 
 ### FR-4 撤销安全网
 
-| ID     | 需求                                                                  | 状态      | 落点                                                          |
-| ------ | --------------------------------------------------------------------- | --------- | ------------------------------------------------------------- |
-| FR-4.1 | 所有经本产品的关闭路径统一入撤销栈（单行/整分区/清理重复/多选/整组）  | ✅        | `closeWithUndo`（`stores/undoStore.ts:271`）                  |
-| FR-4.2 | 栈深可调 5–50（默认 10），FIFO 淘汰                                   | ✅        | `undoStackLimit`（`models.ts:137`）；`core/undo/UndoStack.ts` |
-| FR-4.3 | 撤销历史面板：任意批次恢复 + 浏览器最近关闭（`sessions`，最多 20 条） | ✅        | `UndoHistoryPanel.tsx:42`；`platform/sessions.ts:27`          |
-| FR-4.4 | 恢复保留原窗口：批次记录 `windowId`，按原窗口恢复                     | ✅        | `models.ts:262-266`                                           |
-| FR-4.5 | 恢复失败条目保留在栈中可重试，不静默丢失                              | ✅        | `RestoreEngine.ts:141-145`                                    |
-| FR-4.6 | 撤销栈可跨重启持久化（可关闭为仅会话内）                              | ✅        | `persistUndo` 默认 `true`（`models.ts:166`）                  |
-| FR-4.7 | 撤销执行串行化 + 跨页锁，防并发重复恢复                               | ✅        | `undoStore.ts` `undoInFlight` + `UNDO_EXEC_LOCK`              |
-| FR-4.8 | **重做（Redo）**                                                      | ✅        | `undoStore.ts:664` `redo`；提示条「重做」出口（`undoStore.ts:431`）；⌘⇧Z（`useGlobalHotkeys.ts:68-72`）；重做栈独立持久化且不进导出（`registry.ts:73`） |
+| ID     | 需求                                                                  | 状态 | 落点                                                                                                                                                    |
+| ------ | --------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-4.1 | 所有经本产品的关闭路径统一入撤销栈（单行/整分区/清理重复/多选/整组）  | ✅   | `closeWithUndo`（`stores/undoStore.ts:271`）                                                                                                            |
+| FR-4.2 | 栈深可调 5–50（默认 10），FIFO 淘汰                                   | ✅   | `undoStackLimit`（`models.ts:137`）；`core/undo/UndoStack.ts`                                                                                           |
+| FR-4.3 | 撤销历史面板：任意批次恢复 + 浏览器最近关闭（`sessions`，最多 20 条） | ✅   | `UndoHistoryPanel.tsx:42`；`platform/sessions.ts:27`                                                                                                    |
+| FR-4.4 | 恢复保留原窗口：批次记录 `windowId`，按原窗口恢复                     | ✅   | `models.ts:262-266`                                                                                                                                     |
+| FR-4.5 | 恢复失败条目保留在栈中可重试，不静默丢失                              | ✅   | `RestoreEngine.ts:141-145`                                                                                                                              |
+| FR-4.6 | 撤销栈可跨重启持久化（可关闭为仅会话内）                              | ✅   | `persistUndo` 默认 `true`（`models.ts:166`）                                                                                                            |
+| FR-4.7 | 撤销执行串行化 + 跨页锁，防并发重复恢复                               | ✅   | `undoStore.ts` `undoInFlight` + `UNDO_EXEC_LOCK`                                                                                                        |
+| FR-4.8 | **重做（Redo）**                                                      | ✅   | `undoStore.ts:664` `redo`；提示条「重做」出口（`undoStore.ts:431`）；⌘⇧Z（`useGlobalHotkeys.ts:68-72`）；重做栈独立持久化且不进导出（`registry.ts:73`） |
 
 ### FR-5 快照 / 归档 / 工作空间
 
@@ -201,19 +201,15 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 | FR-7.4 | 复用引擎 fail-closed：默认关闭，豁免令牌 TTL 10s 且可叠加                              | ✅   | `reuseAllowance`（默认 `enabled=false`）；`AllowanceLedger`       |
 | FR-7.5 | 工具栏角标：auto / count / dups / off 四档                                             | ✅   | `badgeMode`（`models.ts:185`）                                    |
 
-### FR-8 稍后读
+### FR-8 稍后读 —— **已下线（代码零命中）**
 
-| ID     | 需求                                                          | 状态 | 落点                                                  |
-| ------ | ------------------------------------------------------------- | ---- | ----------------------------------------------------- |
-| FR-8.1 | 暂存条目（标题/网址/图标/时间戳），标记已读 / 全部已读 / 移除 | ✅   | `ReadLaterSection.tsx:17`；`readLaterStore`           |
-| FR-8.2 | 7 天未读提示并归档为快照                                      | ✅   | `core/readlater/staleness.ts:6`                       |
-| FR-8.3 | 超限淘汰**最旧**（上限 200）                                  | ✅   | `core/readlater/trim.ts:10-17`；`READLATER_LIMIT=200` |
+`core/readlater`、`platform/readlater`、`stores/readLaterStore`、`ui/readlater/ReadLaterSection` 及其右键/命令面板入口、i18n 词条均已移除；备份文件不再包含 `readLater` 分区。本条不再作为需求跟踪。
 
 ### FR-9 数据导入导出与同步
 
 | ID     | 需求                                                                                                       | 状态 | 落点                                                                                                  |
 | ------ | ---------------------------------------------------------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------- |
-| FR-9.1 | 完整备份导出为 JSON（`format: 'tabs.export'`，`version: 2`）                                               | ✅   | `models.ts:348,360-372`                                                                               |
+| FR-9.1 | 完整备份导出为 JSON（`format: 'tabs.export'`，`version: 1`）                                               | ✅   | `models.ts:337,352-362`                                                                               |
 | FR-9.2 | 导入为事务：任一分区写入失败整体回滚；格式不符直接拒绝并区分 `version-mismatch` 与 `invalid`               | ✅   | `models.ts:384-395`；`dataStore` `transferSlice`                                                      |
 | FR-9.3 | 跨设备同步镜像（**默认关闭**）：文件夹 + 磁贴 + 设置分块镜像到 `chrome.storage.sync`，关闭时清除已上传镜像 | ✅   | `syncMirrorEnabled` 默认 `false`（`models.ts:220`）；`platform/storage/SyncMirror.ts:200-210,213-241` |
 | FR-9.4 | 清除全部数据（需二次确认）                                                                                 | ✅   | `ClearDataDialog`；`SettingsPage.tsx` 数据分区                                                        |
@@ -267,7 +263,6 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 | 撤销栈       | 批次（id/kind/createdAt/windowId/entries）   | `storage.local` | 否           | `models.ts:257-269` |
 | 自动休眠台账 | tabIds + count（冗余一致由 `.refine` 锁定）  | `storage.local` | 否           | `models.ts:272-282` |
 | 快照族       | manual / auto / archive / space              | `storage.local` | 否           | `models.ts:316-332` |
-| 稍后读       | 条目 + 已读时间                              | `storage.local` | 否           | `models.ts:303-313` |
 
 ### 7.2 体积上限（外部输入侧一律封顶）
 
@@ -283,7 +278,6 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 | **撤销栈深度** | **10（可调 5–50）** | `models.ts:42,137`               |
 | 单快照标签数   | 1,000               | `models.ts:44`                   |
 | 快照族总条数   | 200                 | `models.ts:46`                   |
-| 稍后读条目     | 200                 | `models.ts:48`                   |
 | 禁缓存规则     | 50 条 × 200 字符    | `core/nocache/noCachePattern.ts` |
 
 自由文本字段（标题/URL/名称）**刻意不加**逐字符串上限：上限只加在外部输入侧的集合层，避免存量用户真实数据被判为坏数据清空（`models.ts:21-24`）。
@@ -292,9 +286,9 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 
 ```
 format: 'tabs.export'（字面量）
-version: 2（字面量，缺省按 2 处理；不同版本即拒绝）
+version: 1（字面量，导入端无缺省兜底；不同版本即拒绝）
 exportedAt: ISO 字符串
-fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
+fixedFolders / persistentPins / siteCollapse / settings / snapshots
 ```
 
 导入三态返回：`success` | `version-mismatch` | `invalid`（`models.ts:384-395`）。导出文件**不包含**当前打开的标签与撤销栈（`PRIVACY.md:79`）。
@@ -363,8 +357,8 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
 
 ### P0（不可逆风险 / 信任损耗）
 
-| ID        | 需求                                              | 现状与证据                                                                                                                                                                                                                          | 验收标准（Given/When/Then）                                                                                                                                                                                                                                              | 工作量 |
-| --------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| ID                  | 需求                                              | 现状与证据                                                                                                                                                                                                                          | 验收标准（Given/When/Then）                                                                                                                                                                                                                                              | 工作量 |
+| ------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
 | **BR-01** ✅ 已落地 | 批量动作**影响面可见化**（决策 D2：**不阻断**）   | 「一键清理重复」（`App.tsx:630-649`）、「休眠全部」（`:694-723`）、「快速整理」（`:772-803`）三处一次性影响几十个标签，**既无确认也无预览**；而快照删除/恢复已有二次确认与 diff 预览（`RestoreConfirmDialog.tsx:8-19`），处理不对称 | Given 存在 ≥1 个可清理重复标签，When 悬停/聚焦底栏清理入口，Then 提示含「将关闭 N 个」；Given 点击清理重复，When 执行完成，Then 仍为**一步执行**且回执给出「已关闭 N 个、保留域名 Top3」与撤销入口；Given 点击快速整理，When 执行完成，Then 回执明确说明该操作不进撤销栈 | 1–1.5  |
 | **BR-02** ✅ 已落地 | 卸载/清除数据前的挽留与导出引导                   | 扩展卸载即清除 `storage.local` 全部数据（`PRIVACY.md:81`）；`ClearDataDialog` 的二次确认与「先导出一份备份」按钮**已存在**（`ClearDataDialog.tsx:50-52`，`SettingsPage.tsx:433` 已接线）；缺口是**首启引导终步无备份提醒**          | Given 新装用户走到引导最后一步，When 终步渲染，Then 出现「建议现在导出一份备份」提示与「立即导出」按钮；Given 点击「立即导出」，When 导出完成，Then 生成 `format: 'tabs.export'` 文件并给出 toast                                                                        | 1–2    |
 | **BR-03** ✅ 已落地 | 撤销后提供重做（Redo）出口（决策 D3：**持久化**） | 撤销栈只支持 pop（`core/undo/UndoStack.ts`），撤销后无重做                                                                                                                                                                          | Given 刚执行一次撤销，When 撤销提示条出现，Then 提示条内含「重做」且点击可恢复撤销前的状态；Given **重启浏览器后**，When 打开面板，Then 重做入口仍可用；Given 发生新的关闭操作，When 新批次入栈，Then 重做栈清空；Given 导出备份，When 检查导出文件，Then 不含重做栈     | 3–4    |
@@ -373,7 +367,7 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
 
 | ID        | 需求                                                      | 现状与证据                                                                                                                                                                                                              | 验收标准                                                                                                                                                                                                      | 工作量 |
 | --------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **BR-04** | 首屏信息架构减负（决策 D4：**顺序调整优先，零新增状态**） | 侧边栏首屏依次堆叠：搜索框 → 提示条 → Tip → 空间条 → 常驻磁贴条 → 浏览器固定区 → 固定空间 → 稍后读 → 标签列表（`App.tsx:1005-1119`），主体列表被推到折叠线以下                                                          | Given 默认设置且窗口有 30 个标签，When 打开侧边栏，Then 首屏可见 ≥8 行标签（无需滚动）；Given 实施顺序调整后，When 复核 `src/core/schema`，Then **无新增持久化字段**（实测不足 8 行时才升级为折叠状态位方案） | 1–2    |
+| **BR-04** | 首屏信息架构减负（决策 D4：**顺序调整优先，零新增状态**） | 侧边栏首屏依次堆叠：搜索框 → 提示条 → Tip → 空间条 → 常驻磁贴条 → 浏览器固定区 → 固定空间 → 标签列表（侧边栏 `App.tsx` 首屏区段），主体列表被推到折叠线以下                                                             | Given 默认设置且窗口有 30 个标签，When 打开侧边栏，Then 首屏可见 ≥8 行标签（无需滚动）；Given 实施顺序调整后，When 复核 `src/core/schema`，Then **无新增持久化字段**（实测不足 8 行时才升级为折叠状态位方案） | 1–2    |
 | **BR-05** | 空态组件统一（保留既有引导内容）                          | `SnapshotsPanel.tsx:589`、`UndoHistoryPanel.tsx:102`、`SectionList.tsx:141` 各自手写空态，未复用 `EmptyState`；其中撤销历史空态在存在会话快照时**已有**「从快照找回」引导（`UndoHistoryPanel.tsx:106-107`），改造须保留 | Given 快照列表为空 / 撤销历史为空且无快照，When 打开对应面板，Then 使用与列表一致的 `EmptyState`（图标 + 说明 + 可选动作）；Given 撤销历史为空但存在快照，When 打开面板，Then 保留「从快照找回」引导          | 1      |
 | **BR-06** | 面板内加载态补齐                                          | 快照面板 / 撤销历史 / 命令面板无骨架屏                                                                                                                                                                                  | Given 快照数据量较大导致面板打开后有 >200ms 准备时间，When 打开面板，Then 显示骨架而非空白                                                                                                                    | 1      |
 | **BR-07** | 两套 keeper 策略口径统一或显式命名                        | `DuplicateIndex.KeeperPolicy`（active > pinned > index，`DuplicateIndex.ts:79-91`）与复用引擎 `rankForKeep`（lastAccessed > active > pinned > index，`DedupeByUrl.ts:17-27`）规则不同，仅靠注释防误用                   | Given 同一组标签，When 分别调用两处策略，Then 文档与类型命名明确区分二者用途，并有单测锁定各自口径                                                                                                            | 0.5    |
@@ -381,7 +375,7 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
 | **BR-09** | 同步镜像配额降级可见                                      | `pull()` 仅在 `meta.count > 64` 时判无效（`SyncMirror.ts:221`），64 × 6000B ≈ 384KB，远超 `storage.sync` 配额，超限只会静默丢镜像                                                                                       | Given 镜像写入超出同步配额，When 用户打开设置页，Then 显示「同步镜像未生效（容量超限）」而非静默失败                                                                                                          | 1–2    |
 | **BR-10** | 快照恢复「查询失败按空集」需给用户可见提示                | `snapshots.ts:246-251` 查询目标窗口失败时按空集继续（注释明示是刻意决策：恢复是显式用户操作，**宁多建不缺建**，且可撤销），但当前只 `logDegraded` 留痕，用户端无感知，会看到重复标签而不知原因                          | Given 查询目标窗口标签失败，When 恢复继续执行，Then 界面给出「未能读取当前窗口，可能产生重复标签，可用撤销回退」提示；**不改变**「继续恢复」这一既有决策                                                      | 0.5    |
 | **BR-11** | 语言兜底精细化（决策 D6：**未支持语言落 `en`**）          | `i18n/index.ts:13` 仅 `en` 前缀判英文，其余语言全落 `zh-CN`                                                                                                                                                             | Given 浏览器语言为 `ja`，When 打开面板，Then 落到 `en`（或显式支持列表中的默认值）而非 `zh-CN`                                                                                                                | 0.5    |
-| **BR-12** | 标签右键菜单补「固定」                                    | 仅 page 上下文有 pin，tab 上下文只有休眠/按域名搜索/稍后读（`contextMenus.ts:78-82,125-138`）                                                                                                                           | Given 用户在标签栏右键某标签，When 菜单展开，Then 含「固定/取消固定」                                                                                                                                         | 0.5    |
+| **BR-12** | 标签右键菜单补「固定」                                    | **已落地**：tab 上下文现为休眠 / 固定 / 按域名搜索三项（`contextMenus.ts:153-167`）；menu 创建已逐项兜底，不支持 `tab` 上下文的内核只丢这几项                                                                           | Given 用户在标签栏右键某标签，When 菜单展开，Then 含「固定/取消固定」                                                                                                                                         | 0.5    |
 | **BR-13** | 设置搜索覆盖全部分区                                      | 设置搜索只过滤声明式分区条目（`SettingsPage.tsx:219-233`），数据分区 6 行（含 `syncMirrorEnabled`）与快捷键/关于区搜不到                                                                                                | Given 用户在设置搜索框输入「同步」，When 结果渲染，Then 命中跨设备同步开关                                                                                                                                    | 0.5    |
 | **BR-14** | 清理残留与形态可达性                                      | `src/entrypoints/bookmarks/` 为空目录；popup 在标准变体无常规入口（`wxt.config.ts:75`）但覆盖率仍要求 ≥80%                                                                                                              | Given 主分支，When 全量构建，Then 无空入口目录；Given 标准变体，When 用户想用快速切换器，Then 有文档/入口说明其可达路径                                                                                       | 0.5    |
 
@@ -427,7 +421,6 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
 | 挂起条目        | `pendingTabId`（`models.ts:56`）              | 组内新建后等待真实导航的标签                    |
 | 快照族          | `Snapshot.origin: manual/auto/archive/space`  | 命名 / 关窗自动 / 归档 / 工作区四类快照         |
 | 空间            | `origin: 'space'` 快照                        | 轻量工作区，复用快照数据结构                    |
-| 稍后读          | `ReadLaterItem`                               | 一次性消费的暂存队列，与文件夹正交              |
 | 复用引擎        | `platform/reuse/`                             | 同网址唯一化的后台引擎（默认关闭，fail-closed） |
 | keeper          | `KeeperPolicy` / `rankForKeep`                | 重复组中「保留哪一个」的策略                    |
 
@@ -446,9 +439,9 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
 
 ### 14.2 仍待定
 
-| #   | 问题                                                             | 影响     | 需谁决定 |
-| --- | ---------------------------------------------------------------- | -------- | -------- |
-| Q5  | 兼容变体（弹窗形态）随 V2.0 交付，是否需要在本迭代内做真机验证？ | 发布计划 | 产品     |
+| #   | 问题                                                                                                                                                          | 影响     | 需谁决定 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| Q5  | 弹窗快速切换器在标准产物中无可达入口，是随 V2.0 一并交付，还是现在下线（连带清 `entrypoints/popup/`、测试与 i18n `popup.*`，并给 manifest 补 `action: {}`）？ | 产品形态 | 产品     |
 
 ---
 
@@ -468,10 +461,10 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots / readLater
 
 | 能力域     | 主要文件                                                                                                                                                                                                                                                             |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 领域逻辑   | `src/core/{url,dup,site,fixed,group,commands,search,undo,util,schema,insights,snapshot,theme,readlater,nocache}/**`                                                                                                                                                  |
-| 平台适配   | `src/platform/{tabs,storage,snapshot,sync,undo,reuse,group,nocache,readlater,theme}.ts` 及子目录                                                                                                                                                                     |
-| 状态层     | `src/stores/{tabStore,undoStore,snapshotStore,dataStore,readLaterStore}.ts` 及 `data/` 切片                                                                                                                                                                          |
-| 视图层     | `src/ui/{common,tabs,fixed,search,dialog,dnd,readlater}/**`                                                                                                                                                                                                          |
+| 领域逻辑   | `src/core/{url,dup,site,fixed,group,commands,search,undo,util,schema,insights,snapshot,theme,nocache}/**` 与 `src/core/tab-types.ts`                                                                                                                                 |
+| 平台适配   | `src/platform/{tabs,bookmarks,sessions,sidePanel,navigation,permissions,diagnostics,messages,registry}.ts` 及 `{storage,snapshot,sync,undo,reuse,group,nocache,theme}/` 子目录                                                                                       |
+| 状态层     | `src/stores/{tabStore,undoStore,snapshotStore,dataStore}.ts` 及 `data/` 切片                                                                                                                                                                                         |
+| 视图层     | `src/ui/{common,tabs,fixed,search,dialog,dnd}/**`                                                                                                                                                                                                                    |
 | 形态入口   | `src/entrypoints/{background.ts,background/**,sidepanel/**,popup/**,options/**,about/**}`                                                                                                                                                                            |
 | 文案与样式 | `src/i18n/locales/{zh-CN,en}/translation.json`（**实测 32 个顶层命名空间 / 744 条叶子键，中英键集合零漂移**）；`src/styles/main.css`（`@theme` 令牌层 `:28-93`；`forest` 为 `:root` 内置默认 `:236-238`，另 5 套经 `:root[data-hue]` 覆盖 `:245-463`，各含明暗两套） |
 | 门禁脚本   | `scripts/{privacy-check,i18n-dead-keys,pack-crx}.mjs`                                                                                                                                                                                                                |

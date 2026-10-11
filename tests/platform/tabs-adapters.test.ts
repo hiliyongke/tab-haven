@@ -18,7 +18,7 @@ import {
   moveTabs,
   onTabHighlighted,
   queryAllWindowTabs,
-  queryCurrentWindowGroups,
+  queryWindowGroups,
   queryCurrentWindowTabs,
   recolorGroup,
   reloadTabs,
@@ -91,38 +91,38 @@ describe('查询类', () => {
     expect(tabs.map((tab) => tab.id)).toEqual([1, 2]);
   });
 
-  it('queryCurrentWindowGroups：无 tabGroups API 时返回空数组（不抛错）', async () => {
+  it('queryWindowGroups：无 tabGroups API 时返回空数组（不抛错）', async () => {
     // 注意：不能整体替换 `fakeBrowser.tabGroups` —— `platform/tabs.ts` 在模块加载期就把
     // `browser.tabGroups` 存进了模块级常量，替换对象后被测代码仍指向旧引用。
     // 只能**就地**摘掉 query 方法（函数内部读的是 `browser.tabGroups?.query`，取到实时值）。
     const original = fakeBrowser.tabGroups.query;
     (fakeBrowser.tabGroups as unknown as { query?: unknown }).query = undefined;
     try {
-      await expect(queryCurrentWindowGroups()).resolves.toEqual([]);
+      await expect(queryWindowGroups()).resolves.toEqual([]);
     } finally {
       (fakeBrowser.tabGroups as unknown as { query?: unknown }).query = original;
     }
   });
 
-  it('queryCurrentWindowGroups：显式 windowId 时不额外查一次标签（高频路径省一次全量）', async () => {
+  it('queryWindowGroups：显式 windowId 时不额外查一次标签（高频路径省一次全量）', async () => {
     const tabsQuery = vi.fn(async () => []);
     Object.assign(fakeBrowser.tabs, { query: tabsQuery });
     Object.assign(fakeBrowser.tabGroups, {
       query: vi.fn(async () => [{ id: 3, title: 'G', color: 'blue' }])
     });
 
-    const groups = await queryCurrentWindowGroups(42);
+    const groups = await queryWindowGroups(42);
 
     expect(tabsQuery).not.toHaveBeenCalled();
     expect(groups[0]!.id).toBe(3);
   });
 
-  it('queryCurrentWindowGroups：未给 windowId 时从当前窗口标签推导', async () => {
+  it('queryWindowGroups：未给 windowId 时从当前窗口标签推导', async () => {
     Object.assign(fakeBrowser.tabs, { query: vi.fn(async () => [rawTab({ windowId: 9 })]) });
     const groupsQuery = vi.fn(async () => []);
     Object.assign(fakeBrowser.tabGroups, { query: groupsQuery });
 
-    await queryCurrentWindowGroups();
+    await queryWindowGroups();
 
     expect(groupsQuery).toHaveBeenCalledWith({ windowId: 9 });
   });

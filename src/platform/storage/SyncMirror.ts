@@ -22,6 +22,11 @@ const CHUNK_META_KEY = `${CHUNK_PREFIX}meta`;
 /** 单块安全字节数（chrome.storage.sync 单 key 配额 8KB，按 UTF-8 字节计——
     中文标题/URL 每字符 3 字节，按字符数切分必超配额）。 */
 const CHUNK_BYTES = 6000;
+/**
+ * 分块数上限：sync 总额度 100KB（约 17 块 × 6000B）之外再留一档上限，
+ * 用于识别「镜像因容量超限而不可用」——超限必须留痕，不能与「无镜像」同款静默。
+ */
+const MAX_CHUNKS = 64;
 const MIRROR_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 镜像 30 天无更新视为过期
 
 /** 镜像内容 schema（不校验设置细节，交给 SettingsSchema 在读取端校验）。 */
@@ -241,7 +246,17 @@ class SyncMirror {
       const metaRaw = all[CHUNK_META_KEY];
       if (typeof metaRaw !== 'string') return null;
       const meta = JSON.parse(metaRaw) as { count?: number };
-      if (typeof meta.count !== 'number' || meta.count <= 0 || meta.count > 64) return null;
+      if (typeof meta.count !== 'number' || meta.count <= 0) return null;
+      if (meta.count > MAX_CHUNKS) {
+        // 分块数超限不是「没有镜像」，而是「镜像不可用」：此前与『无镜像』同样
+        // 静默返回 null，用户换机后恢复不到数据却看不到任何提示。留痕以便
+        // 设置页据此提示「同步镜像未生效（容量超限）」。
+        logDegraded(
+          'syncMirror',
+          `同步镜像分块数超限（${meta.count}/${MAX_CHUNKS}），已跳过本次恢复`
+        );
+        return null;
+      }
       const chunks: string[] = [];
       for (let i = 0; i < meta.count; i += 1) {
         const chunk = all[`${CHUNK_PREFIX}${i}`];

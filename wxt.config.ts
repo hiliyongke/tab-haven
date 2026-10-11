@@ -3,14 +3,6 @@ import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-// TABS_VARIANT=compat：兼容变体（剥离 sidePanel，面向不支持侧边栏的 Chromium 内核）。
-// V1.0 只发布标准版，兼容版管道建成但随 V2.0 交付。
-//
-// 实现说明：WXT 会自动检测 sidepanel.html 入口并合并 side_panel 字段与
-// sidePanel 权限，manifest 配置函数无法可靠覆盖（实测）。因此兼容变体的
-// 字段剥离放在 build:manifestGenerated hook 中做确定性后处理。
-const isCompatVariant = process.env.TABS_VARIANT === 'compat';
-
 export default defineConfig({
   // 源码目录：分层结构（core/platform/stores/ui/entrypoints）位于 src/ 下
   srcDir: 'src',
@@ -40,7 +32,12 @@ export default defineConfig({
       'sidePanel',
       // 开发者禁缓存能力：DNR 改响应头（横幅改由侧边栏角标呈现，不注入页面）。
       // host 权限刻意走 optional（按需请求）：不开该功能则安装时不出现全站权限警告。
-      'declarativeNetRequest'
+      'declarativeNetRequest',
+      // 站点图标走浏览器自己的 favicon 通道（`chrome-extension://<id>/_favicon/`）。
+      // 此前直接渲染站点图标地址（tab.favIconUrl），那是本产品唯一的第三方出站请求，
+      // 且在鉴权站点上会被 302 带到登录页再跳回来（一次约 25 跳）。换成本地通道后
+      // 「零出站网络请求」不再有任何例外；代价是权限清单多一项（见 PRIVACY.md §2）。
+      'favicon'
     ],
     optional_host_permissions: ['<all_urls>'],
     commands: {
@@ -62,9 +59,12 @@ export default defineConfig({
       }
     }
     // side_panel 字段与 sidePanel 权限由 WXT 检测 sidepanel 入口自动生成；
-    // action 由 WXT 检测 popup 入口自动生成。标准版点击 action 打开侧边栏
-    // 由 background 的 setPanelBehavior({ openPanelOnActionClick }) 控制，
-    // default_popup 仅在右键图标时作为快速切换器入口（Chrome 平台行为）。
+    // action 字段由 WXT 检测 popup 入口自动生成（badge 依赖 action 存在）。
+    // 标准版点击 action 打开侧边栏由 background 的
+    // setPanelBehavior({ openPanelOnActionClick }) 控制，因此产物 manifest 的
+    // default_popup 由下方 hook 删除 —— 也就是说 `src/entrypoints/popup/`
+    // 在当前形态下**并不可达**，它只为让 WXT 生成 action 字段而存在，
+    // 不要按「可打开的弹窗」去改它。
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
@@ -72,25 +72,10 @@ export default defineConfig({
       // 无法被 manifest() 配置可靠覆盖（实测），故在此确定性后处理。
       if (manifest.options_ui) manifest.options_ui.open_in_tab = true;
 
-      if (!isCompatVariant) {
-        // 标准版（侧边栏形态）：点击图标开侧边栏，绝不可绑定 default_popup，
-        // 否则 Chrome 优先打开 popup 而非 sidePanel（实测：openPanelOnActionClick
-        // 与 default_popup 共存时 popup 胜出）。快速切换器仅在兼容变体启用。
-        if (manifest.action) delete manifest.action.default_popup;
-        return;
-      }
-
-      // 兼容变体：<114 内核遇未知权限字符串会加载失败，必须剥离 sidePanel。
-      delete manifest.side_panel;
-      if (manifest.permissions) {
-        manifest.permissions = manifest.permissions.filter(
-          (permission) => permission !== 'sidePanel'
-        );
-      }
-      // 降级形态：action 绑定 popup 快速切换器。
-      if (manifest.action) {
-        manifest.action.default_popup = 'popup.html';
-      }
+      // 侧边栏形态：点击图标开侧边栏，绝不可绑定 default_popup，否则 Chrome
+      // 优先打开 popup 而非 sidePanel（实测：openPanelOnActionClick 与
+      // default_popup 共存时 popup 胜出）。
+      if (manifest.action) delete manifest.action.default_popup;
     }
   },
   vite: () => ({

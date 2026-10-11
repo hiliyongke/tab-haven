@@ -6,6 +6,7 @@ import type { FixedFolder, Snapshot } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import { SearchEngine } from '@/core/search/SearchEngine';
+import { hostnameOf } from '@/core/url/UrlInspector';
 import { useDataStore } from '@/stores/dataStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -41,8 +42,11 @@ interface CommandItem {
   id: string;
   label: string;
   icon: LucideIcon;
-  /** 标签项携带网站图标（favicon 失败回退首字母），扫读效率远高于统一放大镜。 */
-  favIconUrl?: string;
+  /**
+   * 标签项携带网址（不是图标地址）：图标由浏览器按页面 URL 现取，失败回退首字母，
+   * 扫读效率远高于统一放大镜。
+   */
+  url?: string;
   /** 是否为当前激活标签（显示「当前」标记并置顶）。 */
   current?: boolean;
   /** 可选说明行：破坏性操作（如重排分组）需要在这里讲清影响面。 */
@@ -81,9 +85,9 @@ function PaletteOption({
       onMouseEnter={onSelect}
       onClick={onRun}
     >
-      {cmd.favIconUrl ? (
+      {cmd.url ? (
         <span className="flex shrink-0 items-center">
-          <Favicon src={cmd.favIconUrl} title={cmd.label} size={16} />
+          <Favicon pageUrl={cmd.url} title={cmd.label} size={16} />
         </span>
       ) : (
         <Icon d={cmd.icon} className="h-4 w-4 shrink-0 opacity-70" />
@@ -296,7 +300,7 @@ export function CommandPalette({
         run: actions.onToggleAllSections
       }
     ];
-    // 激活标签置顶 + 其余按最近访问降序（Spotlight 惯例），并携带 favicon 供扫读。
+    // 激活标签置顶 + 其余按最近访问降序（Spotlight 惯例），并携带网址供扫读图标。
     const tabCmds: CommandItem[] = [...tabs]
       .sort((a, b) => {
         if (a.active !== b.active) return a.active ? -1 : 1;
@@ -306,7 +310,7 @@ export function CommandPalette({
         id: `tab-${tab.id}`,
         label: tab.title || tab.url || '',
         icon: Icons.search,
-        favIconUrl: tab.favIconUrl,
+        url: tab.url,
         current: tab.active,
         run: () => actions.onSwitchTab(tab.id)
       }));
@@ -321,12 +325,9 @@ export function CommandPalette({
         .map((batch) => {
           // 撤销条目不含标题（UndoTabRecord 只有 url/位置/组信息），展示用主机名。
           const firstUrl = batch.entries[0]?.url ?? '';
-          let firstName = firstUrl;
-          try {
-            firstName = new URL(firstUrl).hostname || firstUrl;
-          } catch {
-            // 非标准 URL：原样展示
-          }
+          // 主机名走 UrlInspector 的唯一口径，不在这里内联 new URL()：
+          // 内联副本会漏掉 www 剥离 / 尾点归一，与列表里同一站点的展示不一致。
+          const firstName = hostnameOf(firstUrl) || firstUrl;
           return {
             id: `undo-${batch.id}`,
             label:
@@ -344,8 +345,11 @@ export function CommandPalette({
           label: snap.name,
           icon: Icons.snapshot,
           hint: t('palette.recentSnapshotHint', { count: snap.tabCount }),
-          // 不直接恢复：恢复会新建整批标签且不在撤销栈覆盖范围内，
-          // 必须先弹影响面确认（与快照面板同一闸门），确认由下方弹窗执行。
+          // 不直接恢复：恢复会新建整批标签，必须先弹影响面确认
+          // （与快照面板同一闸门），确认由下方弹窗执行。
+          // 注：恢复产生的这批标签**已被登记进撤销栈**（见 snapshotStore 的
+          // recordRestoreForUndo），可整批撤销回去；这里要拦的是「用户没意识到
+          // 会新建 N 个标签」，不是「关不掉」。
           run: () => setPendingRestore(snap)
         });
       }
@@ -586,7 +590,7 @@ export function CommandPalette({
             {t('palette.tabsTruncated', { count: EMPTY_QUERY_TAB_LIMIT })}
           </div>
         )}
-        {/* 快照恢复闸门：与快照面板同一组件（恢复不在撤销栈覆盖范围）。
+        {/* 快照恢复闸门：与快照面板同一组件（恢复可整批撤销，但仍需前置影响面确认）。
             放在 dialog 内、listbox 外，不干扰键盘漫游序列。 */}
         {pendingRestore !== null && (
           <RestoreConfirmDialog

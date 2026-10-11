@@ -4,7 +4,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { NO_GROUP } from '@/core/tab-types';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository } from '@/platform/storage/repositories';
-import { runActionClickRegroup } from '@/entrypoints/background/actionRegroup';
+import { runActionClickRegroup } from '@/platform/background/actionRegroup';
 
 /**
  * 工具栏「点击即整理」（settings.actionClickMode = 'regroup'）：

@@ -10,3 +10,10 @@ coverage/
 # 审计/评审报告（由工具生成的长文归档，非源码）。
 # CI 对全仓跑 `format:check`，把生成的报告纳入格式化检查会让报告写作与构建互相牵制。
 deliverables/
+
+# 外部引入技能的原始内容（`.codebuddy/skills/chrome-extensions/`）：
+# 它来自上游 `GoogleChrome/modern-web-guidance-src`，维护方式是「重新 clone 覆盖」。
+# 若对本仓格式化，下一次上游覆盖就会把格式差异原样带回来，`format:check` 必然再次失败
+# ——格式化上游内容与「覆盖式更新」这两种维护方式互斥，故只格式化 SKILL.md 之外的
+# 本仓自撰部分（README.md 已在格式化范围内）。
+.codebuddy/skills/chrome-extensions/

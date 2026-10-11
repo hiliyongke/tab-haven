@@ -4,7 +4,7 @@ import { logDegraded } from '@/platform/diagnostics';
 /**
  * 侧边栏能力收敛层。
  *
- * `sidePanel` 是可选 API（兼容变体与旧内核没有它），且设置页、预设面板都需要
+ * `sidePanel` 是可选 API（Chrome 116 以下没有它），且设置页、预设面板都需要
  * 读取当前布局 / 主动打开面板。集中在此后可统一处理「API 不存在」的降级，
  * 入口层不必各写一遍可选链与 try/catch。
  */

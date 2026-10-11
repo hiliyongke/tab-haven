@@ -27,12 +27,15 @@ describe('parseExportFile', () => {
     expect(result.success && result.data.version).toBe(EXPORT_FILE_VERSION);
   });
 
-  it('缺 version 时按当前版本处理（容错早期备份）', () => {
+  it('缺 version 即拒绝：不为无版本号的备份开口子', () => {
+    // 场景：任意 JSON（甚至别的扩展导出的文件）都没有 version 字段。
+    // 若缺省兜底为当前版本，等于让无版本号的任意结构按当前格式解析通过，
+    // 「单一格式、版本不符即拒绝」的口径就形同虚设。
     const withoutVersion: Record<string, unknown> = { ...VALID };
     delete withoutVersion['version'];
     const result = parseExportFile(withoutVersion);
-    expect(result.success).toBe(true);
-    expect(result.success && result.data.version).toBe(EXPORT_FILE_VERSION);
+    expect(result.success).toBe(false);
+    expect(result.success === false && result.reason).toBe('invalid');
   });
 
   it('其他版本被拒绝：旧版扩展不得误读新版数据结构', () => {
@@ -63,5 +66,54 @@ describe('parseExportFile', () => {
 describe('ExportFileSchema 版本号常量', () => {
   it('schema 的字面量与导出常量一致（改常量必须同步改 schema）', () => {
     expect(ExportFileSchema.parse(VALID).version).toBe(EXPORT_FILE_VERSION);
+  });
+});
+
+describe('导入侧网址 scheme 白名单', () => {
+  const withPin = (url: string) => ({
+    ...VALID,
+    persistentPins: [{ id: 'p1', identity: 'example.com', url, title: 'x' }],
+    fixedFolders: [
+      {
+        id: 'f1',
+        name: 'F',
+        collapsed: false,
+        items: [{ id: 'i1', url, title: 'x', createdAt: 1 }]
+      }
+    ]
+  });
+
+  it('保留 http(s) 网址', () => {
+    const result = parseExportFile(withPin('https://example.com/a'));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.persistentPins[0]?.url).toBe('https://example.com/a');
+    expect(result.data.fixedFolders[0]?.items[0]?.url).toBe('https://example.com/a');
+  });
+
+  it('可执行 / 内部页 scheme 一律降级为安全占位', () => {
+    // 场景：备份文件可被手工构造。javascript: / data: / file: / chrome:// 若原样落盘，
+    // 之后点击条目就会在标签上下文里执行或跳到内部页。
+    for (const url of [
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'file:///etc/passwd',
+      'chrome://extensions'
+    ]) {
+      const result = parseExportFile(withPin(url));
+      expect(result.success).toBe(true);
+      if (!result.success) continue;
+      expect(result.data.persistentPins[0]?.url).toBe('about:blank');
+      expect(result.data.fixedFolders[0]?.items[0]?.url).toBe('about:blank');
+    }
+  });
+
+  it('一条畸形网址不会把整份备份判死（归一化而非判坏）', () => {
+    const result = parseExportFile({
+      ...withPin('javascript:alert(1)'),
+      settings: { themePreference: 'dark' }
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.settings.themePreference).toBe('dark');
   });
 });

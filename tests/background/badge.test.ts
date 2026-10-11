@@ -3,8 +3,8 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
-import { refreshBadge, refreshBadgeSoon } from '@/entrypoints/background/badge';
-import { syncCachedSettings } from '@/entrypoints/background/shared';
+import { refreshBadge, refreshBadgeSoon, showBadgeOverride } from '@/platform/background/badge';
+import { syncCachedSettings } from '@/platform/background/shared';
 
 /**
  * 工具栏角标。
@@ -163,6 +163,35 @@ describe('refreshBadge', () => {
     await refreshBadge();
 
     expect(readDiagnostics().some((e) => e.message.includes('工具栏角标更新失败'))).toBe(true);
+  });
+});
+
+describe('showBadgeOverride 临时角标（如「整理完成」打勾）', () => {
+  it('覆盖期内显示覆盖文案，到期后回到按设置计算的角标', async () => {
+    await applyBadgeMode('count');
+    const { setBadgeText } = installBadgeApi([{ url: 'https://a.com/' }]);
+
+    showBadgeOverride('✓', '#16a34a', 1500);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setBadgeText).toHaveBeenLastCalledWith({ text: '✓' });
+
+    // 定时器被吞掉（SW 被回收）也不影响收敛：覆盖态自带到期时间，
+    // 到期后任意一次刷新都会回到真实值，不会永久停在 ✓。
+    await vi.advanceTimersByTimeAsync(1500);
+    await refreshBadge();
+    expect(setBadgeText).toHaveBeenLastCalledWith({ text: '1' });
+  });
+
+  it('覆盖未到期时刷新不改写覆盖文案', async () => {
+    await applyBadgeMode('count');
+    const { setBadgeText } = installBadgeApi([{ url: 'https://a.com/' }]);
+
+    showBadgeOverride('✓', '#16a34a', 5_000);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await refreshBadge();
+
+    expect(setBadgeText).toHaveBeenLastCalledWith({ text: '✓' });
   });
 });
 

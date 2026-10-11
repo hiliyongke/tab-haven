@@ -31,10 +31,12 @@ export function FixedArea() {
   const notifyError = useUndoStore((state) => state.notifyError);
   const [creating, setCreating] = useState(false);
   const [dropRequest, setDropRequest] = useState<CreateFolderRequest | null>(null);
-  // 固定空间折叠：文件夹多（>5）时首次自动折叠，避免 34vh 独立滚动区抢占首屏；
+  // 固定空间折叠：文件夹一多就首次自动折叠，避免 34vh 独立滚动区把标签列表
+  // 挤到折叠线以下（BR-04）。阈值取 2 而非 5：侧边栏窄，两个文件夹已足以占满
+  // 一屏，首屏的主角应当是标签列表。
   // 用户手动切换后（非 null）遵循用户选择，不再按阈值自动改变。
   const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(null);
-  const collapsed = collapsedOverride ?? folders.length > 5;
+  const collapsed = collapsedOverride ?? folders.length > 2;
   // 不订阅 tabs：它仅用于建文件夹弹窗确认时的一次性过滤，订阅会让每次标签快照
   // 都重渲染整个固定区。事件期经 getState 读最新值即可（与其它 handler 同一约定）。
   const folderSortableIds = useMemo(

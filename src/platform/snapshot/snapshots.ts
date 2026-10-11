@@ -219,7 +219,7 @@ export async function replaceSpaceSnapshot(
 /**
  * 由窗口标签 + 原生组构建快照条目列表（UI 与 SW 关窗自动保存共用的采集端）。
  * 仅 http(s) 页面可恢复（chrome:// 等内部页浏览器不允许以 URL 创建），其余跳过；
- * 同时记录静音状态与所在原生组标题/颜色，供恢复时还原（旧快照无这些字段则不还原）。
+ * 同时记录静音状态与所在原生组标题/颜色，供恢复时还原（缺省则不还原）。
  */
 export function collectSnapshotTabs(
   tabs: readonly TabRecord[],
@@ -249,7 +249,7 @@ function missingTabsOf(snapshot: Snapshot, existingKeys: ReadonlySet<string>): S
   const missing: SnapshotTab[] = [];
   for (const tab of snapshot.tabs) {
     // 仅 http(s) 条目可恢复（chrome:// 等内部页浏览器不允许以 URL 创建，采集端已过滤，
-    // 此处兜底旧数据/导入数据）。
+    // 此处兜底导入数据）。
     if (!/^https?:\/\//i.test(tab.url)) continue;
     const key = webComparisonKey(tab.url, undefined) ?? tab.url;
     if (existingKeys.has(key) || seen.has(key)) continue;

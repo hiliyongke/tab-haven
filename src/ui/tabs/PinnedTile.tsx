@@ -83,7 +83,7 @@ export function PinnedTile({
         {...sortable?.listeners}
       >
         <span className="pinned-favicon-wrap">
-          <Favicon src={favIconUrl} title={title || ''} cssSized />
+          <Favicon pageUrl={url} title={title || ''} cssSized />
         </span>
       </button>
       {onUnpin && (

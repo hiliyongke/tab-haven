@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUndoStore } from '@/stores/undoStore';
 import { DialogShell } from '@/ui/dialog/Dialog';
@@ -25,7 +25,7 @@ import { EmptyState } from '@/ui/common/EmptyState';
  * 此前所有批次长得一样，用户回看历史时分不清操作来源 —— 而「自动行为发生在
  * 我不知情时」正是最容易引发不信任的场景，来源必须显式。
  * 未知 kind 返回 null（不显示标签）：schema 里 kind 是自由字符串，
- * 未来新增来源不应在旧版本里显示成错误的标签。
+ * 未知来源一律不显示标签，避免显示成错误的标签。
  */
 function kindLabel(kind: string, t: (key: string) => string): string | null {
   if (kind === 'archive') return t('undo.kindArchive');
@@ -63,6 +63,12 @@ export function UndoHistoryPanel({
   const redoing = useUndoStore((state) => state.redoing);
   const [recent, setRecent] = useState<RecentClosedEntry[] | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  /**
+   * 恢复互斥必须走 ref：restoringId 是渲染期 state，同一 tick 内的连击读到的
+   * 都是旧值 null（按钮的 disabled 也要等重渲染才生效），两行会同时进入执行体。
+   * restoringId 保留为展示态（哪一行在恢复中）。
+   */
+  const restoringRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +89,8 @@ export function UndoHistoryPanel({
   const handleRestoreRecent = (entry: RecentClosedEntry) => {
     // 恢复互斥：并发点击不同行会互相覆盖 restoringId，
     // 先完成的回调把另一行提前解禁。
-    if (restoringId !== null) return;
+    if (restoringRef.current) return;
+    restoringRef.current = true;
     setRestoringId(entry.sessionId);
     void restoreRecentClosed(entry.sessionId)
       .then((ok) => {
@@ -97,6 +104,7 @@ export function UndoHistoryPanel({
         notifyError(t('errors.operationFailed'));
       })
       .finally(() => {
+        restoringRef.current = false;
         setRestoringId(null);
       });
   };

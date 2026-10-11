@@ -37,7 +37,7 @@ function collectLeaves(nodes: BookmarkTreeNode[]): { url: string; title: string 
  *
  * 固定条目的 url 在 schema 里是可选且无 scheme 约束的，导入的备份文件可以合法地
  * 携带 `javascript:` / `data:` 串。写进书签后一次点击就在当前站点上下文执行脚本，
- * 因此这里必须白名单过滤（与 Favicon 的 src 校验同一原则）。
+ * 因此这里必须白名单过滤（与「只把受控地址交给浏览器执行」同一原则）。
  */
 export function isExportableUrl(url: string | undefined): url is string {
   return url !== undefined && webComparisonKey(url, undefined) !== null;

@@ -6,7 +6,7 @@ import { act } from 'react';
 import i18n from '@/i18n';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
-import { useSearchController } from '@/entrypoints/sidepanel/hooks/useSearchController';
+import { useSearchController } from '@/ui/search/useSearchController';
 
 /**
  * 搜索控制器历史命中规格（P-01）：

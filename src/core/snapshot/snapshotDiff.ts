@@ -56,7 +56,7 @@ export function snapshotDiff(
   const seen = new Set<string>();
 
   for (const tab of tabs) {
-    // 不可恢复：非 http(s)（采集端已过滤，此处兜底旧数据 / 导入数据）。
+    // 不可恢复：非 http(s)（采集端已过滤，此处兜底导入数据）。
     if (!/^https?:\/\//i.test(tab.url)) {
       skipped.push({ tab, status: 'skipped' });
       continue;

@@ -168,3 +168,14 @@ export async function openSidePanel(): Promise<void> {
     logDegraded('background', '打开侧边栏失败', error);
   }
 }
+
+/**
+ * 面板侧搜索：先开面板，再把搜索动作挂起投递。
+ *
+ * 右键菜单与地址栏必须共用这一条路径：菜单分支此前只 `queueAction`（不面板），
+ * 面板未打开时动作只落 session 队列，用户点了「搜索此域名」得到零反馈。
+ */
+export async function runPanelSearch(query: string): Promise<void> {
+  await openSidePanel().catch(() => undefined);
+  await queueAction({ type: 'search-domain', query });
+}

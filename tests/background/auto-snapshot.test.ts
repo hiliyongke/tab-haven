@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS, type Snapshot } from '@/core/schema/models';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
-import { runAutoSnapshot, syncAutoSnapshotAlarm } from '@/entrypoints/background/autoSnapshot';
+import { runAutoSnapshot, syncAutoSnapshotAlarm } from '@/platform/background/autoSnapshot';
 
 /**
  * 定时自动快照（PRD FR-D5.2 触发①）：

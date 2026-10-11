@@ -3,8 +3,12 @@ import { type Settings } from '@/core/schema/models';
 import { canSafelyDiscardTab } from '@/core/tab-types';
 import { mapTab } from '@/platform/tabs';
 import { readSession } from '@/platform/storage/session';
-import { autoDiscardRepository, settingsRepository } from '@/platform/storage/repositories';
-import { AUTO_DISCARD_BATCHES_LIMIT } from '@/platform/registry';
+import { settingsRepository } from '@/platform/storage/repositories';
+import {
+  appendAutoDiscardBatch,
+  mutateAutoDiscardLedger,
+  readAutoDiscardBatches
+} from '@/platform/storage/autoDiscardLedger';
 import { sendMessage } from '@/platform/messages';
 import { t } from '@/i18n/headless';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
@@ -20,11 +24,9 @@ import { logDegraded } from '@/platform/diagnostics';
 async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
   const at = Date.now();
-  const current = await autoDiscardRepository.read();
-  const next = [...current, { tabIds, at, count: tabIds.length }]
-    .sort((a, b) => b.at - a.at)
-    .slice(0, AUTO_DISCARD_BATCHES_LIMIT);
-  const persisted = await autoDiscardRepository.write(next);
+  // 走台账模块：追加是整表 RMW，必须与「面板全部唤醒」共用同一把跨页锁，
+  // 否则两者并发时后写覆盖先写，刚写入的批次会被面板的整表写回抹掉。
+  const persisted = await appendAutoDiscardBatch(tabIds, at);
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
     notifyUser('Tabs', t('bg.autoDiscarded', { count: tabIds.length }));
@@ -41,13 +43,16 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
 /** 清理已失效的自动休眠台账（批次标签全部不存在或已唤醒）。 */
 async function pruneAutoDiscardBatch(): Promise<void> {
   try {
-    const batches = await autoDiscardRepository.read();
+    const batches = await readAutoDiscardBatches();
     if (batches.length === 0) return;
     const tabs = await browser.tabs.query({});
     const live = new Map(tabs.map((tab) => [tab.id, tab.discarded]));
     // 只保留「仍有标签处于休眠」的批次：已全部唤醒的批次留着会出现点了没反应的入口。
-    const kept = batches.filter((batch) => batch.tabIds.some((id) => live.get(id) === true));
-    if (kept.length !== batches.length) await autoDiscardRepository.write(kept);
+    // 与追加/摘除共用跨页锁内重读的磁盘基线，避免用过期快照整表覆盖。
+    await mutateAutoDiscardLedger((disk) => {
+      const kept = disk.filter((batch) => batch.tabIds.some((id) => live.get(id) === true));
+      return kept.length === disk.length ? null : kept;
+    });
   } catch (error) {
     logDegraded('auto-discard', '自动休眠扫描失败', error);
     // 读取失败保持现状

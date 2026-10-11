@@ -112,7 +112,8 @@ export const TabRow = memo(function TabRow({
       // 「提示暂停、松手却真实重排」的行为矛盾。
       canReorder: reorderEnabled !== false,
       title: tab.title || '',
-      favIconUrl: tab.favIconUrl
+      // 拖拽跟随层要显示图标：带页面地址交给 Favicon 走浏览器通道，不再带图标地址。
+      url: tab.url
     }
   });
 
@@ -369,7 +370,7 @@ export const TabRow = memo(function TabRow({
   return (
     <li ref={liRef} data-tabs-tab-id={tab.id} onContextMenu={handleContextMenu}>
       <RowItem
-        faviconSrc={tab.favIconUrl}
+        faviconPageUrl={tab.url}
         faviconTitle={tab.title || ''}
         isActive={isActive}
         isMediaPlaying={tab.audible && !tab.muted}

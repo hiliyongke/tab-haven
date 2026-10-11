@@ -82,9 +82,8 @@ export function SnapshotsPanel({
    */
   const [confirmRestoreSelected, setConfirmRestoreSelected] = useState<Snapshot | null>(null);
   /** 正在恢复的快照 id：恢复会新建大量标签（耗时数百 ms），期间禁用该行按钮防双击并发。 */
+  /** 正在恢复的快照 id（展示态：对应行显示进行中）。 */
   const [restoringId, setRestoringId] = useState<string | null>(null);
-  /** 正在删除的快照 id：删除确认按钮连点防护（与 restoringId 同口径）。 */
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   /**
    * 勾选集（P-02 选择性恢复）：键为 `${index}-${tab.url}`（与 SnapshotRow 行键一致）。
    * 勾选是「从完整恢复里剔除若干条」，语义上必须**默认全选**——用户展开详情
@@ -181,6 +180,14 @@ export function SnapshotsPanel({
 
   /** 保存进行中标尺：await 期间输入框仍在，Enter 连击/双击会并发提交出重复快照。 */
   const saveInFlight = useRef(false);
+  /**
+   * 恢复/删除互斥必须走 ref：restoringId 是渲染期 state，同一 tick 内的连点
+   * 读到的都是旧值 null（disabled 也要等重渲染才生效），会双双穿透 —— 表现为
+   * 同一份快照被开两批标签，或同 id 的删除并发双写。
+   * restoringId 只保留为展示态（哪一行在进行中）。
+   */
+  const restoreInFlight = useRef(false);
+  const deleteInFlight = useRef(false);
 
   const handleSave = async () => {
     if (saveInFlight.current) return;
@@ -266,7 +273,8 @@ export function SnapshotsPanel({
     }
     // 互斥：恢复期间再点会基于同一窗口现状并发 create，可能把同一批标签开两份
     // （快照恢复没有 undo 栈式的 undoInFlight 互斥，这里在组件层补上）。
-    if (restoringId !== null) return;
+    if (restoreInFlight.current) return;
+    restoreInFlight.current = true;
     setRestoringId(id);
     try {
       const { count, degraded } = await restore(id);
@@ -277,6 +285,7 @@ export function SnapshotsPanel({
     } catch {
       notifyError(t('errors.operationFailed'));
     } finally {
+      restoreInFlight.current = false;
       setRestoringId(null);
     }
   };
@@ -304,7 +313,8 @@ export function SnapshotsPanel({
   /** 确认后的选择性恢复执行体（勾选集已固化为传入的部分快照）。 */
   const performRestoreSelected = async (partial: Snapshot) => {
     setConfirmRestoreSelected(null);
-    if (restoringId !== null) return;
+    if (restoreInFlight.current) return;
+    restoreInFlight.current = true;
     setRestoringId(partial.id);
     try {
       const { count, degraded } = await restoreSelected(partial.id, partial.tabs);
@@ -315,6 +325,7 @@ export function SnapshotsPanel({
     } catch {
       notifyError(t('errors.operationFailed'));
     } finally {
+      restoreInFlight.current = false;
       setRestoringId(null);
     }
   };
@@ -322,15 +333,15 @@ export function SnapshotsPanel({
   const performDelete = async (id: string) => {
     setConfirmDeleteId(null);
     // 互斥：确认弹窗按钮快速连点会并发触发两次 deleteSnapshot（同 id 双写竞态）。
-    // 与 handleRestore 的 restoringId、handleSave 的 saveInFlight 同一口径。
-    if (deletingId !== null) return;
-    setDeletingId(id);
+    // 与 handleRestore / handleSave 同一口径（ref 标尺而非渲染期 state）。
+    if (deleteInFlight.current) return;
+    deleteInFlight.current = true;
     try {
       await deleteSnapshot(id);
     } catch {
       notifyError(t('errors.operationFailed'));
     } finally {
-      setDeletingId(null);
+      deleteInFlight.current = false;
     }
   };
 

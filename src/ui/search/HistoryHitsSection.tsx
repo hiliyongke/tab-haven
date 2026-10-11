@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { HistorySearchHit } from '@/entrypoints/sidepanel/hooks/useSearchController';
+import type { HistorySearchHit } from '@/ui/search/useSearchController';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { formatTime } from '@/ui/common/format';
 
@@ -67,59 +67,69 @@ export function HistoryHitsSection({
         </span>
       </header>
       <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100 bg-surface">
-        {hits.map((hit) => (
-          <li
-            key={`${hit.snapshotId}-${hit.tabIndex}`}
-            className="group flex min-w-0 items-center gap-1.5 px-2 py-1.5"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-2xs text-gray-700">
-                {hit.titleSegments.map((segment, index) =>
-                  segment.hit ? (
-                    <mark
-                      key={index}
-                      className="rounded bg-accent-100 px-px font-semibold text-accent-700"
-                    >
-                      {segment.text}
-                    </mark>
-                  ) : (
-                    <span key={index}>{segment.text}</span>
-                  )
-                )}
-              </p>
-              <p className="mt-px flex min-w-0 items-center gap-1.5 text-3xs text-gray-400">
-                <span
-                  className={
-                    'rounded px-1 py-px leading-none ' + originBadgeClass(hit.snapshotOrigin)
-                  }
-                >
-                  {t(originBadgeKey(hit.snapshotOrigin))}
-                </span>
-                <span className="truncate">{hit.snapshotName}</span>
-                <span className="shrink-0">{formatTime(hit.snapshotCreatedAt)}</span>
-                <span className="max-w-[40%] truncate">{hit.tab.url}</span>
-              </p>
-            </div>
-            <button
-              type="button"
-              title={t('search.historyOpenUrl')}
-              aria-label={t('search.historyOpenUrl')}
-              className="shrink-0 rounded p-1 text-gray-500 transition-base hover:bg-accent-50 hover:text-accent-600"
-              onClick={() => onOpenUrl(hit.tab.url)}
+        {hits.map((hit) => {
+          // 徽标文案与快照名同文时不重复渲染：自动/归档快照的 name 就是生成文案
+          // （snap.name 直接落 t('snapshots.auto')），再显示一遍只占宽度、把 URL 挤没。
+          const badgeLabel = t(originBadgeKey(hit.snapshotOrigin));
+          return (
+            <li
+              key={`${hit.snapshotId}-${hit.tabIndex}`}
+              className="group flex min-w-0 items-center gap-1.5 px-2 py-1.5"
             >
-              <Icon d={Icons.search} className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              title={t('search.historyRestoreSnapshot')}
-              aria-label={t('search.historyRestoreSnapshot')}
-              className="shrink-0 rounded p-1 text-gray-500 transition-base hover:bg-accent-50 hover:text-accent-600"
-              onClick={() => onRestoreSnapshot(hit.snapshotId, hit.snapshotTabCount)}
-            >
-              <Icon d={Icons.openAll} className="h-3.5 w-3.5" />
-            </button>
-          </li>
-        ))}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-2xs text-gray-700">
+                  {hit.titleSegments.map((segment, index) =>
+                    segment.hit ? (
+                      <mark
+                        key={index}
+                        className="rounded bg-accent-100 px-px font-semibold text-accent-700"
+                      >
+                        {segment.text}
+                      </mark>
+                    ) : (
+                      <span key={index}>{segment.text}</span>
+                    )
+                  )}
+                </p>
+                <p className="mt-px flex min-w-0 items-center gap-1.5 text-3xs text-gray-400">
+                  {/* 徽标必须 shrink-0 + nowrap：flex 子项默认可收缩，中文逐字断行
+                    会把「自动快照」拆成「自动快 / 照」（窄面板下必现）。 */}
+                  <span
+                    className={
+                      'shrink-0 whitespace-nowrap rounded px-1 py-px leading-none ' +
+                      originBadgeClass(hit.snapshotOrigin)
+                    }
+                  >
+                    {badgeLabel}
+                  </span>
+                  {hit.snapshotName !== badgeLabel && (
+                    <span className="truncate">{hit.snapshotName}</span>
+                  )}
+                  <span className="shrink-0">{formatTime(hit.snapshotCreatedAt)}</span>
+                  <span className="max-w-[40%] truncate">{hit.tab.url}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                title={t('search.historyOpenUrl')}
+                aria-label={t('search.historyOpenUrl')}
+                className="shrink-0 rounded p-1 text-gray-500 transition-base hover:bg-accent-50 hover:text-accent-600"
+                onClick={() => onOpenUrl(hit.tab.url)}
+              >
+                <Icon d={Icons.search} className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title={t('search.historyRestoreSnapshot')}
+                aria-label={t('search.historyRestoreSnapshot')}
+                className="shrink-0 rounded p-1 text-gray-500 transition-base hover:bg-accent-50 hover:text-accent-600"
+                onClick={() => onRestoreSnapshot(hit.snapshotId, hit.snapshotTabCount)}
+              >
+                <Icon d={Icons.openAll} className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

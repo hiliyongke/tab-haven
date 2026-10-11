@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
+import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
+import {
+  planDuplicateCleanup,
+  selectArchivableTabs,
+  selectSleepableTabs
+} from '@/core/tabSelectors';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
@@ -16,7 +21,11 @@ import {
 import { downloadJsonFile, openAboutPage, openOptionsPage } from '@/platform/navigation';
 import { onRuntimeMessage } from '@/platform/messages';
 import { datedJsonFilename } from '@/core/util/filename';
-import { autoDiscardRepository } from '@/platform/storage/repositories';
+import {
+  readAutoDiscardBatches,
+  removeAutoDiscardBatch
+} from '@/platform/storage/autoDiscardLedger';
+import { logFailure } from '@/platform/diagnostics';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import i18n from '@/i18n';
@@ -41,12 +50,12 @@ import { SearchBar } from '@/ui/search/SearchBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 import { pulseTabRows, useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { useAutoGroupSync } from '@/entrypoints/sidepanel/hooks/useAutoGroupSync';
-import { useSearchController } from '@/entrypoints/sidepanel/hooks/useSearchController';
+import { useSearchController } from '@/ui/search/useSearchController';
 import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
 import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
 import { useSpaces } from '@/entrypoints/sidepanel/hooks/useSpaces';
-import { useOtherWindows } from '@/entrypoints/sidepanel/hooks/useOtherWindows';
+import { useOtherWindows } from '@/ui/tabs/useOtherWindows';
 import { OtherWindowsSection } from '@/ui/tabs/OtherWindowsSection';
 import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import type { Snapshot } from '@/core/schema/models';
@@ -61,75 +70,8 @@ import {
   LoadErrorState,
   LoadingSkeleton,
   NoSearchResults
-} from '@/entrypoints/sidepanel/ListStates';
+} from '@/ui/common/ListStates';
 import { useTabDragHandlers } from '@/entrypoints/sidepanel/useTabDragHandlers';
-
-/**
- * 重复清理计划：可关闭的标签 + 每个重复组保留的 keeper id。
- *
- * 抽成模块级纯函数：清理按钮的「可清理数」徽章与清理动作本身必须基于同一份
- * 计算（否则会出现「徽章显示 3 个，点下去说没有」这类不一致）；keepIds 供
- * 清理后的脉冲高亮使用，让「保留了谁」可见。
- * 固定空间绑定的标签豁免：用户显式保存的资产不参与自动清理。
- */
-function planDuplicateCleanup(
-  index: DuplicateIndex,
-  boundTabIds: readonly number[]
-): { removable: TabRecord[]; keepIds: number[] } {
-  const removable: TabRecord[] = [];
-  const keepIds: number[] = [];
-  // 绑定集转 Set 后查表：原实现对每个可清理标签做一次 O(n) 数组扫描，
-  // 在大标签量 + 大量固定绑定时是渲染期的固定热点（本函数每帧都可能重算）。
-  const bound = new Set(boundTabIds);
-  for (const group of index.duplicates()) {
-    const { keeper, removable: groupRemovable } = KeeperPolicy.default.select(group);
-    keepIds.push(keeper.id);
-    for (const tab of groupRemovable) {
-      if (!bound.has(tab.id)) removable.push(tab);
-    }
-  }
-  return { removable, keepIds };
-}
-
-/**
- * 可安全休眠的标签（口径唯一来源）：非激活、未休眠、未被固定空间绑定、可安全休眠。
- *
- * 抽成模块级纯函数的原因同 planDuplicateCleanup：底栏「休眠」入口提示的数量
- * 与实际执行的目标必须来自同一份计算，否则会出现「提示可休眠 5 个、按下后
- * 说没有」的不一致。
- */
-/**
- * 同一批标签（tabIds 顺序一致）。
- *
- * 用来在「全部唤醒」后从台账里摘掉这一轮：台账是多批次滚动保留的，按内容比对
- * 而非整表清空，避免把其它轮次（仍处休眠的标签）的唤醒出口一起抹掉。
- */
-function sameTabIds(a: readonly number[], b: readonly number[]): boolean {
-  return a.length === b.length && a.every((id, index) => id === b[index]);
-}
-
-function selectSleepableTabs(
-  tabs: readonly TabRecord[],
-  boundTabIds: readonly number[]
-): TabRecord[] {
-  const bound = new Set(boundTabIds);
-  return tabs.filter(
-    (tab) => !tab.active && !tab.discarded && !bound.has(tab.id) && canSafelyDiscardTab(tab)
-  );
-}
-
-/**
- * 归档会真正关闭的标签（与 snapshotStore.archiveCurrentWindow 的可关闭口径同源：
- * 仅 http(s) 页面可入档，chrome:// 等内部页保留在原窗口）。
- *
- * 抽成模块级纯函数的原因同 selectSleepableTabs：确认弹窗上写的「将关闭 N 个」
- * 必须等于按下后真实关闭的数量，两处口径分叉即确认文案失信。
- */
-function selectArchivableTabs(tabs: readonly TabRecord[]): TabRecord[] {
-  return tabs.filter(
-    (tab) => typeof tab.id === 'number' && Boolean(tab.url) && /^https?:\/\//i.test(tab.url ?? '')
-  );
-}
 
 export default function App() {
   const { t } = useTranslation();
@@ -320,11 +262,9 @@ export default function App() {
         run: async () => {
           const woken = (await reloadTabs(batch.tabIds)).length;
           // 只清掉这一轮：台账是多批次滚动保留的，整表清空会连带抹掉更早几轮
-          // 仍处休眠的标签的唤醒出口。
-          const remaining = (await autoDiscardRepository.read()).filter(
-            (entry) => !sameTabIds(entry.tabIds, batch.tabIds)
-          );
-          await autoDiscardRepository.write(remaining);
+          // 仍处休眠的标签的唤醒出口。摘除走台账模块的跨页锁，避免与 SW 侧
+          // 「追加新批次 / 淘汰失效批次」的整表写互相覆盖。
+          await removeAutoDiscardBatch(batch.tabIds);
           useUndoStore.getState().notify(i18n.t('discard.woken', { count: woken }));
         }
       });
@@ -381,30 +321,36 @@ export default function App() {
     redoLast: () => void useUndoStore.getState().redo()
   });
 
+  /** 初始化失败后的自动重试定时器句柄（跨 effect 实例共享，cleanup 才能清到）。 */
+  const retryTimerRef = useRef<number | undefined>(undefined);
+
   // 同步服务：事件 → 快照 → store 订阅自动重渲染。
   // 依赖里刻意不含 `t`：语言切换会导致 t 引用变化，进而重放整个数据层初始化
   // （重读全部仓库 + 重新订阅标签事件），切换一次语言等于重启一次面板。
   useEffect(() => {
     let cancelled = false;
-    let retryTimer: number | undefined;
+    // 重试定时器句柄必须在 effect 之间共享：局部 `let` 在 StrictMode 双挂载下
+    // 只属于当次闭包，第二次挂载的 cleanup 清不到第一次排上的定时器。
     // 初始化失败时 toast 并自动重试一次（dataStore 已回滚 initialized 守卫，允许重入），
     // 避免面板永久停在 Loading 骨架屏。
     void initializeData().catch(() => {
       if (cancelled) return;
       notify(i18n.t('errors.dataLoadFailed'));
-      retryTimer = window.setTimeout(() => {
+      retryTimerRef.current = window.setTimeout(() => {
         void initializeData().catch(() => {
           // 自动重试仍失败：转错误态（手动重试 / 重新打开面板），不再静默。
           if (!cancelled) setLoadFailed(true);
         });
       }, 1000);
     });
-    void loadUndo();
+    void loadUndo().catch((error: unknown) => {
+      logFailure('sidepanel', '撤销历史加载失败', error);
+    });
     void useSnapshotStore.getState().load();
     const stopSync = startTabSync();
     return () => {
       cancelled = true;
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (retryTimerRef.current !== undefined) window.clearTimeout(retryTimerRef.current);
       stopSync();
     };
   }, [initializeData, loadUndo, startTabSync, notify]);
@@ -427,13 +373,15 @@ export default function App() {
   // 台账是多批次（滚动保留最近若干轮），这里只补提示最近那一轮 —— 一次性弹 N 条
   // 会让提示条互相顶掉；更早的轮次仍可在下次休眠后按同一路径出现。
   useEffect(() => {
-    void autoDiscardRepository
-      .read()
+    void readAutoDiscardBatches()
       .then((batches) => {
         const latest = [...batches].sort((a, b) => b.at - a.at)[0];
         if (latest && latest.tabIds.length > 0) showDiscardUndoToast(latest);
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        // 读取失败必须留痕：否则「没有可唤醒的批次」与「台账一直在读失败」无从分辨。
+        logFailure('sidepanel', '自动休眠台账读取失败', error);
+      });
   }, [showDiscardUndoToast]);
 
   // 复用引擎（同网址唯一化）关闭的标签 → 登记进撤销栈。
@@ -881,17 +829,24 @@ export default function App() {
       return;
     }
     // 产品决策 D2（2026-09-30）：点击即执行，不弹确认。
-    // 快速整理是三者中唯一**不可撤销**的动作（打散并重建浏览器原生组，不进撤销栈），
-    // 因此它的影响面必须提前可见：底栏入口的 `title` 已写明「重排不进撤销栈、不可撤销」，
-    // 这里是执行后的回执。
+    // 快速整理打散并重建浏览器原生组、不进撤销栈，是本产品唯一不可反悔的破坏性动作，
+    // 与「一切关闭都可反悔」的核心承诺冲突。因此执行前先存一份现场快照当回退点：
+    // 存不进去就中止重排，绝不裸奔执行（与归档同款纪律：留档失败不关标签）。
     setQuickRegrouping(true);
-    void regroupTempArea(plan.ungroupTabIds, plan.plans)
-      .then((count) => {
-        // 快速整理直接打散并重建浏览器原生组：显式请求快照刷新，让整理结果
-        // 立即呈现（与事件驱动刷新共用 signal 合并，不会重复查询）。
-        tabSyncService.requestRefresh();
-        notify(t('footer.quickRegroupDone', { count }));
-      })
+    void (async () => {
+      try {
+        await useSnapshotStore.getState().saveCurrentWindow(t('snapshots.beforeRegroupName'));
+      } catch (error) {
+        logFailure('sidepanel', '重排前保存现场快照失败，已取消重排', error);
+        notifyError(t('footer.quickRegroupSnapshotFailed'));
+        return;
+      }
+      const count = await regroupTempArea(plan.ungroupTabIds, plan.plans);
+      // 快速整理直接打散并重建浏览器原生组：显式请求快照刷新，让整理结果
+      // 立即呈现（与事件驱动刷新共用 signal 合并，不会重复查询）。
+      tabSyncService.requestRefresh();
+      notify(t('footer.quickRegroupDone', { count }));
+    })()
       .catch(() => notifyError(t('errors.operationFailed')))
       .finally(() => setQuickRegrouping(false));
   }, [

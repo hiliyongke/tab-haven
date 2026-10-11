@@ -54,7 +54,8 @@ export const FolderItemRow = memo(function FolderItemRow({
       folderId: folder.id,
       itemId: item.id,
       title: item.title || '',
-      favIconUrl: item.favIconUrl
+      // 同 TabRow：带页面地址供拖拽跟随层取浏览器 favicon。
+      url: item.url
     }
   });
   // 同 TabRow：键盘监听挂主按钮，指针监听挂整行（避免同一事件双重激活）。
@@ -191,7 +192,7 @@ export const FolderItemRow = memo(function FolderItemRow({
     // 定位工具按「真实行优先、条目兜底」两段查找（见 useLocateActive）。
     <li data-folder-tab-id={runtimeTab?.id}>
       <RowItem
-        faviconSrc={item.favIconUrl}
+        faviconPageUrl={item.url}
         faviconTitle={item.title}
         faviconFallback={
           item.pendingTabId !== undefined ? (

@@ -9,8 +9,8 @@ import {
   snapshotsRepository
 } from '@/platform/storage/repositories';
 import { clearDiagnostics } from '@/platform/diagnostics';
-import { getLastActiveTabId, recordActiveTab } from '@/entrypoints/background/windowCache';
-import { syncCachedSettings } from '@/entrypoints/background/shared';
+import { getLastActiveTabId, recordActiveTab } from '@/platform/background/windowCache';
+import { syncCachedSettings } from '@/platform/background/shared';
 
 /**
  * SW 入口编排器（`background.ts`，461 行）—— 此前 0% 覆盖。
@@ -93,6 +93,11 @@ function actionMock(name: 'setBadgeText' | 'setBadgeBackgroundColor' | 'setTitle
 /** 读取被就地打桩的 sidePanel 方法。 */
 function sidePanelMock(name: 'open' | 'setPanelBehavior') {
   return (fakeBrowser.sidePanel as unknown as Record<string, ReturnType<typeof vi.fn>>)[name]!;
+}
+
+/** 读取 `beforeEach` 里安装的 runtime.sendMessage spy（SW → 面板的单向消息出口）。 */
+function sendMessageMock() {
+  return fakeBrowser.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>;
 }
 
 /** 安装子模块依赖的浏览器 API stub，并启动入口，返回监听器表。 */
@@ -707,5 +712,86 @@ describe('omnibox 监听', () => {
     listeners.get('omnibox.onInputStarted')!();
 
     await vi.waitFor(() => expect(setDefaultSuggestion).toHaveBeenCalled());
+  });
+});
+
+describe('重复标签复用的 SW 接线', () => {
+  /**
+   * 背景：`ReuseCoordinator` 的**决策算法**在 `tests/platform/reuse/` 下已有覆盖，
+   * 但入口把它接到浏览器事件的这一段（激活既有标签 / 关闭新建标签 / 通知面板 /
+   * 回传关闭快照）此前 0% 覆盖。接线错位的典型症状是算法测试全绿而线上失灵：
+   * 提示开关被忽略、或把「计划关闭」而非「实际关闭」的标签回传撤销栈（撤销时
+   * 凭空多出重复标签）。这里锁的是**接线**，不是算法。
+   */
+
+  /** 注入复用链路依赖的浏览器 API：窗口扫描结果 + 标签组查询（fake-browser 未实现后者，同步抛错）。 */
+  function stubReuseDeps(windowId: number): void {
+    Object.assign(fakeBrowser.tabs, {
+      query: vi.fn(async () => [
+        rawTab({ id: 1, windowId, index: 0, url: 'https://same.com/', active: true }),
+        rawTab({ id: 10, windowId, index: 1, url: 'https://same.com/' })
+      ]),
+      update: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined)
+    });
+    Object.assign(fakeBrowser.tabGroups, { query: vi.fn(async () => []) });
+  }
+
+  /**
+   * 启动并等待「同 URL 唯一化」开关联动落定。
+   *
+   * coordinator 构造为 fail-closed 的禁用态，开关由 `syncCoordinatorEnabled()`
+   * 异步读回设置后置起；不等它落定就驱动 onCreated，`handleCreated` 会直接
+   * return —— 用例会以「什么都没发生」的假绿/假红形式失败，且极难归因。
+   */
+  async function bootReuse(
+    windowId: number,
+    settings: Partial<Settings>
+  ): Promise<Map<string, AnyListener>> {
+    const listeners = await boot(settings);
+    stubReuseDeps(windowId);
+    await vi.advanceTimersByTimeAsync(0);
+    sendMessageMock().mockClear();
+    return listeners;
+  }
+
+  it('新建同址标签：激活既有 + 关闭新建 + 通知面板 + 回传实际关闭的快照', async () => {
+    const windowId = 7020;
+    const listeners = await bootReuse(windowId, { uniqueUrlTabs: true, reuseNotifyEnabled: true });
+
+    listeners.get('tabs.onCreated')!(
+      rawTab({ id: 10, windowId, index: 1, url: 'https://same.com/' }) as never
+    );
+
+    // 复用：保留最近访问的既有标签（id 1），关闭新建的副本（id 10）
+    await vi.waitFor(() => {
+      expect(fakeBrowser.tabs.update).toHaveBeenCalledWith(1, { active: true });
+      expect(fakeBrowser.tabs.remove).toHaveBeenCalledWith(10);
+    });
+    // 提示：经 runtime 消息推给面板（无面板时静默丢弃，故断言消息而非界面）
+    expect(sendMessageMock()).toHaveBeenCalledWith({ type: 'duplicate-reused' });
+    // 关闭快照回传：撤销栈的登记依据，组名随快照一起回传
+    await vi.waitFor(() =>
+      expect(sendMessageMock()).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'reuse-closed', windowId })
+      )
+    );
+  });
+
+  it('关闭「重复合并提示」后仍回传关闭快照（撤销登记不受提示开关影响）', async () => {
+    const windowId = 7021;
+    const listeners = await bootReuse(windowId, { uniqueUrlTabs: true, reuseNotifyEnabled: false });
+
+    listeners.get('tabs.onCreated')!(
+      rawTab({ id: 10, windowId, index: 1, url: 'https://same.com/' }) as never
+    );
+
+    await vi.waitFor(() =>
+      expect(sendMessageMock()).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'reuse-closed', windowId })
+      )
+    );
+    // 刻意与 notifyReuse 分开：关掉提示也必须能撤销这次自动关闭
+    expect(sendMessageMock()).not.toHaveBeenCalledWith({ type: 'duplicate-reused' });
   });
 });

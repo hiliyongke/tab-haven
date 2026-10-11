@@ -10,7 +10,9 @@
  * （如 undoInFlight / 页内串行链）仍然生效，语义不弱于引入本锁之前。
  * 降级会留痕（一次）——锁失效而无人知晓比没有锁更危险。
  */
-import { logDegraded } from '@/platform/diagnostics';
+// 从日志内核（叶子模块）取留痕能力：若从 `@/platform/diagnostics` 引入会形成
+// diagnostics ↔ crossPageLock 的循环依赖（诊断落盘反过来要用本锁）。
+import { logDegraded } from '@/platform/log';
 
 /** 降级只告警一次：调用点密集（每次导入/每次设置变更），逐次留痕会刷满诊断缓冲。 */
 let degradeWarned = false;
@@ -51,3 +53,10 @@ export const SESSION_RMW_LOCK = 'tabs.session-rmw';
 /** 撤销库写盘：撤销栈同样是整表写，两个侧边栏窗口并发入栈/出栈时
  *  整表写本页内存栈会互相覆盖（已撤销批次复活 / 新批次从磁盘消失）。 */
 export const UNDO_PERSIST_LOCK = 'tabs.undo-persist';
+/**
+ * 自动休眠台账：三个写入方（SW 闹钟写入新批次、SW 扫描淘汰失效批次、
+ * 面板「全部唤醒」摘除该轮）都是整表 read-modify-write，锁外并发会 last-writer-wins：
+ * 刚清除的批次被写回（「全部唤醒」点了没反应）/ 刚写入的批次被覆盖丢失
+ * （该轮自动休眠失去撤销出口）。
+ */
+export const AUTO_DISCARD_RMW_LOCK = 'tabs.auto-discard-rmw';

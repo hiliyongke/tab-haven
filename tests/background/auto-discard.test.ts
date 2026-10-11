@@ -8,8 +8,8 @@ import {
   discardInactiveTabs,
   runAutoDiscard,
   syncAutoDiscardAlarm
-} from '@/entrypoints/background/autoDiscard';
-import { syncCachedSettings } from '@/entrypoints/background/shared';
+} from '@/platform/background/autoDiscard';
+import { syncCachedSettings } from '@/platform/background/shared';
 
 /**
  * 自动休眠（`alarms` 保活调度）与批量休眠。

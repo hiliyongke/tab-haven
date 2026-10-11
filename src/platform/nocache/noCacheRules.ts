@@ -14,6 +14,8 @@
  * SettingsSchema 在写入前统一完成，本模块只消费已归一的 pattern。
  */
 
+import { normalizeHostname } from '@/core/url/hostname';
+
 /** DNR 规则的最小结构描述（避免耦合具体类型包，由 background 侧适配）。 */
 export interface NoCacheDnrRule {
   id: number;
@@ -123,16 +125,19 @@ export function matchesNoCachePattern(url: string, pattern: string): boolean {
   const slashIndex = pattern.indexOf('/');
   // 形态 2：纯域名 → 裸域或任意深度子域。
   if (slashIndex === -1) {
-    const host = parsed.hostname.toLowerCase();
-    return host === pattern || host.endsWith(`.${pattern}`);
+    const host = normalizeHostname(parsed.hostname);
+    const base = normalizeHostname(pattern);
+    return host === base || host.endsWith(`.${base}`);
   }
 
   // 形态 3：域名 + 路径前缀 → 裸域或任意深度子域 + 路径前缀匹配。
   // DNR 侧是 `urlFilter: '||domain/path'`：`||` 为主机锚定且含子域，
   // 此前页面侧要求 host 精确相等——DNR 已改写子域请求的响应头，
   // 警示条却不显示（语义分叉）。与形态 2 同口径对齐 DNR。
-  const host = parsed.hostname.toLowerCase();
-  const base = pattern.slice(0, slashIndex);
+  // 两侧同走 normalizeHostname：此前只有 host 做了小写，pattern 侧没有，
+  // 于是「www.a.com」与「a.com」在禁缓存匹配里被判成两个站点。
+  const host = normalizeHostname(parsed.hostname);
+  const base = normalizeHostname(pattern.slice(0, slashIndex));
   const path = pattern.slice(slashIndex);
   return (host === base || host.endsWith(`.${base}`)) && parsed.pathname.startsWith(path);
 }

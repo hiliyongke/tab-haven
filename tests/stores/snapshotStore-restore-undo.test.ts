@@ -14,7 +14,7 @@ const createdIds: number[] = [];
 
 vi.mock('@/platform/tabs', () => ({
   queryCurrentWindowTabs: vi.fn(),
-  queryCurrentWindowGroups: vi.fn().mockResolvedValue([]),
+  queryWindowGroups: vi.fn().mockResolvedValue([]),
   closeTabs: vi.fn().mockResolvedValue(undefined),
   // 差分必须落在恢复的目标窗口上（跨窗恢复时侧边栏所在窗口未必是它）。
   queryWindowTabs: vi.fn(),

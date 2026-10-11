@@ -6,9 +6,37 @@ import { logDegraded } from '@/platform/diagnostics';
 
 let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * 临时角标覆盖（如「整理完成」打勾）及其到期时间。
+ *
+ * 覆盖态自带到期时间是刻意的：SW 被回收时裸 setTimeout 会被吞掉，覆盖态若只靠
+ * 定时器清除，角标会永久停在覆盖文案上。改为「到期时间 + 每次刷新时判定」后，
+ * 只要之后发生任意一次刷新就会回到真实状态。
+ */
+let badgeOverride: { text: string; color: string; until: number } | undefined;
+let overrideTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** 显示一段临时角标（覆盖当前设置的计算结果），到期后自动恢复。 */
+export function showBadgeOverride(text: string, color: string, holdMs: number): void {
+  badgeOverride = { text, color, until: Date.now() + holdMs };
+  if (overrideTimer) clearTimeout(overrideTimer);
+  overrideTimer = setTimeout(() => {
+    overrideTimer = undefined;
+    badgeOverride = undefined;
+    void refreshBadge();
+  }, holdMs);
+  void refreshBadge();
+}
+
 /** 刷新角标：按 badgeMode 计算当前窗口重复标签数。 */
 async function refreshBadge(): Promise<void> {
   if (!browser.action) return;
+  if (badgeOverride && Date.now() >= badgeOverride.until) badgeOverride = undefined;
+  if (badgeOverride) {
+    await browser.action.setBadgeText({ text: badgeOverride.text }).catch(() => {});
+    await browser.action.setBadgeBackgroundColor({ color: badgeOverride.color }).catch(() => {});
+    return;
+  }
   // 关模式：直接清空角标并跳过全量 tabs.query（避免每次标签事件都查全量标签）。
   if (cachedSettings.badgeMode === 'off') {
     await browser.action.setBadgeText({ text: '' }).catch(() => {});

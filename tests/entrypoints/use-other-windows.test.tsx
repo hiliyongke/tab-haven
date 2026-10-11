@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
-import { useOtherWindows } from '@/entrypoints/sidepanel/hooks/useOtherWindows';
+import { useOtherWindows } from '@/ui/tabs/useOtherWindows';
 import { useTabStore } from '@/stores/tabStore';
 
 /** 造一个窗口的标签集。 */

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { SNAPSHOT_TABS_LIMIT, type Snapshot, type SnapshotTab } from '@/core/schema/models';
 
 /**
@@ -22,35 +23,46 @@ import { SNAPSHOT_TABS_LIMIT, type Snapshot, type SnapshotTab } from '@/core/sch
  *  - tabs 数量受 SNAPSHOT_TABS_LIMIT 约束（超出静默截断，与 parseOneTab 同口径）。
  */
 
-/** Workona 导出中的最小条目结构。 */
-interface WorkonaTab {
-  title?: string;
-  url?: string;
-}
+/**
+ * Workona 导出的结构 schema。
+ *
+ * 解析必须走 zod 而非 `as` 断言：这是**外部文件导入**，与备份导入同属「不信任
+ * 任何输入」的边界。此前用 `JSON.parse(...) as WorkonaExport` + 手写 typeof 守卫，
+ * 字段形态靠注释维护，新增字段时极易漏判。
+ *
+ * 一律 `.passthrough()`：只声明消费的字段，第三方导出的多余字段原样忽略
+ * （这是刻意的宽松，不是漏校验 —— 真正的安全闸门在 url 的 scheme 白名单）。
+ */
+const WorkonaTabSchema = z
+  .object({ title: z.string().optional(), url: z.string().optional() })
+  .passthrough();
+const WorkonaResourceSectionSchema = z
+  .object({ title: z.string().optional(), resources: z.array(WorkonaTabSchema).optional() })
+  .passthrough();
+const WorkonaWorkspaceSchema = z
+  .object({
+    title: z.string().optional(),
+    tabs: z.array(WorkonaTabSchema).optional(),
+    resources: z.array(WorkonaResourceSectionSchema).optional()
+  })
+  .passthrough();
+const WorkonaGroupSchema = z
+  .object({ title: z.string().optional(), workspaces: z.array(WorkonaWorkspaceSchema).optional() })
+  .passthrough();
+const WorkonaExportSchema = z
+  .object({
+    /** 官方导出顶层键（大写 W，字段名大小写混合是 Workona 导出的实际形态）。 */
+    Workspaces: z.array(WorkonaGroupSchema).optional(),
+    /** 小写变体：部分三方工具转换后的文件。 */
+    workspaces: z.array(WorkonaGroupSchema).optional(),
+    archived_workspaces: z.array(WorkonaWorkspaceSchema).optional(),
+    /** 字段名空格变体：不同年份的导出样本存在 "Archived Workspaces" 写法。 */
+    'Archived Workspaces': z.array(WorkonaWorkspaceSchema).optional()
+  })
+  .passthrough();
 
-/** Workona 导出中的资源区段（与 tabs 同构的 url 列表容器）。 */
-interface WorkonaResourceSection {
-  title?: string;
-  resources?: WorkonaTab[];
-}
-
-/** Workona 导出中的单个 workspace。 */
-interface WorkonaWorkspace {
-  title?: string;
-  tabs?: WorkonaTab[];
-  resources?: WorkonaResourceSection[];
-}
-
-/** Workona 导出顶层结构（仅声明消费的字段，多余字段忽略）。 */
-interface WorkonaExport {
-  /** 官方导出顶层键（大写 W，字段名大小写混合是 Workona 导出的实际形态）。 */
-  Workspaces?: Array<{ title?: string; workspaces?: WorkonaWorkspace[] }>;
-  /** 小写变体：部分三方工具转换后的文件。 */
-  workspaces?: Array<{ title?: string; workspaces?: WorkonaWorkspace[] }>;
-  archived_workspaces?: WorkonaWorkspace[];
-  /** 字段名空格变体：不同年份的导出样本存在 "Archived Workspaces" 写法。 */
-  'Archived Workspaces'?: WorkonaWorkspace[];
-}
+type WorkonaTab = z.infer<typeof WorkonaTabSchema>;
+type WorkonaWorkspace = z.infer<typeof WorkonaWorkspaceSchema>;
 
 /** 解析结果。 */
 export interface WorkonaImportResult {
@@ -107,13 +119,15 @@ export function parseWorkona(
 ): WorkonaImportResult {
   const empty: WorkonaImportResult = { snapshots: [], skippedWorkspaces: 0, totalTabs: 0 };
   if (rawText.length > WORKONA_INPUT_LIMIT) return empty;
-  let data: WorkonaExport;
+  let rawJson: unknown;
   try {
-    data = JSON.parse(rawText) as WorkonaExport;
+    rawJson = JSON.parse(rawText);
   } catch {
     return empty;
   }
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) return empty;
+  const parsedExport = WorkonaExportSchema.safeParse(rawJson);
+  if (!parsedExport.success) return empty;
+  const data = parsedExport.data;
 
   const snapshots: Snapshot[] = [];
   let skippedWorkspaces = 0;

@@ -5,7 +5,7 @@ import { structuralSignature } from '@/core/util/signature';
 import {
   closeTabs,
   queryCurrentWindowTabs,
-  queryCurrentWindowGroups,
+  queryWindowGroups,
   queryWindowTabs,
   resolveRestoreWindowId
 } from '@/platform/tabs';
@@ -157,7 +157,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   saveCurrentWindow: async (name) => {
     const tabs = await queryCurrentWindowTabs();
-    const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
+    const groups = await queryWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const snapshot = buildSnapshot({
       name: name ?? '',
@@ -175,7 +175,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   saveSpace: async (name) => {
     const tabs = await queryCurrentWindowTabs();
-    const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
+    const groups = await queryWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const snapshot = buildSnapshot({
       name: name ?? '',
@@ -190,7 +190,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   archiveCurrentWindow: async (name) => {
     const tabs = await queryCurrentWindowTabs();
-    const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
+    const groups = await queryWindowGroups(tabs[0]?.windowId);
     const windowId = tabs[0]?.windowId;
     const snapTabs = collectSnapshotTabs(tabs, groups);
     if (snapTabs.length > 0) {
@@ -348,7 +348,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   updateSpace: async (id) => {
     const tabs = await queryCurrentWindowTabs();
-    const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
+    const groups = await queryWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const result = await replaceSpaceSnapshot(id, snapTabs, tabs[0]?.windowId);
     set({ snapshots: result.snapshots });

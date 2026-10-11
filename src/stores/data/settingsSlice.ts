@@ -1,12 +1,12 @@
-import { browser } from 'wxt/browser';
 import { syncMirror } from '@/platform/storage/SyncMirror';
+import { clearAllStoredData } from '@/platform/storage/DataRepository';
 import {
   COLLAPSE_RMW_LOCK,
   SETTINGS_RMW_LOCK,
   withCrossPageLock
 } from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
-import { DEFAULT_SETTINGS, SettingsSchema } from '@/core/schema/models';
+import { DEFAULT_SETTINGS, SITE_COLLAPSE_LIMIT, SettingsSchema } from '@/core/schema/models';
 import { restoreFromMirrorOnEnable } from './mirrorRestore';
 import type { DataContext, DataState } from './types';
 
@@ -28,23 +28,36 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
   };
 
   return {
+    // 折叠是尽力而为的展示态（丢了只影响分组展开与否），且 UI 侧是 `void` 调用
+    // （拿不到 promise 回执）：异常必须就地消化并留痕，否则锁请求在面板关闭时
+    // 以 AbortError reject 会变成一条无人接的 rejection。
     toggleSiteCollapsed: (siteKey, collapsed) =>
       serialize(async () => {
         let next: string[] = ctx.get().collapsedSites;
-        // 与 updateSettings 同口径：折叠状态是整表写，options / sidepanel 各有独立
-        // 内存副本。必须「锁内重读磁盘 → 合并 → 写」—— 只把内存基线包进锁不构成
-        // 互斥，另一页刚写入的折叠项仍会被本页的旧基线整表抹掉。
-        const ok = await withCrossPageLock(COLLAPSE_RMW_LOCK, async () => {
-          const disk = await ctx.repos.collapse.read();
-          next = collapsed
-            ? disk.includes(siteKey)
-              ? disk
-              : [...disk, siteKey]
-            : disk.filter((key) => key !== siteKey);
-          return ctx.repos.collapse.write(next);
-        });
-        if (!ok)
+        try {
+          // 与 updateSettings 同口径：折叠状态是整表写，options / sidepanel 各有独立
+          // 内存副本。必须「锁内重读磁盘 → 合并 → 写」—— 只把内存基线包进锁不构成
+          // 互斥，另一页刚写入的折叠项仍会被本页的旧基线整表抹掉。
+          const ok = await withCrossPageLock(COLLAPSE_RMW_LOCK, async () => {
+            const disk = await ctx.repos.collapse.read();
+            const merged = collapsed
+              ? disk.includes(siteKey)
+                ? disk
+                : [...disk, siteKey]
+              : disk.filter((key) => key !== siteKey);
+            // 折叠记忆是「最近折叠过哪些站点」的滚动记录：满额时淘汰最旧的。
+            // 此前不淘汰，计数一满整表写就一直失败，并顶起与折叠毫无关系的
+            // 全局「存储降级」横幅 —— 用户看到的是一个无关的告警，而旧记录
+            // 永久占着名额不再释放。
+            next =
+              merged.length > SITE_COLLAPSE_LIMIT ? merged.slice(-SITE_COLLAPSE_LIMIT) : merged;
+            return ctx.repos.collapse.write(next);
+          });
+          if (!ok)
+            ctx.reportPersistenceFailure('dataStore', '站点折叠状态写入失败（仅影响分组展开状态）');
+        } catch {
           ctx.reportPersistenceFailure('dataStore', '站点折叠状态写入失败（仅影响分组展开状态）');
+        }
         ctx.set({ collapsedSites: next });
       }),
 
@@ -137,9 +150,9 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
           // 清空前先让在途/排队的合并写入收尾并丢弃旧值，避免其随后把旧数据写回已清空的存储，
           // 使「清空」失效。（本函数也在串行链上：排队的设置写已在进入本函数前完成。）
           await ctx.cancelWrites();
-          await syncMirror.clearAll();
-          await browser.storage.local.clear();
-          await browser.storage.session.clear();
+          // 清空语义（含「先清镜像再清 local」的顺序）收口在 platform：
+          // store 不直连 browser.storage，避免新增存储分区时漏清。
+          await clearAllStoredData(() => syncMirror.clearAll());
           // 清空期间若又排入了合并写（极少见），丢弃之，保证最终落盘为空态。
           await ctx.cancelWrites();
           // 存储刚被整体清空：此前累积的降级记账已无对应数据，若不重置，

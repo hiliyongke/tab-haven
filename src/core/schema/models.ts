@@ -40,7 +40,7 @@ export const HOST_MAX_LENGTH = 253;
  * 图标 URL 长度上限（仅作用于**导入侧**，见 ImportFaviconUrlSchema）。
  *
  * 基础 schema 不加此上限：运行时 Chrome 给出的 favIconUrl 可能是体积较大的
- * `data:image/...`，在读盘路径上封顶会把合法存量数据判成坏数据而丢条目。
+ * `data:image/...`，在读盘路径上封顶会把本机已写入的合法数据判成坏数据而丢条目。
  */
 export const FAVICON_URL_MAX_LENGTH = 2_048;
 /** 单个撤销批次的标签条目上限。 */
@@ -95,7 +95,7 @@ export const SettingsSchema = z.object({
   /** 主题色预设：plain 纯净（默认，无底色跟随 Chrome 明暗）/ forest 石墨绿 / ocean 雾霾蓝 / violet 暮山紫 / sunset 暖阳橙 / mono 中性灰。 */
   // 色号取自 `@/core/theme/colorThemes` 的唯一来源，避免与主题应用/设置页各写一份。
   colorTheme: z.enum(COLOR_THEME_IDS).default('plain'),
-  /** 语言覆盖（BCP-47）。宽松校验兼容旧数据，仅约束长度与格式。 */
+  /** 语言覆盖（BCP-47）。仅约束长度与格式。 */
   language: z.string().min(2).max(32).optional(),
   /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
   aggregationThreshold: z.number().int().min(1).max(5).default(2),
@@ -145,7 +145,7 @@ export const SettingsSchema = z.object({
    * 不改动任何标签），且「关窗后标签全丢」是最大痛点，出厂不保护等于放弃安全网。
    * 容量由 maxAutoSnapshots（10 条滚动保留）约束，不会无限增长。
    *
-   * 注意：默认值只作用于新装用户，已存设置的用户读的是自己的存储值。
+   * 注意：默认值只在存储中尚无该键时生效，用户改过之后读的是其存储值。
    */
   autoSaveSnapshots: z.boolean().default(true),
   /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
@@ -231,7 +231,7 @@ export const SettingsSchema = z.object({
   /**
    * 面板展示其他窗口的分段（只读 + 聚焦/关闭，当前窗口的全部交互不变）。
    * 默认关闭：产品口径是「只管理当前窗口」，读取其他窗口必须由用户显式开启，
-   * 与 searchAllWindows 的默认关闭口径保持一致（默认值为新装生效，已存设置不受影响）。
+   * 与 searchAllWindows 的默认关闭口径保持一致。
    */
   showOtherWindows: z.boolean().default(false)
 });
@@ -268,7 +268,7 @@ export const UndoBatchSchema = z.object({
   kind: z.string(),
   createdAt: z.number(),
   /**
-   * 关闭发生时的窗口 id（旧批次缺省）。
+   * 关闭发生时的窗口 id（缺省即未记录来源窗口）。
    * 撤销必须回到原窗口：只记录「关了什么」而不记录「从哪关的」，用户切到另一个
    * 窗口再撤销时，标签会被恢复到错误的窗口。
    */
@@ -296,9 +296,9 @@ export const SnapshotTabSchema = z.object({
   title: z.string().default(''),
   favIconUrl: z.string().optional(),
   pinned: z.boolean().default(false),
-  /** 静音状态（恢复时还原；旧快照缺省为 false）。 */
+  /** 静音状态（恢复时还原；缺省为 false）。 */
   muted: z.boolean().default(false),
-  /** 快照时所在原生组标题（未分组/旧快照缺省；恢复时按名并入或重建）。 */
+  /** 快照时所在原生组标题（未分组时缺省；恢复时按名并入或重建）。 */
   groupTitle: z.string().optional(),
   /** 快照时所在原生组颜色（Chrome 色名字符串，重建组时还原）。 */
   groupColor: z.string().optional()
@@ -328,21 +328,13 @@ export type Snapshot = z.infer<typeof SnapshotSchema>;
  * 导出文件格式版本号。
  *
  * 必须在**第一个公开版本**就带上：格式一旦发布且无版本号，后续每次加字段都只能靠
- * 「猜字段是否存在」来兼容，迁移逻辑会随版本数指数膨胀。带版本号后，导入端可以
- * 先读 version 再分发到对应 schema，老备份走显式迁移路径。
+ * 「猜字段是否存在」来兼容。带版本号后，导入端只需比对字面量——**相同才收，
+ * 不同即拒**，不按版本分发、不做跨版本升格解析。
  *
- * 演进方式：新增 version 常量 → 保留旧结构为 `ExportFileV{n}Schema` →
- * `parseExportFile` 按 version 分发并把旧结构升到最新结构。
- *
- * v2：新增 readLater（稍后读）分区。字段是纯新增且旧版会忽略未知键，但版本号必须
- * 递增——版本号要唯一标识格式，否则同一 v1 会存在「有/无 readLater」两种形态，
- * 导入端无法按版本分发，只能靠猜字段（正是本版本号想消灭的兼容泥潭）。
- *
- * v3：移除 readLater 分区（稍后读能力下线）。同样是「删字段」而非「加字段」，
- * 版本号仍须递增：否则同一 v2 会存在「有/无 readLater」两种形态，与上面 v1→v2
- * 的顾虑完全对称。旧 v2 备份按项目单一格式口径被拒绝导入（不做跨版本兼容解析）。
+ * 本产品不做跨版本兼容：备份格式随主版本演进，旧备份交给对应版本的扩展导入，
+ * 而不是让当前版本去猜旧结构。
  */
-export const EXPORT_FILE_VERSION = 3;
+export const EXPORT_FILE_VERSION = 1;
 
 /**
  * 导出文件格式。
@@ -350,16 +342,16 @@ export const EXPORT_FILE_VERSION = 3;
  * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族
  * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区）。
  *
- * `version` 缺省时按 1 处理（容错未带版本号的早期备份）；
- * 未来版本会被字面量拒绝 —— 旧版扩展不认识新版数据结构，
- * 宁可提示用户升级，也不能让旧代码误读新字段。
+ * `version` 是必填字面量：缺省即判为「格式不符」并拒绝导入。此处**不做**容错缺省
+ * —— 缺省兜底会让无版本号的任意 JSON 都能按当前版本解析通过，等于把单一格式口径
+ * 开了一道后门，也让「版本不同即拒绝」的承诺失真。
  *
  * 导入端另有 `ExportFileImportSchema`（本 schema 的图标加固副本，见下）：
  * 备份里的 `favIconUrl` 只接受 `data:image/` / `chrome://` / `chrome-extension://`。
  */
 export const ExportFileSchema = z.object({
   format: z.literal('tabs.export'),
-  version: z.literal(EXPORT_FILE_VERSION).default(EXPORT_FILE_VERSION),
+  version: z.literal(EXPORT_FILE_VERSION),
   exportedAt: z.string(),
   fixedFolders: z.array(FixedFolderSchema).max(FOLDERS_LIMIT),
   persistentPins: z.array(PersistentPinSchema).max(PINS_LIMIT),
@@ -404,18 +396,43 @@ export const ImportFaviconUrlSchema = z
   )
   .optional();
 
-/** 导入专用条目 schema：只替换 favIconUrl，其余字段与运行时同口径。 */
+/**
+ * 导入侧网址字段：scheme 白名单归一化（只放行 `http:` / `https:`）。
+ *
+ * 备份的 `url` 最终会被拿去 `tabs.create` / 渲染成可点击条目，因此只接受网页
+ * scheme：`javascript:` / `data:text/html` / `file:` / `chrome://*` 一律降级为
+ * 安全占位 `about:blank`。
+ *
+ * 与图标同口径「归一化而非判坏」：一条畸形网址不该把整份备份判死（那才是最糟的
+ * 数据事故）。归一为占位而非丢弃条目，还有一层原因——快照有
+ * `tabCount === tabs.length` 的一致性校验，丢条目会让该校验失衡并把整份备份拒掉。
+ *
+ * 只作用于导入专用 schema：运行时读盘走原 schema，不会误伤本机已写入的数据。
+ */
+const IMPORT_URL_SCHEME = /^https?:\/\//i;
+/** 网址被判为不安全时的占位值：不可执行脚本、不指向内部页。 */
+const UNSAFE_URL_PLACEHOLDER = 'about:blank';
+export const ImportUrlSchema = z
+  .string()
+  .transform((value) => (IMPORT_URL_SCHEME.test(value) ? value : UNSAFE_URL_PLACEHOLDER));
+
+/** 导入专用条目 schema：收紧 favIconUrl 与 url，其余字段与运行时同口径。 */
+// 文件夹条目的 url 在运行时本就可选（挂起条目没有 url），导入侧必须保持可选，
+// 否则 safeExtend 覆盖后会把「无 url 的挂起条目」判成坏数据。
 const ImportFixedFolderItemSchema = FixedFolderItemSchema.safeExtend({
-  favIconUrl: ImportFaviconUrlSchema
+  favIconUrl: ImportFaviconUrlSchema,
+  url: ImportUrlSchema.optional()
 });
 const ImportFixedFolderSchema = FixedFolderSchema.safeExtend({
   items: z.array(ImportFixedFolderItemSchema).max(FOLDER_ITEMS_LIMIT)
 });
 const ImportPersistentPinSchema = PersistentPinSchema.safeExtend({
-  favIconUrl: ImportFaviconUrlSchema
+  favIconUrl: ImportFaviconUrlSchema,
+  url: ImportUrlSchema
 });
 const ImportSnapshotTabSchema = SnapshotTabSchema.safeExtend({
-  favIconUrl: ImportFaviconUrlSchema
+  favIconUrl: ImportFaviconUrlSchema,
+  url: ImportUrlSchema
 });
 /** SnapshotSchema 带 refine（tabCount === tabs.length），safeExtend 会保留该校验。 */
 const ImportSnapshotSchema = SnapshotSchema.safeExtend({

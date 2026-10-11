@@ -45,7 +45,8 @@ export const RowItem = memo(
   forwardRef<
     HTMLDivElement,
     {
-      faviconSrc?: string;
+      /** 图标所属页面地址（不是图标地址）：图标由浏览器按页面 URL 现取。 */
+      faviconPageUrl?: string;
       faviconTitle: string;
       faviconSize?: number;
       /** 自定义 favicon 替代（如固定条目的 pending 占位）。 */
@@ -77,7 +78,7 @@ export const RowItem = memo(
     }
   >(function RowItem(
     {
-      faviconSrc,
+      faviconPageUrl,
       faviconTitle,
       faviconSize = 16,
       faviconFallback,
@@ -167,7 +168,7 @@ export const RowItem = memo(
             grip 仅为视觉提示；底色用 --row-bg 与行底一致，浮现时自然盖住 favicon。 */}
           <span className="row-favicon relative inline-flex shrink-0 items-center">
             {faviconFallback || (
-              <Favicon src={faviconSrc} title={faviconTitle} size={faviconSize} />
+              <Favicon pageUrl={faviconPageUrl} title={faviconTitle} size={faviconSize} />
             )}
             <span
               className="drag-grip"

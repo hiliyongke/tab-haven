@@ -10,7 +10,9 @@ import en from './locales/en/translation.json';
  */
 
 const browserLanguage = globalThis.navigator?.language ?? '';
-const initialLanguage = browserLanguage.toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
+// 只认中文前缀，其余一律落 en（决策 D6）：日文 / 德文 / 法文用户读到中文比读到
+// 英文更不可解，而 en 是这两套 locale 里更通用的那一套。
+const initialLanguage = browserLanguage.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
 
 i18n.use(initReactI18next).init({
   resources: {

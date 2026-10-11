@@ -233,16 +233,20 @@ export function SettingsPage() {
     const dynamic: OutlineItem[] = visibleSections
       .filter((entry) => entry.specs.length > 0)
       .map(({ section }) => ({ id: section.titleKey, label: t(section.titleKey) }));
-    return [
+    // 静态区块（预置 / 概念图 / 快捷键 / 数据 / 关于）此前永不参与搜索过滤：
+    // 搜「导出」时目录里仍挂着「数据」以外的块，点了不会有任何反应。
+    // 与设置分区同口径：按标题过滤。
+    const q = settingsSearch.trim().toLowerCase();
+    const statics: OutlineItem[] = [
       { id: 'presets.title', label: t('presets.title') },
       { id: 'settings.capabilitiesGuide', label: t('settings.capabilitiesGuide') },
       { id: 'fixedMap.title', label: t('fixedMap.title') },
-      ...dynamic,
       { id: 'settings.shortcuts', label: t('settings.shortcuts') },
       { id: 'settings.data', label: t('settings.data') },
       { id: 'about.title', label: t('about.title') }
-    ];
-  }, [t, visibleSections]);
+    ].filter((item) => !q || item.label.toLowerCase().includes(q));
+    return [...statics.slice(0, 3), ...dynamic, ...statics.slice(3)];
+  }, [t, visibleSections, settingsSearch]);
 
   if (!ready) {
     return (

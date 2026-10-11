@@ -32,7 +32,10 @@ const ALLOWED_PERMISSIONS = new Set([
   'sessions', // 撤销历史面板恢复浏览器最近关闭
   'bookmarks', // 用户主动的固定文件夹 ↔ 书签互转
   'notifications', // 自动休眠完成的本机通知
-  'declarativeNetRequest' // 开发者禁缓存：按用户站点规则改写响应头（默认关闭，配套 host 权限走 optional）
+  'declarativeNetRequest', // 开发者禁缓存：按用户站点规则改写响应头（默认关闭，配套 host 权限走 optional）
+  // 站点图标走浏览器本地通道（chrome-extension://<id>/_favicon/）。加它反而让
+  // 「零出站网络请求」从「有一个例外」变成「零例外」：图标不再由扩展页向站点取。
+  'favicon'
 ]);
 
 /**
@@ -60,16 +63,17 @@ const NETWORK_PATTERNS = [
 ];
 
 /**
- * 图标渲染闸门（P1-4）：`src/ui/common/Favicon.tsx` 是唯一会渲染外部地址的地方。
+ * 图标渲染闸门（P1-4）：`src/ui/common/Favicon.tsx` 是唯一渲染站点图标的地方。
  *
- * 折中口径：浏览器/站点自身提供的图标仍然渲染（否则图标大面积消失），但必须保留
- * 三道闸门——scheme 白名单、渲染前判定、`no-referrer`。门禁只拦「放开」：
- * 白名单里多出 http(s)/data:image 之外的 scheme、删掉判定、删掉 no-referrer、
- * 或新增一个不受白名单约束的动态 src，都会失败。
+ * 口径（已收紧为**零例外**）：图标只允许来自浏览器自己的 favicon 通道
+ * `chrome-extension://<id>/_favicon/`。此前渲染站点自身的图标地址，那是本产品
+ * 唯一的第三方出站请求，且在鉴权站点上会被 302 一路带到登录页再跳回来
+ * （一次约 25 跳，最终 ERR_TOO_MANY_REDIRECTS）。
+ *
+ * 门禁只拦「放开」：删掉通道构造、改用任何 http(s) 图标地址、或新增第二个不受
+ * `buildFaviconSrc` 约束的 src 渲染点，都会失败。
  */
 const FAVICON_FILE = join(SRC, 'ui', 'common', 'Favicon.tsx');
-/** 白名单允许出现的 scheme（与 PRIVACY.md §1 的图标承诺一致）。 */
-const FAVICON_ALLOWED_SCHEMES = new Set(['http', 'https', 'data']);
 
 /** 存储键字面量：项目内所有存储键统一以 `tabs.` 前缀命名。 */
 const STORAGE_KEY_LITERAL = /['"](tabs\.[a-zA-Z0-9._-]+)['"]/g;
@@ -157,47 +161,38 @@ function checkFaviconGuard() {
   }
   const text = readFileSync(FAVICON_FILE, 'utf8');
 
-  const whitelist = text.match(/const\s+SAFE_FAVICON_SRC\s*=\s*\/([^\n]+?)\/([a-z]*)\s*;/);
-  if (!whitelist) {
-    issues.push('Favicon.tsx 缺少 SAFE_FAVICON_SRC 白名单（渲染外部图标必须过白名单）');
-  } else {
-    const body = whitelist[1];
-    const schemes = [...body.matchAll(/([a-z][a-z0-9+.-]*)\s*:/gi)].map((m) => m[1].toLowerCase());
-    const illegal = [...new Set(schemes)].filter((scheme) => !FAVICON_ALLOWED_SCHEMES.has(scheme));
-    if (illegal.length > 0) {
-      issues.push(
-        `Favicon.tsx 图标白名单放开了未授权的 scheme: ${illegal.sort().join(', ')}` +
-          '（仅允许 http(s) 与 data:image/）'
-      );
-    }
-    // 正则里的 `/` 常被转义成 `\/`，故分隔符前的反斜杠可选。
-    if (schemes.includes('data') && !/data\s*:\s*image\s*\\?\//i.test(body)) {
-      issues.push('Favicon.tsx 图标白名单中的 data: 必须是 data:image/ 前缀');
-    }
+  // ① 必须走浏览器自己的 favicon 通道（本产品唯一允许的图标来源）。
+  if (!/_favicon/.test(text)) {
+    issues.push('Favicon.tsx 未使用浏览器 favicon 通道（_favicon）——图标不得来自任何第三方');
   }
-
-  if (!/isSafeFaviconSrc\(src\)/.test(text)) {
-    issues.push('Favicon.tsx 渲染前缺少 isSafeFaviconSrc(src) 白名单判定');
+  if (!/chrome-extension:\/\//.test(text)) {
+    issues.push('Favicon.tsx 图标地址必须是 chrome-extension:// 本扩展通道');
   }
-  if (!/referrerPolicy\s*=\s*["']no-referrer["']/.test(text)) {
-    issues.push('Favicon.tsx 的 <img> 缺少 referrerPolicy="no-referrer"（会向站点泄露来源）');
+  // ② 渲染的 src 必须由该通道构造函数产出，不能是任意外来地址。
+  if (!/const\s+src\s*=\s*buildFaviconSrc\s*\(/.test(text)) {
+    issues.push('Favicon.tsx 的 src 必须来自 buildFaviconSrc(pageUrl)（禁止渲染任意图标地址）');
   }
+  // ③ 旧的 http(s) 图标白名单不得再出现（它是「唯一外部请求」时代的产物）。
+  if (/SAFE_FAVICON_SRC|isSafeFaviconSrc/.test(text)) {
+    issues.push('Favicon.tsx 仍保留 http(s) 图标白名单判定——图标已不得来自任何外部站点');
+  }
+  // ④ 渲染点唯一且受同一约束：多出一个 src 就是新增一条图标渲染路径。
   const srcAttrs = [...text.matchAll(/\bsrc\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]*\})/g)].map((m) =>
     m[0].replace(/\s+/g, ' ')
   );
   const guarded = srcAttrs.filter((attr) => /^src\s*=\s*\{src\}$/.test(attr));
   if (guarded.length !== srcAttrs.length || srcAttrs.length === 0) {
     issues.push(
-      `Favicon.tsx 出现不受白名单判定的 src 渲染点: ${srcAttrs.join(' | ') || '（无）'}` +
+      `Favicon.tsx 出现不受 buildFaviconSrc 约束的 src 渲染点: ${srcAttrs.join(' | ') || '（无）'}` +
         '（只允许 src={src}）'
     );
   }
   if (/dangerouslySetInnerHTML|\binnerHTML\b/.test(text)) {
     issues.push('Favicon.tsx 出现 innerHTML 渲染路径');
   }
-  // 对外口径：图标请求必须在 PRIVACY.md 明示（否则「零出站」表述失真）。
+  // 对外口径：图标来源必须在 PRIVACY.md 说明（权限表 + 第 1 节）。
   if (existsSync(PRIVACY_DOC) && !/favicon/i.test(readFileSync(PRIVACY_DOC, 'utf8'))) {
-    issues.push('PRIVACY.md 未明示站点图标请求（favicon），与「零出站网络请求」表述冲突');
+    issues.push('PRIVACY.md 未说明站点图标来源（favicon 通道）');
   }
 }
 

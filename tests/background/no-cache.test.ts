@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
-import { syncNoCacheRules } from '@/entrypoints/background/noCache';
+import { syncNoCacheRules } from '@/platform/background/noCache';
 
 /**
  * 开发者禁缓存（DNR 动态规则同步）。

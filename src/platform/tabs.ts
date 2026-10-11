@@ -98,7 +98,7 @@ export async function queryWindowTabs(windowId: number): Promise<TabRecord[]> {
  * tabGroups 能力检测：不支持该 API 的浏览器每次查询必抛错，会让调用方
  * （TabSyncService）进入永久失败退避，面板停在首帧。
  */
-export async function queryCurrentWindowGroups(windowId?: number): Promise<TabGroupRecord[]> {
+export async function queryWindowGroups(windowId?: number): Promise<TabGroupRecord[]> {
   if (!browser.tabGroups?.query) return [];
   let targetWindowId = windowId;
   if (targetWindowId === undefined) {

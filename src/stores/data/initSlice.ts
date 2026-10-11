@@ -58,7 +58,7 @@ export function createInitSlice(ctx: DataContext): Partial<DataState> {
               .safeParse(mirror.folders);
             const parsedPins = PersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
             const parsedSettings = SettingsSchema.safeParse(mirror.settings);
-            // 单边解析失败（如未来版本 schema 偏斜）：该分区跳过恢复，且不置 seeded ——
+            // 单边解析失败：该分区跳过恢复，且不置 seeded ——
             // 置位会让它永久失去重试机会（与 stores/data/mirrorRestore 同口径）。
             mirrorParseOk = parsedFolders.success && parsedPins.success && parsedSettings.success;
             if (parsedFolders.success && folders.length === 0)

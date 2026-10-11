@@ -54,7 +54,7 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
   // 上限（与 initSlice 同口径），否则一份异常镜像就能把本地库撑到远超正常使用规模。
   const parsedFolders = FixedFolderSchema.array().max(FOLDERS_LIMIT).safeParse(mirror.folders);
   const parsedPins = PersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
-  // 单边解析失败（如未来版本 schema 偏斜）：不恢复、不置 seeded、不推镜像——
+  // 单边解析失败：不恢复、不置 seeded、不推镜像——
   // 任何一边落不了本地时推镜像都会把本地空值覆盖云端对应分区，且永久失去恢复机会。
   if (!parsedFolders.success || !parsedPins.success) {
     ctx.reportPersistenceFailure('dataStore', '同步镜像数据异常，已跳过恢复（下次启动重试）');

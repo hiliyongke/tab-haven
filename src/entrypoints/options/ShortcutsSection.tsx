@@ -9,6 +9,11 @@ import { Row, Section } from '@/entrypoints/options/settingControls';
  */
 const IS_MAC = /mac/i.test(globalThis.navigator?.platform ?? '');
 
+/** 面板内快捷键修饰键：只给当前平台那一套写法，不在同一行里并列两套。 */
+const modKey = (key: string): string => (IS_MAC ? `⌘${key}` : `Ctrl+${key}`);
+/** 带 Shift 的组合键同理。 */
+const modShiftKey = (key: string): string => (IS_MAC ? `⌘⇧${key}` : `Ctrl+Shift+${key}`);
+
 /** 快捷键说明区：按平台渲染修饰键（mac 显示 ⌃⇧ 符号，Windows/Linux 显示 Ctrl+Shift 文案）。 */
 export function ShortcutsSection({
   onOpenShortcutSettings
@@ -30,19 +35,19 @@ export function ShortcutsSection({
           <span className="text-2xs text-gray-500">{t('settings.shortcutBrowser')}</span>
         </Row>
       ))}
-      <Row label="⌘K / Ctrl+K" hint={t('settings.shortcutPanelSearch')}>
+      <Row label={modKey('K')} hint={t('settings.shortcutPanelSearch')}>
         <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
       </Row>
-      <Row label="⌘P / Ctrl+P" hint={t('settings.shortcutPalette')}>
+      <Row label={modKey('P')} hint={t('settings.shortcutPalette')}>
         <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
       </Row>
-      <Row label="⌘J / Ctrl+J" hint={t('settings.shortcutLocatePanel')}>
+      <Row label={modKey('J')} hint={t('settings.shortcutLocatePanel')}>
         <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
       </Row>
-      <Row label="⌘Z / Ctrl+Z" hint={t('settings.shortcutUndo')}>
+      <Row label={modKey('Z')} hint={t('settings.shortcutUndo')}>
         <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
       </Row>
-      <Row label="⌘⇧Z / Ctrl+Shift+Z" hint={t('settings.shortcutRedo')}>
+      <Row label={modShiftKey('Z')} hint={t('settings.shortcutRedo')}>
         <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
       </Row>
       <Row label={t('settings.shortcutCustomize')} hint={t('settings.shortcutCustomizeHint')}>

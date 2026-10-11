@@ -8,7 +8,7 @@ import { logDegraded } from '@/platform/diagnostics';
  * 用于固定条目与真实标签的会话绑定（挂起条目追踪）。
  *
  * 与其余持久化数据一致，读写都必须经 zod 校验（架构约定）：
- * storage.session 的内容同样可能来自异常写入或旧版本残留，
+ * storage.session 的内容同样可能来自异常写入，
  * 裸 `as` 断言会让下游拿到非 number 的 tabId 并静默错绑。
  */
 

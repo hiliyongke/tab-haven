@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { activateTabAcrossWindows, createTabsWithUrls, queryAllWindowTabs } from '@/platform/tabs';
 import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
 import { t } from '@/i18n/headless';
-import { hostnameOf, openSidePanel, queueAction } from './shared';
+import { hostnameOf, openSidePanel, runPanelSearch } from './shared';
 
 interface OmniSuggestion {
   content: string;
@@ -134,17 +134,6 @@ async function handleOmniboxEnter(text: string, disposition?: string): Promise<v
   }
   // 纯文本默认站内搜索
   await runPanelSearch(raw);
-}
-
-/**
- * 地址栏搜索：先开面板，再把搜索动作挂起投递。
- *
- * 旧实现只 `runtime.sendMessage`——面板未打开时无人接收，用户输入 `t 关键词`
- * 回车后毫无反馈，等同于功能失效。改为与快捷键一致的「开面板 + 队列」路径。
- */
-async function runPanelSearch(query: string): Promise<void> {
-  await openSidePanel().catch(() => undefined);
-  await queueAction({ type: 'search-domain', query });
 }
 
 export { queryOmnibox, handleOmniboxEnter };

@@ -11,7 +11,7 @@ import {
   recordActiveTab,
   refreshWindowTabs,
   scheduleWindowRefresh
-} from '@/entrypoints/background/windowCache';
+} from '@/platform/background/windowCache';
 
 /**
  * 窗口标签缓存与关窗自动快照 —— **本文件是「关窗快照」这条兜底链路的唯一回归保护**。

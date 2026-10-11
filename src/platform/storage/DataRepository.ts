@@ -54,7 +54,12 @@ export class DataRepository<T> {
         const reparsed = this.schema.safeParse(recovered);
         if (reparsed.success) {
           // 把恢复后的干净数据回写，避免下次仍走失败分支。
-          void this.write(reparsed.data as T);
+          // 回写结果必须留痕：配额接近上限时回写恒失败，此后每次读取都会重跑一遍
+          // 逐元素恢复（大数组上是每次读盘都付出的固定开销），而诊断里毫无痕迹。
+          const written = await this.write(reparsed.data as T);
+          if (!written) {
+            logDegraded('storage', `坏数据恢复后回写失败（${this.key}），下次读取将重复走恢复分支`);
+          }
           return reparsed.data as T;
         }
       }
@@ -144,4 +149,23 @@ export class DataRepository<T> {
       logDegraded('storage', `坏数据隔离失败（${this.key}）`, error);
     }
   }
+}
+
+/**
+ * 清空本机存储区域：local → session。
+ *
+ * 调用方必须在**之前**先清掉浏览器账号同步镜像（传入 `clearMirror`）：
+ * 首启恢复标志（seeded）随 local 一并被清掉，若镜像还在，下次初始化会把它当成
+ * 「跨设备首启」把旧数据原样复活回来，用户看到的「已清空」是假的。
+ *
+ * 存储拓扑（有哪些区域、按什么顺序清）只应有一处知道，因此收口在 platform：
+ * 此前这段语义写在 store 里并直连 `browser.storage`，新增存储分区时极易漏清。
+ *
+ * 镜像清理以回调传入而非本模块直接依赖 SyncMirror：镜像是独立能力，由编排方
+ * （store）决定「要不要清、清哪些」，仓库层不反过来依赖它。
+ */
+export async function clearAllStoredData(clearMirror: () => Promise<void>): Promise<void> {
+  await clearMirror();
+  await browser.storage.local.clear();
+  await browser.storage.session.clear();
 }

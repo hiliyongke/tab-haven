@@ -22,6 +22,8 @@ Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它默认只管�
 
 商店上架后，在扩展商店搜索 "Tabs" 一键安装。
 
+上架前需准备的材料（商店文案、权限理由、隐私政策 URL、截图）与发布前自查清单统一维护在 [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)；打包用 `pnpm zip`（WXT 产物，上架前需确认未把 `.codebuddy/`、`docs/`、`README.md` 打进包）。
+
 ### 从源码构建（开发者）
 
 ```bash
@@ -32,8 +34,7 @@ pnpm install
 pnpm dev
 
 # 3. 生产构建
-pnpm build            # 标准版（Chrome/Edge/Brave，含侧边栏）
-pnpm build:compat     # 兼容版（旧内核 Chromium，降级为弹窗形态）
+pnpm build            # Chrome/Edge/Brave（含侧边栏）
 
 # 4. 打包为 ZIP 以便上架
 pnpm zip
@@ -52,8 +53,11 @@ pnpm check            # 一条命令跑全部：typecheck → lint → check:i18
 | `pnpm check:i18n`    | 中英文案键集合一致性与死键检查                         |
 | `pnpm check:ui`      | UI 设计令牌守卫（未受控调色板 / 字号 / 对比度）        |
 | `pnpm check:privacy` | 隐私回归：权限冻结 + 零网络调用（需先 `pnpm build`）   |
+| `pnpm format:check`  | Prettier 格式检查（提交前与 CI 另跑，不在 `check` 内） |
 
 加载已解压扩展：打开 `chrome://extensions` → 开启"开发者模式" → "加载已解压的扩展程序" → 选择 `./.output/chrome-mv3`。
+
+可选：让 AI 直接在真实 Chrome 里安装/重载扩展并 inspect 侧边栏与 Service Worker —— 配置见 [docs/chrome-devtools-mcp.md](./docs/chrome-devtools-mcp.md)。
 
 ---
 
@@ -65,17 +69,17 @@ pnpm check            # 一条命令跑全部：typecheck → lint → check:i18
 | 组织       | 文件夹（CRUD / 拖放排序 / 挂起转正 / 一键打开全部 / 导出到书签）、常驻磁贴（身份归一化、中键只关页）、从书签栏导入文件夹；工作空间切换（命令面板键入文件夹名，一键打开该「空间」全部缺失条目，P-04「文件夹即空间」轻量验证）                                                                                                                                            |
 | 搜索       | 标题 / 网址 / 拼音首字母模糊搜索，命中高亮，`↑↓` / `Enter` / `Esc` 键盘导航；可选扩展到所有窗口（跨窗口一键切换）；时间线搜索（搜索框内「含历史」开关，同时命中最近 20 份快照与归档条目，支持仅打开单个 URL 或整快照恢复）；命令面板（⌘/Ctrl+P：命令 + 标签切换 + 文件夹空间三组漫游）                                                                                  |
 | 拖拽整理   | dnd-kit 驱动的标签/常驻磁贴/分组头/文件夹条目排序；拖入固定空间与文件夹，重复 URL 自动去重                                                                                                                                                                                                                                                                              |
-| 快捷入口   | 网页/链接/标签栏/工具栏图标右键菜单（休眠、固定、加入文件夹、按域名搜索）；地址栏 `t` 命令直达标签/固定条目；工具栏角标（标签数 / 重复组数，休眠数见悬停提示）                                                                                                                                                                                                                   |
-| 重复治理   | 一键清理重复标签（每个网址保留最近访问 / 激活 / 固定 / 位置靠前的一个；固定标签与固定空间内的条目豁免，可撤销）                                                                                                                                                                                                                                                                    |
+| 快捷入口   | 网页/链接/标签栏/工具栏图标右键菜单（休眠、固定、加入文件夹、按域名搜索）；地址栏 `t` 命令直达标签/固定条目；工具栏角标（标签数 / 重复组数，休眠数见悬停提示）                                                                                                                                                                                                          |
+| 重复治理   | 一键清理重复标签（每个网址保留最近访问 / 激活 / 固定 / 位置靠前的一个；固定标签与固定空间内的条目豁免，可撤销）                                                                                                                                                                                                                                                         |
 | 安全网     | 多层撤销栈（栈深 10，可恢复关闭的标签与分组）；撤销历史面板（任意批次恢复 + 浏览器最近关闭）；经本产品执行的关闭路径可撤销，恢复失败的条目保留在历史中可重试                                                                                                                                                                                                            |
 | 会话快照   | 命名保存当前窗口 / 归档当前窗口（留档并关闭）/ 保存固定空间 / OneTab 文本导入 / Workona 迁移器（导出 JSON 一键转快照族：普通/归档工作区、resources 站点收藏并入、仅 http(s)、1MB 上限）；关窗自动快照（默认开启，滚动保留）；恢复仅新建缺失标签并还原固定/静音/分组；恢复前 diff 预览（将新建 / 已存在 / 跳过三分类与计数摘要，可勾选部分条目选择性恢复）；快照本地周报 |
 | 习惯洞察   | 标签习惯洞察（快照周报内嵌，纯本地计算零上报）：重复重灾区按站点聚合（www 归一化）、休眠候选（排除激活/固定/播放/绑定）、7 天滞留预警；三类洞察一键直达清理重复/一键休眠/归档窗口既有动作                                                                                                                                                                               |
 | 休眠与资源 | 手动 / 批量 / 自动休眠（自动休眠可撤销、支持域名白名单）；一键唤醒全部                                                                                                                                                                                                                                                                                                  |
-| 数据       | 完整备份导出导入（固定空间 + 设置 + 全部快照与归档，导入为事务、失败整体回滚；单一备份格式，格式不符即拒绝）；文件夹、常驻磁贴与设置经浏览器账号通道镜像同步（**默认关闭**，跨设备首启自动恢复）                                                                                                                                                                                                |
+| 数据       | 完整备份导出导入（固定空间 + 设置 + 全部快照与归档，导入为事务、失败整体回滚；单一备份格式，格式不符即拒绝）；文件夹、常驻磁贴与设置经浏览器账号通道镜像同步（**默认关闭**，跨设备首启自动恢复）                                                                                                                                                                        |
 | 平台       | 侧边栏主形态 + 弹窗快速切换器降级形态；中/英双语；主题三态（跟随系统/亮/暗）；自制弹窗组件；快捷键帮助面板（含浏览器设置跳转）                                                                                                                                                                                                                                          |
 | 信任       | 信任面板（关于页）：12 项权限逐条用途说明、数据存放位置说明、DevTools 零网络请求自验证教程——把「零网络」从文档承诺变成可见功能                                                                                                                                                                                                                                          |
 
-> 注：本版（v1.0，未封板、未对外发布）包含时间线搜索、快照恢复预览与选择性恢复、信任面板、工作空间切换入口（P-04）、习惯洞察（P-05）、Workona 迁移器（P-09），均属免费核心、零新权限、零上报。兼容变体的构建管道已建成，随 V2.0 交付。
+> 注：本版（v1.0，未封板、未对外发布）包含时间线搜索、快照恢复预览与选择性恢复、信任面板、工作空间切换入口（P-04）、习惯洞察（P-05）、Workona 迁移器（P-09），均属免费核心、零新权限、零上报。本产品尚未发布正式版，代码内不保留任何版本兼容 / 迁移逻辑（备份格式单一、无跨版本解析、无设置迁移）。
 
 ---
 
@@ -86,10 +90,12 @@ Tabs 采用分层架构：**领域逻辑（core）零 chrome/DOM 依赖，是唯
 ```
 src/
 ├── entrypoints/        # 形态入口（薄壳）
-│   ├── background.ts    # SW：重复标签复用引擎 + commands 分发 + 消息端点
+│   ├── background.ts    # SW：事件编排 + commands 分发 + 消息端点
+│   ├── background/      # SW 子模块（复用引擎调度 / 自动休眠 / 自动快照 / 右键菜单 / 地址栏 / 角标 / 禁缓存 / 窗口缓存）
 │   ├── sidepanel/       # 侧边栏主形态
-│   ├── popup/           # 弹窗快速切换器（降级形态）
-│   └── options/         # 设置 / 本地数据导入导出
+│   ├── popup/           # 弹窗快速切换器（当前产物未绑定 default_popup，入口保留）
+│   ├── options/         # 设置 / 本地数据导入导出
+│   └── about/           # 关于与信任面板
 ├── core/               # 纯领域逻辑（零 chrome/DOM 依赖，单测主战场）
 │   ├── url/             # UrlInspector：URL 规约 + 分类（全应用 URL 判定唯一事实来源）
 │   ├── dup/             # DuplicateIndex + KeeperPolicy：重复组索引与 keeper 策略
@@ -98,8 +104,13 @@ src/
 │   ├── group/           # AutoGrouping：自动分组计划（纯决策）
 │   ├── commands/        # folderCommands：文件夹纯计算
 │   ├── search/          # SearchEngine：fuzzysort + pinyin-pro 三目标索引
+│   ├── snapshot/        # snapshotDiff：快照恢复前 diff 预览
 │   ├── undo/            # UndoStack：操作记录制 + 栈深淘汰
+│   ├── insights/        # tabInsights：习惯洞察 + workonaImport：Workona 迁移解析
+│   ├── nocache/         # noCachePattern：禁缓存站点规则归一化
+│   ├── theme/           # colorThemes：主题标识
 │   ├── util/            # structuralSignature 等通用工具
+│   ├── tab-types.ts     # TabRecord / TabGroupRecord 等领域类型
 │   └── schema/          # zod schema 族 + 导出文件格式
 ├── platform/           # chrome 适配层（唯一触碰 chrome.* 的层）
 │   ├── tabs.ts          # 标签查询 / 事件聚合 / 操作
@@ -107,12 +118,16 @@ src/
 │   ├── sync/            # TabSyncService：事件→快照节流调度
 │   ├── storage/         # DataRepository：zod 校验读写 + 坏数据隔离 + 变更订阅
 │   ├── snapshot/        # 快照构建 / 裁剪 / 持久化 / 恢复 / OneTab 解析
-│   ├── theme/           # ThemeApplier：主题三态落地
 │   ├── undo/            # RestoreEngine：撤销恢复管线
+│   ├── group/           # 原生标签组适配
+│   ├── nocache/         # declarativeNetRequest 动态规则
+│   ├── theme/           # ThemeApplier：主题三态落地
+│   ├── bookmarks.ts / sessions.ts / sidePanel.ts / navigation.ts / permissions.ts
+│   ├── diagnostics.ts   # 降级诊断（环形缓冲 + 脱敏，供设置页导出）
 │   ├── messages.ts      # 类型安全消息协议（zod）
-│   └── capabilities.ts  # 形态能力检测
-├── stores/             # zustand store 族（tab / undo / data / snapshot）
-├── ui/                 # React 组件库（common / tabs / fixed / search / dialog）
+│   └── registry.ts      # 组合根：仓库实例装配
+├── stores/             # zustand store 族（dataStore / tabStore / undoStore / snapshotStore + data/ 切片）
+├── ui/                 # React 组件库（common / tabs / fixed / search / dialog / dnd）
 ├── i18n/               # UI 文案（react-i18next）
 ├── theme-init.ts       # 头部同步主题，避免闪烁
 └── styles/             # Tailwind + CSS 变量
@@ -140,7 +155,7 @@ src/
 | 命令                                                             | 作用                                                                              |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                                         |
-| `pnpm build` / `pnpm build:compat`                               | 生产构建（标准版 / 兼容版）                                                       |
+| `pnpm build`                                                     | 生产构建                                                                          |
 | `pnpm zip`                                                       | 打包为上架用 ZIP                                                                  |
 | `pnpm crx`                                                       | 打包离线分发用 CRX3（复用 `.output/tabs.pem` 签名；上架仍用 zip）                 |
 | `pnpm check`                                                     | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
@@ -178,12 +193,15 @@ Tabs 采用 [MIT 许可证](./LICENSE) 开源。
 
 产品与设计类文档统一放在 `docs/`：
 
-| 文档                                                                     | 用途                                                          |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| [`docs/product-requirements.md`](./docs/product-requirements.md)         | PRD：需求状态、验收标准与待办清单（BR-01…BR-18）              |
-| [`docs/product-design.md`](./docs/product-design.md)                     | As-Is 现状规格化描述（当前代码已实现成什么样）                |
-| [`docs/product-design-analysis.md`](./docs/product-design-analysis.md)   | 设计分析：优势、缺陷清单与优先级排序                          |
-| [`docs/product-improvement-plan.md`](./docs/product-improvement-plan.md) | 优化与修复计划：逐项实施方案、验收清单与排期（FIX-01…FIX-18） |
+| 文档                                                                       | 用途                                                                     |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)                                 | **上架唯一来源**：商店文案、每项权限理由、隐私披露、版本历史、发布前自查 |
+| [`docs/chrome-mv3-audit.md`](./docs/chrome-mv3-audit.md)                   | Chrome MV3 合规审计：缺陷清单（file:line + 优先级 + 人日）与已核验项     |
+| [`docs/chrome-capability-roadmap.md`](./docs/chrome-capability-roadmap.md) | Chrome API 新能力落地评估：可做 / 待拍板 / 不做三类                      |
+| [`docs/product-requirements.md`](./docs/product-requirements.md)           | PRD：需求状态、验收标准与待办清单（BR-01…BR-18）                         |
+| [`docs/product-design.md`](./docs/product-design.md)                       | As-Is 现状规格化描述（当前代码已实现成什么样）                           |
+| [`docs/product-design-analysis.md`](./docs/product-design-analysis.md)     | 设计分析：优势、缺陷清单与优先级排序                                     |
+| [`docs/product-improvement-plan.md`](./docs/product-improvement-plan.md)   | 优化与修复计划：逐项实施方案、验收清单与排期（FIX-01…FIX-18）            |
 
 隐私边界以根目录 [PRIVACY.md](./PRIVACY.md) 为唯一对外口径，开发约定见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 

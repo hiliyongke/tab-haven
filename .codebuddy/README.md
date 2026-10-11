@@ -25,7 +25,8 @@
 │   ├── schema-evolution/SKILL.md      # 持久化数据变更五步流程
 │   ├── quality-gates/SKILL.md         # 各门禁失败的定位与修法
 │   ├── ui-component/SKILL.md          # 组件复用清单与新组件规范（防重复造轮子）
-│   └── change-recipes/SKILL.md        # 高频变更任务文件地图（设置项/快捷键/菜单/manifest/入口）
+│   ├── change-recipes/SKILL.md        # 高频变更任务文件地图（设置项/快捷键/菜单/manifest/入口）
+│   └── chrome-extensions/SKILL.md     # Chrome 官方 MV3 扩展技能（含 references/，见下方「外部引入技能」）
 ├── commands/                 # 自定义斜杠命令（文件名即命令名）
 │   ├── feature.md      # /feature <需求>     —— 新功能全流程串联（开发主入口）
 │   ├── spec.md         # /spec <需求>        —— 需求分析与实施计划
@@ -77,6 +78,7 @@
                               ├─ skill: ui-component（组件复用清单，写 UI 前必查）
                               ├─ skill: schema-evolution（改持久化数据时）
                               ├─ skill: wxt-dev-workflow（起 dev/构建/变体）
+                              ├─ skill: chrome-extensions（MV3 API 惯用法/坑、上架材料）
                               └─ rules: testing（写测试时加载）
 测试  /test ────────────────► test-engineer + skill: behavior-spec-testing
 评审  /review ──────────────► code-reviewer（四维度，file:line 清单）
@@ -96,17 +98,17 @@
 
 ## 全流程覆盖矩阵
 
-| 阶段             | 入口                  | 主要模块                                                                           | 质量保障                                              |
-| ---------------- | --------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| 功能交付（主线） | `/feature`            | 串联下列全部模块                                                                   | 计划确认制；五阶段流水线                              |
-| 需求分析         | `/spec`               | requirements-analyst、architecture/privacy-security 规则                           | 宪法冲突前置拦截；影响面点名 schema/权限/文案三类流程 |
-| 编码             | 自然语言 / 手动 @规则 | 4 条 always 规则、change-recipes、ui-component、schema-evolution、wxt-dev-workflow | 分层红线 + 最小改动 + 复用优先                        |
-| 测试             | `/test`               | test-engineer、testing 规则、behavior-spec-testing                                 | 覆盖率 ratchet；fake-browser 偏差声明                 |
-| 评审             | `/review`             | code-reviewer                                                                      | Blocker 分级；全称判断先核验                          |
-| 门禁             | `/check`              | quality-gates                                                                      | 禁改配置绕过门禁                                      |
-| 合规             | `/privacy-audit`      | privacy-auditor                                                                    | 逐项证据化核验                                        |
-| 提交             | `/commit`             | git-commit 规则                                                                    | 草稿确认制；AI 无 git 写权限                          |
-| 发布             | `/release`            | quality-gates、privacy-auditor、wxt-dev-workflow                                   | 审计通过才打包；不 tag 不上传                         |
+| 阶段             | 入口                  | 主要模块                                                                                              | 质量保障                                              |
+| ---------------- | --------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 功能交付（主线） | `/feature`            | 串联下列全部模块                                                                                      | 计划确认制；五阶段流水线                              |
+| 需求分析         | `/spec`               | requirements-analyst、architecture/privacy-security 规则                                              | 宪法冲突前置拦截；影响面点名 schema/权限/文案三类流程 |
+| 编码             | 自然语言 / 手动 @规则 | 4 条 always 规则、change-recipes、ui-component、schema-evolution、wxt-dev-workflow、chrome-extensions | 分层红线 + 最小改动 + 复用优先                        |
+| 测试             | `/test`               | test-engineer、testing 规则、behavior-spec-testing                                                    | 覆盖率 ratchet；fake-browser 偏差声明                 |
+| 评审             | `/review`             | code-reviewer                                                                                         | Blocker 分级；全称判断先核验                          |
+| 门禁             | `/check`              | quality-gates                                                                                         | 禁改配置绕过门禁                                      |
+| 合规             | `/privacy-audit`      | privacy-auditor                                                                                       | 逐项证据化核验                                        |
+| 提交             | `/commit`             | git-commit 规则                                                                                       | 草稿确认制；AI 无 git 写权限                          |
+| 发布             | `/release`            | quality-gates、privacy-auditor、wxt-dev-workflow                                                      | 审计通过才打包；不 tag 不上传                         |
 
 ## 扩展指南（新增配置怎么做）
 
@@ -115,6 +117,16 @@
 - **加 Skill**：`skills/<名>/SKILL.md`，指令性语言写步骤；长文档放 `references/`，脚本放 `scripts/`，模板放 `assets/`。
 - **加 Command**：`commands/<名>.md`（文件名即命令名），正文是提示词模板，参数用 `$ARGUMENTS`/`$1`；同类命令多时用子目录命名空间。
 - **通用原则**：新内容优先挂到既有模块（如在既有规则里加一节），避免碎片化；与既有文件重复的信息改为互相引用。
+
+## 外部引入技能：`chrome-extensions`
+
+| 项             | 说明                                                                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 来源           | `GoogleChrome/modern-web-guidance-src` 仓库的 `skills-src/chrome-extensions`（Chrome 官方，与 `npx modern-web-guidance` CLI 同源）                         |
+| 内容           | `SKILL.md`（20 条 MV3 强制规则 + 上架流程）+ `references/extensions/*.md`（19 篇 API 专题）+ `references/webstore/*.md`（4 篇上架材料）                    |
+| 本地适配       | frontmatter 改为本项目格式（补 `allowed-tools`、`disable`，description 中文化）；正文顶部追加「Tabs 项目适配约束」一节，声明项目红线优先于通用建议         |
+| 更新方式       | 重新 clone 上游仓库覆盖 `SKILL.md` 与 `references/`，**必须保留**本地追加的「Tabs 项目适配约束」节与 frontmatter 改动（上游不含这两处）                    |
+| 与自研技能边界 | `wxt-dev-workflow` 管本仓库的构建/变体/产物，`chrome-extensions` 管通用 MV3 API 惯用法与上架材料；二者冲突时以 `wxt-dev-workflow` 为准（更贴近本仓库实测） |
 
 ## 维护约定
 

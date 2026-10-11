@@ -18,7 +18,7 @@ import {
 } from '@/platform/storage/repositories';
 import { UNDO_PERSIST_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
-import { queryWindowTabs, resolveRestoreWindowId } from '@/platform/tabs';
+import { queryWindowGroups, queryWindowTabs, resolveRestoreWindowId } from '@/platform/tabs';
 import { logFailure } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -204,8 +204,13 @@ function enqueueUndoPersist(
       if (!ok) logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
     });
   });
-  undoPersistChain = step.catch((error) => logFailure('undoStore', '撤销历史写入失败', error));
-  return step;
+  // 必须把「已兜底的 promise」同时作为链与返回值：只把 step 接进链而返回 step，
+  // 调用方拿到的是会 reject 的那一个（锁请求在上下文销毁时以 AbortError reject，
+  // 撤销恢复期间关闭面板即触发）。后果是 load() 的 `ready` 永远停在 false，
+  // 此后每次 appendBatch 都重跑一次必然失败的 load —— 撤销栈整体失效。
+  const guarded = step.catch((error) => logFailure('undoStore', '撤销历史写入失败', error));
+  undoPersistChain = guarded;
+  return guarded;
 }
 
 /**
@@ -233,8 +238,10 @@ function enqueueRedoPersist(
       if (!ok) logFailure('undoStore', '重做栈写入失败，本次重做状态可能未持久化');
     });
   });
-  redoPersistChain = step.catch((error) => logFailure('undoStore', '重做栈写入失败', error));
-  return step;
+  // 同 enqueueUndoPersist：返回已兜底的 promise，写盘失败不阻断调用方业务链。
+  const guarded = step.catch((error) => logFailure('undoStore', '重做栈写入失败', error));
+  redoPersistChain = guarded;
+  return guarded;
 }
 
 export const useUndoStore = create<UndoState>()((set, get) => {
@@ -308,9 +315,10 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     }
 
     // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
-    const groupNameById = new Map(
-      useTabStore.getState().groups.map((group) => [group.id, group.title])
-    );
+    // 组表同样要按**目标窗口**取：tabStore 只持有当前窗口的组，跨窗口撤销时
+    // 用它匹配会全漏，恢复后标签还在、原生分组却丢了。
+    const groups = await queryWindowGroups(windowId).catch(() => useTabStore.getState().groups);
+    const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
     const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
     const closed = targets.filter((tab) => closedIds.includes(tab.id));
     if (closed.length === 0) {
@@ -695,7 +703,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
           }
 
           // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
-          const groups = useTabStore.getState().groups;
+          // 与 closeRestoredBatch 同口径：按重做目标窗口取组表，不能用当前窗口的。
+          const groups =
+            redoWindowId === undefined
+              ? useTabStore.getState().groups
+              : await queryWindowGroups(redoWindowId).catch(() => useTabStore.getState().groups);
           const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
           const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
           const closed = targets.filter((tab) => closedIds.includes(tab.id));

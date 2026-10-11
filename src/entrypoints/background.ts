@@ -13,38 +13,40 @@ import {
 } from '@/platform/storage/repositories';
 import { initHeadlessI18n, t } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
-import { MessageSchema, sendMessage } from '@/platform/messages';
+import { MessageSchema, REUSE_CLOSED_LIMIT, sendMessage } from '@/platform/messages';
 import { PINS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import {
   cachedSettings,
   syncCachedSettings,
   queueAction,
   openSidePanel,
+  runPanelSearch,
   hostnameOf,
   notifyUser
-} from './background/shared';
+} from '@/platform/background/shared';
 import {
   MENU_IDS,
   rebuildContextMenus,
   clearContextMenus,
   addEntryToFolder,
   discardTabSafely,
-  setupMenus
-} from './background/contextMenus';
+  setupMenus,
+  type AddEntryResult
+} from '@/platform/background/contextMenus';
 import {
   runAutoDiscard,
   discardInactiveTabs,
   syncAutoDiscardAlarm
-} from './background/autoDiscard';
+} from '@/platform/background/autoDiscard';
 import {
   AUTO_SNAPSHOT_ALARM,
   runAutoSnapshot,
   syncAutoSnapshotAlarm
-} from './background/autoSnapshot';
-import { refreshBadgeSoon } from './background/badge';
-import { runActionClickRegroup } from './background/actionRegroup';
-import { setupNoCache } from './background/noCache';
-import { queryOmnibox, handleOmniboxEnter } from './background/omnibox';
+} from '@/platform/background/autoSnapshot';
+import { refreshBadgeSoon, showBadgeOverride } from '@/platform/background/badge';
+import { runActionClickRegroup } from '@/platform/background/actionRegroup';
+import { setupNoCache } from '@/platform/background/noCache';
+import { queryOmnibox, handleOmniboxEnter } from '@/platform/background/omnibox';
 import {
   scheduleWindowRefresh,
   initWindowTabsCache,
@@ -53,7 +55,7 @@ import {
   refreshWindowTabs,
   recordActiveTab,
   getLastActiveTabId
-} from './background/windowCache';
+} from '@/platform/background/windowCache';
 
 export default defineBackground(() => {
   /**
@@ -97,11 +99,19 @@ export default defineBackground(() => {
           // 会拿旧 id 直接入组，而该 id 可能已被浏览器复用为无关组。
           const groups = await browser.tabGroups.query({ windowId }).catch(() => []);
           const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
-          sendMessage({
-            type: 'reuse-closed',
-            windowId,
-            tabs: closed.map((tab) => toUndoTabRecord(tab, groupNameById))
-          });
+          const records = closed.map((tab) => toUndoTabRecord(tab, groupNameById));
+          // 协议层对单条消息的标签数有上限（防无界传输面）。原样发送超限数据会让
+          // 整条消息被 schema 拒绝并静默丢弃 —— 这一批关闭就此彻底无法登记撤销，
+          // 而同网址唯一化是默认开启的能力。超限按上限截断并留痕，宁可少记几条
+          // 也不能让整批失去撤销出口。
+          const tabs = records.slice(0, REUSE_CLOSED_LIMIT);
+          if (records.length > tabs.length) {
+            logDegraded(
+              'background',
+              `同网址合并一次关闭 ${records.length} 条，超出单条回执上限，已截断为 ${tabs.length} 条`
+            );
+          }
+          sendMessage({ type: 'reuse-closed', windowId, tabs });
         })();
       }
     },
@@ -243,17 +253,17 @@ export default defineBackground(() => {
   // 需显式结算旧任务并把新标签纳入追踪，否则窗口标签缓存与复用追踪短暂失真。
   browser.tabs.onReplaced?.addListener((addedTabId, removedTabId) => {
     coordinator.handleRemoved(removedTabId);
-    browser.tabs
-      .get(addedTabId)
-      .then((tab) => {
+    void (async () => {
+      try {
+        const tab = await browser.tabs.get(addedTabId);
         coordinator.handleCreated(mapTab(tab));
         if (typeof tab.windowId === 'number') scheduleWindowRefresh(tab.windowId);
-      })
-      .catch((error) => {
+      } catch (error) {
         // 标签在置换后瞬间又被关闭时 get 失败：留痕即可，复用追踪缺口是
         // 一次性漏判，不必当成故障处理。
         logDegraded('background', `onReplaced：获取新标签 ${addedTabId} 失败`, error);
-      });
+      }
+    })();
     refreshBadgeSoon();
   });
 
@@ -375,6 +385,18 @@ export default defineBackground(() => {
     refreshBadgeSoon();
   });
 
+  /**
+   * 右键「加入文件夹」的结果反馈。
+   *
+   * 成功也必须反馈（MV3 上下文菜单动作必须有用户可感知的确认）：此前只有失败
+   * 才通知，用户点完不知道到底存没存。三态各发一条，避免「写入失败」被统一
+   * 说成「已在文件夹中」这种与事实相反的表述。
+   */
+  const notifyAddToFolderResult = (result: AddEntryResult): void => {
+    if (result === 'failed') return; // 失败通知已由 addEntryToFolder 内部发出
+    notifyUser('Tabs', t(result === 'added' ? 'bg.addToFolderDone' : 'bg.alreadyInFolder'));
+  };
+
   browser.contextMenus?.onClicked.addListener((info, tab) => {
     const id = info.menuItemId as string;
     if (id.startsWith('th:page:add-folder:') || id.startsWith('th:link:add-folder:')) {
@@ -385,18 +407,14 @@ export default defineBackground(() => {
           void addEntryToFolder(folderId, {
             url: info.linkUrl,
             title: info.selectionText || info.linkUrl
-          }).then((added) => {
-            if (!added) notifyUser('Tabs', t('bg.alreadyInFolder'));
-          });
+          }).then((result) => notifyAddToFolderResult(result));
         }
       } else if (tab?.url) {
         void addEntryToFolder(folderId, {
           url: tab.url,
           title: tab.title || tab.url,
           favIconUrl: tab.favIconUrl
-        }).then((added) => {
-          if (!added) notifyUser('Tabs', t('bg.alreadyInFolder'));
-        });
+        }).then((result) => notifyAddToFolderResult(result));
       }
       return;
     }
@@ -423,15 +441,19 @@ export default defineBackground(() => {
             void (async () => {
               // 跨页锁内重读再合并：与面板 coalesced 写共用 PINS_RMW_LOCK，
               // 避免末值落盘覆盖右键新增的固定图标。
+              let pinned = false;
               await withCrossPageLock(PINS_RMW_LOCK, async () => {
                 const pins = await pinsRepository.read();
-                await pinsRepository.write(
+                pinned = await pinsRepository.write(
                   dedupePins([...pins.filter((p) => p.identity !== pin.identity), pin])
                 );
               });
-              if (!targetTab.pinned && targetTab.id !== undefined) {
+              if (pinned && !targetTab.pinned && targetTab.id !== undefined) {
                 await browser.tabs.update(targetTab.id, { pinned: true }).catch(() => {});
               }
+              // 成功也要有反馈：此前只有失败才通知，用户点「固定」后无法确认是否生效。
+              // 与 addEntryToFolder 同口径：按 write 的真实结果反馈，不假设成功。
+              notifyUser('Tabs', t(pinned ? 'bg.pinDone' : 'bg.pinFailed'));
             })();
           }
         }
@@ -440,7 +462,13 @@ export default defineBackground(() => {
       case MENU_IDS.pageSearchSite:
       case MENU_IDS.tabSearchSite: {
         const host = hostnameOf(targetTab?.url);
-        if (host) void queueAction({ type: 'search-domain', query: host.replace(/^www\./, '') });
+        // 与地址栏搜索共用「先开面板再入队」路径：只入队时面板未打开，动作
+        // 仅落 session 队列，用户点了菜单却看不到任何反应。
+        if (host) {
+          void runPanelSearch(host.replace(/^www\./, '')).catch((error) =>
+            logDegraded('background', '右键按域名搜索失败', error)
+          );
+        }
         break;
       }
       case MENU_IDS.actionOpenPanel:
@@ -465,12 +493,23 @@ export default defineBackground(() => {
     }
     if (omniboxSuggestTimer) clearTimeout(omniboxSuggestTimer);
     omniboxSuggestTimer = setTimeout(() => {
-      void queryOmnibox(text).then((results) => suggest(results));
+      // 必须兜底：queryOmnibox reject 时若不调用 suggest，地址栏会永久停在
+      // 「等待建议」的状态，同时留下一条无处可见的未捕获 rejection。
+      void (async () => {
+        try {
+          suggest(await queryOmnibox(text));
+        } catch (error) {
+          logDegraded('background', '地址栏建议生成失败', error);
+          suggest([]);
+        }
+      })();
     }, 120);
   });
   browser.omnibox?.onInputEntered.addListener((content, disposition) => {
     if (!cachedSettings.omniboxEnabled) return;
-    void handleOmniboxEnter(content, disposition);
+    void handleOmniboxEnter(content, disposition).catch((error) =>
+      logDegraded('background', '地址栏回车处理失败', error)
+    );
   });
   browser.omnibox?.onInputStarted.addListener(() => {
     if (!cachedSettings.omniboxEnabled) return;
@@ -485,18 +524,20 @@ export default defineBackground(() => {
   // regroup 模式：openPanelOnActionClick 为 false 时 Chrome 才会派发 onClicked，
   // 两种点击方式由设置驱动的 behavior 切换实现并存。
   browser.action?.onClicked.addListener(() => {
-    void settingsRepository
-      .read()
-      .then(async (settings) => {
+    void (async () => {
+      try {
+        const settings = await settingsRepository.read();
         if (settings.actionClickMode !== 'regroup') return;
         const count = await runActionClickRegroup();
         if (count <= 0) return;
         // 轻量完成反馈：角标短暂打勾（无文案噪音），随后按设置恢复正常角标。
-        await browser.action.setBadgeText({ text: '✓' });
-        await browser.action.setBadgeBackgroundColor({ color: '#16a34a' });
-        setTimeout(() => refreshBadgeSoon(), 1500);
-      })
-      .catch((error) => logDegraded('background', '工具栏点击处理失败', error));
+        // 走 badge 模块的带到期时间的覆盖态：裸 setTimeout 在 SW 被回收后不会
+        // 触发，角标会永久停在 ✓。
+        showBadgeOverride('✓', '#16a34a', 1500);
+      } catch (error) {
+        logDegraded('background', '工具栏点击处理失败', error);
+      }
+    })();
   });
 
   // 自动休眠：白名单 + 台账 + 通知（alarms 保活调度，MV3 SW 回收后仍可触发）

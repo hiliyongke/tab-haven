@@ -190,7 +190,7 @@ export function buildDragOverlay(data: DragData): ReactNode {
     case DragType.FolderItem:
       return (
         <div className="drag-overlay-chip">
-          <Favicon src={data.favIconUrl} title={data.title || ''} size={16} />
+          <Favicon pageUrl={data.url} title={data.title || ''} size={16} />
           <span className="truncate">{data.title}</span>
         </div>
       );
@@ -204,7 +204,7 @@ export function buildDragOverlay(data: DragData): ReactNode {
     case DragType.Pin:
       return (
         <div className="drag-overlay-chip">
-          <Favicon src={data.favIconUrl} title={data.title || ''} size={16} />
+          <Favicon pageUrl={data.url} title={data.title || ''} size={16} />
         </div>
       );
     case DragType.Folder:

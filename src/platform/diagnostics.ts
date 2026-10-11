@@ -1,12 +1,23 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+import {
+  DIAGNOSTIC_MAX_ENTRIES,
+  clearDiagnosticBuffer,
+  logDegraded,
+  logFailure,
+  readDiagnostics,
+  redactUrlsForTest,
+  setDiagnosticSink,
+  type DiagnosticEntry
+} from '@/platform/log';
 
 /**
- * 降级诊断日志：把静默 catch 收口为可观测记录。
+ * 诊断记录的**落盘与导出**层。
  *
- * 产品无服务端日志可查，本地记录是唯一排查手段。
- * 仅记录技术上下文，不记录标签标题与 URL 等浏览内容。
+ * 分工：日志的产生、脱敏与内存环形缓冲在叶子模块 `@/platform/log`（不依赖任何
+ * platform 模块，故 `crossPageLock` 可以安全地向它留痕而不形成环）；本模块负责
+ * 需要浏览器 API 的部分——跨上下文共享缓冲、全局异常兜底、导出。
  *
  * 存储模型：内存环形缓冲（本上下文即时可读）+ storage.local 共享环形缓冲
  * （跨上下文可读）。MV3 各上下文（background SW / sidepanel / options）模块实例
@@ -14,22 +25,17 @@ import { withCrossPageLock } from '@/platform/storage/crossPageLock';
  * 的故障记录——而那恰是多数 logDegraded 的产生地。落盘经 500ms 去抖与跨页锁，
  * 写放大与并发交错都有界；落盘失败仅保留在内存队列，诊断自身失败不再上报
  * （避免自举循环）。
+ *
+ * 仅记录技术上下文，不记录标签标题与 URL 等浏览内容。
  */
 
-const MAX_ENTRIES = 100;
+export type { DiagnosticEntry };
+export { logDegraded, logFailure, readDiagnostics, redactUrlsForTest };
+
 /** 共享环形缓冲的存储键与 RMW 锁名。 */
 const STORAGE_KEY = 'tabs.diagnostics.v1';
 const DIAG_RMW_LOCK = 'tabs.diagnostics-rmw';
 const PERSIST_DEBOUNCE_MS = 500;
-
-export interface DiagnosticEntry {
-  at: string;
-  /** 降级发生的逻辑域，如 'session' / 'sync-mirror' / 'auto-group'。 */
-  scope: string;
-  message: string;
-  /** 只存 message 不存 stack，避免缓冲体积膨胀。 */
-  detail?: string;
-}
 
 const StoredEntriesSchema = z.array(
   z.object({
@@ -40,73 +46,9 @@ const StoredEntriesSchema = z.array(
   })
 );
 
-const buffer: DiagnosticEntry[] = [];
 /** 本上下文产生、尚未落盘的增量。 */
 let pending: DiagnosticEntry[] = [];
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
-
-/**
- * 日志脱敏（R17 / S-2）。
- *
- * 原实现只匹配 `http(s)://` 开头的串 —— 于是以下三种形式会**原样落盘**：
- *   ① 裸域名 + 路径：`example.com/private/path`
- *   ② 带端口：`localhost:8080/admin`（无点分级，① 的 TLD 规则抓不到）
- *   ③ 含用户信息：`https://user:pass@example.com/`（旧正则只替换 `https://` 之后的
- *      整段，看似命中，但裸写 `user:pass@example.com` 时不带协议头就会漏）
- *
- * 诊断日志的定位是「本地排障」，且本产品无遥测、日志只在用户主动导出时离开设备；
- * 但导出文件常被用户贴到 issue 里求援 —— 脱漏 URL 等于把浏览记录公开出去。
- * 因此宁可**过度脱敏**（把可疑的主机名一并替换为 <url>），也不漏一条。
- */
-const REDACT_PATTERNS: RegExp[] = [
-  // ① 带协议头的完整 URL（含 user:pass@ / 端口 / 查询串）
-  /[a-z][a-z0-9+.-]*:\/\/[^\s'")\]}]+/gi,
-  // ② 裸域名 + 可选端口 + 可选路径：至少一个点分级，避免把普通英文词误判成域名。
-  //    TLD 取 2-24 位字母。
-  /\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,24}(?::\d{1,5})?(?:\/[^\s'")\]}]*)?/gi,
-  // ③ 无点分级的主机名 + 端口（如 `localhost:8080/admin`）。
-  //    ② 要求点分级，抓不到 localhost:8080，故单列。
-  /(?<![.\w-])[a-z0-9-]*[a-z][a-z0-9-]*:\d{1,5}(?:\/[^\s'")\]}]*)?/gi,
-  // ④ 含 @ 的凭据段（兜底）
-  /\b[a-z0-9._%+-]+:[^\s@]+@[^\s'")\]}]+/gi
-];
-
-/**
- * ② 会误伤「文件名:行号」（如 `file.ts:42` —— `ts` 被当成 TLD）。
- * 源码/文档扩展名不会是真实域名的 TLD，故在脱敏前先保护这类 token。
- * 代价：一个真实域名若以这些串结尾且后面紧跟 `:数字`，会漏掉 —— 现实中不成立。
- */
-const FILE_LINE_TOKEN =
-  /\b[\w.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|html|htm|xml|yml|yaml|svg|png|jpg|jpeg|gif|webp|py|rb|go|rs|java|kt|c|h|cpp|sh|txt|csv|log|map|lock):\d+(?::\d+)?\b/gi;
-
-function redactUrls(text: string): string {
-  // 先占位保护文件名:行号，脱敏后还原 —— 比写一条巨型负向断言更易读也更易验证。
-  const protectedTokens: string[] = [];
-  let out = text.replace(FILE_LINE_TOKEN, (m) => {
-    protectedTokens.push(m);
-    return `\uE000${protectedTokens.length - 1}\uE000`;
-  });
-  for (const pattern of REDACT_PATTERNS) out = out.replace(pattern, '<url>');
-  return out.replace(/\uE000(\d+)\uE000/g, (_m, i) => protectedTokens[Number(i)] ?? '');
-}
-
-/** 供行为测试断言脱敏结果（R17 / S-2）。内部函数，不参与产品路径。 */
-export const redactUrlsForTest = redactUrls;
-
-/** 提取错误详情：只取 message（不取 stack，避免缓冲膨胀），并做 URL 脱敏。 */
-function detailOf(error: unknown): string | undefined {
-  const raw =
-    error instanceof Error ? error.message : error === undefined ? undefined : String(error);
-  return raw === undefined ? undefined : redactUrls(raw);
-}
-
-function push(entry: DiagnosticEntry): void {
-  buffer.push(entry);
-  if (buffer.length > MAX_ENTRIES) buffer.splice(0, buffer.length - MAX_ENTRIES);
-  pending.push(entry);
-  if (pending.length > MAX_ENTRIES) pending.splice(0, pending.length - MAX_ENTRIES);
-  schedulePersist();
-}
 
 function schedulePersist(): void {
   if (persistTimer !== undefined) return;
@@ -115,6 +57,15 @@ function schedulePersist(): void {
     void flushDiagnostics();
   }, PERSIST_DEBOUNCE_MS);
 }
+
+// 订阅日志内核：每条新记录并入待写增量并触发去抖落盘。
+setDiagnosticSink((entry) => {
+  pending.push(entry);
+  if (pending.length > DIAGNOSTIC_MAX_ENTRIES) {
+    pending.splice(0, pending.length - DIAGNOSTIC_MAX_ENTRIES);
+  }
+  schedulePersist();
+});
 
 /** 清空代数：clearDiagnostics 每次递增，flush 落盘前据此丢弃已过期批次（清空后旧记录不得复活）。 */
 let clearEpoch = 0;
@@ -137,48 +88,15 @@ async function flushDiagnostics(): Promise<void> {
       const raw = (await area.get(STORAGE_KEY))[STORAGE_KEY];
       const existing = StoredEntriesSchema.safeParse(raw);
       const merged = [...(existing.success ? existing.data : []), ...batch];
-      await area.set({ [STORAGE_KEY]: merged.slice(-MAX_ENTRIES) });
+      await area.set({ [STORAGE_KEY]: merged.slice(-DIAGNOSTIC_MAX_ENTRIES) });
     });
   } catch {
     // 落盘失败回填待写队列（有界），下一条日志会触发下一轮 flush。
     pending.unshift(...batch);
-    if (pending.length > MAX_ENTRIES) pending.splice(0, pending.length - MAX_ENTRIES);
+    if (pending.length > DIAGNOSTIC_MAX_ENTRIES) {
+      pending.splice(0, pending.length - DIAGNOSTIC_MAX_ENTRIES);
+    }
   }
-}
-
-/**
- * 记录一次降级（静默失败）。
- *
- * 用于替代 `catch {}` / `catch { return null }` 这类不可观测的错误处理。
- * 调用点语义：主流程可以继续，但本次操作未产生预期效果。
- *
- * `quiet`：预期内竞态（如「组在查询与写入之间被解散」）置 true。
- * Chrome 扩展管理页的「错误」面板会记录扩展上下文的 warning 与 error 级
- * console 输出（官方行为），预期内竞态刷在那里只会淹没真实故障——用户看到
- * 的是一屏「报错」，而这些记录本来只该出现在诊断导出里。
- * quiet 仍然进诊断环形缓冲（可导出排查），只是输出降为 debug 级。
- */
-export function logDegraded(
-  scope: string,
-  message: string,
-  error?: unknown,
-  options?: { quiet?: boolean }
-): void {
-  push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
-  const line = `[Tabs][${scope}] ${message}`;
-  if (options?.quiet) console.debug(line, error ?? '');
-  else console.warn(line, error ?? '');
-}
-
-/** 记录一次真实失败（操作未达成且无法自动恢复）。 */
-export function logFailure(scope: string, message: string, error?: unknown): void {
-  push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
-  console.error(`[Tabs][${scope}] ${message}`, error ?? '');
-}
-
-/** 本上下文内存快照（按时间升序）。跨上下文全量请用 readAllDiagnostics。 */
-export function readDiagnostics(): DiagnosticEntry[] {
-  return [...buffer];
 }
 
 /**
@@ -259,7 +177,7 @@ export async function clearDiagnostics(): Promise<void> {
   // 先递增代数：在途 flush 落盘前发现代数落后即丢弃批次，
   // 否则已拿到旧 batch、正等在锁上的 flush 会在 remove 之后写回旧记录。
   clearEpoch += 1;
-  buffer.length = 0;
+  clearDiagnosticBuffer();
   pending = [];
   if (persistTimer !== undefined) {
     clearTimeout(persistTimer);

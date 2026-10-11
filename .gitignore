@@ -43,9 +43,12 @@ Thumbs.db
 
 # ---------- 助手工作区 ----------
 # .codebuddy 下的 rules/agents/skills/commands/README 是团队共享的 AI 工作流规范，随库跟踪；
-# 仅忽略本机私有产物（跨会话记忆、插件市场缓存）：
+# 仅忽略本机私有产物（跨会话记忆、插件市场缓存、并行 Agent 团队的运行时状态）：
 .codebuddy/memory/
 .codebuddy/marketplace/
 .codebuddy/plan/
 .codebuddy/plans/
+# teams/ 是并行 Agent 团队的会话运行时状态（team-lead / 成员 agent 的 JSON），
+# 每次派单都会重写、且只对本机会话有意义，随库跟踪只会污染 diff。
+.codebuddy/teams/
 .workbuddy

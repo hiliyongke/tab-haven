@@ -125,7 +125,7 @@ export async function restoreTabRecordsDetailed(
         if (!record.pinned && record.groupId !== NO_GROUP) {
           // 旧 groupId 在浏览器重启后可能已被复用为无关组：入组前校验组标题，
           // 与记录不符即视为原组已失效，走按名重建——否则标签会误入他组。
-          // （旧批次无 groupName 时无从校验，保持原样直接尝试入组。）
+          // （批次未记录 groupName 时无从校验，保持原样直接尝试入组。）
           let reuseGroupId = true;
           if (record.groupName) {
             try {

@@ -10,7 +10,7 @@ import { logDegraded } from '@/platform/diagnostics';
 
 const WINDOW_TABS_KEY = 'tabs.window-tabs.v1';
 type WindowTabsCache = Record<string, SnapshotTab[]>;
-/** 缓存内容 schema：session 中的脏条目（异常写入/旧版本残留）必须被隔离丢弃，
+/** 缓存内容 schema：session 中的脏条目（异常写入）必须被隔离丢弃，
  * 否则整条关窗快照在 persistSnapshot 的 zod 校验处整体写盘失败。 */
 const WindowTabsCacheSchema = z.record(z.string(), z.array(SnapshotTabSchema));
 let memWindowTabs: WindowTabsCache = {};
@@ -71,8 +71,13 @@ export function markSkipAutoSave(windowId: number): Promise<void> {
       // session 不可用时内存标记仍在：SW 不回收则语义不变
     }
   });
-  skipMarkerChain = step;
-  return step;
+  // 双保险：链上任何一次 reject 都会让此后每个 markSkipAutoSave 不再 resolve，
+  // 而归档流程正等着它的 sendResponse —— 表现为每次归档都挂满 ack 超时才降级。
+  // 与 platform/storage/session.ts 的串行链同口径。
+  skipMarkerChain = step.catch((error: unknown) => {
+    logDegraded('window-cache', '跳过自动保存标记写入失败', error);
+  });
+  return skipMarkerChain;
 }
 
 /** 消费「跳过自动保存」标记（内存优先，session 镜像兜底）；仅未过期才命中。 */
@@ -103,10 +108,36 @@ async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
  * 「新建标签位置 = 激活标签之后」的定位锚点：onCreated 时新标签已被 Chrome
  * 激活，直接 query active 只会查到它自己，必须用激活前的记录。
  */
-/** 已关闭窗口集合：在途 refresh 完成时窗口若已关闭，缓存写回会复活幽灵键。 */
-const removedWindowIds = new Set<number>();
+/**
+ * 已关闭窗口集合（值为标记到期时间）：在途 refresh 完成时窗口若已关闭，
+ * 缓存写回会复活幽灵键。
+ *
+ * 采用「到期时间 + 读时惰性清理」而非定时器删除：SW 被回收时裸 setTimeout 会被
+ * 吞掉，集合会在 SW 存活期内随每次关窗单调增长。
+ */
+const removedWindowIds = new Map<number, number>();
 /** 已关闭窗口标记的保留时长（覆盖在途 refresh 的防抖 + 查询往返，之后即失效）。 */
 const REMOVED_MARK_TTL_MS = 5_000;
+
+/** 标记窗口已关闭（顺手清理已过期的历史标记）。 */
+function markWindowRemoved(windowId: number): void {
+  const now = Date.now();
+  for (const [id, at] of removedWindowIds) {
+    if (now > at) removedWindowIds.delete(id);
+  }
+  removedWindowIds.set(windowId, now + REMOVED_MARK_TTL_MS);
+}
+
+/** 窗口是否刚被关闭（标记过期即失效并移除）。 */
+function isWindowRemoved(windowId: number): boolean {
+  const at = removedWindowIds.get(windowId);
+  if (at === undefined) return false;
+  if (Date.now() > at) {
+    removedWindowIds.delete(windowId);
+    return false;
+  }
+  return true;
+}
 
 const lastActiveTabIds = new Map<number, number>();
 
@@ -163,7 +194,7 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
     ]);
     // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会
     // 以空数组/残余数据复活已清理的键（驻留到浏览器重启）。丢弃即可。
-    if (removedWindowIds.has(windowId)) return;
+    if (isWindowRemoved(windowId)) return;
     const list = collectTabs(rawTabs, rawGroups.map(mapTabGroup));
     memWindowTabs[String(windowId)] = list;
     // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置 =
@@ -235,12 +266,8 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
     clearTimeout(pendingTimer);
     windowRefreshTimers.delete(windowId);
   }
-  // 标记窗口已关闭：在途 refresh 完成后据此丢弃结果（防幽灵键复活）。
-  removedWindowIds.add(windowId);
-  // 标记只需覆盖「在途 refresh 收敛」的窗口（刷新防抖 250ms + 查询往返），
-  // 之后即无意义；不清理会让集合在 SW 存活期内随每次关窗单调增长。
-  // 裸 setTimeout：SW 上下文没有 window（同文件其余定时器一致）。
-  setTimeout(() => removedWindowIds.delete(windowId), REMOVED_MARK_TTL_MS);
+  // 标记窗口已关闭：在途 refresh 完成后据此丢弃结果（防幽灵键复活，标记带 TTL）。
+  markWindowRemoved(windowId);
   lastActiveTabIds.delete(windowId);
   const idKey = String(windowId);
   let tabs = memWindowTabs[idKey];

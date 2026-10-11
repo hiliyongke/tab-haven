@@ -25,7 +25,8 @@ interface TabDragData {
    */
   canReorder: boolean;
   title: string;
-  favIconUrl?: string;
+  /** 图标所属页面地址（不是图标地址）：拖拽跟随层用它向浏览器 favicon 通道取图。 */
+  url?: string;
 }
 
 export interface SectionDragData {
@@ -44,7 +45,8 @@ interface PinDragData {
   /** 浏览器原生标签 id（SectionList 内浏览器置顶场景）。 */
   tabId?: number;
   title: string;
-  favIconUrl?: string;
+  /** 图标所属页面地址（不是图标地址）。 */
+  url?: string;
 }
 
 interface FolderDragData {
@@ -58,7 +60,8 @@ interface FolderItemDragData {
   folderId: string;
   itemId: string;
   title: string;
-  favIconUrl?: string;
+  /** 图标所属页面地址（不是图标地址）。 */
+  url?: string;
 }
 
 export type DragData =

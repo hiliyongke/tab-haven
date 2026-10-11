@@ -4,10 +4,7 @@ import type { TabRecord } from '@/core/tab-types';
 import { hostnameOf } from '@/core/url/UrlInspector';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
-import type {
-  OtherWindow,
-  OtherWindowsStatus
-} from '@/entrypoints/sidepanel/hooks/useOtherWindows';
+import type { OtherWindow, OtherWindowsStatus } from '@/ui/tabs/useOtherWindows';
 
 /**
  * 其他窗口分段（A4）：主体列表之下的只读浏览 + 聚焦/关闭。
@@ -133,7 +130,7 @@ export function OtherWindowsSection({
               </p>
               {tabs.map((tab) => (
                 <div key={tab.id} className="flex min-w-0 items-center gap-1.5 px-2.5 py-1">
-                  <Favicon src={tab.favIconUrl} title={tab.title || tab.url || ''} />
+                  <Favicon pageUrl={tab.url} title={tab.title || tab.url || ''} />
                   <button
                     type="button"
                     className="min-w-0 flex-1 truncate text-left text-3xs text-gray-700 hover:text-accent-700"

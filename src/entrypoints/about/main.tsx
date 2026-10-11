@@ -6,7 +6,7 @@ import { AboutPage } from '@/entrypoints/about/AboutPage';
 import { useDataStore } from '@/stores/dataStore';
 import { ErrorBoundary } from '@/ui/common/ErrorBoundary';
 import { SettingsSync } from '@/ui/common/SettingsSync';
-import { LoadErrorState } from '@/entrypoints/sidepanel/ListStates';
+import { LoadErrorState } from '@/ui/common/ListStates';
 import { installGlobalErrorHandlers, logFailure } from '@/platform/diagnostics';
 import '../../i18n';
 import '../../styles/main.css';

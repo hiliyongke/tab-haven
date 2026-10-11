@@ -256,7 +256,7 @@ export default function App() {
                 onMouseEnter={() => setSelectedIndex(index)}
                 onClick={() => activateAndClose(hit.tabId)}
               >
-                <Favicon src={tab.favIconUrl} title={tab.title || ''} size={16} />
+                <Favicon pageUrl={tab.url} title={tab.title || ''} size={16} />
                 <span className="min-w-0 flex-1 truncate">
                   {hit.titleSegments.map((segment, segmentIndex) =>
                     segment.hit ? (

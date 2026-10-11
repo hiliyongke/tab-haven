@@ -20,7 +20,7 @@ vi.mock('@/platform/tabs', async () => {
   return {
     ...actual,
     queryCurrentWindowTabs: async () => tabState.tabs,
-    queryCurrentWindowGroups: async () => []
+    queryWindowGroups: async () => []
   };
 });
 

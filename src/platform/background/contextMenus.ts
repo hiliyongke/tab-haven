@@ -60,6 +60,25 @@ export function clearContextMenus(): void {
   enqueueMenuWrite(() => menus.removeAll());
 }
 
+/**
+ * 单条菜单创建：失败只丢这一项，不中断整批。
+ *
+ * Chrome 对不支持的 contexts 值（如较新内核才支持的 `tab`）直接在 create 处抛错。
+ * 此前整批 create 是串行 await：首项抛错时 removeAll 已执行，后续菜单（含工具栏
+ * 的「打开面板」）全部不会创建，而错误只落诊断 —— 表现为右键菜单大面积消失且
+ * 用户无从知晓。逐项兜底后，不支持的上下文只是自己不出现，其余菜单照常。
+ */
+async function createMenuItem(
+  menus: NonNullable<typeof browser.contextMenus>,
+  props: Parameters<NonNullable<typeof browser.contextMenus>['create']>[0]
+): Promise<void> {
+  try {
+    await menus.create(props);
+  } catch (error) {
+    logDegraded('contextMenus', `右键菜单创建失败，已跳过该项：${String(props.id)}`, error);
+  }
+}
+
 /** 重建右键菜单（文件夹列表变化时刷新子菜单；串行，先清后建）。 */
 export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
   const menus = browser.contextMenus;
@@ -67,29 +86,29 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
   enqueueMenuWrite(async () => {
     await menus.removeAll();
     // 页面右键
-    await menus.create({
+    await createMenuItem(menus, {
       id: MENU_IDS.pageDiscard,
       title: menuText('menuDiscardPage'),
       contexts: ['page']
     });
-    await menus.create({
+    await createMenuItem(menus, {
       id: MENU_IDS.pagePin,
       title: menuText('menuPinPage'),
       contexts: ['page']
     });
-    await menus.create({
+    await createMenuItem(menus, {
       id: MENU_IDS.pageSearchSite,
       title: menuText('menuSearchSite'),
       contexts: ['page']
     });
     if (folders.length > 0) {
-      await menus.create({
+      await createMenuItem(menus, {
         id: MENU_IDS.pageFolderParent,
         title: menuText('menuAddPageToFolder'),
         contexts: ['page']
       });
       for (const folder of folders) {
-        await menus.create({
+        await createMenuItem(menus, {
           id: `th:page:add-folder:${folder.id}`,
           title: folder.name,
           parentId: MENU_IDS.pageFolderParent,
@@ -99,13 +118,13 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
     }
     // 链接右键
     if (folders.length > 0) {
-      await menus.create({
+      await createMenuItem(menus, {
         id: MENU_IDS.linkFolderParent,
         title: menuText('menuAddLinkToFolder'),
         contexts: ['link']
       });
       for (const folder of folders) {
-        await menus.create({
+        await createMenuItem(menus, {
           id: `th:link:add-folder:${folder.id}`,
           title: folder.name,
           parentId: MENU_IDS.linkFolderParent,
@@ -113,62 +132,71 @@ export function rebuildContextMenus(folders: readonly FixedFolder[]): void {
         });
       }
     }
-    // 标签栏右键
-    await menus.create({
+    // 工具栏图标右键（先建：这是最稳定的入口，不能因下方较新上下文失败而丢失）
+    await createMenuItem(menus, {
+      id: MENU_IDS.actionOpenPanel,
+      title: menuText('menuOpenPanel'),
+      contexts: ['action']
+    });
+    await createMenuItem(menus, {
+      id: MENU_IDS.actionDiscardInactive,
+      title: menuText('menuDiscardInactive'),
+      contexts: ['action']
+    });
+    await createMenuItem(menus, {
+      id: MENU_IDS.actionSettings,
+      title: menuText('menuOpenSettings'),
+      contexts: ['action']
+    });
+    // 标签栏右键（contexts: 'tab' 需较新 Chrome，不支持时逐项跳过）
+    await createMenuItem(menus, {
       id: MENU_IDS.tabDiscard,
       title: menuText('menuDiscardTab'),
       contexts: ['tab']
     });
     // 标签栏「固定」：与 page 上下文的同语义项共用 menuPinPage 文案
     // （menuSearchSite 同为跨 page、tab 两个上下文复用同一键）。
-    await menus.create({
+    await createMenuItem(menus, {
       id: MENU_IDS.tabPin,
       title: menuText('menuPinPage'),
       contexts: ['tab']
     });
-    await menus.create({
+    await createMenuItem(menus, {
       id: MENU_IDS.tabSearchSite,
       title: menuText('menuSearchSite'),
       contexts: ['tab']
     });
-    // 工具栏图标右键
-    await menus.create({
-      id: MENU_IDS.actionOpenPanel,
-      title: menuText('menuOpenPanel'),
-      contexts: ['action']
-    });
-    await menus.create({
-      id: MENU_IDS.actionDiscardInactive,
-      title: menuText('menuDiscardInactive'),
-      contexts: ['action']
-    });
-    await menus.create({
-      id: MENU_IDS.actionSettings,
-      title: menuText('menuOpenSettings'),
-      contexts: ['action']
-    });
   });
 }
+
+/**
+ * 加入固定文件夹的三种结局。
+ *
+ * 三态（而非布尔）是必需的：写入失败与「已存在」若都返回 false，调用方只能统一
+ * 提示「已在文件夹中」——写失败的用户会收到一条与事实相反的通知，且内部还额外
+ * 发了一条失败通知（两条通知互相矛盾）。
+ */
+export type AddEntryResult = 'added' | 'exists' | 'failed';
 
 /** 把单个条目加入固定文件夹（URL 全局唯一；绑定由面板 reconcile 自动建立）。 */
 export async function addEntryToFolder(
   folderId: string,
   entry: { url: string; title: string; favIconUrl?: string }
-): Promise<boolean> {
+): Promise<AddEntryResult> {
   // 跨页锁内重读再合并：面板 coalesced「末值落盘」在途时，锁外的
   // read-modify-write 会被后写覆盖（新增条目静默丢失）。与面板共用 FOLDERS_RMW_LOCK。
   return withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
     const folders = await foldersRepository.read();
     const target = folders.find((folder) => folder.id === folderId);
-    if (!target) return false;
+    if (!target) return 'failed';
     // 非 http(s) 一律拒绝，不回落到原始字符串：右键的 linkUrl 由被点击页面提供，
     // 页面可控；javascript: / data: 等一旦落库，用户点一下固定图标即执行。
     const key = webComparisonKey(entry.url, undefined);
-    if (key === null) return false;
+    if (key === null) return 'failed';
     const exists = folders.some((folder) =>
       folder.items.some((item) => webComparisonKey(item.url, undefined) === key)
     );
-    if (exists) return false;
+    if (exists) return 'exists';
     const item = createFolderItem({ url: key, title: entry.title, favIconUrl: entry.favIconUrl });
     const next = folders.map((folder) =>
       folder.id === folderId
@@ -176,13 +204,15 @@ export async function addEntryToFolder(
         : folder
     );
     const ok = await foldersRepository.write(next);
-    // write 返回 boolean：quota 超限时落盘失败，若照常返回 true，用户收到
+    // write 返回 boolean：quota 超限时落盘失败，若照常返回成功，用户收到
     // 「已添加」通知而条目重启即丢——按真实结果反馈。
     if (!ok) {
+      // 只有失败分支在此发通知：成功与「已存在」由调用方按结果各发一次，
+      // 避免同一动作出现两条语义冲突的通知。
       notifyUser('Tabs', t('bg.addToFolderFailed'));
-      return false;
+      return 'failed';
     }
-    return true;
+    return 'added';
   });
 }
 

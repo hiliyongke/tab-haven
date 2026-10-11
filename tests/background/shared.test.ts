@@ -12,7 +12,7 @@ import {
   openSidePanel,
   queueAction,
   syncCachedSettings
-} from '@/entrypoints/background/shared';
+} from '@/platform/background/shared';
 
 /**
  * SW 侧共享上下文（被全部 background 子模块复用）。

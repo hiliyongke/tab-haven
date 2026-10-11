@@ -43,7 +43,7 @@ export const DuplicateReusedMessageSchema = z.object({
  * 消息体携带标签快照，必须有界——否则异常数据会把 storage/session 之外的
  * runtime 通道当成无上限的传输面。
  */
-const REUSE_CLOSED_LIMIT = 50;
+export const REUSE_CLOSED_LIMIT = 50;
 
 /**
  * SW → UI：复用引擎（同网址唯一化）本次结算关闭掉的标签快照。

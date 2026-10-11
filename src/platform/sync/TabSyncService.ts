@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
-import { queryCurrentWindowGroups, queryCurrentWindowTabs } from '@/platform/tabs';
+import { queryWindowGroups, queryCurrentWindowTabs } from '@/platform/tabs';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -93,10 +93,10 @@ export class TabSyncService {
     const run = async () => {
       querying = true;
       try {
-        // 先查标签再带 windowId 查组：省掉 queryCurrentWindowGroups 内部那次
+        // 先查标签再带 windowId 查组：省掉 queryWindowGroups 内部那次
         // 只为拿 windowId 的重复全窗口查询（每次刷新 3 次 API 调用降为 2 次）。
         const tabs = await queryCurrentWindowTabs();
-        const groups = await queryCurrentWindowGroups(tabs[0]?.windowId);
+        const groups = await queryWindowGroups(tabs[0]?.windowId);
         if (stopped) return;
         failures = 0;
         // 依据最新快照启停「发声校准轮询」（先于广播，让 onSnapshot 立即获得最新值）。

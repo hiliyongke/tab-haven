@@ -167,6 +167,7 @@ describe('dataStore 固定空间事务', () => {
   it('importData：部分分区写入失败时整体回滚（不留下半套数据）', async () => {
     const payload = {
       format: 'tabs.export',
+      version: EXPORT_FILE_VERSION,
       exportedAt: new Date().toISOString(),
       fixedFolders: [
         {
@@ -226,6 +227,7 @@ describe('dataStore 固定空间事务', () => {
     // 备份文件可被任意构造：同 item id、不同 URL 是最典型的脏绑定来源。
     await useDataStore.getState().importData({
       format: 'tabs.export',
+      version: EXPORT_FILE_VERSION,
       exportedAt: new Date().toISOString(),
       fixedFolders: [
         {
@@ -255,6 +257,7 @@ describe('dataStore 固定空间事务', () => {
   it('importData：全部整表写分区均经各自的跨页 RMW 锁', async () => {
     const payload = {
       format: 'tabs.export',
+      version: EXPORT_FILE_VERSION,
       exportedAt: new Date().toISOString(),
       fixedFolders: [
         {
@@ -312,6 +315,7 @@ describe('dataStore 固定空间事务', () => {
 
     const payload = {
       format: 'tabs.export',
+      version: EXPORT_FILE_VERSION,
       exportedAt: new Date().toISOString(),
       fixedFolders: [],
       persistentPins: [],
@@ -348,6 +352,7 @@ describe('dataStore 固定空间事务', () => {
 
     const importing = useDataStore.getState().importData({
       format: 'tabs.export',
+      version: EXPORT_FILE_VERSION,
       exportedAt: new Date().toISOString(),
       fixedFolders: [],
       persistentPins: [],
