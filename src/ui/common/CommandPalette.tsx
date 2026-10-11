@@ -11,6 +11,7 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { logDegraded } from '@/platform/diagnostics';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { IconButton } from '@/ui/common/IconButton';
 import { Favicon } from '@/ui/common/Favicon';
 import { useModalA11y } from '@/ui/dialog/Dialog';
 
@@ -456,6 +457,15 @@ export function CommandPalette({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
+          />
+          {/* 可见的关闭入口：命令面板此前也只有 Esc / 点遮罩两条隐藏路径。
+              放在输入框之后 —— 「打开聚焦首项」仍落在输入框上。 */}
+          <IconButton
+            icon={Icons.close}
+            box="md"
+            title={t('dialog.close')}
+            dismiss
+            onClick={onClose}
           />
         </div>
         {/*

@@ -46,7 +46,28 @@ export function GroupEditDialog({
   };
 
   return (
-    <DialogShell title={t('groups.edit')} onClose={onClose}>
+    <DialogShell
+      title={t('groups.edit')}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            type="button"
+            className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
+            onClick={onClose}
+          >
+            {t('dialog.cancel')}
+          </button>
+          <button
+            type="button"
+            className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
+            onClick={commit}
+          >
+            {t('dialog.confirm')}
+          </button>
+        </>
+      }
+    >
       <TextField
         className="mb-2"
         ariaLabel={t('groups.namePlaceholder')}
@@ -76,22 +97,6 @@ export function GroupEditDialog({
             onChange={() => setDraftColor(c)}
           />
         ))}
-      </div>
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-          onClick={onClose}
-        >
-          {t('dialog.cancel')}
-        </button>
-        <button
-          type="button"
-          className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
-          onClick={commit}
-        >
-          {t('dialog.confirm')}
-        </button>
       </div>
     </DialogShell>
   );

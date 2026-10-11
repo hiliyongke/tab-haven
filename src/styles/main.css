@@ -612,10 +612,12 @@ body {
     opacity: 1;
   }
 }
+/* 弹窗进场：位移 4px → 8px、时长 140ms → --dur-normal(160ms)。
+   三段式分区后弹窗体量更大，位移太小会显得「贴在原地的淡入」，缺少落位感。 */
 @keyframes dialog-enter {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(4px);
+    transform: scale(0.98) translateY(8px);
   }
   to {
     opacity: 1;
@@ -623,13 +625,13 @@ body {
   }
 }
 .modal-overlay {
-  animation: overlay-enter 120ms var(--ease-out);
+  animation: overlay-enter var(--dur-fast) var(--ease-out);
   /* 遮罩色走令牌：此前三处各写一次 bg-black/30，颜色既不随主题变化，
      也游离在「未受控调色板」守卫的扫描前缀之外。 */
   background: var(--overlay-scrim);
 }
 .modal-panel {
-  animation: dialog-enter 140ms var(--ease-out);
+  animation: dialog-enter var(--dur-normal) var(--ease-out);
 }
 
 /* Toast 进场：从下方轻滑入（退场同样受卸载时机限制，保持瞬时） */
@@ -1099,8 +1101,10 @@ html.theme-transition *::after {
 }
 
 /* ---------- 弹窗宽度刻度（两档收敛，替代散落的任意宽度值） ---------- */
+/* 弹窗宽度：小弹窗放宽到 400 —— 标题栏 / 内容 / 底栏三段式分区后，360 的
+   正文区（扣掉两侧 16px padding）只剩 328，中文长句在标题栏里就开始截断。 */
 .dialog-sm {
-  width: min(360px, 88vw);
+  width: min(400px, 90vw);
 }
 .dialog-md {
   width: min(440px, 92vw);

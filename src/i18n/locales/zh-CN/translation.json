@@ -419,6 +419,7 @@
   },
   "dialog": {
     "confirm": "确定",
+    "close": "关闭",
     "cancel": "取消",
     "save": "保存",
     "confirmTitle": "确认操作"

@@ -418,6 +418,7 @@
   },
   "dialog": {
     "confirm": "OK",
+    "close": "Close",
     "cancel": "Cancel",
     "save": "Save",
     "confirmTitle": "Confirm action"

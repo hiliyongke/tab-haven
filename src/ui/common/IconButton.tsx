@@ -18,7 +18,8 @@ export function IconButton({
   badge,
   onClick,
   /** 可选文字标签：传入后在图标右侧显示功能名称（工具条可选文字模式）。 */
-  label
+  label,
+  dismiss
 }: {
   icon: LucideIcon;
   /** tooltip + aria-label（icon-only 按钮的可达性必须项）。 */
@@ -42,6 +43,12 @@ export function IconButton({
   danger?: boolean;
   /** 右上角计数徽章（>0 时显示）。 */
   badge?: number;
+  /**
+   * 关闭类按钮（弹窗右上角 ✕）：渲染 `data-dialog-dismiss` 标记。
+   * 弹窗打开时「聚焦首项」会跳过带该标记的元素 —— 否则焦点一打开就落在关闭
+   * 按钮上，而不是输入框或主按钮（Tab 循环仍会经过它，可达性不变）。
+   */
+  dismiss?: boolean;
   onClick?: () => void;
 }) {
   // 尺寸兜底：min-h/min-w 保证命中区不小于 24px（WCAG 2.5.8）。
@@ -60,6 +67,7 @@ export function IconButton({
       className={className}
       title={title}
       aria-label={title}
+      data-dialog-dismiss={dismiss || undefined}
       aria-disabled={disabled || undefined}
       disabled={disabled}
       onClick={onClick}

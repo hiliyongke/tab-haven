@@ -113,7 +113,9 @@ export function UndoHistoryPanel({
 
   return (
     <DialogShell title={t('undo.historyTitle')} onClose={onClose} widthClassName="dialog-md">
-      <div className="max-h-[70vh] overflow-y-auto pr-1">
+      {/* 滚动交给 DialogShell 的内容区（标题栏与底栏常驻可见），这里不再自套
+          一层 max-h + overflow —— 两层滚动容器会让滚动条出现两次、高度打架。 */}
+      <div className="pr-1">
         {!hasAny && (
           <p className="py-6 text-center text-xs text-gray-500">{t('undo.historyEmpty')}</p>
         )}

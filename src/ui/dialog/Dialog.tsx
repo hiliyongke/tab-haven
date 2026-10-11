@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/common/Button';
+import { Icons } from '@/ui/common/Icon';
+import { IconButton } from '@/ui/common/IconButton';
 import { TextField } from '@/ui/common/TextField';
 
 /**
@@ -12,6 +14,8 @@ import { TextField } from '@/ui/common/TextField';
 interface DialogShellProps {
   title: string;
   children: React.ReactNode;
+  /** 底部按钮区（淡底 + 上分隔线）；不传则不渲染底栏（内容型弹窗如快照面板）。 */
+  footer?: React.ReactNode;
   onClose: () => void;
   /** 覆盖默认宽度（宽度刻度见 main.css .dialog-sm/.dialog-md）。 */
   widthClassName?: string;
@@ -105,8 +109,12 @@ export function useModalA11y(
     // 微任务，此时 dialog 已打开、子树可聚焦。否则 focus() 打在 display:none 的
     // 子树上静默失效，焦点落在 dialog 元素自身（键盘漫游整体不可用）。
     queueMicrotask(() => {
-      const focusable = shellRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      focusable?.focus();
+      // 跳过关闭按钮（data-dialog-dismiss）：弹窗一打开焦点应落在输入框或主按钮
+      // 上，而不是右上角的 ✕ —— 否则输入型弹窗要再按一次 Tab 才能开始打字。
+      const focusable = Array.from(
+        shellRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []
+      ).filter((el) => !el.hasAttribute('data-dialog-dismiss'));
+      focusable[0]?.focus();
     });
 
     // 背景滚动锁定：模态打开时背景仍随滚轮滚动，会让遮罩与内容错位、且把
@@ -185,14 +193,22 @@ export function useModalA11y(
 }
 
 /**
- * 弹窗外壳（focus trap + Esc + 焦点恢复 + 遮罩点击关闭）。供扩展弹窗复用统一行为契约。
+ * 弹窗外壳（focus trap + Esc + 焦点恢复 + 遮罩点击关闭 + 可见关闭按钮）。
+ *
+ * 三段式结构（标题栏 / 内容区 / 底部按钮区）：
+ * 此前是「标题 + 内容 + 按钮」一整块白板，靠 mb-3 撑开层次，长内容弹窗
+ * （快照面板 / 撤销历史）里尤其显得是塞进去的一块；且**没有任何可见的关闭
+ * 入口** —— 只能 Esc 或点遮罩，用户不知道。
+ * 现在标题栏与底栏用淡底 + 细分隔线分区，滚动落在内容区（标题与按钮常驻可见）。
  */
 export function DialogShell({
   title,
   children,
+  footer,
   onClose,
   widthClassName = 'dialog-sm'
 }: DialogShellProps) {
+  const { t } = useTranslation();
   const shellRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useModalA11y(shellRef, onClose);
@@ -210,15 +226,34 @@ export function DialogShell({
       <div
         ref={shellRef}
         // elev-3 而非 shadow-xl：阴影统一走 shadow-tint 暖调令牌（见 main.css）
-        className={`${widthClassName} modal-panel elev-3 max-h-[85vh] overflow-y-auto rounded-xl border border-gray-200 bg-surface p-4`}
+        // overflow-hidden + 内容区滚动：标题与底栏在长内容弹窗里始终可见，
+        // 圆角也不会被滚动内容切掉。
+        className={`${widthClassName} modal-panel elev-3 flex max-h-[85vh] flex-col overflow-hidden rounded-xl border border-gray-200 bg-surface`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        <h2 id={titleId} className="mb-3 text-sm font-semibold">
-          {title}
-        </h2>
-        {children}
+        <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
+          <h2 id={titleId} className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800">
+            {title}
+          </h2>
+          {/* 可见的关闭入口：此前只有 Esc / 点遮罩两条隐藏路径。
+              dismiss 标记让「打开聚焦首项」跳过它（焦点应落在输入框或主按钮上）。 */}
+          <IconButton
+            icon={Icons.close}
+            box="md"
+            title={t('dialog.close')}
+            dismiss
+            onClick={onClose}
+          />
+        </div>
+        {/* min-h-0：flex 子项默认 min-height:auto，会顶破父级 max-h 而滚不起来。 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
+        {footer && (
+          <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-3 py-2">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body
@@ -252,7 +287,20 @@ export function PromptDialog({
   };
 
   return (
-    <DialogShell title={title} onClose={onCancel}>
+    <DialogShell
+      title={title}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            {t('dialog.cancel')}
+          </Button>
+          <Button disabled={!canSubmit} onClick={submit}>
+            {t('dialog.confirm')}
+          </Button>
+        </>
+      }
+    >
       <TextField
         inputRef={inputRef}
         value={value}
@@ -265,14 +313,6 @@ export function PromptDialog({
           if (event.key === 'Enter' && canSubmit) submit();
         }}
       />
-      <div className="mt-3 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onCancel}>
-          {t('dialog.cancel')}
-        </Button>
-        <Button disabled={!canSubmit} onClick={submit}>
-          {t('dialog.confirm')}
-        </Button>
-      </div>
     </DialogShell>
   );
 }
@@ -297,16 +337,21 @@ export function ConfirmDialog({
 }) {
   const { t } = useTranslation();
   return (
-    <DialogShell title={title} onClose={onCancel}>
-      <p className="mb-3 text-sm text-gray-600">{message}</p>
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onCancel}>
-          {t('dialog.cancel')}
-        </Button>
-        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
-          {confirmLabel ?? t('dialog.confirm')}
-        </Button>
-      </div>
+    <DialogShell
+      title={title}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            {t('dialog.cancel')}
+          </Button>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
+            {confirmLabel ?? t('dialog.confirm')}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-gray-600">{message}</p>
     </DialogShell>
   );
 }
