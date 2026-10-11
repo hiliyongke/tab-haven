@@ -7,24 +7,17 @@ import {
   restoreRecentClosed,
   type RecentClosedEntry
 } from '@/platform/sessions';
+import { hostnameOf } from '@/core/url/UrlInspector';
 import { logDegraded } from '@/platform/diagnostics';
 import { formatTime } from '@/ui/common/format';
 import { Button } from '@/ui/common/Button';
+import { EmptyState } from '@/ui/common/EmptyState';
 
 /**
  * 撤销历史面板：
  *  - 本产品撤销栈：列出全部批次，点击任意批次一键恢复（回溯任意一步）；
  *  - 浏览器最近关闭：chrome.sessions 记录的原生关闭标签/窗口，一键恢复。
  */
-
-function hostnameOf(url: string | undefined): string {
-  if (!url) return '';
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return '';
-  }
-}
 
 /**
  * 批次来源标签：让用户知道这批关闭是「我手动关的」还是「归档带走的」。
@@ -116,9 +109,8 @@ export function UndoHistoryPanel({
       {/* 滚动交给 DialogShell 的内容区（标题栏与底栏常驻可见），这里不再自套
           一层 max-h + overflow —— 两层滚动容器会让滚动条出现两次、高度打架。 */}
       <div className="pr-1">
-        {!hasAny && (
-          <p className="py-6 text-center text-xs text-gray-500">{t('undo.historyEmpty')}</p>
-        )}
+        {/* 空态复用通用 EmptyState：与弹窗 / 侧栏的空态同构，文案仍取 undo.historyEmpty。 */}
+        {!hasAny && <EmptyState title={t('undo.historyEmpty')} />}
 
         {/* D5.3 崩溃引导：撤销与浏览器最近关闭都为空，但存在会话快照时，提示用户从快照找回。 */}
         {!hasAny && hasSnapshots && (

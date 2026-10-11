@@ -55,6 +55,24 @@ class SyncMirror {
    * 全部 write 收口到本链后，同一时刻至多一个写在途，顺序确定。
    */
   private writeChain: Promise<void> = Promise.resolve();
+  /**
+   * 镜像写结果的回执（BR-09）。
+   *
+   * 镜像失败此前只进诊断日志 —— 而诊断日志只有主动导出才看得到，「跨设备同步
+   * 悄悄失效」对用户完全不可见（用户以为开着同步，实际上其他设备收不到改动）。
+   * platform 层不做 UI 反馈，只把结果交出去，由组合根（dataStore）转成可见提示。
+   */
+  private onFailure: ((message: string) => void) | undefined;
+  private onSuccess: (() => void) | undefined;
+
+  /** 注册镜像写结果的回执回调（幂等覆盖：最后注册者生效）。 */
+  setMirrorResultHandlers(handlers: {
+    onFailure: (message: string) => void;
+    onSuccess: () => void;
+  }): void {
+    this.onFailure = handlers.onFailure;
+    this.onSuccess = handlers.onSuccess;
+  }
 
   /**
    * 丢弃去抖窗口内尚未落盘的镜像与待重试任务。
@@ -176,10 +194,12 @@ class SyncMirror {
         clearTimeout(this.retryTimer);
         this.retryTimer = undefined;
       }
+      this.onSuccess?.();
     } catch (error) {
       // 超出同步配额或同步不可用：降级（仅丢失镜像，本地数据不受影响）。
       // 但必须可观测——否则「跨设备同步悄悄失效」对用户完全不可见。
       logDegraded('sync-mirror', '镜像写入失败，跨设备同步已降级（本地数据不受影响）', error);
+      this.onFailure?.('跨设备同步镜像写入失败：本地数据不受影响，但其它设备不会收到本次改动');
       this.scheduleRetry(payload);
     }
   }

@@ -48,12 +48,12 @@ function makeActions(): PaletteActions & { calls: string[] } {
     onLocateActive: record('locate'),
     onOpenHistory: record('history'),
     onOpenSettings: record('settings'),
+    onOpenAbout: record('about'),
     onToggleAllSections: record('toggle'),
     onOpenSnapshots: record('snapshots'),
     onSaveSnapshot: record('saveSnapshot'),
     onArchiveWindow: record('archive'),
     onSaveSpace: record('saveSpace'),
-    onReadLaterActive: record('readLater'),
     onOpenFolder: () => undefined,
     onSwitchTab: (id) => calls.push(`switch:${id}`)
   };
@@ -101,7 +101,7 @@ describe('CommandPalette 无障碍契约', () => {
     const { input } = renderPalette();
 
     const options = screen.getAllByRole('option');
-    // 13 条命令 + 2 个标签
+    // 12 条命令 + 2 个标签
     expect(options).toHaveLength(15);
     expect(options[0]).toHaveTextContent(i18n.t('discard.allInactive'));
     expect(options.at(-1)).toHaveTextContent('标签-2');
@@ -210,7 +210,7 @@ describe('CommandPalette 空查询截断', () => {
   it('21+ 标签时空查询仅挂载前 20 个标签项，并出现截断提示', () => {
     renderPalette(manyTabs());
 
-    // 13 条命令 + 20 个标签（截断），第 21 个起不挂载
+    // 12 条命令 + 20 个标签（截断），第 21 个起不挂载
     expect(screen.getAllByRole('option')).toHaveLength(33);
     expect(screen.queryByText('标签-21')).not.toBeInTheDocument();
     expect(screen.getByText(i18n.t('palette.tabsTruncated', { count: 20 }))).toBeInTheDocument();
@@ -314,7 +314,7 @@ describe('CommandPalette 空查询 dashboard', () => {
     expect(screen.getByText(/site-b2-0/)).toBeInTheDocument();
     // 快照条目
     expect(screen.getByText('周末阅读')).toBeInTheDocument();
-    // 扁平顺序：文件夹(0) + 命令(13) + 最近(3) + 标签(2) = 18；最近组首项下标 13
+    // 扁平顺序：文件夹(0) + 命令(12) + 最近(3) + 标签(2)；最近组首项下标 12
     expect(screen.getAllByRole('option')).toHaveLength(18);
     fireEvent.keyDown(input, { key: 'ArrowUp' }); // 环绕到末项仍是标签
     const active = document.getElementById(input.getAttribute('aria-activedescendant')!);

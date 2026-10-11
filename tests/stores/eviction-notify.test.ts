@@ -11,11 +11,11 @@ import { useUndoStore } from '@/stores/undoStore';
 /**
  * 淘汰提示（R18 / S-3）的**不刷屏**契约。
  *
- * 三类淘汰的共同形态：容量已满时「每触发一次操作就再淘汰一条」。批量关 50 个
- * 标签、连续暂存稍后读、逐份导入 Workona 都会连着触发几十次淘汰 —— 若每次都弹
+ * 两类淘汰的共同形态：容量已满时「每触发一次操作就再淘汰一条」。批量关 50 个
+ * 标签、逐份导入 Workona 都会连着触发几十次淘汰 —— 若每次都弹
  * toast，提示条会互相顶掉且刷屏，用户反而一条都看不到。故按 key 会话内合并一次。
  *
- * 这里只锁「合并」这一层（notifyEviction 的公共语义），三类淘汰各自的
+ * 这里只锁「合并」这一层（notifyEviction 的公共语义），两类淘汰各自的
  * 「淘汰项精确交出」由 tests/core/eviction-reporting.test.ts 覆盖。
  */
 
@@ -59,9 +59,9 @@ describe('notifyEviction 会话内合并', () => {
     expect(useUndoStore.getState().toast?.message).toBe('第一批淘汰 3 条');
   });
 
-  it('不同 key 各自提示一次（三类淘汰互不压制）', () => {
+  it('不同 key 各自提示一次（两类淘汰互不压制）', () => {
     const store = useUndoStore.getState();
-    store.notifyEviction('read-later', '稍后读淘汰');
+    store.notifyEviction('k3', '撤销栈淘汰');
     store.notifyEviction('snapshots', '快照淘汰');
     expect(useUndoStore.getState().toast?.message).toBe('快照淘汰');
     // 同类再次触发仍被合并

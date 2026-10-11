@@ -117,7 +117,7 @@ describe('runAutoDiscard 安全集', () => {
     await runAutoDiscard();
 
     expect(api.discard).not.toHaveBeenCalled();
-    expect(await autoDiscardRepository.read()).toBeNull();
+    expect(await autoDiscardRepository.read()).toEqual([]);
   });
 
   it('休眠超时未访问的非激活标签，并记录可撤销台账', async () => {
@@ -129,7 +129,7 @@ describe('runAutoDiscard 安全集', () => {
 
     await runAutoDiscard();
 
-    const batch = await autoDiscardRepository.read();
+    const [batch] = await autoDiscardRepository.read();
     expect(batch?.tabIds.sort()).toEqual([1, 2]);
     expect(batch?.count).toBe(2);
     expect(typeof batch?.at).toBe('number');
@@ -150,7 +150,7 @@ describe('runAutoDiscard 安全集', () => {
 
     expect(api.discard).toHaveBeenCalledTimes(1);
     expect(api.discard).toHaveBeenCalledWith(2);
-    expect((await autoDiscardRepository.read())?.tabIds).toEqual([2]);
+    expect((await autoDiscardRepository.read())[0]?.tabIds).toEqual([2]);
   });
 
   it('固定空间绑定的标签被排除（会话绑定优先于自动化）', async () => {
@@ -194,7 +194,7 @@ describe('runAutoDiscard 安全集', () => {
     await runAutoDiscard();
 
     expect(api.discard).not.toHaveBeenCalled();
-    expect(await autoDiscardRepository.read()).toBeNull();
+    expect(await autoDiscardRepository.read()).toEqual([]);
   });
 
   it('discard 失败的标签不计入台账（台账只反映真实冻结）', async () => {
@@ -207,18 +207,18 @@ describe('runAutoDiscard 安全集', () => {
     await runAutoDiscard();
 
     expect(api.discard).toHaveBeenCalledTimes(2);
-    expect((await autoDiscardRepository.read())?.tabIds).toEqual([2]);
+    expect((await autoDiscardRepository.read())[0]?.tabIds).toEqual([2]);
   });
 
   it('台账清理：批次内标签已全部唤醒时清空（不留无法撤销的陈旧入口）', async () => {
     await applySettings({ autoDiscardEnabled: true, autoDiscardMinutes: 30 });
-    await autoDiscardRepository.write({ tabIds: [900], at: Date.now(), count: 1 });
+    await autoDiscardRepository.write([{ tabIds: [900], at: Date.now(), count: 1 }]);
     // 所有标签都「刚访问过」→ 本轮不产生新的休眠，只剩清理逻辑生效
     installTabsApi([makeTab({ id: 1, url: 'https://a.com/', lastAccessed: Date.now() })]);
 
     await runAutoDiscard();
 
-    expect(await autoDiscardRepository.read()).toBeNull();
+    expect(await autoDiscardRepository.read()).toEqual([]);
   });
 
   it('查询异常被就地吞掉并留痕（不得逃逸成 alarms 回调的未捕获 rejection）', async () => {
@@ -244,7 +244,7 @@ describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', 
 
     await discardInactiveTabs();
 
-    const batch = await autoDiscardRepository.read();
+    const [batch] = await autoDiscardRepository.read();
     expect(batch?.tabIds).toEqual([1]);
     expect(fakeBrowser.runtime.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'auto-discarded', tabIds: [1], count: 1 })
@@ -257,7 +257,7 @@ describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', 
 
     await discardInactiveTabs();
 
-    expect(await autoDiscardRepository.read()).toBeNull();
+    expect(await autoDiscardRepository.read()).toEqual([]);
   });
 
   it('查询异常不逃逸（快捷键回调内的 async 函数）', async () => {

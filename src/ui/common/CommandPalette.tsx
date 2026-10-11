@@ -20,19 +20,19 @@ export interface PaletteActions {
   onDiscardInactive: () => void;
   onWakeAll: () => void;
   onQuickRegroup: () => void;
-  /** 一键清理重复标签（保留每网址的激活/固定/最早者，可撤销）。 */
+  /** 一键清理重复标签（每网址保留「最近访问 > 激活 > 固定 > 位置靠前 > id 大」者，可撤销）。 */
   onCleanDuplicates: () => void;
   onLocateActive: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
+  /** 打开关于页（能力总览 + 信任面板）：隐私自证的直达入口。 */
+  onOpenAbout: () => void;
   onToggleAllSections: () => void;
   onSwitchTab: (tabId: number) => void;
   onOpenSnapshots: () => void;
   onSaveSnapshot: () => void;
   onArchiveWindow: () => void;
   onSaveSpace: () => void;
-  /** 把当前激活标签加入稍后读（C3）。 */
-  onReadLaterActive: () => void;
   /** 打开指定固定文件夹的全部条目（P-04：文件夹即空间）。 */
   onOpenFolder: (folderId: string) => void;
 }
@@ -218,7 +218,15 @@ export function CommandPalette({
         icon: Icons.snowflake,
         run: actions.onDiscardInactive
       },
-      { id: 'wake', label: t('discard.wakeAll'), icon: Icons.wakeAll, run: actions.onWakeAll },
+      {
+        id: 'wake',
+        label: t('discard.wakeAll'),
+        icon: Icons.wakeAll,
+        // 口径明示：两条唤醒路径覆盖的窗口范围不同（这条只看当前窗口，
+        // 自动休眠的「全部唤醒」按台账 tabIds，可能跨窗口）。
+        hint: t('discard.wakeAllHint'),
+        run: actions.onWakeAll
+      },
       {
         id: 'regroup',
         label: t('footer.quickRegroup'),
@@ -243,12 +251,6 @@ export function CommandPalette({
         label: t('undo.historyTitle'),
         icon: Icons.history,
         run: actions.onOpenHistory
-      },
-      {
-        id: 'readLater',
-        label: t('readlater.addActive'),
-        icon: Icons.bookmarkAdd,
-        run: actions.onReadLaterActive
       },
       {
         id: 'snapshots',
@@ -279,6 +281,13 @@ export function CommandPalette({
         label: t('settings.title'),
         icon: Icons.settings,
         run: actions.onOpenSettings
+      },
+      {
+        id: 'about',
+        label: t('about.open'),
+        icon: Icons.shield,
+        hint: t('about.entryHint'),
+        run: actions.onOpenAbout
       },
       {
         id: 'toggle',
@@ -588,9 +597,18 @@ export function CommandPalette({
               void useSnapshotStore
                 .getState()
                 .restore(snap.id)
-                .then((count) => {
-                  if (count > 0) useUndoStore.getState().notify(t('snapshots.restored', { count }));
-                  else useUndoStore.getState().notify(t('snapshots.empty'));
+                .then(({ count, degraded }) => {
+                  if (count === 0) {
+                    useUndoStore.getState().notify(t('snapshots.empty'));
+                    return;
+                  }
+                  useUndoStore
+                    .getState()
+                    .notify(
+                      degraded
+                        ? t('snapshots.restoredDegraded', { count })
+                        : t('snapshots.restored', { count })
+                    );
                 })
                 .catch(() => useUndoStore.getState().notifyError(t('errors.operationFailed')));
               onClose();

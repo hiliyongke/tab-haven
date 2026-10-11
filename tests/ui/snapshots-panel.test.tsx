@@ -86,7 +86,7 @@ describe('SnapshotsPanel 分组', () => {
 
 describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必须先见影响面）', () => {
   it('行内恢复先弹摘要确认（名称 + 标签数 + 分组数），确认后才执行', () => {
-    const restore = vi.fn(async () => 2);
+    const restore = vi.fn(async () => ({ count: 2, degraded: false }));
     useSnapshotStore.setState({
       snapshots: [
         makeSnap({
@@ -119,7 +119,7 @@ describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必�
   });
 
   it('取消确认弹窗：不执行恢复', () => {
-    const restore = vi.fn(async () => 2);
+    const restore = vi.fn(async () => ({ count: 2, degraded: false }));
     useSnapshotStore.setState({
       snapshots: [
         makeSnap({

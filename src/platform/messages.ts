@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
+import { UndoTabRecordSchema } from '@/core/schema/models';
 
 /**
  * 类型安全消息协议（background ↔ UI）。
@@ -35,6 +36,29 @@ export const AllowDuplicateOnceMessageSchema = z.object({
 /** SW → UI：发生了一次重复标签复用（通知 UI 显示状态提示）。 */
 export const DuplicateReusedMessageSchema = z.object({
   type: z.literal('duplicate-reused')
+});
+
+/**
+ * 复用引擎一次结算能关闭的标签数上限（同网址副本，实际远小于此）。
+ * 消息体携带标签快照，必须有界——否则异常数据会把 storage/session 之外的
+ * runtime 通道当成无上限的传输面。
+ */
+const REUSE_CLOSED_LIMIT = 50;
+
+/**
+ * SW → UI：复用引擎（同网址唯一化）本次结算关闭掉的标签快照。
+ *
+ * 这条消息是「默认开启的自动合并必须可撤销」的回执通道：复用引擎在 SW 内直接
+ * `tabs.remove`，UI 若不拿到快照就无从登记撤销批次 —— 那是 README 承诺之外
+ * 的一条不可逆关闭路径。关闭前由 SW 侧构造 UndoTabRecord（带组名，供按名重建
+ * 原组），UI 侧只负责入撤销栈。
+ */
+export const ReuseClosedMessageSchema = z.object({
+  type: z.literal('reuse-closed'),
+  /** 关闭发生的窗口（撤销要回到同一个窗口）。 */
+  windowId: z.number().int(),
+  /** 本次被关闭的标签快照（含新建的那个副本）。 */
+  tabs: z.array(UndoTabRecordSchema).max(REUSE_CLOSED_LIMIT)
 });
 
 /** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
@@ -90,6 +114,7 @@ export const SettingsSyncedMessageSchema = z.object({
 export const MessageSchema = z.discriminatedUnion('type', [
   AllowDuplicateOnceMessageSchema,
   DuplicateReusedMessageSchema,
+  ReuseClosedMessageSchema,
   SearchFocusMessageSchema,
   SearchDomainMessageSchema,
   AutoDiscardedMessageSchema,

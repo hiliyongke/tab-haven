@@ -13,7 +13,8 @@ import {
   onTabHighlighted,
   reloadTabs
 } from '@/platform/tabs';
-import { downloadJsonFile, openOptionsPage } from '@/platform/navigation';
+import { downloadJsonFile, openAboutPage, openOptionsPage } from '@/platform/navigation';
+import { onRuntimeMessage } from '@/platform/messages';
 import { datedJsonFilename } from '@/core/util/filename';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
@@ -31,6 +32,7 @@ import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
 import { OnboardingTour } from '@/ui/common/OnboardingTour';
 import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
 import { SpaceStrip } from '@/ui/common/SpaceStrip';
+import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { DndRoot } from '@/ui/dnd/DndRoot';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { FixedArea } from '@/ui/fixed/FixedArea';
@@ -46,11 +48,8 @@ import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys
 import { useSpaces } from '@/entrypoints/sidepanel/hooks/useSpaces';
 import { useOtherWindows } from '@/entrypoints/sidepanel/hooks/useOtherWindows';
 import { OtherWindowsSection } from '@/ui/tabs/OtherWindowsSection';
-import { ReadLaterSection } from '@/ui/readlater/ReadLaterSection';
 import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import type { Snapshot } from '@/core/schema/models';
-import { useReadLaterStore } from '@/stores/readLaterStore';
-import type { ReadLaterItem } from '@/core/schema/models';
 import { useListNavigation } from '@/entrypoints/sidepanel/hooks/useListNavigation';
 import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
@@ -99,6 +98,16 @@ function planDuplicateCleanup(
  * 与实际执行的目标必须来自同一份计算，否则会出现「提示可休眠 5 个、按下后
  * 说没有」的不一致。
  */
+/**
+ * 同一批标签（tabIds 顺序一致）。
+ *
+ * 用来在「全部唤醒」后从台账里摘掉这一轮：台账是多批次滚动保留的，按内容比对
+ * 而非整表清空，避免把其它轮次（仍处休眠的标签）的唤醒出口一起抹掉。
+ */
+function sameTabIds(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
 function selectSleepableTabs(
   tabs: readonly TabRecord[],
   boundTabIds: readonly number[]
@@ -106,6 +115,19 @@ function selectSleepableTabs(
   const bound = new Set(boundTabIds);
   return tabs.filter(
     (tab) => !tab.active && !tab.discarded && !bound.has(tab.id) && canSafelyDiscardTab(tab)
+  );
+}
+
+/**
+ * 归档会真正关闭的标签（与 snapshotStore.archiveCurrentWindow 的可关闭口径同源：
+ * 仅 http(s) 页面可入档，chrome:// 等内部页保留在原窗口）。
+ *
+ * 抽成模块级纯函数的原因同 selectSleepableTabs：确认弹窗上写的「将关闭 N 个」
+ * 必须等于按下后真实关闭的数量，两处口径分叉即确认文案失信。
+ */
+function selectArchivableTabs(tabs: readonly TabRecord[]): TabRecord[] {
+  return tabs.filter(
+    (tab) => typeof tab.id === 'number' && Boolean(tab.url) && /^https?:\/\//i.test(tab.url ?? '')
   );
 }
 
@@ -186,49 +208,12 @@ export default function App() {
 
   // 历史命中恢复的待确认快照（与快照面板/命令面板同一闸门）。
   const [pendingHistoryRestore, setPendingHistoryRestore] = useState<Snapshot | null>(null);
-  // 稍后读（C3）：分区数据与操作。
-  const readLaterItems = useReadLaterStore((state) => state.items);
-  const handleReadLaterMarkRead = useCallback((item: ReadLaterItem) => {
-    void useReadLaterStore.getState().markRead(item.id);
-  }, []);
-  const handleReadLaterMarkAllRead = useCallback(() => {
-    void useReadLaterStore.getState().markAllRead();
-  }, []);
-  const handleReadLaterRemove = useCallback((item: ReadLaterItem) => {
-    void useReadLaterStore.getState().removeItem(item.id);
-  }, []);
-  /** 归档过期未读：先进快照（不丢数据）再清出暂存区。 */
-  const handleReadLaterArchiveStale = useCallback(
-    (stale: readonly ReadLaterItem[]) => {
-      if (stale.length === 0) return;
-      void (async () => {
-        try {
-          const count = await useSnapshotStore.getState().archiveItems(
-            t('readlater.archiveName'),
-            stale.map((item) => ({
-              url: item.url,
-              title: item.title,
-              favIconUrl: item.favIconUrl,
-              pinned: false,
-              muted: false
-            }))
-          );
-          // 归档成功但清出暂存区失败：必须提示（条目残留，再次点击会重复归档）。
-          const removed = await useReadLaterStore
-            .getState()
-            .removeItems(stale.map((item) => item.id));
-          if (!removed) {
-            notifyError(t('errors.operationFailed'));
-            return;
-          }
-          notify(t('readlater.archived', { count }));
-        } catch {
-          notifyError(t('errors.operationFailed'));
-        }
-      })();
-    },
-    [notify, notifyError, t]
-  );
+  /**
+   * 待确认的「归档当前窗口」（影响面 = 将被关闭的标签数）。
+   * 归档是一次性关掉整个窗口的破坏性动作，而恢复（同样是新建整批标签）反而
+   * 强制确认 —— 危险操作确认力度必须对称。归档不是高频动作，加确认不构成摩擦。
+   */
+  const [pendingArchiveCount, setPendingArchiveCount] = useState<number | null>(null);
   // 引导延迟挂载：让用户先看到真实列表一眼，再弹出介绍（边看边学）。
   const [showTour, setShowTour] = useState(false);
   // 数据初始化自动重试仍失败：从骨架屏转为错误态（说明 + 手动重试），
@@ -334,7 +319,12 @@ export default function App() {
         label: i18n.t('discard.wakeAll'),
         run: async () => {
           const woken = (await reloadTabs(batch.tabIds)).length;
-          await autoDiscardRepository.write(null);
+          // 只清掉这一轮：台账是多批次滚动保留的，整表清空会连带抹掉更早几轮
+          // 仍处休眠的标签的唤醒出口。
+          const remaining = (await autoDiscardRepository.read()).filter(
+            (entry) => !sameTabIds(entry.tabIds, batch.tabIds)
+          );
+          await autoDiscardRepository.write(remaining);
           useUndoStore.getState().notify(i18n.t('discard.woken', { count: woken }));
         }
       });
@@ -411,7 +401,6 @@ export default function App() {
     });
     void loadUndo();
     void useSnapshotStore.getState().load();
-    void useReadLaterStore.getState().load();
     const stopSync = startTabSync();
     return () => {
       cancelled = true;
@@ -434,15 +423,30 @@ export default function App() {
   // hook：原先两者挤在同一个 effect 里，依赖数组含消息侧回调，导致切标签 / 语言变化时
   // 快捷键监听被连带解绑重绑。拆开后语义不变而重挂次数下降。
 
-  // 自动休眠台账：面板打开时若有未撤销批次，提示可一键唤醒
+  // 自动休眠台账：面板打开时若有未撤销批次，提示可一键唤醒。
+  // 台账是多批次（滚动保留最近若干轮），这里只补提示最近那一轮 —— 一次性弹 N 条
+  // 会让提示条互相顶掉；更早的轮次仍可在下次休眠后按同一路径出现。
   useEffect(() => {
     void autoDiscardRepository
       .read()
-      .then((batch) => {
-        if (batch && batch.tabIds.length > 0) showDiscardUndoToast(batch);
+      .then((batches) => {
+        const latest = [...batches].sort((a, b) => b.at - a.at)[0];
+        if (latest && latest.tabIds.length > 0) showDiscardUndoToast(latest);
       })
       .catch(() => {});
   }, [showDiscardUndoToast]);
+
+  // 复用引擎（同网址唯一化）关闭的标签 → 登记进撤销栈。
+  // 该能力默认开启，关闭发生在 SW 内（面板拿不到标签快照），不回传就形成一条
+  // 「经本产品执行却不可撤销」的关闭路径。消息经既有 runtime 协议，不自造通道。
+  useEffect(
+    () =>
+      onRuntimeMessage((message) => {
+        if (message.type !== 'reuse-closed') return;
+        void useUndoStore.getState().recordReuseClosed(message.windowId, message.tabs);
+      }),
+    []
+  );
 
   // 首启引导延迟弹出：数据就绪后先让用户看到真实列表约 0.9s，
   // 避免模态遮罩第一时间盖住被介绍的对象。引导完成（onboarded）后不再触发。
@@ -786,6 +790,32 @@ export default function App() {
     });
   }, [runBatch, notify, t]);
   /**
+   * 归档当前窗口：先给影响面确认（将关闭 N 个标签），确认后才真正执行。
+   *
+   * 归档是一次性关掉整个窗口的破坏性动作，此前它与「恢复」的安全级别是反的：
+   * 恢复（新建整批标签）强制确认，归档（关闭整批标签）点击即执行。
+   * 归档虽可撤销，但栈深有限、后续关闭会把它挤掉 —— 误触即丢，必须拦一道。
+   */
+  const requestArchive = useCallback(() => {
+    const closable = selectArchivableTabs(useTabStore.getState().tabs);
+    if (closable.length === 0) {
+      // 入口常驻（命令面板 / 洞察出口）：无可归档标签时点按不能静默。
+      notify(t('snapshots.archiveNone'));
+      return;
+    }
+    setPendingArchiveCount(closable.length);
+  }, [notify, t]);
+
+  const performArchive = useCallback(() => {
+    setPendingArchiveCount(null);
+    void useSnapshotStore
+      .getState()
+      .archiveCurrentWindow()
+      .then((count) => notify(t('snapshots.archived', { count })))
+      .catch(() => notifyError(t('errors.operationFailed')));
+  }, [notify, notifyError, t]);
+
+  /**
    * 导出备份并下载（首启引导终步与「数据只在本机、卸载即清除」的提醒配套）。
    * 与设置页共用 platform 的下载实现，结果同样走 toast：导出失败必须可见
    * （宁可明确报错，也不能让用户以为已经备份了）。
@@ -983,6 +1013,9 @@ export default function App() {
       onLocateActive: locateActiveViaRef,
       onOpenHistory: () => setShowHistory(true),
       onOpenSettings: openOptionsPage,
+      // 信任面板此前只有「底栏设置 → 设置页 → 关于页」一条三步路径，
+      // 而「自证零网络」是本产品的核心卖点 —— 命令面板一次直达。
+      onOpenAbout: openAboutPage,
       onToggleAllSections: handleToggleAllSections,
       onSwitchTab: (tabId: number) => void smartActivate(tabId),
       onOpenSnapshots: () => setShowSnapshots(true),
@@ -998,28 +1031,7 @@ export default function App() {
           .saveSpace(t('snapshots.space'))
           .then(() => notify(t('snapshots.saved')))
           .catch(() => notifyError(t('errors.operationFailed'))),
-      onReadLaterActive: () => {
-        const active = useTabStore.getState().tabs.find((tab) => tab.active);
-        if (!active?.url) return;
-        void useReadLaterStore
-          .getState()
-          .addItem({
-            url: active.url,
-            title: active.title ?? active.url,
-            favIconUrl: active.favIconUrl
-          })
-          .then((ok) => {
-            // 落盘失败必须如实反馈：报「已加入」而重启即丢，比不提示更糟。
-            if (ok) notify(t('readlater.added'));
-            else notifyError(t('errors.operationFailed'));
-          });
-      },
-      onArchiveWindow: () =>
-        void useSnapshotStore
-          .getState()
-          .archiveCurrentWindow()
-          .then((count) => notify(t('snapshots.archived', { count })))
-          .catch(() => notifyError(t('errors.operationFailed'))),
+      onArchiveWindow: requestArchive,
       onOpenFolder: handleOpenFolder
     }),
     [
@@ -1030,6 +1042,7 @@ export default function App() {
       locateActiveViaRef,
       handleToggleAllSections,
       handleOpenFolder,
+      requestArchive,
       smartActivate,
       notify,
       notifyError,
@@ -1062,7 +1075,13 @@ export default function App() {
         void useSnapshotStore
           .getState()
           .restore(snapshotId)
-          .then((count) => notify(t('snapshots.restored', { count })))
+          .then(({ count, degraded }) =>
+            notify(
+              degraded
+                ? t('snapshots.restoredDegraded', { count })
+                : t('snapshots.restored', { count })
+            )
+          )
           .catch(() => notifyError(t('errors.operationFailed')));
         return;
       }
@@ -1183,17 +1202,6 @@ export default function App() {
           onWheel={markUserScroll}
           onTouchMove={markUserScroll}
         >
-          {/* 稍后读分区（C3）：与「当前有几个标签」正交，故放在状态三元之外
-              （数据与搜索态守卫即可）；位置在主体列表之前——先把存的看了。 */}
-          {dataReady && !isFiltering && (
-            <ReadLaterSection
-              items={readLaterItems}
-              onMarkRead={handleReadLaterMarkRead}
-              onMarkAllRead={handleReadLaterMarkAllRead}
-              onRemove={handleReadLaterRemove}
-              onArchiveStale={handleReadLaterArchiveStale}
-            />
-          )}
           {!dataReady ? (
             loadFailed ? (
               /* 自动重试仍失败：给出说明与手动出口，不留无出口的骨架屏 */
@@ -1292,6 +1300,8 @@ export default function App() {
           onLocateActive={locateActiveViaRef}
           onOpenHistory={() => setShowHistory(true)}
           onOpenSettings={openOptionsPage}
+          // 信任面板（P-03）：底栏一次直达，与设置页「关于」同一入口。
+          onOpenAbout={openAboutPage}
           onOpenSnapshots={() => {
             setSnapshotView('list');
             setShowSnapshots(true);
@@ -1319,7 +1329,13 @@ export default function App() {
               void useSnapshotStore
                 .getState()
                 .restore(snapshot.id)
-                .then((count) => notify(t('snapshots.restored', { count })))
+                .then(({ count, degraded }) =>
+                  notify(
+                    degraded
+                      ? t('snapshots.restoredDegraded', { count })
+                      : t('snapshots.restored', { count })
+                  )
+                )
                 .catch(() => notifyError(t('errors.operationFailed')));
             }}
             onCancel={() => setPendingHistoryRestore(null)}
@@ -1331,13 +1347,18 @@ export default function App() {
             onClose={() => setShowSnapshots(false)}
             onCleanDuplicates={handleCloseDuplicates}
             onDiscardInactive={handleDiscardInactive}
-            onArchiveWindow={() =>
-              void useSnapshotStore
-                .getState()
-                .archiveCurrentWindow()
-                .then((count) => notify(t('snapshots.archived', { count })))
-                .catch(() => notifyError(t('errors.operationFailed')))
-            }
+            onArchiveWindow={requestArchive}
+          />
+        )}
+        {/* 归档确认：与恢复确认对称的破坏性动作闸门（不阻断高频操作）。 */}
+        {pendingArchiveCount !== null && (
+          <ConfirmDialog
+            title={t('snapshots.archiveCurrent')}
+            message={t('snapshots.archiveConfirm', { count: pendingArchiveCount })}
+            danger
+            confirmLabel={t('snapshots.archiveCurrent')}
+            onConfirm={performArchive}
+            onCancel={() => setPendingArchiveCount(null)}
           />
         )}
         {!settings.onboarded && dataReady && showTour && (

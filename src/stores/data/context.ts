@@ -36,6 +36,8 @@ const FOLDERS_SCOPE = 'fixed-folders';
 const PINS_SCOPE = 'persistent-pins';
 /** 会话绑定分区的降级记账 scope（folderSlice 的 reconcile 路径共用同一 scope）。 */
 export const BINDINGS_SCOPE = 'session-bindings';
+/** 跨设备同步镜像的降级记账 scope（镜像失败不影响本地，但要让用户看见）。 */
+const SYNC_MIRROR_SCOPE = 'sync-mirror';
 
 export function buildDataContext(
   set: (partial: Partial<DataState>) => void,
@@ -51,6 +53,18 @@ export function buildDataContext(
   });
   const writePinsCoalesced = createCoalescedWriter<PersistentPin[], boolean>({
     write: (value) => withCrossPageLock(PINS_RMW_LOCK, () => repos.pins.write(value))
+  });
+
+  /**
+   * 镜像写结果回执（BR-09）：失败置起降级横幅、成功清掉。
+   *
+   * 镜像走浏览器账号通道，失败时本地数据**不受影响** —— 正因如此它此前完全静默，
+   * 用户会一直以为同步在生效。这里让它与本地落盘失败共用同一条「持久化失败必须
+   * 可见」的纪律（只是 scope 独立，不会被其它分区的写成功连坐清除）。
+   */
+  syncMirror.setMirrorResultHandlers({
+    onFailure: (message) => reportPersistenceFailure(SYNC_MIRROR_SCOPE, message),
+    onSuccess: () => clearDegraded(SYNC_MIRROR_SCOPE)
   });
 
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */

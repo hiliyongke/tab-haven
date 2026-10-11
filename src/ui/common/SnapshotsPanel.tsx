@@ -4,10 +4,12 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useDataStore } from '@/stores/dataStore';
-import { snapshotDiff } from '@/core/snapshot/snapshotDiff';
+import { buildPartialSnapshot, snapshotDiff } from '@/core/snapshot/snapshotDiff';
+import type { Snapshot } from '@/core/schema/models';
 import { computeInsights } from '@/core/insights/tabInsights';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { ConfirmDialog, DialogShell } from '@/ui/dialog/Dialog';
+import { EmptyState } from '@/ui/common/EmptyState';
 import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
@@ -71,9 +73,14 @@ export function SnapshotsPanel({
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  /** 待恢复确认的快照 id：恢复会一次性新建整批标签且不在撤销栈覆盖范围内
-      （撤销栈只覆盖「关闭」），决策前必须看到影响面摘要。 */
+  /** 待恢复确认的快照 id：恢复会一次性新建整批标签，决策前必须看到影响面摘要。 */
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
+  /**
+   * 待确认的**选择性恢复**（P-02）：勾选集在点击那一刻固化为「部分快照」。
+   * 勾选恢复与整份恢复是同一类破坏性动作（一次新建整批标签），此前它绕过
+   * 影响面闸门直接执行 —— 同一产品里同一动作出现两档安全级别。
+   */
+  const [confirmRestoreSelected, setConfirmRestoreSelected] = useState<Snapshot | null>(null);
   /** 正在恢复的快照 id：恢复会新建大量标签（耗时数百 ms），期间禁用该行按钮防双击并发。 */
   const [restoringId, setRestoringId] = useState<string | null>(null);
   /** 正在删除的快照 id：删除确认按钮连点防护（与 restoringId 同口径）。 */
@@ -262,8 +269,10 @@ export function SnapshotsPanel({
     if (restoringId !== null) return;
     setRestoringId(id);
     try {
-      const count = await restore(id);
-      notify(t('snapshots.restored', { count }));
+      const { count, degraded } = await restore(id);
+      notify(
+        degraded ? t('snapshots.restoredDegraded', { count }) : t('snapshots.restored', { count })
+      );
       onClose();
     } catch {
       notifyError(t('errors.operationFailed'));
@@ -273,15 +282,15 @@ export function SnapshotsPanel({
   };
 
   /**
-   * 选择性恢复（P-02）：按当前勾选集恢复。勾选集为空提示用户先勾选；
-   * 恢复互斥与 handleRestore 共用 restoringId（同一时刻只允许一个恢复在途）。
+   * 选择性恢复（P-02）：按当前勾选集恢复，但**先弹影响面确认**（与整份恢复
+   * 同一闸门）。勾选集为空提示用户先勾选；恢复互斥与 handleRestore 共用
+   * restoringId（同一时刻只允许一个恢复在途）。
    */
-  const handleRestoreSelected = async (id: string, tabCount: number) => {
+  const handleRestoreSelected = (id: string, tabCount: number) => {
     if (tabCount === 0) {
       notify(t('snapshots.restoreSelectedEmpty'));
       return;
     }
-    if (restoringId !== null) return;
     const snap = snapshots.find((entry) => entry.id === id);
     if (!snap) return;
     const selectedTabs = snap.tabs.filter((tab, index) => selectedKeys.has(`${index}-${tab.url}`));
@@ -289,10 +298,19 @@ export function SnapshotsPanel({
       notify(t('snapshots.restoreSelectedEmpty'));
       return;
     }
-    setRestoringId(id);
+    setConfirmRestoreSelected(buildPartialSnapshot(snap, selectedTabs));
+  };
+
+  /** 确认后的选择性恢复执行体（勾选集已固化为传入的部分快照）。 */
+  const performRestoreSelected = async (partial: Snapshot) => {
+    setConfirmRestoreSelected(null);
+    if (restoringId !== null) return;
+    setRestoringId(partial.id);
     try {
-      const count = await restoreSelected(id, selectedTabs);
-      notify(t('snapshots.restored', { count }));
+      const { count, degraded } = await restoreSelected(partial.id, partial.tabs);
+      notify(
+        degraded ? t('snapshots.restoredDegraded', { count }) : t('snapshots.restored', { count })
+      );
       onClose();
     } catch {
       notifyError(t('errors.operationFailed'));
@@ -615,7 +633,12 @@ export function SnapshotsPanel({
 
           <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto pr-1">
             {ordered.length === 0 ? (
-              <p className="py-8 text-center text-xs text-gray-500">{t('snapshots.emptyHint')}</p>
+              /* 复用通用空态：与面板其余空态同款（图标 + 说明），此前这里手写
+                 一行居中文本，三处空态三种观感。 */
+              <EmptyState
+                icon={<Icon d={Icons.snapshot} className="h-4 w-4" />}
+                title={t('snapshots.emptyHint')}
+              />
             ) : (
               groups.map((group) => (
                 <div key={group.key}>
@@ -702,6 +725,14 @@ export function SnapshotsPanel({
             />
           );
         })()}
+      {/* 选择性恢复的影响面闸门：与整份恢复共用同一组件（勾选数即影响面）。 */}
+      {confirmRestoreSelected !== null && (
+        <RestoreConfirmDialog
+          snapshot={confirmRestoreSelected}
+          onConfirm={() => void performRestoreSelected(confirmRestoreSelected)}
+          onCancel={() => setConfirmRestoreSelected(null)}
+        />
+      )}
     </DialogShell>
   );
 }

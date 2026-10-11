@@ -89,10 +89,16 @@ export function trimSnapshotsWithEvicted(
   const autoSorted = sorted.filter((s) => s.origin === 'auto');
   const autoEvicted = autoSorted.slice(maxAuto);
   const autoKept = autoSorted.slice(0, maxAuto);
-  const manualKept = sorted.filter((s) => s.origin !== 'auto');
-  const merged = [...autoKept, ...manualKept].sort((x, y) => y.createdAt - x.createdAt);
+  // 上限只对「非自动」快照生效：snapshotLimit 的语义是「命名快照 / 归档 / 工作区的
+  // 保留上限」，auto 侧已由 maxAutoSnapshots 独立收敛。两族合流后再统一 slice，
+  // 会让手动快照占满额度时把旧 auto 一并挤掉 —— 而 auto 恰恰是崩溃兜底那一族，
+  // 被自己不该竞争的额度淘汰即「兜底快照凭空消失」。
+  const manualSorted = sorted.filter((s) => s.origin !== 'auto');
   const limit = Math.max(1, settings.snapshotLimit);
-  return { kept: merged.slice(0, limit), evicted: [...autoEvicted, ...merged.slice(limit)] };
+  const manualKept = manualSorted.slice(0, limit);
+  const manualEvicted = manualSorted.slice(limit);
+  const kept = [...autoKept, ...manualKept].sort((x, y) => y.createdAt - x.createdAt);
+  return { kept, evicted: [...autoEvicted, ...manualEvicted] };
 }
 
 /** OneTab 导入文本的体积上限（1MB，远超正常使用规模）。 */
@@ -143,7 +149,7 @@ export function parseOneTab(text: string): SnapshotTab[] {
  *
  * 为什么用回调而不是改返回值：persistSnapshot 返回 `Snapshot[]` 是既有公开契约
  * （store 直接 `set({ snapshots: next })`，测试也有桩），改成对象会波及全部调用方；
- * 而淘汰提示只有面板需要。与 readLaterOps 的 setReadLaterEvictionListener 同款。
+ * 而淘汰提示只有面板需要。
  */
 let onEvicted: ((count: number) => void) | undefined;
 export function setSnapshotEvictionListener(fn: (count: number) => void): void {
@@ -253,8 +259,19 @@ function missingTabsOf(snapshot: Snapshot, existingKeys: ReadonlySet<string>): S
   return missing;
 }
 
+/** 恢复结果：新建标签数 + 是否按降级口径执行（查询目标窗口失败）。 */
+export interface RestoreSnapshotResult {
+  /** 本次实际新建的标签数。 */
+  count: number;
+  /**
+   * 查询目标窗口失败，本次按「无重复」继续（宁多建不缺建，且恢复可撤销）。
+   * 置起即意味着**可能多建了副本**，由调用方补一句提示 —— 不阻断流程。
+   */
+  degraded: boolean;
+}
+
 /**
- * 恢复快照到当前（或指定）窗口，返回实际新建的标签数。
+ * 恢复快照到当前（或指定）窗口，返回实际新建的标签数与降级标志。
  *
  * 恢复是纯加法：
  *  - 仅新建缺失标签 —— 与窗口内已打开 URL（web 比较键口径）相同的条目跳过，
@@ -266,19 +283,25 @@ function missingTabsOf(snapshot: Snapshot, existingKeys: ReadonlySet<string>): S
  *    固定标签不参与分组（Chrome 限制：固定标签不属于组）。
  * 单条创建失败不影响其余条目；分组恢复失败保持未分组（不阻断恢复）。
  */
-export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Promise<number> {
+export async function restoreSnapshot(
+  snapshot: Snapshot,
+  windowId?: number
+): Promise<RestoreSnapshotResult> {
   let target = windowId;
   if (target === undefined) {
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     target = win?.id;
   }
-  if (target === undefined) return 0;
+  if (target === undefined) return { count: 0, degraded: false };
 
   // 1. 目标窗口已打开的 URL 集合（web 比较键）
+  let degraded = false;
   const existingTabs = await browser.tabs.query({ windowId: target }).catch((error) => {
     // 查询失败不得静默按空集合处理：恢复会为窗口内已打开的 URL 重复新建标签。
-    // 留痕后仍按空集继续（恢复是显式用户操作，宁多建不缺建，且用户可撤销）。
+    // 留痕后仍按空集继续（恢复是显式用户操作，宁多建不缺建，且用户可撤销），
+    // 但必须把降级事实交回调用方 —— 否则「恢复出来一堆重复标签」无从解释。
     logDegraded('snapshots', `快照恢复：查询目标窗口 ${target} 标签失败，按无重复处理`, error);
+    degraded = true;
     return [];
   });
   const existingKeys = new Set<string>();
@@ -289,7 +312,7 @@ export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Pr
 
   // 2. 仅恢复缺失条目
   const missing = missingTabsOf(snapshot, existingKeys);
-  if (missing.length === 0) return 0;
+  if (missing.length === 0) return { count: 0, degraded };
 
   // 3. 有限并发创建：豁免 → 创建（pinned 内联）→ muted 后置
   //
@@ -319,7 +342,7 @@ export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Pr
       }
     })
   ).filter((entry): entry is { id: number; tab: SnapshotTab } => entry !== null);
-  if (created.length === 0) return 0;
+  if (created.length === 0) return { count: 0, degraded };
 
   // 4. 分组还原：同组名一次性成组（同名并入 / 缺失重建）
   const groupTabs = new Map<string, number[]>();
@@ -355,5 +378,5 @@ export async function restoreSnapshot(snapshot: Snapshot, windowId?: number): Pr
     }
   }
 
-  return created.length;
+  return { count: created.length, degraded };
 }

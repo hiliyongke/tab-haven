@@ -67,7 +67,9 @@ describe('trimSnapshots 与 WithEvicted 同口径', () => {
       snap('m2', 'manual', 20)
     ];
     const { kept } = trimSnapshotsWithEvicted(input, settings);
-    expect(kept.map((s) => s.id)).toEqual(['m2', 'm1', 'a3']);
+    // 上限只对非 auto 生效：auto 由 maxAutoSnapshots（2）独立收敛，
+    // 手动快照占满 snapshotLimit（3）不得把仍在上限内的 a2 挤掉。
+    expect(kept.map((s) => s.id)).toEqual(['m2', 'm1', 'a3', 'a2']);
     // 单返回值版本必须与之同口径（现委托同一实现，防止日后分叉成两种裁剪结果）
     expect(trimSnapshots(input, settings).map((s) => s.id)).toEqual(kept.map((s) => s.id));
   });

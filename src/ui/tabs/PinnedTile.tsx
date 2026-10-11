@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
+import { hostnameOf } from '@/core/url/UrlInspector';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { useDomainAccent } from '@/ui/tabs/accent';
@@ -51,14 +52,9 @@ export function PinnedTile({
 }) {
   const { t } = useTranslation();
   // 磁贴主色：优先 favicon（data: URL 可取色）主色，否则域名哈希色——与站点组圆点同源。
-  const domain = useMemo(() => {
-    if (!url) return undefined;
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return undefined;
-    }
-  }, [url]);
+  // hostname 判定复用 core 唯一实现：此前此处内联了一份 `new URL(url).hostname`，
+  // 与固定空间 / 休眠白名单的口径来源不同，修一处漏一处。
+  const domain = useMemo(() => hostnameOf(url) || undefined, [url]);
   const accent = useDomainAccent(favIconUrl, domain);
   const tileClass =
     'pinned-tile' +

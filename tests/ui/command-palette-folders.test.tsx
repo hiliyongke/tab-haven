@@ -51,12 +51,12 @@ function makeActions(): PaletteActions & { openedFolders: string[] } {
     onLocateActive: noop,
     onOpenHistory: noop,
     onOpenSettings: noop,
+    onOpenAbout: noop,
     onToggleAllSections: noop,
     onOpenSnapshots: noop,
     onSaveSnapshot: noop,
     onArchiveWindow: noop,
     onSaveSpace: noop,
-    onReadLaterActive: noop,
     onOpenFolder: (folderId) => {
       openedFolders.push(folderId);
     },
@@ -86,7 +86,7 @@ describe('CommandPalette 文件夹命令（P-04）', () => {
     const { input } = renderPalette(folders);
 
     const options = screen.getAllByRole('option');
-    // 2 文件夹 + 13 命令 + 1 标签
+    // 2 文件夹 + 12 命令 + 1 标签
     expect(options).toHaveLength(16);
     expect(options[0]).toHaveTextContent('项目 A');
     expect(options[1]).toHaveTextContent('项目 B');

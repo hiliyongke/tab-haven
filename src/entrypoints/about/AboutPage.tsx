@@ -62,8 +62,7 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     titleKey: 'about.domContextTitle',
     items: [
       { titleKey: 'about.domContext1Title', bodyKey: 'about.domContext1Body' },
-      { titleKey: 'about.domContext2Title', bodyKey: 'about.domContext2Body' },
-      { titleKey: 'about.domContext3Title', bodyKey: 'about.domContext3Body' }
+      { titleKey: 'about.domContext2Title', bodyKey: 'about.domContext2Body' }
     ]
   },
   {
@@ -163,6 +162,7 @@ const PANEL_SHORTCUTS: { key: string; keys: string[] }[] = [
   { key: 'about.shortcutPalette', keys: ['⌘/Ctrl', 'P'] },
   { key: 'about.shortcutLocate', keys: ['⌘/Ctrl', 'J'] },
   { key: 'about.shortcutUndo', keys: ['⌘/Ctrl', 'Z'] },
+  { key: 'about.shortcutRedo', keys: ['⌘/Ctrl', '⇧', 'Z'] },
   { key: 'about.shortcutRoam', keys: ['↑', '↓', 'Enter'] },
   { key: 'about.shortcutReorder', keys: ['Alt', '↑/↓'] },
   { key: 'about.shortcutDrag', keys: ['Space'] }

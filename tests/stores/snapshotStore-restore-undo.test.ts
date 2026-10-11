@@ -25,7 +25,7 @@ vi.mock('@/platform/snapshot/snapshots', () => ({
   restoreSnapshot: vi.fn().mockImplementation(async () => {
     createdIds.length = 0;
     createdIds.push(901, 902);
-    return 2;
+    return { count: 2, degraded: false };
   }),
   buildSnapshot: vi.fn(),
   collectSnapshotTabs: vi.fn(),
@@ -94,7 +94,7 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
       ]
     });
 
-    const count = await useSnapshotStore.getState().restore('s1');
+    const { count } = await useSnapshotStore.getState().restore('s1');
     expect(count).toBe(2);
     expect(recordClosedBatch).toHaveBeenCalledTimes(1);
 
@@ -109,7 +109,7 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
     const { restoreSnapshot } = await import('@/platform/snapshot/snapshots');
     const { useSnapshotStore } = await import('@/stores/snapshotStore');
 
-    vi.mocked(restoreSnapshot).mockResolvedValueOnce(0);
+    vi.mocked(restoreSnapshot).mockResolvedValueOnce({ count: 0, degraded: false });
     vi.mocked(queryWindowTabs).mockResolvedValue([tab(100)] as never);
 
     useSnapshotStore.setState({
@@ -135,7 +135,7 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
     const { restoreSnapshot } = await import('@/platform/snapshot/snapshots');
     const { useSnapshotStore } = await import('@/stores/snapshotStore');
 
-    vi.mocked(restoreSnapshot).mockResolvedValueOnce(2);
+    vi.mocked(restoreSnapshot).mockResolvedValueOnce({ count: 2, degraded: false });
     // 差分基线为空 = 「窗口里每个标签都是本次新建的」，撤销会把用户原有标签一并关掉。
     vi.mocked(queryWindowTabs).mockRejectedValueOnce(new Error('query failed'));
 
@@ -156,7 +156,7 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
       ]
     });
 
-    const count = await useSnapshotStore.getState().restore('s3');
+    const { count } = await useSnapshotStore.getState().restore('s3');
     // 恢复本身照常成功，只是少一个反悔入口
     expect(count).toBe(2);
     expect(recordClosedBatch).not.toHaveBeenCalled();

@@ -76,8 +76,8 @@ function toComparisonKey(raw: string): string {
 /**
  * 提取 URL 的主机名；解析失败返回空串。
  *
- * 唯一事实来源在此：此前 background/shared 与 ui/tabs/OtherWindowsSection
- * 各写一份 `new URL(url).hostname`，两处口径容易漂移。
+ * 唯一事实来源在此：此前 background/shared、ui/common/UndoHistoryPanel 与
+ * ui/tabs/PinnedTile 各写一份 `new URL(url).hostname`，多份副本口径容易漂移。
  */
 export function hostnameOf(url: string | undefined): string {
   if (!url) return '';

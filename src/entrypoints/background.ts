@@ -5,6 +5,7 @@ import { mapTab } from '@/platform/tabs';
 import { installGlobalErrorHandlers, logDegraded } from '@/platform/diagnostics';
 import { openOptionsPage } from '@/platform/navigation';
 import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
+import { toUndoTabRecord } from '@/core/undo/UndoStack';
 import {
   foldersRepository,
   pinsRepository,
@@ -27,7 +28,6 @@ import {
   rebuildContextMenus,
   clearContextMenus,
   addEntryToFolder,
-  addTabToReadLater,
   discardTabSafely,
   setupMenus
 } from './background/contextMenus';
@@ -87,6 +87,22 @@ export default defineBackground(() => {
       notifyReuse: () => {
         if (!cachedSettings.reuseNotifyEnabled) return;
         sendMessage({ type: 'duplicate-reused' });
+      },
+      // 复用关闭的标签快照回传面板登记撤销（同网址唯一化默认开启，这条关闭
+      // 路径此前完全不进撤销栈）。刻意与 notifyReuse 分开：撤销登记不受
+      // 「重复合并提示」开关影响，关掉提示也必须能撤销。
+      reportClosed: (windowId, closed) => {
+        void (async () => {
+          // 组名必须随快照一起回传：撤销恢复时若只有 groupId 而没有组名做校验，
+          // 会拿旧 id 直接入组，而该 id 可能已被浏览器复用为无关组。
+          const groups = await browser.tabGroups.query({ windowId }).catch(() => []);
+          const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
+          sendMessage({
+            type: 'reuse-closed',
+            windowId,
+            tabs: closed.map((tab) => toUndoTabRecord(tab, groupNameById))
+          });
+        })();
       }
     },
     { allowances: allowanceLedger, allowancesReady: allowanceLedgerReady }
@@ -309,7 +325,7 @@ export default defineBackground(() => {
   /**
    * 卸载挽留（R4 / S-1）。
    *
-   * 卸载扩展会连同 chrome.storage.local 一起删除固定空间、快照与归档、稍后读和
+   * 卸载扩展会连同 chrome.storage.local 一起删除固定空间、快照与归档和
    * 撤销栈 —— 而 Tabs 没有服务器，卸载后无从找回。此前用户点击「移除」时得不到
    * 任何提示，是一条单向的、不可挽回的数据丢失路径。
    *
@@ -393,16 +409,9 @@ export default defineBackground(() => {
       case MENU_IDS.tabDiscard:
         void discardTabSafely(targetTab);
         break;
-      case MENU_IDS.pageReadLater:
-      case MENU_IDS.tabReadLater:
-        if (targetTab?.url && targetTab.id !== undefined) {
-          void addTabToReadLater({
-            url: targetTab.url,
-            title: targetTab.title || targetTab.url,
-            favIconUrl: targetTab.favIconUrl
-          });
-        }
-        break;
+      // 标签栏右键的「固定」与页面右键同一处理分支：两处都是把目标标签
+      // 写进固定图标区并置 pinned，语义完全一致，不复制一份分支。
+      case MENU_IDS.tabPin:
       case MENU_IDS.pagePin: {
         if (targetTab?.url && targetTab.id !== undefined) {
           const pin = pinFromTab({

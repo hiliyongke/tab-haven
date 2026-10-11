@@ -7,7 +7,7 @@ import {
   selectRedoTargets,
   toUndoTabRecord
 } from '@/core/undo/UndoStack';
-import type { UndoBatch } from '@/core/schema/models';
+import type { UndoBatch, UndoTabRecord } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
 import i18n from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
@@ -91,6 +91,14 @@ interface UndoState {
     kind: string,
     groupNameById?: ReadonlyMap<number, string | undefined>
   ) => Promise<void>;
+  /**
+   * 复用引擎（同网址唯一化）关闭的标签登记撤销（P1-1）。
+   *
+   * 该开关默认开启，标签却是在 SW 内被 `tabs.remove` 的 —— 面板拿不到标签快照，
+   * 这条默认路径此前完全不进撤销栈，与「经本产品执行的关闭都可撤销」的承诺冲突。
+   * 由 SW 经既有 runtime 协议回传 UndoTabRecord 快照，本方法只负责入栈。
+   */
+  recordReuseClosed: (windowId: number, records: readonly UndoTabRecord[]) => Promise<void>;
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
@@ -99,7 +107,7 @@ interface UndoState {
   /**
    * 淘汰提示（R18 / S-3）：同一 key 在本会话内只提示一次。
    *
-   * 三类淘汰（稍后读超限、快照超限、撤销栈超限）都是「每次触发容量的操作都会
+   * 两类淘汰（快照超限、撤销栈超限）都是「每次触发容量的操作都会
    * 再淘汰一条」——批量关 50 个标签、连续保存快照都会连着触发几十次。若每次都弹
    * toast，提示条会互相顶掉且刷屏，用户反而看不到任何一条。故按 key 合并：
    * 同类淘汰在本会话内只提示一次（内容与数量以首次为准）。
@@ -386,9 +394,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 用入口快照会把它们整批抹掉。
     onCommitted(get().batches, retryBatch);
 
-    // 撤销成功后压入重做栈：只压「本次真正恢复成功」的条目 —— 失败项仍留在
-    // 撤销栈等重试，把它们也压进重做栈会让「重做」去关一批从未被恢复的标签。
-    const restoredEntries = batch.entries.filter((entry) => !result.failed.includes(entry));
+    // 撤销成功后压入重做栈：只压「本次真正新建出来」的条目 —— 失败项仍留在
+    // 撤销栈等重试；「窗口已打开同 URL 而未新建」的条目也必须排除：重做按 URL
+    // 反查关闭，把它们算进来会关掉用户本来就开着、与本次撤销无关的那个标签。
+    const restoredEntries = batch.entries.filter(
+      (entry) => !result.failed.includes(entry) && !result.skippedAlreadyOpen.includes(entry)
+    );
     if (restoredEntries.length > 0) {
       const redoBatch: UndoBatch = { ...batch, entries: restoredEntries };
       const settings = await settingsRepository.read();
@@ -411,6 +422,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
             : i18n.t('undo.restored', { count: result.count }),
         canUndo: false,
         batchId: undefined,
+        // 查询目标窗口失败（按不去重继续）时附一句说明：本次可能多建了副本，
+        // 属信息而非错误，走 note 同槽展示，不阻断流程也不改回执口径。
+        note: result.degraded ? i18n.t('undo.restoreDegraded') : undefined,
         // 重做出口挂在本次撤销的回执上：撤销刚发生，正是用户最可能反悔的时刻。
         action:
           get().redoBatches.length > 0
@@ -728,6 +742,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       await appendBatch(batch);
     },
 
+    recordReuseClosed: async (windowId, records) => {
+      if (records.length === 0) return;
+      const batch = createUndoBatch('reuse', [...records], { windowId });
+      await appendBatch(batch);
+    },
+
     clearToast: () => {
       clearTimeout(toastTimer);
       set({ toast: null });
@@ -750,7 +770,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       // 若本次操作没有回执（如后台归档登记），它就以独立提示条的形式留在界面上。
       //
       // 已知取舍：极少数场景（同一操作内两类淘汰先后发生）下，后一条会覆盖尚未
-      // 被接走的前一条。三类淘汰分别发生在「暂存稍后读 / 保存快照 / 关闭标签」，
+      // 被接走的前一条。两类淘汰分别发生在「保存快照 / 关闭标签」，
       // 路径不重叠，且覆盖只影响「少提示一条」，故不为此拼接文案。
       pendingEvictionToast = message;
       // 刻意不经 showToast：否则本次展示会把自己登记的那条又消费掉。

@@ -5,8 +5,6 @@ import {
   DEFAULT_SETTINGS,
   FixedFolderSchema,
   PersistentPinSchema,
-  READLATER_LIMIT,
-  ReadLaterItemSchema,
   SettingsSchema,
   SiteCollapseSchema,
   SnapshotSchema,
@@ -16,12 +14,20 @@ import type {
   AutoDiscardBatch,
   FixedFolder,
   PersistentPin,
-  ReadLaterItem,
   Settings,
   SiteCollapseState,
   Snapshot,
   UndoBatch
 } from '@/core/schema/models';
+
+/**
+ * 自动休眠台账保留的批次数上限（按 at 滚动淘汰最旧的）。
+ *
+ * 单槽位时第二轮休眠会整表覆盖第一轮 —— 面板只提示「最近一轮」，前一轮被冻结的
+ * 标签就此失去「全部唤醒」出口。5 轮远超「连续几轮自动休眠后想一次性找回」的真实
+ * 规模，同时把存储面钉死在有界区间（与全项目集合的既定原则一致）。
+ */
+export const AUTO_DISCARD_BATCHES_LIMIT = 5;
 
 /**
  * 平台依赖组合根（composition root）。
@@ -44,10 +50,9 @@ export interface Repositories {
    */
   redo: DataRepository<UndoBatch[]>;
   autoGroups: DataRepository<number[]>;
-  autoDiscard: DataRepository<AutoDiscardBatch | null>;
+  autoDiscard: DataRepository<AutoDiscardBatch[]>;
   seeded: DataRepository<boolean>;
   snapshots: DataRepository<Snapshot[]>;
-  readLater: DataRepository<ReadLaterItem[]>;
 }
 
 function createRepositories(): Repositories {
@@ -78,21 +83,15 @@ function createRepositories(): Repositories {
       z.array(z.number()).max(500),
       []
     ),
-    autoDiscard: new DataRepository<AutoDiscardBatch | null>(
+    autoDiscard: new DataRepository<AutoDiscardBatch[]>(
       'tabs.auto-discard-batch.v1',
-      AutoDiscardBatchSchema.nullable(),
-      null
+      z.array(AutoDiscardBatchSchema).max(AUTO_DISCARD_BATCHES_LIMIT),
+      []
     ),
     // 首次启动标志：false 表示新设备（可从浏览器同步通道镜像恢复）。
     seeded: new DataRepository<boolean>('tabs.sync-seeded.v1', z.boolean(), false),
     // 会话快照列表（命名快照 + 关窗自动保存），本地优先、零账号。
-    snapshots: new DataRepository<Snapshot[]>('tabs.snapshots.v1', SnapshotSchema.array(), []),
-    // 稍后读分区：独立于固定文件夹的「一次性消费」暂存区，不参与同步镜像。
-    readLater: new DataRepository<ReadLaterItem[]>(
-      'tabs.read-later.v1',
-      ReadLaterItemSchema.array().max(READLATER_LIMIT),
-      []
-    )
+    snapshots: new DataRepository<Snapshot[]>('tabs.snapshots.v1', SnapshotSchema.array(), [])
   };
 }
 

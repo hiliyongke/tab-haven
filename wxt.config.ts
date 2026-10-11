@@ -34,6 +34,10 @@ export default defineConfig({
       'sessions',
       'bookmarks',
       'notifications',
+      // 侧边栏主形态所需。WXT 检测到 sidepanel 入口后本就会自动注入该权限，
+      // 这里显式列出是让「声明」与 PRIVACY.md/隐私门禁的口径落在同一处源码上
+      // （WXT 会去重，产物 manifest 中不会出现重复项）。
+      'sidePanel',
       // 开发者禁缓存能力：DNR 改响应头（横幅改由侧边栏角标呈现，不注入页面）。
       // host 权限刻意走 optional（按需请求）：不开该功能则安装时不出现全站权限警告。
       'declarativeNetRequest'

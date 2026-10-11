@@ -16,7 +16,6 @@ import { RowActions } from '@/ui/common/RowActions';
 import { RowItem } from '@/ui/common/RowItem';
 import { ContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { StatusBadges } from '@/ui/common/StatusBadges';
-import { useReadLaterStore } from '@/stores/readLaterStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { DragType } from '@/ui/dnd/types';
 
@@ -171,21 +170,6 @@ export const TabRow = memo(function TabRow({
     [t]
   );
 
-  /** 加入稍后读（R12）。 */
-  const addToReadLater = useCallback(
-    async (target: TabRecord) => {
-      if (!target.url) return;
-      const ok = await useReadLaterStore.getState().addItem({
-        url: target.url,
-        title: target.title ?? '',
-        favIconUrl: target.favIconUrl
-      });
-      // 只在失败时提示：成功路径由 store 自行反馈，避免重复 toast。
-      if (!ok) useUndoStore.getState().notifyError(t('errors.operationFailed'));
-    },
-    [t]
-  );
-
   /** 右键菜单（R12 / IX-4）：面板内标签行此前无任何上下文菜单。 */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -201,7 +185,6 @@ export const TabRow = memo(function TabRow({
   const menuItems = useMemo<ContextMenuItem[]>(
     () => [
       { label: t('tabs.copyUrl'), onSelect: () => void copyTabUrl(tab) },
-      { label: t('tabs.addToReadLater'), onSelect: () => void addToReadLater(tab) },
       {
         label: tab.pinned ? t('tabs.unpin') : t('tabs.pin'),
         onSelect: () => onTogglePin(tab)
@@ -212,7 +195,7 @@ export const TabRow = memo(function TabRow({
       ...(onDuplicate ? [{ label: t('tabs.duplicate'), onSelect: () => onDuplicate(tab) }] : []),
       { label: t('tabs.closeTab'), onSelect: () => onClose(tab), danger: true }
     ],
-    [tab, t, onTogglePin, onDiscard, onDuplicate, onClose, copyTabUrl, addToReadLater]
+    [tab, t, onTogglePin, onDiscard, onDuplicate, onClose, copyTabUrl]
   );
 
   const handleActivate = useCallback(() => onActivate(tab.id), [onActivate, tab.id]);

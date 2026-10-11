@@ -27,10 +27,31 @@ export interface RestoreResult {
   count: number;
   /** 本次未恢复成功的记录（与入参顺序无关，按恢复顺序追加）。 */
   failed: UndoTabRecord[];
+  /**
+   * 「目标窗口已打开同 URL」而未真正新建的记录。
+   *
+   * 它们对撤销是成功（页面确实在），但对**重做**不是：重做按 URL 反查并关闭，
+   * 若把它们压进重做栈，被关掉的是用户本来就开着、从未被本次撤销恢复出来的
+   * 那个标签 —— 安全网反过来制造误关。调用方入重做栈时必须排除这批。
+   */
+  skippedAlreadyOpen: UndoTabRecord[];
+  /**
+   * 查询目标窗口已打开页面失败，本次按「不去重」继续（宁可多建也不拒绝恢复）。
+   * 置起即意味着**可能多建了副本**，由调用方告知用户，不阻断流程。
+   */
+  degraded: boolean;
 }
 
-/** 取窗口内已打开页面的比较键集合（去重判定的唯一口径）。 */
-async function openKeysInWindow(windowId: number): Promise<Set<string>> {
+/**
+ * 取窗口内已打开页面的比较键集合（去重判定的唯一口径）。
+ *
+ * 查询失败返回 `degraded: true`：此时按「不去重」继续（宁可多开一个标签，也不能
+ * 因为读不到状态而拒绝恢复），但必须让调用方知道本次可能多建了副本 —— 静默按空集
+ * 处理会让「撤销了一下多出一堆重复标签」变成无从解释的现象。
+ */
+async function openKeysInWindow(
+  windowId: number
+): Promise<{ keys: Set<string>; degraded: boolean }> {
   const keys = new Set<string>();
   try {
     const tabs = await browser.tabs.query({ windowId });
@@ -39,10 +60,13 @@ async function openKeysInWindow(windowId: number): Promise<Set<string>> {
       if (key) keys.add(key);
     }
   } catch {
-    // 查询失败退化为「不去重」：宁可多开一个标签，也不能因为读不到状态而拒绝恢复。
+    return { keys, degraded: true };
   }
-  return keys;
+  return { keys, degraded: false };
 }
+
+/** 单条记录的恢复结局：新建成功 / 已存在未新建 / 失败。 */
+type RestoreOutcome = 'created' | 'skipped' | 'failed';
 
 /**
  * 恢复一批撤销记录，返回成功数量与失败明细。
@@ -57,7 +81,7 @@ export async function restoreTabRecordsDetailed(
   const restored = [...records].sort((a, b) => a.index - b.index);
   // 已打开去重：与快照恢复（snapshots.restoreSnapshot）同口径。
   // 不做这一步的话，用户手动重开某页后再撤销，必定收获一个重复标签。
-  const openKeys = await openKeysInWindow(windowId);
+  const { keys: openKeys, degraded } = await openKeysInWindow(windowId);
 
   // 有限并发而非严格串行：每条记录都要走「发放豁免（一次 runtime 往返）→
   // tabs.create → 静音/分组」三段 await，严格串行下 100 条就是 300 次串行往返，
@@ -67,14 +91,16 @@ export async function restoreTabRecordsDetailed(
   const outcomes = await mapWithConcurrency(
     restored,
     DEFAULT_CONCURRENCY,
-    async (record): Promise<boolean> => {
+    async (record): Promise<RestoreOutcome> => {
       // 无 URL 的记录无法恢复：计入失败明细，避免整批重试时反复静默跳过。
-      if (!record.url) return false;
+      if (!record.url) return 'failed';
 
       const recordKey = webComparisonKey(record.url, undefined);
       if (recordKey !== null && openKeys.has(recordKey)) {
         // 目标窗口已有同 URL：视为已恢复，不再新建一个副本。
-        return true;
+        // 必须与「新建成功」区分开：重做会按 URL 反查并关闭，把这条算作新建
+        // 会让重做关掉用户本来就开着、与本次撤销无关的那个标签。
+        return 'skipped';
       }
 
       try {
@@ -90,7 +116,7 @@ export async function restoreTabRecordsDetailed(
         });
         const createdId = created.id;
         // 拿不到 id 视为恢复失败（后续静音/分组都无从下手），计入明细而非静默跳过。
-        if (createdId === undefined) return false;
+        if (createdId === undefined) return 'failed';
 
         if (record.muted) {
           await browser.tabs.update(createdId, { muted: true });
@@ -129,22 +155,26 @@ export async function restoreTabRecordsDetailed(
         // 刻意**不**把新恢复的 URL 加回 openKeys：撤销是「把关掉的还回来」，
         // 同一批次里出现两条同 URL 是合法的（用户确实关了两个同 URL 标签）。
         // 若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
-        return true;
+        return 'created';
       } catch {
         // 单个标签恢复失败不影响同一批次中的其余标签；记录明细供调用方保留重试。
-        return false;
+        return 'failed';
       }
     }
   );
 
   let count = 0;
   const failed: UndoTabRecord[] = [];
-  for (const [index, ok] of outcomes.entries()) {
-    if (ok) count += 1;
-    else failed.push(restored[index]!);
+  const skippedAlreadyOpen: UndoTabRecord[] = [];
+  for (const [index, outcome] of outcomes.entries()) {
+    const record = restored[index]!;
+    if (outcome === 'failed') failed.push(record);
+    else if (outcome === 'skipped') skippedAlreadyOpen.push(record);
+    // 'created' 与 'skipped' 都算「这份页面此刻在窗口里」，故 count 一并计入。
+    if (outcome !== 'failed') count += 1;
   }
 
-  return { count, failed };
+  return { count, failed, skippedAlreadyOpen, degraded };
 }
 
 /** 兼容入口：只要成功数量（调用方无需失败明细时使用）。 */

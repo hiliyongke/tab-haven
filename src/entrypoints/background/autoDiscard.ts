@@ -4,16 +4,27 @@ import { canSafelyDiscardTab } from '@/core/tab-types';
 import { mapTab } from '@/platform/tabs';
 import { readSession } from '@/platform/storage/session';
 import { autoDiscardRepository, settingsRepository } from '@/platform/storage/repositories';
+import { AUTO_DISCARD_BATCHES_LIMIT } from '@/platform/registry';
 import { sendMessage } from '@/platform/messages';
 import { t } from '@/i18n/headless';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { buildWhitelistMatcher, cachedSettings, hostnameOf, notifyUser } from './shared';
 import { logDegraded } from '@/platform/diagnostics';
 
+/**
+ * 追加一轮休眠台账（多批次保留，按 at 滚动淘汰最旧的）。
+ *
+ * 此前整表覆盖写（单槽位）：第二轮自动休眠会抹掉第一轮的 tabIds，而第一轮冻结的
+ * 标签还没被唤醒 —— 「全部唤醒」于是只兜得住最近一轮，更早的批次永久失去出口。
+ */
 async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
   const at = Date.now();
-  const persisted = await autoDiscardRepository.write({ tabIds, at, count: tabIds.length });
+  const current = await autoDiscardRepository.read();
+  const next = [...current, { tabIds, at, count: tabIds.length }]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, AUTO_DISCARD_BATCHES_LIMIT);
+  const persisted = await autoDiscardRepository.write(next);
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
     notifyUser('Tabs', t('bg.autoDiscarded', { count: tabIds.length }));
@@ -30,12 +41,13 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
 /** 清理已失效的自动休眠台账（批次标签全部不存在或已唤醒）。 */
 async function pruneAutoDiscardBatch(): Promise<void> {
   try {
-    const batch = await autoDiscardRepository.read();
-    if (!batch) return;
+    const batches = await autoDiscardRepository.read();
+    if (batches.length === 0) return;
     const tabs = await browser.tabs.query({});
     const live = new Map(tabs.map((tab) => [tab.id, tab.discarded]));
-    const anyStillDiscarded = batch.tabIds.some((id) => live.get(id) === true);
-    if (!anyStillDiscarded) await autoDiscardRepository.write(null);
+    // 只保留「仍有标签处于休眠」的批次：已全部唤醒的批次留着会出现点了没反应的入口。
+    const kept = batches.filter((batch) => batch.tabIds.some((id) => live.get(id) === true));
+    if (kept.length !== batches.length) await autoDiscardRepository.write(kept);
   } catch (error) {
     logDegraded('auto-discard', '自动休眠扫描失败', error);
     // 读取失败保持现状

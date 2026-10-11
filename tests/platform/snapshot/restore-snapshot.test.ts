@@ -81,7 +81,7 @@ describe('restoreSnapshot（FR-D5.1 加法恢复）', () => {
       snapTab({ url: 'https://b.com/' }), // 已存在 → 跳过
       snapTab({ url: 'https://c.com/' }) // 缺失 → 新建
     ]);
-    const created = await restoreSnapshot(snap, WINDOW_ID);
+    const { count: created } = await restoreSnapshot(snap, WINDOW_ID);
 
     expect(created).toBe(1);
     const all = await fakeBrowser.tabs.query({ windowId: WINDOW_ID });
@@ -95,7 +95,7 @@ describe('restoreSnapshot（FR-D5.1 加法恢复）', () => {
       snapTab({ url: 'https://a.com/' }),
       snapTab({ url: 'https://a.com/' })
     ]);
-    const created = await restoreSnapshot(snap, WINDOW_ID);
+    const { count: created } = await restoreSnapshot(snap, WINDOW_ID);
     expect(created).toBe(1);
   });
 
@@ -104,7 +104,7 @@ describe('restoreSnapshot（FR-D5.1 加法恢复）', () => {
     await ensureWindow();
     await fakeBrowser.tabs.create({ windowId: WINDOW_ID, url: 'https://a.com/' });
     const snap = snapshotOf([snapTab({ url: 'https://a.com/' })]);
-    expect(await restoreSnapshot(snap, WINDOW_ID)).toBe(0);
+    expect(await restoreSnapshot(snap, WINDOW_ID)).toMatchObject({ count: 0 });
   });
 
   it('还原固定与静音状态', async () => {

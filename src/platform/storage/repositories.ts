@@ -24,6 +24,5 @@ export const redoRepository = current.redo;
 export const autoGroupsRepository = current.autoGroups;
 export const autoDiscardRepository = current.autoDiscard;
 export const snapshotsRepository = current.snapshots;
-export const readLaterRepository = current.readLater;
 
 export { getRepositories } from '@/platform/registry';

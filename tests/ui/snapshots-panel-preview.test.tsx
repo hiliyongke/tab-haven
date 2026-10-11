@@ -167,7 +167,7 @@ describe('SnapshotsPanel 恢复预览（P-02）', () => {
   });
 
   it('取消勾选后按钮计数减少，且按勾选集恢复', async () => {
-    const restoreSelected = vi.fn().mockResolvedValue(1);
+    const restoreSelected = vi.fn().mockResolvedValue({ count: 1, degraded: false });
     useSnapshotStore.setState({
       snapshots: [
         makeSnap({
@@ -191,8 +191,12 @@ describe('SnapshotsPanel 恢复预览（P-02）', () => {
       expect(screen.getByRole('button', { name: /Restore selected \(1\)/ })).toBeInTheDocument();
     });
 
-    // 点击恢复：传给 store 的条目应只剩 b.com
+    // 点击恢复：先弹影响面确认（选择性恢复与整份恢复同一闸门），确认后才执行
     fireEvent.click(screen.getByRole('button', { name: /Restore selected \(1\)/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Restoring/)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Restore$/ }).at(-1)!);
     await waitFor(() => {
       expect(restoreSelected).toHaveBeenCalledTimes(1);
       const [, selected] = restoreSelected.mock.calls[0] as [string, SnapshotTab[]];

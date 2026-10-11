@@ -13,6 +13,7 @@ import { sendMessageWithAck } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import { logFailure } from '@/platform/diagnostics';
 import { useUndoStore } from '@/stores/undoStore';
+import type { RestoreSnapshotResult } from '@/platform/snapshot/snapshots';
 import {
   buildSnapshot,
   collectSnapshotTabs,
@@ -96,20 +97,19 @@ interface SnapshotState {
   deleteSnapshot: (id: string) => Promise<void>;
   /** 重命名指定快照。 */
   renameSnapshot: (id: string, name: string) => Promise<void>;
-  /** 恢复指定快照，返回打开的标签数；可指定目标窗口（缺省取聚焦窗口）。 */
-  restore: (id: string, windowId?: number) => Promise<number>;
+  /** 恢复指定快照，返回新建标签数与降级标志；可指定目标窗口（缺省取聚焦窗口）。 */
+  restore: (id: string, windowId?: number) => Promise<RestoreSnapshotResult>;
   /** 把当前窗口最新现场写回既有空间快照（原地更新，空间切换用）。返回是否写入成功。 */
   updateSpace: (id: string) => Promise<boolean>;
   /**
-   * 按条目归档（稍后读过期归档等「非当前窗口」来源）：构造 origin=archive
-   * 快照落盘，返回归档条数。与 archiveCurrentWindow 的差别：条目由调用方给定。
+   * 选择性恢复（P-02）：只恢复勾选的条目，返回新建标签数与降级标志。
+   * 勾选集为空返回 0；其余语义与 restore 一致（缺失才新建、分组还原、
+   * 结束后按差分登记可撤销批次）。
    */
-  archiveItems: (name: string, tabs: readonly SnapshotTab[]) => Promise<number>;
-  /**
-   * 选择性恢复（P-02）：只恢复勾选的条目，返回实际新建标签数。
-   * 勾选集为空返回 0；其余语义与 restore 一致（缺失才新建、分组还原等）。
-   */
-  restoreSelected: (id: string, selectedTabs: readonly SnapshotTab[]) => Promise<number>;
+  restoreSelected: (
+    id: string,
+    selectedTabs: readonly SnapshotTab[]
+  ) => Promise<RestoreSnapshotResult>;
   /** 内存态重置（清除所有数据时调用：已删除的快照不应继续出现在列表里）。 */
   reset: () => void;
 }
@@ -325,7 +325,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
    */
   restore: async (id, windowId) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
-    if (!snap) return 0;
+    if (!snap) return { count: 0, degraded: false };
     // 差分必须落在恢复的**目标窗口**上：restoreSnapshot 在 windowId 缺省时恢复到
     // 最近聚焦窗口，而侧边栏所在窗口未必是它 —— 按当前窗口取「恢复前现场」，
     // 跨窗恢复时会一个新建项都匹配不到。resolveRestoreWindowId 与 restoreSnapshot
@@ -339,11 +339,11 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
         : await queryWindowTabs(targetWindowId)
             .then((tabs) => new Set(tabs.map((tab) => tab.id)))
             .catch(() => undefined);
-    const count = await restoreSnapshot(snap, windowId);
-    if (count > 0 && beforeIds && targetWindowId !== undefined) {
+    const result = await restoreSnapshot(snap, windowId);
+    if (result.count > 0 && beforeIds && targetWindowId !== undefined) {
       await recordRestoreForUndo(beforeIds, targetWindowId);
     }
-    return count;
+    return result;
   },
 
   updateSpace: async (id) => {
@@ -356,27 +356,25 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     return result.replaced;
   },
 
-  archiveItems: async (name, tabs) => {
-    if (tabs.length === 0) return 0;
-    const snapshot = buildSnapshot({
-      name,
-      fallbackName: i18n.t('snapshots.defaultArchiveName'),
-      origin: 'archive',
-      windowId: undefined,
-      tabs
-    });
-    const next = await persistSnapshot(snapshot);
-    set({ snapshots: next });
-    // 返回实际归档条数：buildSnapshot 会过滤无 url 条目，与传入数可能不同。
-    return snapshot.tabCount;
-  },
-
   restoreSelected: async (id, selectedTabs) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
-    if (!snap || selectedTabs.length === 0) return 0;
+    if (!snap || selectedTabs.length === 0) return { count: 0, degraded: false };
+    // 撤销账本与整份恢复完全同口径：勾选恢复同样是一次可新建上百标签的破坏性
+    // 动作，此前它既不走影响面确认也不登记撤销 —— 与 restore 不对称，是安全网缺口。
+    const targetWindowId = await resolveRestoreWindowId(undefined);
+    const beforeIds =
+      targetWindowId === undefined
+        ? undefined
+        : await queryWindowTabs(targetWindowId)
+            .then((tabs) => new Set(tabs.map((tab) => tab.id)))
+            .catch(() => undefined);
     // 部分快照：勾选条目 + 同步重算 tabCount（满足 schema refine 约束），
     // 之后完全复用整份恢复管线（豁免/并发创建/分组还原语义不变）。
-    return restoreSnapshot(buildPartialSnapshot(snap, selectedTabs));
+    const result = await restoreSnapshot(buildPartialSnapshot(snap, selectedTabs));
+    if (result.count > 0 && beforeIds && targetWindowId !== undefined) {
+      await recordRestoreForUndo(beforeIds, targetWindowId);
+    }
+    return result;
   },
 
   reset: () => set({ snapshots: [], ready: false })

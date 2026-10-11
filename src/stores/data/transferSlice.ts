@@ -17,7 +17,6 @@ import {
   withCrossPageLock
 } from '@/platform/storage/crossPageLock';
 import { mutateSession } from '@/platform/storage/session';
-import { replaceReadLater } from '@/platform/readlater/readLaterOps';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { isExportableUrl, readBookmarkBar } from '@/platform/bookmarks';
 import type { DataContext, DataState } from './types';
@@ -40,9 +39,7 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
       persistentPins: ctx.get().pins,
       siteCollapse: ctx.get().collapsedSites,
       settings: ctx.get().settings,
-      snapshots: await ctx.repos.snapshots.read(),
-      // 直读仓库：与快照同口径（导出入口在设置页，走内存桥会静默导出空分区）。
-      readLater: await ctx.repos.readLater.read()
+      snapshots: await ctx.repos.snapshots.read()
     }),
 
     /**
@@ -80,42 +77,24 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
         await ctx.cancelWrites();
         // 回滚值一律直读磁盘：内存态可能已被 watcher 或另一页面改写，
         // 用内存值回滚会把别人的数据反向覆盖到磁盘（回滚本身变成数据丢失）。
-        const [
-          beforeFolders,
-          beforePins,
-          beforeCollapse,
-          beforeSettings,
-          beforeSnapshots,
-          beforeReadLater
-        ] = await Promise.all([
-          ctx.repos.folders.read(),
-          ctx.repos.pins.read(),
-          ctx.repos.collapse.read(),
-          ctx.repos.settings.read(),
-          ctx.repos.snapshots.read(),
-          ctx.repos.readLater.read()
-        ]);
+        const [beforeFolders, beforePins, beforeCollapse, beforeSettings, beforeSnapshots] =
+          await Promise.all([
+            ctx.repos.folders.read(),
+            ctx.repos.pins.read(),
+            ctx.repos.collapse.read(),
+            ctx.repos.settings.read(),
+            ctx.repos.snapshots.read()
+          ]);
         const before = {
           folders: beforeFolders,
           pins: beforePins,
           collapse: beforeCollapse,
           settings: beforeSettings,
-          snapshots: beforeSnapshots,
-          readLater: beforeReadLater
+          snapshots: beforeSnapshots
         };
         // 备份文件可被任意构造：含重复 identity 的 pin / 重复 URL 条目若原样提交，
         // 会立即渲染出重复磁贴与重复条目（其余路径均做去重，导入必须同口径）。
         // 顺序保持原序，按「全空间首见保留」清理，与固定空间的唯一性不变量一致。
-        // 稍后读同样按 URL 身份去重（同 URL 重复条目会渲染成两条未读），
-        // 与固定空间条目同口径：顺序保持原序，按首见保留。
-        const readLaterSeen = new Set<string>();
-        const importedReadLater = data.readLater.filter((item) => {
-          const key = webComparisonKey(item.url, undefined);
-          if (key === null) return true;
-          if (readLaterSeen.has(key)) return false;
-          readLaterSeen.add(key);
-          return true;
-        });
         const importedPins = dedupePins(data.persistentPins);
         const seenKeys = new Set<string>();
         const importedFolders = data.fixedFolders.map((folder) => ({
@@ -189,13 +168,6 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
               withCrossPageLock(SNAPSHOTS_RMW_LOCK, () =>
                 ctx.repos.snapshots.write(before.snapshots)
               )
-          },
-          // 稍后读：与 platform/readlater 共用同一把锁（右键菜单写入在锁内 RMW），
-          // 锁外整表写会被它覆盖丢失（反之亦然）。
-          {
-            name: 'readLater',
-            write: () => replaceReadLater(importedReadLater),
-            rollback: () => replaceReadLater(before.readLater)
           }
         ];
 

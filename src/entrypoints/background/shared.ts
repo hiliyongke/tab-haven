@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
+import { hostnameOf as coreHostnameOf, inspectUrl } from '@/core/url/UrlInspector';
 import {
   PENDING_ACTIONS_KEY,
   PENDING_ACTIONS_LIMIT,
@@ -13,7 +14,7 @@ import { logDegraded } from '@/platform/diagnostics';
 
 /**
  * SW 侧共享状态与工具（被各 background 子模块复用）。
- * 拆分自原 background.ts：设置缓存 / hostname 工具 / 白名单 / 通知 / 待执行动作队列 / 打开侧栏。
+ * 拆分自原 background.ts：设置缓存 / hostname 留痕包装 / 白名单 / 通知 / 待执行动作队列 / 打开侧栏。
  */
 
 /** SW 侧设置缓存：SW 每次启动重新读取（模块级变量在回收后重置），变更经 watch 实时更新。 */
@@ -27,18 +28,24 @@ export const syncCachedSettings = async (): Promise<void> => {
   }
 };
 
-/** 提取 hostname（失败返回空串）。 */
-export function hostnameOf(url: string | undefined): string {
-  if (!url) return '';
-  try {
-    return new URL(url).hostname;
-  } catch (error) {
-    // 文案须与函数名对应：此前这里是复制粘贴的「共享上下文读取失败」，
-    // 诊断导出里出现大量语义无关条目会淹没真实故障。
-    logDegraded('background', 'URL 解析失败，已按空主机名处理', error);
-    return '';
+/**
+ * hostname 判定的唯一事实来源在 `@/core/url/UrlInspector`，这里只包一层 SW 侧留痕。
+ *
+ * 此前这里逐字复制了一份 `new URL(url).hostname`，与 UI 侧的副本各自演进：
+ * 任一处修口径（如空串 / 内部页的处理）另一处都静默漏改，表现为「同一个 URL
+ * 在休眠白名单里算命中、在搜索站点里算不命中」。entrypoints 不沉淀判定逻辑。
+ */
+export const hostnameOf = (url: string | undefined): string => {
+  const host = coreHostnameOf(url);
+  // 「有 URL 却取不到主机名」在 SW 侧是用户可见降级：白名单按主机名匹配，
+  // 取不到即等价于不命中，站点会被自动休眠。空白起始页（about:blank 等）
+  // 本就没有主机名，属正常态，不记诊断 —— 否则每轮休眠扫描都会为它写一条，
+  // 真实故障被淹没（同 syncCachedSettings 的留痕纪律）。
+  if (url && !host && inspectUrl(url, undefined).category !== 'blank-start') {
+    logDegraded('background', 'URL 无法解析为主机名，已按空主机名处理', url);
   }
-}
+  return host;
+};
 
 /**
  * 构建白名单匹配器（精确 hostname 或子域匹配，qq.com 覆盖 mail.qq.com）。

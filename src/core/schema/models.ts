@@ -36,6 +36,13 @@ export const SITE_COLLAPSE_LIMIT = 2_000;
 export const DISCARD_WHITELIST_LIMIT = 500;
 /** hostname / 域名字符串长度上限（DNS 标签总长上限 253）。 */
 export const HOST_MAX_LENGTH = 253;
+/**
+ * 图标 URL 长度上限（仅作用于**导入侧**，见 ImportFaviconUrlSchema）。
+ *
+ * 基础 schema 不加此上限：运行时 Chrome 给出的 favIconUrl 可能是体积较大的
+ * `data:image/...`，在读盘路径上封顶会把合法存量数据判成坏数据而丢条目。
+ */
+export const FAVICON_URL_MAX_LENGTH = 2_048;
 /** 单个撤销批次的标签条目上限。 */
 export const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
 /** 撤销栈默认深度（schema 与 core 共用同一来源，避免上限双定义）。 */
@@ -44,8 +51,6 @@ export const DEFAULT_UNDO_STACK_LIMIT = 10;
 export const SNAPSHOT_TABS_LIMIT = 1_000;
 /** 快照族总条数上限（含归档与自动快照）。 */
 export const SNAPSHOTS_LIMIT = 200;
-/** 稍后读条目数上限。 */
-export const READLATER_LIMIT = 200;
 
 export const FixedFolderItemSchema = z.object({
   id: z.string(),
@@ -223,8 +228,12 @@ export const SettingsSchema = z.object({
    * 仅是 id 引用：空间被删除后该值失效，消费方须按「找不到即视为未激活」容错。
    */
   activeSpaceId: z.string().optional(),
-  /** 面板展示其他窗口的分段（只读 + 聚焦/关闭，当前窗口的全部交互不变）。 */
-  showOtherWindows: z.boolean().default(true)
+  /**
+   * 面板展示其他窗口的分段（只读 + 聚焦/关闭，当前窗口的全部交互不变）。
+   * 默认关闭：产品口径是「只管理当前窗口」，读取其他窗口必须由用户显式开启，
+   * 与 searchAllWindows 的默认关闭口径保持一致（默认值为新装生效，已存设置不受影响）。
+   */
+  showOtherWindows: z.boolean().default(false)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -296,22 +305,6 @@ export const SnapshotTabSchema = z.object({
 });
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
 
-/**
- * 稍后读条目：把标签暂存到独立分区（与固定文件夹正交——稍后读是「一次性消费」
- * 语义：读完成灰、7 天未读提示归档进快照），纯本地持久化、不参与同步镜像。
- */
-export const ReadLaterItemSchema = z.object({
-  id: z.string(),
-  url: z.string(),
-  title: z.string(),
-  favIconUrl: z.string().optional(),
-  /** 暂存时间戳（ms）。 */
-  addedAt: z.number(),
-  /** 标记已读的时间戳（ms）；缺省 = 未读。 */
-  readAt: z.number().optional()
-});
-export type ReadLaterItem = z.infer<typeof ReadLaterItemSchema>;
-
 /** 会话快照（命名快照 + 关窗自动保存），本地优先、零账号。 */
 export const SnapshotSchema = z
   .object({
@@ -344,18 +337,25 @@ export type Snapshot = z.infer<typeof SnapshotSchema>;
  * v2：新增 readLater（稍后读）分区。字段是纯新增且旧版会忽略未知键，但版本号必须
  * 递增——版本号要唯一标识格式，否则同一 v1 会存在「有/无 readLater」两种形态，
  * 导入端无法按版本分发，只能靠猜字段（正是本版本号想消灭的兼容泥潭）。
+ *
+ * v3：移除 readLater 分区（稍后读能力下线）。同样是「删字段」而非「加字段」，
+ * 版本号仍须递增：否则同一 v2 会存在「有/无 readLater」两种形态，与上面 v1→v2
+ * 的顾虑完全对称。旧 v2 备份按项目单一格式口径被拒绝导入（不做跨版本兼容解析）。
  */
-export const EXPORT_FILE_VERSION = 2;
+export const EXPORT_FILE_VERSION = 3;
 
 /**
  * 导出文件格式。
  *
- * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族 + 稍后读
+ * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族
  * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区）。
  *
  * `version` 缺省时按 1 处理（容错未带版本号的早期备份）；
  * 未来版本会被字面量拒绝 —— 旧版扩展不认识新版数据结构，
  * 宁可提示用户升级，也不能让旧代码误读新字段。
+ *
+ * 导入端另有 `ExportFileImportSchema`（本 schema 的图标加固副本，见下）：
+ * 备份里的 `favIconUrl` 只接受 `data:image/` / `chrome://` / `chrome-extension://`。
  */
 export const ExportFileSchema = z.object({
   format: z.literal('tabs.export'),
@@ -366,12 +366,72 @@ export const ExportFileSchema = z.object({
   siteCollapse: SiteCollapseSchema,
   settings: SettingsSchema,
   /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区。 */
-  snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([]),
-  /** 稍后读分区（v2 起纳入备份；老备份缺省为空数组）。 */
-  readLater: z.array(ReadLaterItemSchema).max(READLATER_LIMIT).default([])
+  snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
 });
 
 export type ExportFile = z.infer<typeof ExportFileSchema>;
+
+/**
+ * 导入侧（备份文件）favicon 的 scheme 白名单。
+ *
+ * `favIconUrl` 有两个来源：
+ *  1. 运行时由浏览器给出 —— Chrome 返回的几乎都是 `http(s)://` 站点图标；
+ *  2. 备份文件 —— 可被任意构造。
+ * 渲染图标会让扩展页对该地址发起一次图片请求，因此来源 2 的任意 http(s)
+ * 等于「备份文件可指定扩展向任意站点发请求」。故**只在导入侧**收紧。
+ *
+ * 位置选择（导入专用 schema，而不是基础 schema）：基础 schema 同时用于运行时
+ * 读盘（`DataRepository.read`），在那里收紧会让运行时写入的 http(s) 图标在下次
+ * 读盘时被判为坏数据而清空/隔离 —— 那正是要避免的误伤。校验仍然落在 zod 层
+ * （而非 UI 输入处），因此经备份导入的每一条数据都无法绕过。
+ *
+ * 归一化而非判坏：图标不是业务数据，越界的图标降级为「回退首字母」，
+ * 好过把整条条目（连同网址与标题）一起丢掉。
+ */
+const IMPORT_FAVICON_SCHEME = /^(?:data:image\/|chrome:\/\/|chrome-extension:\/\/)/i;
+
+/**
+ * 导入侧图标字段：长度封顶 + scheme 白名单归一化。
+ *
+ * 超长或非白名单 scheme（含任意 http(s)）一律归一为 `undefined`，而不是让校验
+ * 失败：用 `.max()` 硬失败会让「一个畸形图标」升级为「整份备份导入被拒」，
+ * 图标是装饰性数据，丢图标远好过让用户无法恢复备份。
+ */
+export const ImportFaviconUrlSchema = z
+  .string()
+  .transform((value) =>
+    value.length <= FAVICON_URL_MAX_LENGTH && IMPORT_FAVICON_SCHEME.test(value) ? value : undefined
+  )
+  .optional();
+
+/** 导入专用条目 schema：只替换 favIconUrl，其余字段与运行时同口径。 */
+const ImportFixedFolderItemSchema = FixedFolderItemSchema.safeExtend({
+  favIconUrl: ImportFaviconUrlSchema
+});
+const ImportFixedFolderSchema = FixedFolderSchema.safeExtend({
+  items: z.array(ImportFixedFolderItemSchema).max(FOLDER_ITEMS_LIMIT)
+});
+const ImportPersistentPinSchema = PersistentPinSchema.safeExtend({
+  favIconUrl: ImportFaviconUrlSchema
+});
+const ImportSnapshotTabSchema = SnapshotTabSchema.safeExtend({
+  favIconUrl: ImportFaviconUrlSchema
+});
+/** SnapshotSchema 带 refine（tabCount === tabs.length），safeExtend 会保留该校验。 */
+const ImportSnapshotSchema = SnapshotSchema.safeExtend({
+  tabs: z.array(ImportSnapshotTabSchema).max(SNAPSHOT_TABS_LIMIT)
+});
+
+/**
+ * 导入专用导出文件 schema：与导出结构同形，分区内条目改用受图标约束的版本。
+ * 只被 `parseExportFile` 使用；导出侧仍走 `ExportFileSchema`（原样写出图标，
+ * 保证「导出 → 导入」不丢失运行时图标之外的信息）。
+ */
+const ExportFileImportSchema = ExportFileSchema.safeExtend({
+  fixedFolders: z.array(ImportFixedFolderSchema).max(FOLDERS_LIMIT),
+  persistentPins: z.array(ImportPersistentPinSchema).max(PINS_LIMIT),
+  snapshots: z.array(ImportSnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
+});
 
 /**
  * 导出文件统一读取口径：单一格式，不匹配即拒绝（不静默降级）。
@@ -380,12 +440,15 @@ export type ExportFile = z.infer<typeof ExportFileSchema>;
  * 失败时区分「版本不匹配」与「文件本身有问题」：版本不匹配是**可解释的**
  * （用户手上这份由另一个版本的 Tabs 导出），提示必须指向可操作的下一步，
  * 而不是笼统一句「导入失败」。
+ *
+ * 解析走导入专用 schema：其中的 `favIconUrl` 会被 scheme 白名单归一化
+ * （任意 http(s) 图标 → undefined，渲染时回退为首字母方块）。
  */
 export function parseExportFile(
   raw: unknown
 ):
   { success: true; data: ExportFile } | { success: false; reason: 'version-mismatch' | 'invalid' } {
-  const parsed = ExportFileSchema.safeParse(raw);
+  const parsed = ExportFileImportSchema.safeParse(raw);
   if (parsed.success) return { success: true, data: parsed.data };
   const header = z.object({ format: z.literal('tabs.export'), version: z.number() }).safeParse(raw);
   if (header.success && header.data.version !== EXPORT_FILE_VERSION) {

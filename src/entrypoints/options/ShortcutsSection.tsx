@@ -39,6 +39,12 @@ export function ShortcutsSection({
       <Row label="⌘J / Ctrl+J" hint={t('settings.shortcutLocatePanel')}>
         <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
       </Row>
+      <Row label="⌘Z / Ctrl+Z" hint={t('settings.shortcutUndo')}>
+        <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
+      </Row>
+      <Row label="⌘⇧Z / Ctrl+Shift+Z" hint={t('settings.shortcutRedo')}>
+        <span className="text-2xs text-gray-500">{t('settings.shortcutPanel')}</span>
+      </Row>
       <Row label={t('settings.shortcutCustomize')} hint={t('settings.shortcutCustomizeHint')}>
         <Button variant="secondary" onClick={onOpenShortcutSettings}>
           {t('settings.shortcutCustomizeAction')}

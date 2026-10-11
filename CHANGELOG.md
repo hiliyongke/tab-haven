@@ -12,15 +12,24 @@
 - **快照恢复可撤销**：恢复快照后，本次新建的标签以 `kind='restore'` 进入撤销栈；
   撤销该批次即关闭这批标签，`⌘Z` 可再开回来。
 - **标签行右键菜单**：新增 `ui/common/ContextMenu.tsx`（Portal + `role="menu"` + Esc 关闭 +
-  打开时聚焦首项 + 点击外部关闭 + 视口内收拢）。菜单含复制网址 / 加入稍后读 /
+  打开时聚焦首项 + 点击外部关闭 + 视口内收拢）。菜单含复制网址 /
   固定 / 休眠 / 复制标签 / 关闭。
 - **习惯洞察入口**：底栏在「清理重复」旁独立出现洞察按钮（`insightCount > 0` 时，
   badge 显示条数），点击直达快照面板的洞察区块。
-- **静默淘汰提示**：稍后读超限、快照超限、撤销栈超限时，原先静默丢弃的条目
-  现在会给一次明确提示（新增 `readlater.evicted` / `snapshots.evicted` / `undo.stackEvicted` 文案）。
-  三类上限此前**均无运行时告知**，用户只在打开列表时发现旧数据消失。
+- **静默淘汰提示**：快照超限、撤销栈超限时，原先静默丢弃的条目
+  现在会给一次明确提示（新增 `snapshots.evicted` / `undo.stackEvicted` 文案）。
+  两类上限此前**均无运行时告知**，用户只在打开列表时发现旧数据消失。
   提示按类别去重（会话内各类只提示一次），避免批量操作时提示互相顶掉。
 - **撤销栈 kind 扩展**：新增 `restore` 批次类型（`undo.kindRestore`）。
+
+### Removed
+
+- **稍后读能力整体下线**：移除 `core/readlater`、`platform/readlater`、`stores/readLaterStore`、
+  `ui/readlater/ReadLaterSection` 及其测试；页面 / 标签栏右键菜单、标签行右键菜单与
+  命令面板的相关入口一并删除；`snapshotStore.archiveItems`（仅服务稍后读归档）同时移除。
+- **备份格式升至 v3**：导出文件不再包含 `readLater` 分区，`EXPORT_FILE_VERSION` 由 2 递增到 3
+  （单一备份格式口径：版本不同即拒绝，不做跨版本兼容解析）。本机已存的 `tabs.read-later.v1`
+  不再被读写。
 
 ### Fixed
 

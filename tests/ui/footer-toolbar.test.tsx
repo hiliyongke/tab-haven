@@ -40,6 +40,7 @@ function renderFooter(overrides: Partial<FooterProps> = {}) {
     onLocateActive: vi.fn(),
     onOpenHistory: vi.fn(),
     onOpenSettings: vi.fn(),
+    onOpenAbout: vi.fn(),
     onOpenSnapshots: vi.fn(),
     onOpenPalette: vi.fn(),
     ...overrides

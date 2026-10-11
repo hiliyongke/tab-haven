@@ -37,13 +37,15 @@ export interface FooterToolbarProps {
   onWakeAll: () => void;
   /** 重排临时区分组（打散现有分组后按当前方式重新归拢，可撤销）。 */
   onQuickRegroup: () => void;
-  /** 一键清理重复标签（保留每网址的激活/固定/最早者，可撤销）。 */
+  /** 一键清理重复标签（每网址保留「最近访问 > 激活 > 固定 > 位置靠前 > id 大」者，可撤销）。 */
   onCleanDuplicates: () => void;
   /** 关闭浏览器多选的标签（Ctrl+Click 选中后批量关闭）。 */
   onCloseHighlighted: () => void;
   onLocateActive: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
+  /** 打开关于页（能力总览 + 信任面板）：隐私自证的一次直达入口。 */
+  onOpenAbout: () => void;
   onOpenSnapshots: () => void;
   /** 直达习惯洞察（打开快照面板并落在周报 / 洞察视图）。 */
   onOpenInsights: () => void;
@@ -84,6 +86,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
     onOpenSnapshots,
     onOpenInsights,
     onOpenSettings,
+    onOpenAbout,
     onOpenPalette,
     footerLabels
   } = props;
@@ -181,7 +184,9 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {discardedCount > 0 && (
           <IconButton
             icon={Icons.wakeAll}
-            title={t('discard.wakeAll')}
+            // 口径明示：这里只唤醒**当前窗口**的休眠标签（自动休眠的「全部唤醒」
+            // 按台账 tabIds，可能跨窗口）。不写明会让用户以为一次唤醒所有窗口。
+            title={t('discard.wakeAllCurrent', { count: discardedCount })}
             label={footerLabels ? t('footer.labelWake') : undefined}
             onClick={onWakeAll}
           />
@@ -205,6 +210,14 @@ export function FooterToolbar(props: FooterToolbarProps) {
           label={footerLabels ? t('footer.labelHistory') : undefined}
           badge={undoBatchCount > 0 ? undoBatchCount : undefined}
           onClick={onOpenHistory}
+        />
+        {/* 信任面板（P-03）：权限 → 用途映射与「自行验证零网络」教程。
+            此前唯一入口是「设置页 → 关于页」，核心卖点却要三步才摸得到。 */}
+        <IconButton
+          icon={Icons.shield}
+          title={t('about.open')}
+          label={footerLabels ? t('footer.labelAbout') : undefined}
+          onClick={onOpenAbout}
         />
         <GroupDivider />
         <IconButton

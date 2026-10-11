@@ -36,6 +36,15 @@ interface ReuseCoordinatorDependencies {
   close: (tabId: number) => Promise<void>;
   /** 复用发生时通知 UI（状态提示）。 */
   notifyReuse: () => void;
+  /**
+   * 上报本次结算**实际关闭掉**的标签快照（供 UI 登记撤销批次）。
+   *
+   * 可选依赖：未注入时行为与历史一致（纯合并、不回传），测试与关闭该能力的
+   * 调用方不受影响。之所以必须在**关闭之后**回调（而不是把计划中的 id 交出去）：
+   * 关闭是异步且可能失败的，按计划上报会把从未关掉的标签记进撤销栈，
+   * 撤销时凭空多出一批重复标签。
+   */
+  reportClosed?: (windowId: number, closed: readonly TabRecord[]) => void;
 }
 
 export class ReuseCoordinator {
@@ -205,12 +214,29 @@ export class ReuseCoordinator {
         // 与既有标签的 pinned 豁免同口径——继续合并关闭是破坏性意外。
         if (latest?.pinned ?? tab.pinned) return { action: 'keep' };
         await this.deps.activate(keep.id);
+        // 逐条收集「真正关掉」的标签：复用是默认开启的自动关闭路径，快照必须
+        // 与关闭结果一致 —— 多报会撤销出重复标签，少报则留下无处可撤的关闭。
+        // 关闭失败（标签恰被用户关掉）不再中断本批结算：其余副本仍应完成合并，
+        // 且失败的那条本就不该进撤销栈。
+        const closed: TabRecord[] = [];
         for (const candidate of existing) {
           // 固定标签豁免关闭（与重复清理面板 KeeperPolicy.pinnedExempt 同口径）：
           // 用户主动固定的标签被自动合并关掉是破坏性意外。
-          if (candidate.id !== keep.id && !candidate.pinned) await this.deps.close(candidate.id);
+          if (candidate.id === keep.id || candidate.pinned) continue;
+          try {
+            await this.deps.close(candidate.id);
+            closed.push(candidate);
+          } catch {
+            // 已不存在：不计入撤销账本。
+          }
         }
-        await this.deps.close(tab.id);
+        try {
+          await this.deps.close(tab.id);
+          closed.push(tab);
+        } catch {
+          // 同上：新建标签已消失时无需登记。
+        }
+        if (closed.length > 0) this.deps.reportClosed?.(tab.windowId, closed);
         this.deps.notifyReuse();
         return { action: 'reuse', targetId: keep.id };
       }

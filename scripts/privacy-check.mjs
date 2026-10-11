@@ -59,6 +59,27 @@ const NETWORK_PATTERNS = [
   /<script[^>]+src=["']https?:\/\//
 ];
 
+/**
+ * 图标渲染闸门（P1-4）：`src/ui/common/Favicon.tsx` 是唯一会渲染外部地址的地方。
+ *
+ * 折中口径：浏览器/站点自身提供的图标仍然渲染（否则图标大面积消失），但必须保留
+ * 三道闸门——scheme 白名单、渲染前判定、`no-referrer`。门禁只拦「放开」：
+ * 白名单里多出 http(s)/data:image 之外的 scheme、删掉判定、删掉 no-referrer、
+ * 或新增一个不受白名单约束的动态 src，都会失败。
+ */
+const FAVICON_FILE = join(SRC, 'ui', 'common', 'Favicon.tsx');
+/** 白名单允许出现的 scheme（与 PRIVACY.md §1 的图标承诺一致）。 */
+const FAVICON_ALLOWED_SCHEMES = new Set(['http', 'https', 'data']);
+
+/** 存储键字面量：项目内所有存储键统一以 `tabs.` 前缀命名。 */
+const STORAGE_KEY_LITERAL = /['"](tabs\.[a-zA-Z0-9._-]+)['"]/g;
+/** i18n 键同样以 `tabs.` 开头（`t('tabs.xxx')`），不是存储键，整行跳过。 */
+const I18N_CALL = /\bt\(\s*['"]tabs\./;
+/** 注释行（含 JSDoc）里提到的键名不是声明，跳过。 */
+const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
+/** 非存储用途的 `tabs.` 字面量：导出文件格式标识。 */
+const NON_STORAGE_KEYS = new Set(['tabs.export']);
+
 /** 静态资源引用（img src 等）本身不是扩展发起的网络通道，单独放行。 */
 const NETWORK_EXEMPT = /^\s*(?:\/\/|\*|\/\*)/;
 
@@ -82,6 +103,104 @@ function walk(dir) {
  * 改了 wxt.config.ts 而不动文档，门禁依然全绿。这里把文档解析为真实比对源，
  * 让「承诺」与「强制」对齐：源码清单与文档清单必须逐项一致。
  */
+/**
+ * PRIVACY.md 第 3 节的存储键清单是本检查的**第二事实源**（与权限表同款双向比对）。
+ *
+ * 此前「新增存储键须同步 PRIVACY.md」只是一句承诺：改了源码而忘了文档，门禁全绿。
+ * 这里把文档 §3 解析为真实比对源，让源码键集合与文档键集合必须逐项一致。
+ */
+function readDocumentedStorageKeys() {
+  if (!existsSync(PRIVACY_DOC)) return null;
+  const lines = readFileSync(PRIVACY_DOC, 'utf8').split('\n');
+  const start = lines.findIndex((line) => /^##\s*3\./.test(line));
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^##\s/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  const section = lines.slice(start, end).join('\n');
+  const found = new Set();
+  for (const match of section.matchAll(/`(tabs\.[a-zA-Z0-9._-]+)`/g)) found.add(match[1]);
+  return found;
+}
+
+/** 扫描源码里的存储键常量（键 → 首次出现位置）。 */
+function readSourceStorageKeys() {
+  const found = new Map();
+  for (const file of walk(SRC)) {
+    if (!/\.(ts|tsx)$/.test(file)) continue;
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      if (COMMENT_LINE.test(line) || I18N_CALL.test(line)) return;
+      for (const match of line.matchAll(STORAGE_KEY_LITERAL)) {
+        const key = match[1];
+        if (NON_STORAGE_KEYS.has(key)) continue;
+        if (!found.has(key)) found.set(key, `${relative(ROOT, file)}:${i + 1}`);
+      }
+    });
+  }
+  return found;
+}
+
+/**
+ * 图标渲染闸门校验：渲染路径不接受「白名单之外的任意地址」，且不带 Referer。
+ * 动态 `src={src}` 本身无法从正则上判定取值，故改为断言闸门三件套仍在位，
+ * 并禁止出现第二个（不受同一判定约束的）src 渲染点。
+ */
+function checkFaviconGuard() {
+  if (!existsSync(FAVICON_FILE)) {
+    issues.push('缺少 src/ui/common/Favicon.tsx，图标渲染闸门无法校验');
+    return;
+  }
+  const text = readFileSync(FAVICON_FILE, 'utf8');
+
+  const whitelist = text.match(/const\s+SAFE_FAVICON_SRC\s*=\s*\/([^\n]+?)\/([a-z]*)\s*;/);
+  if (!whitelist) {
+    issues.push('Favicon.tsx 缺少 SAFE_FAVICON_SRC 白名单（渲染外部图标必须过白名单）');
+  } else {
+    const body = whitelist[1];
+    const schemes = [...body.matchAll(/([a-z][a-z0-9+.-]*)\s*:/gi)].map((m) => m[1].toLowerCase());
+    const illegal = [...new Set(schemes)].filter((scheme) => !FAVICON_ALLOWED_SCHEMES.has(scheme));
+    if (illegal.length > 0) {
+      issues.push(
+        `Favicon.tsx 图标白名单放开了未授权的 scheme: ${illegal.sort().join(', ')}` +
+          '（仅允许 http(s) 与 data:image/）'
+      );
+    }
+    // 正则里的 `/` 常被转义成 `\/`，故分隔符前的反斜杠可选。
+    if (schemes.includes('data') && !/data\s*:\s*image\s*\\?\//i.test(body)) {
+      issues.push('Favicon.tsx 图标白名单中的 data: 必须是 data:image/ 前缀');
+    }
+  }
+
+  if (!/isSafeFaviconSrc\(src\)/.test(text)) {
+    issues.push('Favicon.tsx 渲染前缺少 isSafeFaviconSrc(src) 白名单判定');
+  }
+  if (!/referrerPolicy\s*=\s*["']no-referrer["']/.test(text)) {
+    issues.push('Favicon.tsx 的 <img> 缺少 referrerPolicy="no-referrer"（会向站点泄露来源）');
+  }
+  const srcAttrs = [...text.matchAll(/\bsrc\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]*\})/g)].map((m) =>
+    m[0].replace(/\s+/g, ' ')
+  );
+  const guarded = srcAttrs.filter((attr) => /^src\s*=\s*\{src\}$/.test(attr));
+  if (guarded.length !== srcAttrs.length || srcAttrs.length === 0) {
+    issues.push(
+      `Favicon.tsx 出现不受白名单判定的 src 渲染点: ${srcAttrs.join(' | ') || '（无）'}` +
+        '（只允许 src={src}）'
+    );
+  }
+  if (/dangerouslySetInnerHTML|\binnerHTML\b/.test(text)) {
+    issues.push('Favicon.tsx 出现 innerHTML 渲染路径');
+  }
+  // 对外口径：图标请求必须在 PRIVACY.md 明示（否则「零出站」表述失真）。
+  if (existsSync(PRIVACY_DOC) && !/favicon/i.test(readFileSync(PRIVACY_DOC, 'utf8'))) {
+    issues.push('PRIVACY.md 未明示站点图标请求（favicon），与「零出站网络请求」表述冲突');
+  }
+}
+
 function readDocumentedPermissions() {
   if (!existsSync(PRIVACY_DOC)) return null;
   const text = readFileSync(PRIVACY_DOC, 'utf8');
@@ -133,6 +252,28 @@ if (unexpectedHosts.length > 0) {
   issues.push(`未授权主机权限: ${unexpectedHosts.sort().join(', ')}`);
 }
 
+// 存储键 ↔ PRIVACY.md 第 3 节双向比对（任一方向漏改都失败）。
+const sourceKeys = readSourceStorageKeys();
+const documentedKeys = readDocumentedStorageKeys();
+if (documentedKeys === null) {
+  issues.push('未找到 PRIVACY.md 第 3 节，无法校验存储键清单');
+} else {
+  const undocumentedKeys = [...sourceKeys.keys()].filter((key) => !documentedKeys.has(key));
+  const staleKeys = [...documentedKeys].filter((key) => !sourceKeys.has(key));
+  if (undocumentedKeys.length > 0) {
+    issues.push(
+      `存储键已在源码声明但未在 PRIVACY.md 第 3 节记录: ${undocumentedKeys.sort().join(', ')}` +
+        `（出处: ${undocumentedKeys.map((key) => sourceKeys.get(key)).join(', ')}）`
+    );
+  }
+  if (staleKeys.length > 0) {
+    issues.push(`PRIVACY.md 第 3 节记录了源码中已不存在的存储键: ${staleKeys.sort().join(', ')}`);
+  }
+}
+
+// 图标渲染闸门（唯一会渲染外部地址的路径）。
+checkFaviconGuard();
+
 /** 单文件最多报告的网络命中数：压缩产物是单行，不设上限会被一条规则刷满输出。 */
 const MAX_HITS_PER_FILE = 5;
 
@@ -183,5 +324,6 @@ console.log(
   `隐私回归检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
     `主机权限 ${[...hostPermissions].sort().join(', ')}，` +
     `网络通道调用 0（源码 ${sourceCount} 个 + 产物 ${bundleCount} 个），` +
-    `权限清单与 PRIVACY.md 一致`
+    `权限清单与 PRIVACY.md 一致，` +
+    `存储键 ${sourceKeys.size} 个与 PRIVACY.md 第 3 节一致，图标渲染闸门在位`
 );

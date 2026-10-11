@@ -4,6 +4,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
 import { CategoryModule } from '@/ui/common/CategoryModule';
+import { EmptyState } from '@/ui/common/EmptyState';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { SectionCard } from '@/ui/tabs/sectionCards';
 import type { SectionCallbacks } from '@/ui/tabs/sectionTypes';
@@ -138,11 +139,11 @@ function SectionListImpl({
       {/* data-density 下发给分组标题等非行内文字：大字号档位需要同步放大导航级文字 */}
       <div className="flex flex-col gap-1" data-density={density}>
         {sections.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
-            <Icon d={Icons.search} className="h-6 w-6 text-gray-300" />
-            <div className="text-sm font-medium text-gray-600">{t('empty.title')}</div>
-            <div className="text-xs text-gray-500">{t('empty.hint')}</div>
-          </div>
+          <EmptyState
+            icon={<Icon d={Icons.search} className="h-6 w-6" />}
+            title={t('empty.title')}
+            hint={t('empty.hint')}
+          />
         ) : (
           <>
             {nativeSiteSections.length > 0 && (
