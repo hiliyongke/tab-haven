@@ -5,11 +5,9 @@
 **对象**：`Tabs` —— 本地优先、无账号无云端的浏览器标签工作台（Chrome / Edge MV3 侧边栏扩展）
 
 > **⚠️ 同步范围口径提示（2026-09-30 补记）**：本文成文早于同步镜像范围的口径统一，文中若出现「文件夹与设置」一类表述，**实际同步范围为「文件夹 + 常驻磁贴（pins）+ 设置」**（`MirrorPayloadSchema = { at, folders, pins, settings }`，见 `src/platform/storage/SyncMirror.ts`）。本文未直接陈述同步范围；如从其他文档引用到旧表述，一律以 [PRIVACY.md](../PRIVACY.md) 第 4 节为准。
-> **代码基线**：本仓库根目录（路径一律相对引用；`src/` 共 168 文件：102 `.ts` + 59 `.tsx` + 4 `.html` + 2 `.json` + 1 `.css`；`tests/` 99 文件，含 95+ 个 `*.test.ts/tsx`）
+> **代码基线**：本仓库根目录（路径一律相对引用；`src/` 下 `.ts` 102 个 + `.tsx` 60 个 = 26 767 行（不含 `.d.ts`），另 `.html` 4；`tests/` 含 113 个 `*.test.ts/tsx`）
 > **配套文档**：
 
-- `docs/product-design-analysis.md` —— 分析报告（优势 / 缺陷 / 优先级排序）
-- `docs/product-improvement-plan.md` —— 优化与修复计划（本文 §11 待办清单的实施方案、验收与排期）
 - `docs/product-design.md` —— As-Is 现状规格化描述（与本文互补：该文描述「已实现成什么样」，本文描述「需求状态 + 验收 + 待办」）
 
 ---
@@ -350,7 +348,7 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots
 
 ## 11. 待办需求清单（Backlog）
 
-> 来源：`docs/product-design-analysis.md` 第 3–4 节。优先级 = 严重程度 × 改造成本。
+> 优先级 = 严重程度 × 改造成本。
 > 状态：**待排期**；工作量为人日估算（**【推断】**）。
 >
 > **2026-10-11 验收状态回写**：以下条目已在代码侧落地但本表状态未同步，基线以代码为准 —— BR-01（影响面提示与回执）、BR-02（引导终步导出提醒）、BR-03（重做，见 FR-4.8）、BR-05（空态统一，撤销历史「从快照找回」引导保留）、BR-07（两套 keeper 口径已收敛到 `rankForKeep`）、BR-08（快照上限分离）、BR-10（恢复降级提示）、BR-12（标签右键「固定」）。未列者仍为待排期。**PRD 状态须随实现同步**（见 `CONTRIBUTING.md`）。

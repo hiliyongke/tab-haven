@@ -193,15 +193,11 @@ Tabs 采用 [MIT 许可证](./LICENSE) 开源。
 
 产品与设计类文档统一放在 `docs/`：
 
-| 文档                                                                       | 用途                                                                     |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)                                 | **上架唯一来源**：商店文案、每项权限理由、隐私披露、版本历史、发布前自查 |
-| [`docs/chrome-mv3-audit.md`](./docs/chrome-mv3-audit.md)                   | Chrome MV3 合规审计：缺陷清单（file:line + 优先级 + 人日）与已核验项     |
-| [`docs/chrome-capability-roadmap.md`](./docs/chrome-capability-roadmap.md) | Chrome API 新能力落地评估：可做 / 待拍板 / 不做三类                      |
-| [`docs/product-requirements.md`](./docs/product-requirements.md)           | PRD：需求状态、验收标准与待办清单（BR-01…BR-18）                         |
-| [`docs/product-design.md`](./docs/product-design.md)                       | As-Is 现状规格化描述（当前代码已实现成什么样）                           |
-| [`docs/product-design-analysis.md`](./docs/product-design-analysis.md)     | 设计分析：优势、缺陷清单与优先级排序                                     |
-| [`docs/product-improvement-plan.md`](./docs/product-improvement-plan.md)   | 优化与修复计划：逐项实施方案、验收清单与排期（FIX-01…FIX-18）            |
+| 文档                                                             | 用途                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)                       | **上架唯一来源**：商店文案、每项权限理由、隐私披露、版本历史、发布前自查 |
+| [`docs/product-requirements.md`](./docs/product-requirements.md) | PRD：需求状态、验收标准与待办清单（BR-01…BR-18）                         |
+| [`docs/product-design.md`](./docs/product-design.md)             | As-Is 现状规格化描述（当前代码已实现成什么样）                           |
 
 隐私边界以根目录 [PRIVACY.md](./PRIVACY.md) 为唯一对外口径，开发约定见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
