@@ -5,6 +5,7 @@ import {
   type Snapshot,
   type SnapshotTab
 } from '@/core/schema/models';
+import { toGroupColor } from '@/core/group/groupColors';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
@@ -237,7 +238,7 @@ export function collectSnapshotTabs(
       pinned: tab.pinned,
       muted: tab.muted ?? false,
       groupTitle: group?.title || undefined,
-      groupColor: group?.color || undefined
+      groupColor: toGroupColor(group?.color)
     });
   }
   return out;

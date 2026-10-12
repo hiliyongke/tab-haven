@@ -3,19 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { DialogShell } from '@/ui/dialog/Dialog';
 import { TextField } from '@/ui/common/TextField';
 import { groupAccentVar } from '@/ui/tabs/accent';
-
-/** 原生组可使用的标准颜色（tabGroups 枚举）。 */
-const GROUP_COLORS = [
-  'grey',
-  'blue',
-  'red',
-  'yellow',
-  'green',
-  'pink',
-  'purple',
-  'cyan',
-  'orange'
-] as const;
+import { GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 
 /** 原生组编辑弹窗：改名 + 换色（复用 DialogShell 的焦点/键盘行为）。 */
 export function GroupEditDialog({
@@ -84,7 +72,7 @@ export function GroupEditDialog({
           radio 完全够用，且自带 radiogroup 的键盘漫游与选中语义。
           视觉 16px / 命中 24px（::after 扩区，见 .swatch 样式）。 */}
       <div className="mb-2 flex flex-wrap gap-1" role="radiogroup" aria-label={t('groups.edit')}>
-        {GROUP_COLORS.map((c) => (
+        {GROUP_COLOR_NAMES.map((c) => (
           <input
             key={c}
             type="radio"

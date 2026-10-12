@@ -75,8 +75,9 @@ export default defineConfig({
         'src/entrypoints/background.ts': { lines: 72, statements: 68, branches: 56, functions: 60 },
         // SW 子模块整体实测 lines 93.3 / stmts 91.5 / branch 78.8 / funcs 78.8
         'src/entrypoints/background/**': { lines: 86, statements: 84, branches: 72, functions: 72 },
-        // 弹窗降级形态实测 lines 88.5 / stmts 84.4 / branch 73.1 / funcs 85（此前 0%）
-        'src/entrypoints/popup/**': { lines: 80, statements: 76, branches: 64, functions: 76 },
+        // 弹窗快速切换器入口 `src/entrypoints/popup/` 已随「只保留侧边栏单一形态」删除
+        // （其产物 default_popup 本就被 build hook 移除，代码不可达；action 字段改由
+        // `wxt.config.ts` 显式声明）。该 glob 无匹配文件，阈值一并移除。
         // 固定空间实测 lines 87.6 / stmts 71.3 / branch 80.5 / funcs 87.6（此前 16.1%）
         'src/ui/fixed/**': { lines: 78, statements: 62, branches: 70, functions: 78 },
         // 拖拽层实测 lines 70.9 / stmts 57.9 / branch 58.8 / funcs 58.8（此前 20.3%）

@@ -12,7 +12,7 @@ WXT + React 19 + TypeScript + Tailwind CSS 4 + zustand + zod + Vitest；pnpm 11�
 ```
 core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
   ↑ platform（唯一触碰 chrome.* 的层）
-  ↑ stores / ui / entrypoints（sidepanel / popup / options / background）
+  ↑ stores / ui / entrypoints（sidepanel / options / about / background）
 ```
 
 - `src/core/**`：唯一必须单测的层；所有持久化数据经 `src/core/schema` 的 zod schema 校验，坏数据隔离。

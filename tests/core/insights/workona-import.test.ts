@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { SnapshotSchema } from '@/core/schema/models';
-import {
-  parseWorkona,
-  WORKONA_INPUT_LIMIT,
-  type WorkonaImportResult
-} from '@/core/insights/workonaImport';
+import { SNAPSHOTS_LIMIT, SNAPSHOT_TABS_LIMIT, SnapshotSchema } from '@/core/schema/models';
+import { parseWorkona, WORKONA_INPUT_LIMIT } from '@/core/insights/workonaImport';
 
 /** 真实 Workona 导出结构的精简样本（字段名大小写与官方导出一致）。 */
 const SAMPLE = JSON.stringify({
@@ -111,10 +107,67 @@ describe('parseWorkona（P-09 迁移器）', () => {
     expect(parseWorkona('', fixedId).snapshots).toHaveLength(0);
   });
 
-  it('超过 1MB 输入直接拒收（与 parseOneTab 同口径）', () => {
+  /**
+   * 失败必须可解释（与备份导入 version-mismatch / invalid 分流同口径）：
+   * 「文件太大」「不是 JSON」「JSON 不是 Workona 导出」三种失败此前共用同一个
+   * 空结果，用户只看到「导入 0 条」，无法判断下一步该做什么。
+   */
+  it('体积超限 → reason=too-large（可提示拆分成批导入）', () => {
     const huge = ' '.repeat(WORKONA_INPUT_LIMIT + 1);
-    const result: WorkonaImportResult = parseWorkona(huge, fixedId);
-    expect(result.snapshots).toHaveLength(0);
+    expect(parseWorkona(huge, fixedId).reason).toBe('too-large');
+  });
+
+  it('JSON 解析失败 → reason=invalid-json（可提示重新导出）', () => {
+    expect(parseWorkona('{ not json', fixedId).reason).toBe('invalid-json');
+  });
+
+  it('合法 JSON 但不是对象结构 → reason=unrecognized', () => {
+    // 顶层是数组 / 标量时根本不可能是 Workona 导出（其顶层是对象）。
+    expect(parseWorkona('[1,2,3]', fixedId).reason).toBe('unrecognized');
+    expect(parseWorkona('"string"', fixedId).reason).toBe('unrecognized');
+  });
+
+  it('结构合法但无 workspace → reason=ok（不是失败，只是没有可导入内容）', () => {
+    expect(parseWorkona('{}', fixedId).reason).toBe('ok');
+    // 顶层键一律 .passthrough()：多余字段原样忽略，不是格式错误。
+    expect(parseWorkona('{"foo":1}', fixedId).reason).toBe('ok');
+  });
+
+  it('丢弃的量如实计入结果，不静默截断', () => {
+    const raw = JSON.stringify({
+      archived_workspaces: [
+        {
+          title: 'Mixed',
+          tabs: [{ url: 'https://a.com' }, { url: 'chrome://settings' }, { url: 'not-a-url' }, {}]
+        }
+      ]
+    });
+    const result = parseWorkona(raw, fixedId);
+
+    expect(result.totalTabs).toBe(1);
+    // 3 条被丢弃：内部页 / 非 URL / 空条目 —— 此前只静默 return，用户无从知道少了多少。
+    expect(result.truncatedTabs).toBe(3);
+  });
+
+  it('超出单份快照标签上限的部分计入 truncatedTabs', () => {
+    const tabs = Array.from({ length: SNAPSHOT_TABS_LIMIT + 5 }, (_v, i) => ({
+      url: `https://a.com/${i}`
+    }));
+    const result = parseWorkona(JSON.stringify({ archived_workspaces: [{ tabs }] }), fixedId);
+
+    expect(result.snapshots[0]?.tabs).toHaveLength(SNAPSHOT_TABS_LIMIT);
+    expect(result.truncatedTabs).toBe(5);
+  });
+
+  it('超出快照族上限的份数计入 truncatedSnapshots（与备份导入同上限）', () => {
+    const workspaces = Array.from({ length: SNAPSHOTS_LIMIT + 3 }, (_v, i) => ({
+      title: `ws-${i}`,
+      tabs: [{ url: `https://a.com/${i}` }]
+    }));
+    const result = parseWorkona(JSON.stringify({ archived_workspaces: workspaces }), fixedId);
+
+    expect(result.snapshots).toHaveLength(SNAPSHOTS_LIMIT);
+    expect(result.truncatedSnapshots).toBe(3);
   });
 
   it('archived_workspaces 字段名变体（小写）同样识别', () => {

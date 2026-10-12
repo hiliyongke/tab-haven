@@ -85,7 +85,6 @@ Tabs 的解法是把能力集中在**可逆性**上：让「关」这个动作�
 | 形态           | 入口与可达性                                                                                                                   | 能力范围                                                         | 定位                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------ |
 | **sidepanel**  | 侧边栏；点击工具栏图标打开（`openPanelOnActionClick`）                                                                         | **全量**                                                         | 主工作台（`App.tsx:997-1259`） |
-| **popup**      | `default_popup` 在产物中无条件删除（`wxt.config.ts:70`），点击图标走侧边栏；**当前产物无可达入口**，入口与测试保留待 V2.0 决策 | 仅搜索 + 切换（420px，最多 20 条）                               | 快速切换器                     |
 | **options**    | 设置页 `open_in_tab: true`（`wxt.config.ts:26,69`）                                                                            | 设置 5 分区 + 导入导出 + 诊断导出 + 清除数据                     | 配置中心                       |
 | **about**      | 独立页                                                                                                                         | 能力总览 12 域 + 快捷键 + **信任面板**                           | 信任凭证                       |
 | **background** | Service Worker，无 UI                                                                                                          | 复用引擎 / 自动快照 / 自动休眠 / 右键菜单 / omnibox / 角标 / DNR | 后台能力                       |
@@ -307,7 +306,7 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots
 | **可靠性**       | 落盘失败横幅（`storageDegraded`）+ 手动重试出口；落盘降级留痕并脱敏                                                                                                                             | `App.tsx:1020-1033`；`platform/diagnostics.ts:56,125`                                |
 | **并发安全**     | 跨页锁 7 把；撤销执行锁；导入事务期禁用写类入口；写盘串行链                                                                                                                                     | `platform/storage/crossPageLock.ts:39-53`；`undoStore.ts:125`                        |
 | **工程门禁**     | `pnpm check` = typecheck → lint(0 warning) → check:i18n → check:ui → test → build → check:privacy                                                                                               | `package.json:23`                                                                    |
-| **测试覆盖**     | 分层覆盖率棘轮：core 88 / platform 直连 86 / background 子模块 86 / background.ts 72 / popup 80 / ui:fixed 78 / ui:dnd 62 / ui:common 56 / stores 62 / stores:data 66 / platform 60 / global 63 | `vitest.config.ts:68-92`                                                             |
+| **测试覆盖**     | 分层覆盖率棘轮：core 88 / platform 直连 86 / background 子模块 86 / background.ts 72 / ui:fixed 78 / ui:dnd 62 / ui:common 56 / stores 62 / stores:data 66 / platform 60 / global 63 | `vitest.config.ts:68-92`                                                             |
 
 ---
 
@@ -325,7 +324,7 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots
 | 面板内加载态 | 快照面板 / 撤销历史 / 命令面板**无骨架**                                    | ⚠️                          | 见 BR-09                                                                                 |
 | 无候选可操作 | 清理重复 / 休眠 / 唤醒 / 快速整理在入口恒可用时**必须给反馈**，禁止静默空跑 | ✅                          | `App.tsx:637-641,704-707,731-735,780-783`                                                |
 | 存储不可写   | 顶部 `role=alert` 横幅（表达「此刻可能不可写」，成功写会复位）              | ✅                          | `App.tsx:1023-1033`                                                                      |
-| 渲染异常     | `ErrorBoundary` 覆盖 sidepanel / popup / options / about 四个入口           | ✅                          | `sidepanel/main.tsx:18`、`popup/main.tsx:16`、`options/main.tsx:48`、`about/main.tsx:53` |
+| 渲染异常     | `ErrorBoundary` 覆盖 sidepanel / options / about 三个入口                   | ✅                          | `sidepanel/main.tsx:18`、`options/main.tsx:48`、`about/main.tsx:53`                     |
 | 操作失败     | 平台层真实结果驱动反馈，失败不提示成功                                      | ✅                          | `App.tsx:659-664`                                                                        |
 
 ---
@@ -372,10 +371,10 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots
 | **BR-08** | 快照裁剪顺序修正（决策 D5：**上限分离，默认值零变化**）   | `trimSnapshots` 先限 auto 再整体 `slice(0, snapshotLimit)`（`snapshots.ts:72-80`）：当手动快照数 ≥ 上限时，全部 auto 快照被挤掉，与「保留最新 N 条 auto」意图冲突                                                       | Given 手动快照数 = `snapshotLimit`，When 触发一次关窗自动快照，Then 自动快照仍保留最新 `maxAutoSnapshots` 条不被手动快照挤掉                                                                                  | 1      |
 | **BR-09** | 同步镜像配额降级可见                                      | `pull()` 仅在 `meta.count > 64` 时判无效（`SyncMirror.ts:221`），64 × 6000B ≈ 384KB，远超 `storage.sync` 配额，超限只会静默丢镜像                                                                                       | Given 镜像写入超出同步配额，When 用户打开设置页，Then 显示「同步镜像未生效（容量超限）」而非静默失败                                                                                                          | 1–2    |
 | **BR-10** | 快照恢复「查询失败按空集」需给用户可见提示                | `snapshots.ts:246-251` 查询目标窗口失败时按空集继续（注释明示是刻意决策：恢复是显式用户操作，**宁多建不缺建**，且可撤销），但当前只 `logDegraded` 留痕，用户端无感知，会看到重复标签而不知原因                          | Given 查询目标窗口标签失败，When 恢复继续执行，Then 界面给出「未能读取当前窗口，可能产生重复标签，可用撤销回退」提示；**不改变**「继续恢复」这一既有决策                                                      | 0.5    |
-| **BR-11** | 语言兜底精细化（决策 D6：**未支持语言落 `en`**）          | `i18n/index.ts:13` 仅 `en` 前缀判英文，其余语言全落 `zh-CN`                                                                                                                                                             | Given 浏览器语言为 `ja`，When 打开面板，Then 落到 `en`（或显式支持列表中的默认值）而非 `zh-CN`                                                                                                                | 0.5    |
+| **BR-11** | 语言兜底精细化（**未支持语言落 `en`**）                   | **已落地**：`i18n/index.ts` 与 `i18n/headless.ts` 现均为「只认 `zh` 前缀，其余落 `en`」。此前两条轨道判定相反（headless 侧 en 前缀判 en、其余落 zh-CN），日文/德文用户会得到中文的右键菜单与通知、面板却是英文 | Given 浏览器语言为 `ja`，When 打开面板或触发右键菜单，Then UI 与 headless 两条轨道同为 `en`                                                                                                                       | 0.5    |
 | **BR-12** | 标签右键菜单补「固定」                                    | **已落地**：tab 上下文现为休眠 / 固定 / 按域名搜索三项（`contextMenus.ts:153-167`）；menu 创建已逐项兜底，不支持 `tab` 上下文的内核只丢这几项                                                                           | Given 用户在标签栏右键某标签，When 菜单展开，Then 含「固定/取消固定」                                                                                                                                         | 0.5    |
 | **BR-13** | 设置搜索覆盖全部分区                                      | 设置搜索只过滤声明式分区条目（`SettingsPage.tsx:219-233`），数据分区 6 行（含 `syncMirrorEnabled`）与快捷键/关于区搜不到                                                                                                | Given 用户在设置搜索框输入「同步」，When 结果渲染，Then 命中跨设备同步开关                                                                                                                                    | 0.5    |
-| **BR-14** | 清理残留与形态可达性                                      | `src/entrypoints/bookmarks/` 为空目录；popup 在标准变体无常规入口（`wxt.config.ts:75`）但覆盖率仍要求 ≥80%                                                                                                              | Given 主分支，When 全量构建，Then 无空入口目录；Given 标准变体，When 用户想用快速切换器，Then 有文档/入口说明其可达路径                                                                                       | 0.5    |
+| **BR-14** | 清理残留与形态可达性                                      | **已落地**：`src/entrypoints/bookmarks/` 空目录已清理；`src/entrypoints/popup/`（不可达的弹窗快速切换器，388 行 + 2 个测试 + i18n `popup.*`）已随「侧边栏单一形态」删除，`action` 改由 `wxt.config.ts:61-73` 显式声明（产物 manifest 已验证含 `default_icon`，工具栏图标与角标不受影响） | Given 主分支，When 全量构建，Then 无空入口目录且产物 manifest 仍含可用的 `action` 字段                                                                                                                              | 0.5    |
 
 ### P2（架构保险，暂不实现但设计不得反向阻塞）
 
@@ -437,9 +436,9 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots
 
 ### 14.2 仍待定
 
-| #   | 问题                                                                                                                                                          | 影响     | 需谁决定 |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
-| Q5  | 弹窗快速切换器在标准产物中无可达入口，是随 V2.0 一并交付，还是现在下线（连带清 `entrypoints/popup/`、测试与 i18n `popup.*`，并给 manifest 补 `action: {}`）？ | 产品形态 | 产品     |
+| #   | 问题                                                                                                                                                                                                                              | 影响     | 需谁决定 |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| Q5  | 弹窗快速切换器已下线（`entrypoints/popup/`、测试与 i18n `popup.*` 一并清除，`action` 改由 `wxt.config.ts` 显式声明）。若 V2.0 要重新交付该形态，需重新建入口——届时要重新确认它与侧边栏的图标点击归属（`default_popup` 与 `openPanelOnActionClick` 共存时 popup 胜出） | 产品形态 | 产品     |
 
 ---
 
@@ -463,7 +462,7 @@ fixedFolders / persistentPins / siteCollapse / settings / snapshots
 | 平台适配   | `src/platform/{tabs,bookmarks,sessions,sidePanel,navigation,permissions,diagnostics,messages,registry}.ts` 及 `{storage,snapshot,sync,undo,reuse,group,nocache,theme}/` 子目录                                                                                       |
 | 状态层     | `src/stores/{tabStore,undoStore,snapshotStore,dataStore}.ts` 及 `data/` 切片                                                                                                                                                                                         |
 | 视图层     | `src/ui/{common,tabs,fixed,search,dialog,dnd}/**`                                                                                                                                                                                                                    |
-| 形态入口   | `src/entrypoints/{background.ts,background/**,sidepanel/**,popup/**,options/**,about/**}`                                                                                                                                                                            |
+| 形态入口   | `src/entrypoints/{background.ts,background/**,sidepanel/**,options/**,about/**}`                                                                                                                                                                                   |
 | 文案与样式 | `src/i18n/locales/{zh-CN,en}/translation.json`（**实测 32 个顶层命名空间 / 744 条叶子键，中英键集合零漂移**）；`src/styles/main.css`（`@theme` 令牌层 `:28-93`；`forest` 为 `:root` 内置默认 `:236-238`，另 5 套经 `:root[data-hue]` 覆盖 `:245-463`，各含明暗两套） |
 | 门禁脚本   | `scripts/{privacy-check,i18n-dead-keys,pack-crx}.mjs`                                                                                                                                                                                                                |
 | 测试       | `tests/{core,platform,background,stores,ui,entrypoints,perf}/` —— 目录分布：core 30 · platform 19 · background 9 · stores 10 · ui 23 · entrypoints 3 · perf 1（另有 `setup.ts` 与 2 个快照文件）                                                                     |

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Settings } from '@/core/schema/models';
 import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/core/nocache/noCachePattern';
+import { normalizeWhitelistHost } from '@/core/url/hostname';
 import { hasPermissions, requestPermissions, type PermissionQuery } from '@/platform/permissions';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
@@ -94,12 +95,9 @@ export function WhitelistEditor({
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const add = () => {
-    const host = input
-      .trim()
-      .toLowerCase()
-      .replace(/^https?:\/\//, '')
-      .replace(/\/.*$/, '')
-      .replace(/^www\./, '');
+    // 归一化走 core 的唯一来源（schema 落盘与 SW 匹配端用同一函数）：
+    // 此前此处内联一份，改口径时另外两处（schema / buildWhitelistMatcher）会漏改。
+    const host = normalizeWhitelistHost(input);
     if (!host) return;
     if (!value.includes(host)) onChange([...value, host]);
     setInput('');

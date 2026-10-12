@@ -57,14 +57,22 @@ export default defineConfig({
         suggested_key: { default: 'Ctrl+Shift+U' },
         description: '__MSG_commandDiscardInactive__'
       }
+    },
+    // side_panel 字段与 sidePanel 权限由 WXT 检测 sidepanel 入口自动生成。
+    // action 字段必须显式声明：此前它靠 `src/entrypoints/popup/` 这个入口「顺带」
+    // 生成，而该入口的产物 default_popup 又被下方 hook 删除 —— 等于留了一份不可达
+    // 的弹窗代码只为换一个 manifest 字段。现在直接声明 action，popup 入口即删除。
+    // 注意：action 是工具栏图标与角标（`browser.action.setBadgeText`）的载体，
+    // 缺了它扩展在工具栏上不可见、角标 API 也会失效。
+    action: {
+      default_title: '__MSG_extName__',
+      default_icon: {
+        16: 'icon/16.png',
+        32: 'icon/32.png',
+        48: 'icon/48.png',
+        128: 'icon/128.png'
+      }
     }
-    // side_panel 字段与 sidePanel 权限由 WXT 检测 sidepanel 入口自动生成；
-    // action 字段由 WXT 检测 popup 入口自动生成（badge 依赖 action 存在）。
-    // 标准版点击 action 打开侧边栏由 background 的
-    // setPanelBehavior({ openPanelOnActionClick }) 控制，因此产物 manifest 的
-    // default_popup 由下方 hook 删除 —— 也就是说 `src/entrypoints/popup/`
-    // 在当前形态下**并不可达**，它只为让 WXT 生成 action 字段而存在，
-    // 不要按「可打开的弹窗」去改它。
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {

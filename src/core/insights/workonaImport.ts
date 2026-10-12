@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { SNAPSHOT_TABS_LIMIT, type Snapshot, type SnapshotTab } from '@/core/schema/models';
+import {
+  SNAPSHOT_TABS_LIMIT,
+  SNAPSHOTS_LIMIT,
+  type Snapshot,
+  type SnapshotTab
+} from '@/core/schema/models';
 
 /**
  * Workona 迁移器（P-09）：Workona 导出 JSON → Tabs 快照族。
@@ -20,7 +25,8 @@ import { SNAPSHOT_TABS_LIMIT, type Snapshot, type SnapshotTab } from '@/core/sch
  *  - 归档 workspace 的快照 origin 为 'archive'，其余为 'manual'；
  *  - resources（站点收藏）并入同一份快照（条目级 url 字段同构）；
  *  - 仅 http(s) URL 可恢复（chrome:// 等内部页浏览器不允许以 URL 创建）；
- *  - tabs 数量受 SNAPSHOT_TABS_LIMIT 约束（超出静默截断，与 parseOneTab 同口径）。
+ *  - tabs 数量受 SNAPSHOT_TABS_LIMIT 约束、快照份数受 SNAPSHOTS_LIMIT 约束；
+ *    被丢弃的量一律计入结果（truncatedTabs / truncatedSnapshots），不静默截断。
  */
 
 /**
@@ -64,6 +70,16 @@ const WorkonaExportSchema = z
 type WorkonaTab = z.infer<typeof WorkonaTabSchema>;
 type WorkonaWorkspace = z.infer<typeof WorkonaWorkspaceSchema>;
 
+/**
+ * 解析失败原因。
+ *
+ * 与备份导入（`parseExportFile` 的 version-mismatch / invalid 分流）同口径：
+ * 失败必须**可解释**。此前三条失败路径（体积超限 / JSON 损坏 / 结构不匹配）
+ * 共用同一个空结果，用户只看到「导入 0 条」，无法区分「文件拿错了」与
+ * 「文件对但内容全是内部页」。
+ */
+export type WorkonaImportFailure = 'too-large' | 'invalid-json' | 'unrecognized';
+
 /** 解析结果。 */
 export interface WorkonaImportResult {
   /** 转换出的快照（待调用方命名后经 persistSnapshot 落盘）。 */
@@ -72,18 +88,53 @@ export interface WorkonaImportResult {
   skippedWorkspaces: number;
   /** 全部快照的标签总数。 */
   totalTabs: number;
+  /** 因单份快照标签上限（SNAPSHOT_TABS_LIMIT）被丢弃的标签数。 */
+  truncatedTabs: number;
+  /** 因快照族上限（SNAPSHOTS_LIMIT）被丢弃的快照份数。 */
+  truncatedSnapshots: number;
+  /** 失败原因；'ok' 表示解析成功（快照仍可能为 0，见 skippedWorkspaces）。 */
+  reason: 'ok' | WorkonaImportFailure;
 }
+
+/** 成功空结果（无 workspace 命中，但不是失败）。 */
+const emptyOk = (): WorkonaImportResult => ({
+  snapshots: [],
+  skippedWorkspaces: 0,
+  totalTabs: 0,
+  truncatedTabs: 0,
+  truncatedSnapshots: 0,
+  reason: 'ok'
+});
+
+/** 失败结果（按原因可解释）。 */
+const failure = (reason: WorkonaImportFailure): WorkonaImportResult => ({
+  ...emptyOk(),
+  reason
+});
 
 /** 输入体积上限（1MB，与 parseOneTab 的 ONE_TAB_INPUT_LIMIT 同口径）。 */
 export const WORKONA_INPUT_LIMIT = 1024 * 1024;
 
-/** 单个 workspace → 快照条目列表（仅 http(s)，SNAPSHOT_TABS_LIMIT 截断）。 */
-function tabsOfWorkspace(workspace: WorkonaWorkspace): SnapshotTab[] {
+/**
+ * 单个 workspace → 快照条目列表。
+ *
+ * 返回 `[tabs, dropped]`：dropped 是被丢弃的条目数（超出单份上限，或非
+ * http(s) / 非 URL 的条目）。此前超限与非 http(s) 都只是 `return`，用户看到
+ * 「导入了 N 条」而无从知道少了多少 —— 与「坏数据不静默丢弃」的既定口径冲突。
+ */
+function tabsOfWorkspace(workspace: WorkonaWorkspace): { tabs: SnapshotTab[]; dropped: number } {
   const out: SnapshotTab[] = [];
+  let dropped = 0;
   const push = (entry: WorkonaTab): void => {
-    if (out.length >= SNAPSHOT_TABS_LIMIT) return;
+    if (out.length >= SNAPSHOT_TABS_LIMIT) {
+      dropped += 1;
+      return;
+    }
     const url = entry.url?.trim();
-    if (!url) return;
+    if (!url) {
+      dropped += 1;
+      return;
+    }
     try {
       const parsed = new URL(url);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
@@ -93,16 +144,19 @@ function tabsOfWorkspace(workspace: WorkonaWorkspace): SnapshotTab[] {
           pinned: false,
           muted: false
         });
+        return;
       }
     } catch {
-      // 非 URL / 内部页：跳过
+      // 非 URL：落入下方 dropped
     }
+    // 非 http(s) / 解析失败：浏览器不允许以这些 URL 建标签，计入丢弃量。
+    dropped += 1;
   };
   for (const tab of workspace.tabs ?? []) push(tab);
   for (const section of workspace.resources ?? []) {
     for (const resource of section.resources ?? []) push(resource);
   }
-  return out;
+  return { tabs: out, dropped };
 }
 
 /**
@@ -117,24 +171,25 @@ export function parseWorkona(
   newSnapshotId: () => string,
   fallbackTime: number = Date.now()
 ): WorkonaImportResult {
-  const empty: WorkonaImportResult = { snapshots: [], skippedWorkspaces: 0, totalTabs: 0 };
-  if (rawText.length > WORKONA_INPUT_LIMIT) return empty;
+  if (rawText.length > WORKONA_INPUT_LIMIT) return failure('too-large');
   let rawJson: unknown;
   try {
     rawJson = JSON.parse(rawText);
   } catch {
-    return empty;
+    return failure('invalid-json');
   }
   const parsedExport = WorkonaExportSchema.safeParse(rawJson);
-  if (!parsedExport.success) return empty;
+  if (!parsedExport.success) return failure('unrecognized');
   const data = parsedExport.data;
 
   const snapshots: Snapshot[] = [];
   let skippedWorkspaces = 0;
   let totalTabs = 0;
+  let truncatedTabs = 0;
 
   const emit = (workspace: WorkonaWorkspace, origin: Snapshot['origin']): void => {
-    const tabs = tabsOfWorkspace(workspace);
+    const { tabs, dropped } = tabsOfWorkspace(workspace);
+    truncatedTabs += dropped;
     if (tabs.length === 0) {
       // workspace 存在但无可恢复标签：不是错误（可能全是不支持协议的条目），
       // 计数反馈给用户「识别了但跳过」。
@@ -169,5 +224,17 @@ export function parseWorkona(
       : [];
   for (const workspace of archived) emit(workspace, 'archive');
 
-  return { snapshots, skippedWorkspaces, totalTabs };
+  // 快照族上限：备份导入侧由 schema 的 `.max(SNAPSHOTS_LIMIT)` 把住，而 Workona
+  // 导入此前没有任何上限 —— 1MB 输入可产出任意份快照，远超落盘裁剪能收敛的范围。
+  // 在此按同一上限收敛，并把丢弃的份数如实回传（不静默丢量）。
+  const kept = snapshots.slice(0, SNAPSHOTS_LIMIT);
+  const truncatedSnapshots = snapshots.length - kept.length;
+  return {
+    snapshots: kept,
+    skippedWorkspaces,
+    totalTabs,
+    truncatedTabs,
+    truncatedSnapshots,
+    reason: 'ok'
+  };
 }

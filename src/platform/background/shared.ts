@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { hostnameOf as coreHostnameOf, inspectUrl } from '@/core/url/UrlInspector';
+import { normalizeWhitelistHost } from '@/core/url/hostname';
 import {
   PENDING_ACTIONS_KEY,
   PENDING_ACTIONS_LIMIT,
@@ -57,14 +58,11 @@ export const hostnameOf = (url: string | undefined): string => {
  * 供多标签热路径复用；单次判定直接用下面的 `isWhitelisted`。
  */
 export function buildWhitelistMatcher(whitelist: readonly string[]): (hostname: string) => boolean {
+  // 归一化委托 core/url/hostname 的唯一来源（schema 层落盘时用同一函数）：
+  // 此前此处逐字复制一份，与设置页输入处各写一遍，任一处改口径另一处静默漏改。
   const targets: string[] = [];
   for (const entry of whitelist) {
-    const target = entry
-      .trim()
-      .toLowerCase()
-      .replace(/^https?:\/\//, '')
-      .replace(/\/.*$/, '')
-      .replace(/^www\./, '');
+    const target = normalizeWhitelistHost(entry);
     if (target) targets.push(target);
   }
   return (hostname: string) => {
@@ -133,8 +131,13 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
       logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error);
     }
   });
-  queueActionChain = step;
-  await step;
+  // 双保险：与 windowCache.skipMarkerChain / storage/session 的串行链同口径 ——
+  // 链上任何一次漏网 reject 都会让此后每个 queueAction 永不 resolve，快捷键路径
+  // 表现为「按了没反应」且无任何报错。
+  queueActionChain = step.catch((error: unknown) => {
+    logDegraded('background', '挂起动作入队失败', error);
+  });
+  await queueActionChain;
   sendMessage(stamped as Message);
 }
 
@@ -151,8 +154,8 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
 export async function openSidePanel(): Promise<void> {
   const sidePanel = browser.sidePanel;
   if (!sidePanel?.open) {
-    // Chrome < 116 无 open()：面板只能从 Chrome 侧边栏入口手动打开。
-    logDegraded('background', '当前浏览器不支持 sidePanel.open（需 Chrome 116+）');
+    // 无 open() 时（能力探测：个别内核没实现该方法）面板只能从浏览器侧边栏入口手动打开。
+    logDegraded('background', '当前浏览器不支持 sidePanel.open，已降级为不主动打开');
     return;
   }
   try {

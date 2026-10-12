@@ -42,21 +42,20 @@ export function reconcilePendingItems(
               // 优先保留标签真实完整 URL（含 query/fragment）；key 为归一化结果，仅在无真实 URL 时降级使用。
               url: tab.url || key,
               title: tab.title || key,
-              favIconUrl: tab.favIconUrl,
+              // 标签尚未拿到图标时保留旧值：undefined 无条件覆盖会把已显示的
+              // 图标清空，而 favicon 通道在导航早期本就常常还未就绪。
+              favIconUrl: tab.favIconUrl ?? current.favIconUrl,
               pendingTabId: undefined
             };
             changed = true;
-          } else if (
-            (tab.title && tab.title !== current.title) ||
-            tab.favIconUrl !== current.favIconUrl
-          ) {
+          } else {
             // 导航未完成：实时同步标题/图标（仅 favicon 变化也要同步；标题为空时保留旧值）
-            current = {
-              ...current,
-              title: tab.title || current.title,
-              favIconUrl: tab.favIconUrl
-            };
-            changed = true;
+            const title = tab.title || current.title;
+            const favIconUrl = tab.favIconUrl ?? current.favIconUrl;
+            if (title !== current.title || favIconUrl !== current.favIconUrl) {
+              current = { ...current, title, favIconUrl };
+              changed = true;
+            }
           }
         } else {
           // 挂起标签已关闭：条目移除

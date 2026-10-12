@@ -34,6 +34,7 @@ import {
   type AddEntryResult
 } from '@/platform/background/contextMenus';
 import {
+  AUTO_DISCARD_ALARM,
   runAutoDiscard,
   discardInactiveTabs,
   syncAutoDiscardAlarm
@@ -83,7 +84,9 @@ export default defineBackground(() => {
         const tabs = await browser.tabs.query({ windowId });
         return tabs.map(mapTab);
       },
-      activate: (tabId) => browser.tabs.update(tabId, { active: true }).then(() => undefined),
+      activate: async (tabId) => {
+        await browser.tabs.update(tabId, { active: true });
+      },
       close: (tabId) => browser.tabs.remove(tabId),
       // 复用通知经 runtime 消息推给面板（无面板时静默丢弃）。
       notifyReuse: () => {
@@ -241,7 +244,9 @@ export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
     coordinator.handleRemoved(tabId);
     refreshBadgeSoon();
-    scheduleWindowRefresh(removeInfo.windowId);
+    // 与相邻的 onAttached / onDetached 同口径：windowId 缺失时 scheduleWindowRefresh
+    // 会按 undefined 建键，缓存里多出一个永不清理的幽灵窗口。
+    if (typeof removeInfo.windowId === 'number') scheduleWindowRefresh(removeInfo.windowId);
   });
   browser.tabs.onAttached.addListener((_tabId, attachInfo) => {
     if (typeof attachInfo.newWindowId === 'number') scheduleWindowRefresh(attachInfo.newWindowId);
@@ -312,23 +317,30 @@ export default defineBackground(() => {
 
   // 浏览器级快捷键命令分发
   browser.commands?.onCommand.addListener(async (command) => {
-    if (command === 'focus-search') {
-      await openSidePanel();
-      // 走挂起队列而非直接广播：面板刚打开时监听可能尚未注册，直接发消息会丢。
-      await queueAction({ type: 'focus-search' });
-      return;
-    }
-    if (command === 'open-panel') {
-      await openSidePanel();
-      return;
-    }
-    if (command === 'locate-active') {
-      await openSidePanel();
-      await queueAction({ type: 'locate-active' });
-      return;
-    }
-    if (command === 'discard-inactive') {
-      await discardInactiveTabs();
+    // 监听器保持 async：调用方（含测试）可 await 到命令真正执行完。
+    // 代价是返回的 promise 若 reject 无人接住会变成无归属的 unhandled
+    // rejection（用户只看到「按了快捷键没反应」），故内部自行兜住异常。
+    try {
+      if (command === 'focus-search') {
+        await openSidePanel();
+        // 走挂起队列而非直接广播：面板刚打开时监听可能尚未注册，直接发消息会丢。
+        await queueAction({ type: 'focus-search' });
+        return;
+      }
+      if (command === 'open-panel') {
+        await openSidePanel();
+        return;
+      }
+      if (command === 'locate-active') {
+        await openSidePanel();
+        await queueAction({ type: 'locate-active' });
+        return;
+      }
+      if (command === 'discard-inactive') {
+        await discardInactiveTabs();
+      }
+    } catch (error) {
+      logDegraded('background', `快捷键命令执行失败：${command}`, error);
     }
   });
 
@@ -513,9 +525,15 @@ export default defineBackground(() => {
   });
   browser.omnibox?.onInputStarted.addListener(() => {
     if (!cachedSettings.omniboxEnabled) return;
-    void browser.omnibox.setDefaultSuggestion({
-      description: t('bg.omniboxDefault')
-    });
+    // 与 onInputEntered 同口径：默认建议写入失败若不接住，会留下一条无归属的
+    // unhandled rejection（地址栏表现为默认建议缺一行，无可排查线索）。
+    void browser.omnibox
+      .setDefaultSuggestion({
+        description: t('bg.omniboxDefault')
+      })
+      .catch((error: unknown) => {
+        logDegraded('background', '地址栏默认建议写入失败', error);
+      });
   });
 
   // action badge：标签事件驱动刷新（500ms 节流）
@@ -542,7 +560,7 @@ export default defineBackground(() => {
 
   // 自动休眠：白名单 + 台账 + 通知（alarms 保活调度，MV3 SW 回收后仍可触发）
   browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'tabs-auto-discard') void runAutoDiscard();
+    if (alarm.name === AUTO_DISCARD_ALARM) void runAutoDiscard();
     // 定时自动快照：兜住「崩溃 / 强制退出 / 长期不关窗」这些关窗保存覆盖不到的场景。
     if (alarm.name === AUTO_SNAPSHOT_ALARM) void runAutoSnapshot();
   });

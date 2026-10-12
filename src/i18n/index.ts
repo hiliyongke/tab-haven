@@ -20,7 +20,10 @@ i18n.use(initReactI18next).init({
     en: { translation: en }
   },
   lng: initialLanguage,
-  fallbackLng: 'zh-CN',
+  // 兜底语言必须与 manifest 的 default_locale（`wxt.config.ts:14` = 'en'）同解：
+  // 此前这里是 'zh-CN'，与「只认 zh 前缀，其余落 en」的初值判定相反，一旦
+  // language 被切成不存在的语种，界面又会掉回中文。
+  fallbackLng: 'en',
   interpolation: {
     escapeValue: false
   }

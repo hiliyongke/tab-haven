@@ -86,8 +86,8 @@ describe('ContextMenu 打开与关闭', () => {
   it('打开后渲染全部菜单项并聚焦首项', () => {
     openMenu(
       [
-        { label: '关闭标签', onSelect: vi.fn() },
-        { label: '固定', onSelect: vi.fn() }
+        { id: 'close', label: '关闭标签', onSelect: vi.fn() },
+        { id: 'pin', label: '固定', onSelect: vi.fn() }
       ],
       vi.fn()
     );
@@ -100,7 +100,7 @@ describe('ContextMenu 打开与关闭', () => {
   it('点击菜单项触发动作并关闭菜单', () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
-    openMenu([{ label: '关闭标签', onSelect }], onClose);
+    openMenu([{ id: 'close', label: '关闭标签', onSelect }], onClose);
 
     fireEvent.click(screen.getByRole('menuitem', { name: '关闭标签' }));
 
@@ -111,7 +111,7 @@ describe('ContextMenu 打开与关闭', () => {
 
   it('点击菜单外部关闭', () => {
     const onClose = vi.fn();
-    openMenu([{ label: '关闭标签', onSelect: vi.fn() }], onClose);
+    openMenu([{ id: 'close', label: '关闭标签', onSelect: vi.fn() }], onClose);
 
     fireEvent.mouseDown(document.body);
 
@@ -121,7 +121,7 @@ describe('ContextMenu 打开与关闭', () => {
 
   it('Esc 关闭并把焦点还给触发元素', () => {
     const onClose = vi.fn();
-    openMenu([{ label: '关闭标签', onSelect: vi.fn() }], onClose);
+    openMenu([{ id: 'close', label: '关闭标签', onSelect: vi.fn() }], onClose);
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -135,9 +135,9 @@ describe('ContextMenu 键盘导航', () => {
   it('↓/↑ 在菜单项间循环移动焦点', () => {
     openMenu(
       [
-        { label: '第一项', onSelect: vi.fn() },
-        { label: '第二项', onSelect: vi.fn() },
-        { label: '第三项', onSelect: vi.fn() }
+        { id: 'item-1', label: '第一项', onSelect: vi.fn() },
+        { id: 'item-2', label: '第二项', onSelect: vi.fn() },
+        { id: 'item-3', label: '第三项', onSelect: vi.fn() }
       ],
       vi.fn()
     );
@@ -161,8 +161,8 @@ describe('ContextMenu 键盘导航', () => {
   it('Home / End 跳到首项与末项', () => {
     openMenu(
       [
-        { label: '第一项', onSelect: vi.fn() },
-        { label: '第二项', onSelect: vi.fn() }
+        { id: 'item-1', label: '第一项', onSelect: vi.fn() },
+        { id: 'item-2', label: '第二项', onSelect: vi.fn() }
       ],
       vi.fn()
     );
@@ -181,7 +181,7 @@ describe('ContextMenu 键盘导航', () => {
     const anchorRef = { current: anchor as HTMLElement | null };
     render(
       <Host
-        items={[{ label: '关闭标签', onSelect: vi.fn() }]}
+        items={[{ id: 'close', label: '关闭标签', onSelect: vi.fn() }]}
         onClose={onClose}
         anchorRef={anchorRef}
       />
@@ -207,7 +207,7 @@ describe('ContextMenu 键盘导航', () => {
     const anchorRef = { current: anchor as HTMLElement | null };
     render(
       <Host
-        items={[{ label: '关闭标签', onSelect: vi.fn() }]}
+        items={[{ id: 'close', label: '关闭标签', onSelect: vi.fn() }]}
         onClose={onClose}
         anchorRef={anchorRef}
       />
@@ -225,7 +225,7 @@ describe('ContextMenu 键盘导航', () => {
 
   it('Tab 视为离开菜单：关闭并归还焦点（本组件不入 modalStack，不抢 Tab 陷阱）', () => {
     const onClose = vi.fn();
-    openMenu([{ label: '关闭标签', onSelect: vi.fn() }], onClose);
+    openMenu([{ id: 'close', label: '关闭标签', onSelect: vi.fn() }], onClose);
 
     fireEvent.keyDown(document, { key: 'Tab' });
 

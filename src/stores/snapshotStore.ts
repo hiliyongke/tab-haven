@@ -86,12 +86,18 @@ interface SnapshotState {
   importOneTab: (text: string, name?: string) => Promise<number>;
   /**
    * 从 Workona 导出 JSON 批量导入为快照族（P-09 迁移矩阵）。
-   * 返回 { 导入快照数, 导入标签数, 识别但跳过的 workspace 数 }。
+   * 返回 { 导入快照数, 导入标签数, 识别但跳过的 workspace 数, 截断量, 失败原因 }。
+   *
+   * reason 与备份导入同口径：失败必须可解释（体积超限 / JSON 损坏 / 结构不匹配），
+   * 不能让三种完全不同的失败都表现为「导入 0 条」。
    */
   importWorkona: (text: string) => Promise<{
     snapshots: number;
     tabs: number;
     skipped: number;
+    truncatedTabs: number;
+    truncatedSnapshots: number;
+    reason: 'ok' | 'too-large' | 'invalid-json' | 'unrecognized';
   }>;
   /** 删除指定快照。 */
   deleteSnapshot: (id: string) => Promise<void>;
@@ -262,8 +268,15 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   importWorkona: async (text) => {
     const result = parseWorkona(text, () => newId('snap'));
-    if (result.snapshots.length === 0) {
-      return { snapshots: 0, tabs: 0, skipped: result.skippedWorkspaces };
+    if (result.reason !== 'ok' || result.snapshots.length === 0) {
+      return {
+        snapshots: 0,
+        tabs: 0,
+        skipped: result.skippedWorkspaces,
+        truncatedTabs: 0,
+        truncatedSnapshots: result.truncatedSnapshots,
+        reason: result.reason
+      };
     }
     // 逐份落盘：每份各自走 persistSnapshot 的跨页锁 + trimSnapshots 裁剪。
     // 刻意不整批塞进一次写入——快照族上限（SNAPSHOTS_LIMIT）由裁剪函数按
@@ -277,7 +290,10 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     return {
       snapshots: result.snapshots.length,
       tabs: result.totalTabs,
-      skipped: result.skippedWorkspaces
+      skipped: result.skippedWorkspaces,
+      truncatedTabs: result.truncatedTabs,
+      truncatedSnapshots: result.truncatedSnapshots,
+      reason: result.reason
     };
   },
 

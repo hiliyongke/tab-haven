@@ -5,6 +5,9 @@ import {
   normalizeNoCachePattern
 } from '@/core/nocache/noCachePattern';
 import { COLOR_THEME_IDS } from '@/core/theme/colorThemes';
+import { GROUP_COLOR_NAMES } from '@/core/group/groupColors';
+import { pinIdentity } from '@/core/fixed/PinIdentity';
+import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
@@ -73,15 +76,30 @@ export type FixedFolder = z.infer<typeof FixedFolderSchema>;
 
 export const PersistentPinSchema = z.object({
   id: z.string(),
-  /** 身份标识（主机名归一化，见 core/fixed/PinIdentity）。 */
-  identity: z.string(),
+  /**
+   * 身份标识（主机名归一化，见 core/fixed/PinIdentity）。
+   *
+   * 归一化必须在 schema 层完成：`dedupePins` 按 identity 判重，备份导入与同步
+   * 镜像都不经过 UI，落盘时若带着 `WWW.Example.COM` 这类原样值，与运行时
+   * `pinIdentity()` 产出的 `example.com` 不等 —— 同站点磁贴会重复留存且永不合并。
+   */
+  identity: z.string().max(HOST_MAX_LENGTH).transform(normalizeHostname),
   url: z.string(),
   title: z.string(),
   favIconUrl: z.string().optional()
 });
 export type PersistentPin = z.infer<typeof PersistentPinSchema>;
 
-export const SiteCollapseSchema = z.array(z.string().max(HOST_MAX_LENGTH)).max(SITE_COLLAPSE_LIMIT);
+/**
+ * 折叠站点记录（hostname 集合）。
+ *
+ * 与白名单同口径：归一化在 schema 层完成，否则备份里 `WWW.Example.com.` 这类
+ * 条目永不命中折叠态（读出来的是未归一化值，比对的是归一化值）。
+ */
+export const SiteCollapseSchema = z
+  .array(z.string().max(HOST_MAX_LENGTH))
+  .max(SITE_COLLAPSE_LIMIT)
+  .transform((hosts) => hosts.map(normalizeHostname).filter((host) => host.length > 0));
 export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
 
 /**
@@ -175,11 +193,17 @@ export const SettingsSchema = z.object({
    * 自动休眠白名单：这些域名（hostname）永不被自动休眠（手动休眠不受限）。
    * 字符串按 hostname 长度封顶，条数另行限制——`isWhitelisted` 对每个标签
    * O(n) 遍历此列表，无上限会放大每次休眠判定。
+   *
+   * 归一化必须在 schema 层完成（与 `noCachePatterns` 同口径）：备份导入、
+   * 同步镜像、直接写 storage 都不经过设置页的编辑器，若只在 UI 输入处归一化，
+   * 落盘的就是 `HTTPS://WWW.Example.com/path` 这类原样字符串，而匹配端
+   * 再归一化一次时结果未必与 UI 一致 —— 表现为「白名单里明明有，还是被休眠了」。
    */
   discardWhitelist: z
     .array(z.string().max(HOST_MAX_LENGTH))
     .max(DISCARD_WHITELIST_LIMIT)
-    .default([]),
+    .default([])
+    .transform((hosts) => hosts.map(normalizeWhitelistHost).filter((host) => host.length > 0)),
   /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
   searchAllWindows: z.boolean().default(false),
   /** 自动休眠完成时的系统通知（通知面板内始终有「全部唤醒」可撤销）。 */
@@ -300,8 +324,14 @@ export const SnapshotTabSchema = z.object({
   muted: z.boolean().default(false),
   /** 快照时所在原生组标题（未分组时缺省；恢复时按名并入或重建）。 */
   groupTitle: z.string().optional(),
-  /** 快照时所在原生组颜色（Chrome 色名字符串，重建组时还原）。 */
-  groupColor: z.string().optional()
+  /**
+   * 快照时所在原生组颜色（Chrome 色名字符串，重建组时还原）。
+   *
+   * 收严为浏览器色名枚举：恢复快照时该值会原样传给 `tabGroups.update`，任意
+   * 字符串会被浏览器拒绝（整组还原失败）。运行时来源恒为 Chrome 自身的
+   * `group.color`，收紧不会误伤本机数据；被收紧掉的是构造出来的备份文件。
+   */
+  groupColor: z.enum(GROUP_COLOR_NAMES).optional()
 });
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
 
@@ -426,9 +456,20 @@ const ImportFixedFolderItemSchema = FixedFolderItemSchema.safeExtend({
 const ImportFixedFolderSchema = FixedFolderSchema.safeExtend({
   items: z.array(ImportFixedFolderItemSchema).max(FOLDER_ITEMS_LIMIT)
 });
+/**
+ * 导入专用磁贴 schema：图标与网址受上述约束，且 identity 由**归一化后的 url**
+ * 重算——备份里的 identity 是外部数据，若与 url 不一致（如 url 已被降级为
+ * `about:blank` 而 identity 仍指向原站），`dedupePins` 会按这个失真身份判重，
+ * 产出点开是新标签页的磁贴。
+ */
 const ImportPersistentPinSchema = PersistentPinSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema
+}).transform((pin) => {
+  // url 被降级为占位时 pinIdentity 返回 null：保留原 identity（去重仍需它），
+  // 不去写空串——空串会让全部降级磁贴塌缩成一个。
+  const identity = pinIdentity(pin.url);
+  return identity === null ? pin : { ...pin, identity };
 });
 const ImportSnapshotTabSchema = SnapshotTabSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,

@@ -185,16 +185,19 @@ export const TabRow = memo(function TabRow({
 
   const menuItems = useMemo<ContextMenuItem[]>(
     () => [
-      { label: t('tabs.copyUrl'), onSelect: () => void copyTabUrl(tab) },
+      { id: 'copy-url', label: t('tabs.copyUrl'), onSelect: () => void copyTabUrl(tab) },
       {
+        id: 'toggle-pin',
         label: tab.pinned ? t('tabs.unpin') : t('tabs.pin'),
         onSelect: () => onTogglePin(tab)
       },
       ...(onDiscard && !tab.discarded && !tab.active
-        ? [{ label: t('tabs.discard'), onSelect: () => onDiscard(tab) }]
+        ? [{ id: 'discard', label: t('tabs.discard'), onSelect: () => onDiscard(tab) }]
         : []),
-      ...(onDuplicate ? [{ label: t('tabs.duplicate'), onSelect: () => onDuplicate(tab) }] : []),
-      { label: t('tabs.closeTab'), onSelect: () => onClose(tab), danger: true }
+      ...(onDuplicate
+        ? [{ id: 'duplicate', label: t('tabs.duplicate'), onSelect: () => onDuplicate(tab) }]
+        : []),
+      { id: 'close', label: t('tabs.closeTab'), onSelect: () => onClose(tab), danger: true }
     ],
     [tab, t, onTogglePin, onDiscard, onDuplicate, onClose, copyTabUrl]
   );

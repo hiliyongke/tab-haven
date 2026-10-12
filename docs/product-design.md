@@ -26,7 +26,8 @@
 
 - 本文不描述构建/发布流程的操作步骤（见 `README.md:27-43`、`CODEBUDDY.md:29-37`），只描述它们所约束的产品行为。
 - 本文不涉及任何商业化收入的测算；商业模式仅复述 `README.md:159-167` 的承诺文本。
-- 兼容变体（`TABS_VARIANT=compat` / `pnpm build:compat`）**已删除**，本文不描述该形态；弹窗入口保留但当前产物未绑定 `default_popup`，无可达入口。
+- 构建方式只有一种（`pnpm build`）：本产品尚未发布正式版，不存在兼容变体（`TABS_VARIANT=compat` / `pnpm build:compat` 已删除）。
+- 交互形态只有侧边栏一种：弹窗快速切换器入口 `src/entrypoints/popup/` 已删除（它此前只为让 WXT 生成 manifest 的 `action` 字段而存在，`default_popup` 又被构建钩子移除，代码不可达）。`action` 现由 `wxt.config.ts` 显式声明——**工具栏图标与角标都依赖它**。
 
 ---
 
@@ -58,9 +59,8 @@
 | 形态                   | 入口                                                                           | 定位                | 能力边界（代码事实）                                                                                                                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **侧边栏（主形态）**   | `src/entrypoints/sidepanel/`                                                   | 完整工作台          | 搜索、分区列表、固定空间、磁贴、其他窗口、快照面板、撤销历史、命令面板、底部工具栏、首启引导（侧边栏 `App.tsx` 全量渲染树）                                                                                    |
-| **弹窗（快速切换器）** | `src/entrypoints/popup/App.tsx`                                                | 快速切换器          | 只做「搜索当前窗口标签并切换」；命中上限 20（`popup/App.tsx:106`）；Esc/↑↓/Enter（166-181）；跨窗口激活（129-136）；无组织/快照/撤销能力。**当前产物未绑定 `default_popup`，无可达入口**（`wxt.config.ts:70`） |
 | **设置页**             | `src/entrypoints/options/`                                                     | 配置 + 数据生命周期 | 分区设置 + 搜索 + 预设 + 导入导出 + 清除数据（`SettingsPage.tsx`）；导入上限 5 MB（`SettingsPage.tsx:34`）                                                                                                     |
-| **关于页**             | `src/entrypoints/about/AboutPage.tsx`                                          | 能力总览 + 信任面板 | 12 个能力域（30-145）、入口清单（152-158）、面板内快捷键 7 项（161-169）、浏览器级 4 项（176-181）、隐私徽章（184-189）、12 项权限逐条说明（206-219）                                                          |
+| **关于页**             | `src/entrypoints/about/AboutPage.tsx`                                          | 能力总览 + 信任面板 | 12 个能力域（30-145）、入口清单（152-158）、面板内快捷键 7 项（161-169）、浏览器级 4 项（176-181）、隐私徽章（184-189）、12 项权限 + 可选主机权限逐条说明（206-220）                                             |
 | **后台 SW**            | `src/entrypoints/background.ts`（484 行）+ `background/`（9 个模块共 1328 行） | 无界面编排          | 右键菜单、地址栏、角标、自动休眠闹钟、自动快照闹钟、关窗缓存、同 URL 唯一化、标签事件转发                                                                                                                      |
 
 后台 SW 实际挂载的浏览器事件（逐项 `file:line`）：`tabs.onCreated/onActivated/onUpdated/onRemoved/onAttached/onDetached/onReplaced`（`background.ts:181,187,192,215,220,223,228`）、`windows.onCreated/onRemoved`（245,248）、`runtime.onMessage`（252，且校验 `sender.id !== browser.runtime.id` 即拒绝跨扩展消息，260）、`runtime.onInstalled`（309）、`runtime.onStartup`（313）、`omnibox.setDefaultSuggestion`（442）、`action.setBadgeText`（460）、`alarms.onAlarm`（468）、`sidePanel.setPanelBehavior`（121）。
@@ -103,7 +103,7 @@
 
 | 场景               | 触发入口                                           | 使用能力                                                                                  | 兜底 / 反馈                                                                                                              |
 | ------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 标签太多找不到     | ⌘K / 地址栏 `t` / 弹窗                             | 模糊搜索（标题·URL·拼音）、命令面板、时间线搜索                                           | 搜索无结果有专门空态 `NoSearchResults`（`ListStates.tsx`；`App.tsx:1131`）                                               |
+| 标签太多找不到     | ⌘K / 地址栏 `t` / 命令面板 ⌘P                     | 模糊搜索（标题·URL·拼音）、命令面板、时间线搜索                                           | 搜索无结果有专门空态 `NoSearchResults`（`ListStates.tsx`；`App.tsx:1131`）                                               |
 | 误关了标签         | ⌘Z / 底部「历史」                                  | 撤销栈（默认深 10）、撤销历史面板 + 浏览器最近关闭（`sessions`）                          | 恢复失败条目回填栈顶可重试（`undoStore.ts:164-217`）；崩溃场景有专门引导（`UndoHistoryPanel.tsx:106-119`）               |
 | 内存告急           | 底部「休眠非激活」/ 快捷键 Ctrl+Shift+U / 自动闹钟 | 手动 / 批量 / 自动休眠 + 白名单                                                           | 自动休眠写台账（可撤销）；台账落盘失败则**不发**带 tabIds 的可撤销消息，避免「全部唤醒」点不动（`autoDiscard.ts:21-27`） |
 | 重复标签堆积       | 底部徽章 / 习惯洞察直达                            | 重复索引 + KeeperPolicy + 一键清理                                                        | 可撤销；固定项与固定空间内条目豁免                                                                                       |
@@ -134,7 +134,6 @@
 │   ├── 新建标签条
 │   ├── 底部工具栏 FooterToolbar（视图组织 / 内存管理 / 记录恢复 / 设置）
 │   └── 浮层：撤销历史 / 快照面板 / 恢复确认 / 首启引导 / 命令面板
-├── 弹窗 popup【降级形态】——仅搜索 + 切换
 ├── 设置页 options（open_in_tab）
 │   ├── 目录大纲 + 搜索 + 预设
 │   ├── 分区：外观 / 行为 / 内存 / 分组搜索 / 高级
@@ -239,17 +238,16 @@
 
 **能力定义**：`SearchEngine`（fuzzysort + pinyin-pro）对标题 / 网址 / 拼音首字母做模糊匹配，并可选把检索范围扩展到「最近快照与归档条目」。
 
-**触发入口**：⌘K 聚焦（`useGlobalHotkeys.ts`）；地址栏 `t`（`wxt.config.ts:24`）；弹窗（`popup/App.tsx`）；命令面板 ⌘P（`CommandPalette.tsx`）。
+**触发入口**：⌘K 聚焦（`useGlobalHotkeys.ts`）；地址栏 `t`（`wxt.config.ts:16`）；命令面板 ⌘P（`CommandPalette.tsx`）。
 
 **关键规则与阈值**：
 
 - 拼音词典异步就绪后用**递增 tick 触发重算**（`useSearchController.ts:168-185`）。
 - 时间线搜索命中上限为最近 20 份快照（`HISTORY_SNAPSHOT_LIMIT`），合成负 id 与当前标签区分（`useSearchController.ts`）。
 - 命令面板空查询时最多列 20 个标签（`CommandPalette.tsx:53`）；扁平漫游顺序为 folder → command → recent → tab（372）。
-- 弹窗命中上限 20（`popup/App.tsx:106`）。
 - **性能基线（测试即规格）**：150 标签单次查询中位数 < 100 ms；150 标签索引构建 < 1000 ms；500 标签单次查询中位数 < 300 ms（`tests/perf/search-perf.test.ts:81-109`；其中 81-92 为 150 标签查询、94-101 为索引构建、103-109 为 500 标签）。测试内还加了「查询确实命中」的附加断言，防止「快是因为啥都没做」的假通过（88-90）。
 
-**反馈机制**：命中数 `sr-only` `<output aria-live="polite">`（`App.tsx:1017-1019`）；`NoSearchResults` 空态带「清空」出口（`App.tsx:1131`）；弹窗同样有 `sr-only` output（`popup/App.tsx:210-212`）。
+**反馈机制**：命中数 `sr-only` `<output aria-live="polite">`（`App.tsx:1017-1019`）；`NoSearchResults` 空态带「清空」出口（`App.tsx:1131`）。
 
 **已知限制**：时间线命中区只在过滤态且开关打开时展示（`App.tsx:1168`）。
 
@@ -526,7 +524,6 @@
 | 同步镜像重试上限     | 5 次（指数退避）         | `SyncMirror.ts:46,111`                               |
 | 时间线搜索快照数     | 20                       | `useSearchController.ts`（`HISTORY_SNAPSHOT_LIMIT`） |
 | 命令面板空查询标签数 | 20                       | `CommandPalette.tsx:53`                              |
-| 弹窗命中数           | 20                       | `popup/App.tsx:106`                                  |
 | 设置页导入文件上限   | 5 MB                     | `SettingsPage.tsx:34`                                |
 | Workona 导入上限     | 1 MB                     | `workonaImport.ts:66`                                |
 | 其他窗口刷新节流     | 500 ms                   | `useOtherWindows.ts:40-48`                           |
@@ -589,7 +586,7 @@ manifest 声明 10 项权限（`wxt.config.ts:27-40`）+ 1 项按需主机权限
 
 ### 7.3 信任面板设计意图
 
-关于页把「零网络」从文档承诺变成**可见功能**（`README.md:76`）：提供 12 项权限逐条用途说明（`AboutPage.tsx:206-219`）、数据存放位置说明、以及 **DevTools 零网络请求自验证教程**——即教用户自己打开 DevTools 验证。另有隐私徽章（184-189）与补充事实（222-225）。
+关于页把「零网络」从文档承诺变成**可见功能**（`README.md:76`）：提供 12 项权限 + 可选主机权限逐条用途说明（`AboutPage.tsx:206-220`）、数据存放位置说明、以及 **DevTools 零网络请求自验证教程**——即教用户自己打开 DevTools 验证。另有隐私徽章（184-189）与补充事实（222-225）。
 
 设计意图（代码注释/文案可证实的）：让用户可自行验证，而非依赖厂商承诺；信任面板随本版（v1.0）引入，属免费核心、零新权限、零上报（`README.md:78`）。
 
@@ -620,7 +617,6 @@ manifest 声明 10 项权限（`wxt.config.ts:27-40`）+ 1 项按需主机权限
 | 7   | 引导进度点是 `<button>`，带 `aria-label`（「转到第 n 步」）与 `aria-current="step"`；`tour-dot` 透明扩区把 6px 视觉高度撑到 ≥24px 命中（WCAG 2.5.8） | `OnboardingTour.tsx:111-127`                             |
 | 8   | 搜索框 `aria-label`；历史开关 `aria-pressed` + `aria-label` 随态切换                                                                                 | `SearchBar.tsx:45,62-64`                                 |
 | 9   | 磁贴条 `aria-label` + 拖放提示 `data-drop-label`；切换中 `aria-busy`                                                                                 | `PinnedStrip.tsx:53-54`；`SpaceStrip.tsx:38`             |
-| 10  | 弹窗命中数 `sr-only` output 播报                                                                                                                     | `popup/App.tsx:210-212`                                  |
 | 11  | 白名单移除按钮命中区补到 24px（WCAG 2.5.8）                                                                                                          | `settingControls.tsx`（`whitelist-remove` 类）           |
 | 12  | 字号纪律：`text-3xs` 用于说明性正文，配 `check:ui` 对比度守卫                                                                                        | 见 `App.tsx:1029,1040` 等处的 `text-3xs`；`README.md:53` |
 
@@ -666,7 +662,6 @@ manifest 声明 10 项权限（`wxt.config.ts:27-40`）+ 1 项按需主机权限
 | **休眠 / 挂起标签（discard）** | 调 `chrome.tabs.discard` 释放内存，标签保留可唤醒；安全集统一由 `canSafelyDiscardTab` 判定                 | `core/tab-types.ts`；`autoDiscard.ts:65,118`      |
 | **快照族**                     | 全部快照 + 归档的集合，上限 200                                                                            | `models.ts:46`                                    |
 | **降级（degraded）**           | 持久化写失败的状态，按分区记账（`storageDegraded`），UI 顶部横幅告警                                       | `App.tsx:1023-1033`；`folderSlice.ts:375-384`     |
-| **快速切换器（popup）**        | 弹窗入口，只做搜索切换；当前产物未绑定 `default_popup`，**无可达入口**，是否保留待 V2.0 决策               | `wxt.config.ts:70`；`src/entrypoints/popup/`      |
 
 ---
 
@@ -689,11 +684,11 @@ manifest 声明 10 项权限（`wxt.config.ts:27-40`）+ 1 项按需主机权限
 
 ### 根目录文档
 
-- `README.md` — 3（定位）、5,7（无后端/只管当前窗口）、27-43（构建命令）、35-36（build/compat）、42（check 聚合）、53（check:ui）、60-76（功能一览表）、68（角标）、70（撤销覆盖）、71（快照恢复语义）、72（习惯洞察）、75（平台三态/双语）、76（信任面板）、78（V1.1/V1.2 注）、121-126（分层约束）、146（check:ui 令牌）、155（主存储）、159-167（商业模式）
+- `README.md` — 3（定位）、5,7（无后端/只管当前窗口）、27-43（构建命令）、42（check 聚合）、53（check:ui）、60-76（功能一览表）、68（角标）、70（撤销覆盖）、71（快照恢复语义）、72（习惯洞察）、75（平台三态/双语）、76（信任面板）、78（V1.1/V1.2 注）、121-126（分层约束）、146（check:ui 令牌）、155（主存储）、159-167（商业模式）
 - `PRIVACY.md` — 23-36（权限用途表）、32（sessions）、33（bookmarks）、35-36（DNR/optional host）、40（快捷键非权限）、65-73（跨设备同步四要点）、70（同步范围）、72（配额降级）、73（关闭即清除）、79-80（导出/导入事务）、85-94（隐私回归四项）、100（不可妥协底线）
 - `CODEBUDDY.md` — 3（定位）、13-19（分层）、18（schema 隔离）、24（零网络）、26（校验唯 schema）、29-37（命令）、34（check 聚合）、41-42（分层方向）、43-46（agents/skills）
 - `CONTRIBUTING.md` — 15（check 组成）、41-42（分层）、44-50（校验唯 schema + 事故）、52-55（权限冻结）、57-70（持久化变更 + 单一备份格式）、68-70（不做跨版本兼容）、75（覆盖率 ratchet）、89-94（不会接受的改动）
-- `wxt.config.ts` — 14（default_locale）、15（minimum_chrome_version）、16（omnibox `t`）、18（options_ui open_in_tab）、19-36（11 项权限）、37（optional_host_permissions）、38-55（4 个 commands）、61-71（build:manifestGenerated hook：强制 open_in_tab + 删除 default_popup）
+- `wxt.config.ts` — 14（default_locale）、15（minimum_chrome_version）、16（omnibox `t`）、18（options_ui open_in_tab）、19-41（12 项权限）、42（optional_host_permissions）、43-60（4 个 commands）、61-73（action 显式声明：工具栏图标与角标的载体）、77-87（build:manifestGenerated hook：强制 open_in_tab + 删除 default_popup）
 - `tests/perf/search-perf.test.ts` — 81-92（150 标签查询 <100ms）、88-90（命中附加断言）、94-101（索引构建 <1000ms）、103-109（500 标签 <300ms）
 - `scripts/i18n-dead-keys.mjs` — 7-12（三条规则）、33-36（动态键白名单 2 条）、51-59（flatten）、81-87（引用判定正则）、103-106（通过输出）
 
@@ -741,7 +736,7 @@ manifest 声明 10 项权限（`wxt.config.ts:27-40`）+ 1 项按需主机权限
 - `src/entrypoints/options/settingPresets.tsx` — 25-55（三预设）、162-217（CAPABILITIES + replayTour）
 - `src/entrypoints/options/ShortcutsSection.tsx` — 10（IS_MAC）、19-46（快捷键列表）
 - `src/entrypoints/about/AboutPage.tsx` — 30-145（12 能力域）、152-158（ENTRY_POINTS）、161-169（面板内 7 项）、176-181（浏览器级 4 项）、184-189（PRIVACY_BADGES）、206-219（PERMISSION_FACTS 12 项）、222-225（TRUST_EXTRA_FACTS）
-- `src/entrypoints/popup/App.tsx` — 17-19（降级形态注释）、106（命中上限 20）、129-136（跨窗口激活）、166-181（Esc/↑↓/Enter）、210-212（sr-only output）
+- （`src/entrypoints/popup/App.tsx` 已随「侧边栏单一形态」删除，相关条目撤回）
 
 ### ui
 
@@ -786,7 +781,7 @@ manifest 声明 10 项权限（`wxt.config.ts:27-40`）+ 1 项按需主机权限
 | 12  | `Dialog.tsx:48` useModalA11y             | `48: export function useModalA11y(`                                                              | ✅   |
 | 13  | `FooterToolbar.tsx:123-131` 重复徽章     | `123: {duplicateCount > 0 && (` … `130: onClick={onCleanDuplicates}`                             | ✅   |
 | 14  | `CommandPalette.tsx:53` 空查询上限       | `53: const EMPTY_QUERY_TAB_LIMIT = 20;`                                                          | ✅   |
-| 15  | `popup/App.tsx:106` 弹窗命中上限         | `106: return engine.search(query, 20);`                                                          | ✅   |
+| 15  | `wxt.config.ts` 产物 manifest 的 `action` | `61-73: action: { default_title, default_icon }`（popup 入口删除后必须显式声明）                | ✅   |
 | 16  | `SyncMirror.ts:21-22` 块大小与 TTL       | `21: CHUNK_BYTES = 6000`、`22: MIRROR_TTL_MS = …24*30`                                           | ✅   |
 | 17  | `SyncMirror.ts:46` 重试上限              | `46: MAX_RETRY_ATTEMPTS = 5`                                                                     | ✅   |
 | 18  | ~~`trim.ts:10-17` 稍后读淘汰~~（已下线） | 功能已移除，本条不再复核                                                                         | ——   |

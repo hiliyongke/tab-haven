@@ -53,7 +53,7 @@ export function isModalOpen(): boolean {
  * 用「记录并恢复原值」而不是卸载时无条件置 false：嵌套弹窗（快照面板内嵌删除
  * 确认框）会让内层关闭时误把外层仍需的 inert 解掉。
  *
- * 兜底：不支持 inert 的旧内核退化为 aria-hidden（只解决读屏，不解决焦点）。
+ * 兜底：不支持 inert 的运行环境退化为 aria-hidden（只解决读屏，不解决焦点）。
  */
 const INERT_TARGET_SELECTOR = '.app, main, #root > *:not(.modal-overlay)';
 

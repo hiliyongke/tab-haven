@@ -16,6 +16,30 @@ import { buildWhitelistMatcher, cachedSettings, hostnameOf, notifyUser } from '.
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
+ * 自动休眠闹钟名。
+ *
+ * 与 `AUTO_SNAPSHOT_ALARM`（autoSnapshot.ts）同口径：闹钟名一度是裸字符串，
+ * 创建处与 `alarms.onAlarm` 的分发处各写一份，改名必漏一处（漏的那侧表现为
+ * 「闹钟照响但功能不执行」，无任何报错）。集中为导出常量后两侧同源。
+ */
+export const AUTO_DISCARD_ALARM = 'tabs-auto-discard';
+
+/**
+ * 单个标签休眠：成功 true / 失败 false（不抛）。
+ *
+ * 并发映射里必须吞掉单次失败：一个标签因「正在播放音频 / 已激活 / 已被关闭」
+ * 被浏览器拒绝就整批中止，其余可休眠标签会全部漏掉。
+ */
+async function discardSafely(tabId: number): Promise<boolean> {
+  try {
+    await browser.tabs.discard(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 追加一轮休眠台账（多批次保留，按 at 滚动淘汰最旧的）。
  *
  * 此前整表覆盖写（单槽位）：第二轮自动休眠会抹掉第一轮的 tabIds，而第一轮冻结的
@@ -90,12 +114,7 @@ const runAutoDiscard = async (): Promise<void> => {
     }
     // 有限并发：严格串行下每个 tabs.discard 一次 IPC 往返，数百个标签会让 SW
     // 在每轮闹钟里长时间被占满（且 alarms 是每分钟触发的兜底链路）。
-    const outcomes = await mapWithConcurrency(targets, DEFAULT_CONCURRENCY, (tabId) =>
-      browser.tabs
-        .discard(tabId)
-        .then(() => true)
-        .catch(() => false)
-    );
+    const outcomes = await mapWithConcurrency(targets, DEFAULT_CONCURRENCY, discardSafely);
     const discardedIds = targets.filter((_tabId, index) => outcomes[index] === true);
     if (discardedIds.length > 0) await recordAutoDiscardBatch(discardedIds);
     await pruneAutoDiscardBatch();
@@ -110,9 +129,9 @@ async function syncAutoDiscardAlarm(settings: Settings): Promise<void> {
   try {
     if (settings.autoDiscardEnabled) {
       // periodInMinutes 最小为 1；同名闹钟重复创建即重置，幂等安全。
-      await browser.alarms.create('tabs-auto-discard', { periodInMinutes: 1 });
+      await browser.alarms.create(AUTO_DISCARD_ALARM, { periodInMinutes: 1 });
     } else {
-      await browser.alarms.clear('tabs-auto-discard');
+      await browser.alarms.clear(AUTO_DISCARD_ALARM);
     }
   } catch (error) {
     logDegraded('auto-discard', '自动休眠唤醒失败', error);
@@ -135,12 +154,7 @@ async function discardInactiveTabs(): Promise<void> {
       if (tab.id >= 0 && !boundTabIds.has(tab.id) && canSafelyDiscardTab(tab)) targets.push(tab.id);
     }
     // 与 runAutoDiscard 同口径：有限并发，避免数百次串行 IPC 往返。
-    const outcomes = await mapWithConcurrency(targets, DEFAULT_CONCURRENCY, (tabId) =>
-      browser.tabs
-        .discard(tabId)
-        .then(() => true)
-        .catch(() => false)
-    );
+    const outcomes = await mapWithConcurrency(targets, DEFAULT_CONCURRENCY, discardSafely);
     const discardedIds = targets.filter((_tabId, index) => outcomes[index] === true);
     if (discardedIds.length === 0) return;
     await recordAutoDiscardBatch(discardedIds);

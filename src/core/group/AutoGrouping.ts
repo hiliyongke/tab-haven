@@ -3,6 +3,7 @@ import { deriveSections } from '@/core/site/Sections';
 import { subLabel } from '@/core/site/SiteGrouping';
 import { siteResolver } from '@/core/site/SiteResolver';
 import { domainToUnicode } from '@/core/url/punycode';
+import { AUTO_GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 import { NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
 
@@ -19,18 +20,6 @@ import type { TabRecord } from '@/core/tab-types';
  *  - 只创建、不自动解散：关闭开关不会解散已创建的组（用户手动管理）；
  *  - 来源树模式（opener）无法表达为原生组，调用方应跳过。
  */
-
-/** 浏览器原生组色枚举（Chrome tabGroups，grey 保留给用户手动场景）。 */
-const GROUP_COLOR_NAMES = [
-  'blue',
-  'red',
-  'yellow',
-  'green',
-  'pink',
-  'purple',
-  'cyan',
-  'orange'
-] as const;
 
 export interface AutoGroupPlan {
   /** 组标题（域名 / 语言标签）。 */
@@ -53,9 +42,9 @@ export function groupColorForLabel(label: string): string {
     hash = (hash * 31 + label.charCodeAt(i)) | 0;
   }
   const idx =
-    ((Math.abs(hash) % GROUP_COLOR_NAMES.length) + GROUP_COLOR_NAMES.length) %
-    GROUP_COLOR_NAMES.length;
-  return GROUP_COLOR_NAMES[idx]!;
+    ((Math.abs(hash) % AUTO_GROUP_COLOR_NAMES.length) + AUTO_GROUP_COLOR_NAMES.length) %
+    AUTO_GROUP_COLOR_NAMES.length;
+  return AUTO_GROUP_COLOR_NAMES[idx]!;
 }
 
 /**

@@ -217,9 +217,23 @@ export function SnapshotsPanel({
     try {
       if (importSource === 'workona') {
         const result = await importWorkona(importText);
+        // 失败按原因分流（与备份导入 version-mismatch / invalid 同口径）：
+        // 「文件拿错了」「文件不是 JSON」「JSON 不是 Workona 导出」三种失败
+        // 此前统一表现为「导入 0 条」，用户无从判断下一步该做什么。
+        if (result.reason === 'too-large') {
+          notify(t('snapshots.importWorkonaTooLarge'));
+          return;
+        }
+        if (result.reason === 'invalid-json') {
+          notify(t('snapshots.importWorkonaInvalidJson'));
+          return;
+        }
+        if (result.reason === 'unrecognized') {
+          notify(t('snapshots.importWorkonaUnrecognized'));
+          return;
+        }
         if (result.snapshots === 0) {
-          // 区分「没粘贴内容」与「解析不出 workspace」：后者可能是格式不对
-          // 或全部条目都不是 http(s) 网址（skipped 会给出识别量提示）。
+          // 结构合法但没产出快照：区分「没粘贴内容」与「识别到了但条目全不可恢复」。
           notify(
             importText.trim()
               ? result.skipped > 0
@@ -235,6 +249,15 @@ export function SnapshotsPanel({
             tabs: result.tabs
           })
         );
+        // 截断必须显式告知：导入成功但静默少了一批标签/快照，是最难自查的一类问题。
+        if (result.truncatedTabs > 0 || result.truncatedSnapshots > 0) {
+          notify(
+            t('snapshots.importWorkonaTruncated', {
+              tabs: result.truncatedTabs,
+              snapshots: result.truncatedSnapshots
+            })
+          );
+        }
         setImportText('');
         setImportName('');
         setView('list');

@@ -28,7 +28,7 @@
 >
 > Your data stays in your browser's own local storage. If you turn on the optional cross-device switch, your collections, pins, and settings are mirrored through your own browser account's sync — Tabs never operates that channel and never sees the data. It is off by default, and turning it off deletes the mirror. You can export everything to a JSON file at any time, and uninstalling removes all local data.
 >
-> Site icons shown next to tabs are fetched by your browser directly from the site they belong to — the only outgoing request involved, and one Tabs does not read or record.
+> Site icons shown next to tabs come from your browser's own local icon store — Tabs makes no request to the sites you visit.
 >
 > Free forever, with no ads and no upsells. Questions or bugs: open an issue at the project repository.
 
@@ -49,7 +49,7 @@
 | Screenshot 2 [RECOMMENDED]     | 同上                | ⬜ Not created | 搜索：模糊搜索命中高亮 + 键盘导航     |
 | Screenshot 3 [RECOMMENDED]     | 同上                | ⬜ Not created | 固定空间：文件夹 + 常驻磁贴           |
 | Screenshot 4                   | 同上                | ⬜ Not created | 撤销历史面板：多层撤销 + 最近关闭     |
-| Screenshot 5                   | 同上                | ⬜ Not created | 信任面板：12 项权限逐条说明           |
+| Screenshot 5                   | 同上                | ⬜ Not created | 信任面板：全部权限 + 可选主机权限逐条说明 |
 | Small Promo Tile [RECOMMENDED] | 440×280             | ⬜ Not created |                                       |
 | Marquee Promo Tile             | 1400×560            | ⬜ Not created |                                       |
 
@@ -61,7 +61,7 @@
 
 ## Permissions Justification
 
-来源：`wxt.config.ts:19-37`（权限清单与 `optional_host_permissions`）与 `PRIVACY.md` 第 2 节。**两者必须逐项一致**，否则 `pnpm check:privacy` 失败。
+来源：`wxt.config.ts:19-41`（权限清单，12 项）与 `:42`（`optional_host_permissions`）与 `PRIVACY.md` 第 2 节。**两者必须逐项一致**，否则 `pnpm check:privacy` 失败。
 
 | Permission              | Type                      | Justification（面向审核团队，填 dashboard 用）                                                                                                               |
 | ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -74,6 +74,7 @@
 | `sessions`              | permissions               | 在撤销历史面板中显示浏览器最近关闭的标签与窗口，供你一键恢复（浏览器自身的会话数据，本扩展不保存）。                                                         |
 | `bookmarks`             | permissions               | 仅在**你主动点击**时使用：把固定文件夹导出为书签，或从书签栏导入为固定文件夹。不会在后台读取书签。                                                           |
 | `notifications`         | permissions               | 执行自动休眠或后台动作后，在本机弹出一次系统通知告知结果（通知内容仅为本机文案）。                                                                           |
+| `favicon`               | permissions               | 读取浏览器自己的本地站点图标库来显示标签旁的站点图标。Tabs 不向你访问的站点发起任何请求（图标不经第三方）。                                                   |
 | `sidePanel`             | permissions               | 在浏览器侧边栏中展示主界面（这是本扩展的默认形态）。                                                                                                         |
 | `declarativeNetRequest` | permissions               | 供可选的开发者功能「指定站点禁缓存」：按你填写的站点改写该站点响应的缓存头。**不拦截请求、不读取页面内容、不上传任何数据。**                                 |
 | `<all_urls>`            | optional_host_permissions | **默认不授予**。仅当你主动开启「禁缓存」开关时由浏览器弹窗询问，用于让上一条的响应头改写在你指定的站点上生效；拒绝则该功能保持关闭，可随时在扩展详情页收回。 |
@@ -96,10 +97,11 @@
 | User activity                | **本地处理** | 否                               | 撤销栈 / 快照 / 习惯洞察（纯本地计算） | No                         |
 | Website content              | No           | No                               | —                                      | No                         |
 
-**两条必须在披露表单里如实申报的例外**（不申报 = 口径不一致 = 拒审风险）：
+**唯一必须在披露表单里如实申报的例外**（不申报 = 口径不一致 = 拒审风险）：
 
 1. **跨设备同步镜像（默认关闭）**：开启后文件夹、常驻磁贴与设置会经 `chrome.storage.sync` 通过用户自己的浏览器账号通道同步 —— 这在 CWS 口径下属于**离设备传输**，必须勾选并说明：「默认关闭，仅传输用户主动固定的条目与设置，Tabs 不经手」。
-2. **站点图标**：侧边栏里的站点图标由浏览器向**该站点自身**发起一次图片请求（`referrerPolicy="no-referrer"`）。Tabs 不接收、不记录、不拼接自有地址。建议在「网站内容」一项说明为「不读取，仅由浏览器渲染站点图标」。
+
+> 站点图标不再是例外：图标取自浏览器本地图标库（`favicon` 权限），Tabs 不向被浏览站点发起任何请求，产品对外口径为「零出站请求」。
 
 ### Data Use Certification
 
@@ -140,7 +142,7 @@
 1. **`<all_urls>` 走 optional 而非默认授予** —— 这是本文件的核心说服点，务必在 dashboard 的权限理由里写明「默认不授予、按需请求、可随时收回」。
 2. **`tabs` 权限的通用提示** —— Chrome 会把 `tabs` 显示为「读取你的浏览历史」。在描述与隐私政策里说明本扩展只读当前窗口标签元数据、不读历史。
 3. **单一用途（Single Purpose）** —— 功能面较宽（组织 / 快照 / 洞察 / 休眠）。统一口径：**这些都是「标签与会话的组织与恢复」这一件事**，不要描述成「效率套件」这类泛化说法。
-4. **右键菜单的 `tab` 上下文**（`src/platform/background/contextMenus.ts:155,162,167`）需较新 Chrome；旧内核上这几项会缺失（已做逐项兜底，只丢这几项）。上架前确认目标版本表现。
+4. **右键菜单的 `tab` 上下文**（`src/platform/background/contextMenus.ts`）需要支持该上下文的浏览器版本；不支持的内核上这几项会缺失（已做逐项兜底，只丢这几项）。上架前确认目标版本表现。
 5. **零网络** 可通过扩展内「信任面板」的 DevTools 自验证教程复现，审核问起时可指引到该功能。
 
 ### Rejection History
@@ -168,5 +170,5 @@
 | 隐私政策 URL 可访问且与披露一致            | ⬜ **阻塞上架** | 必须先把 `PRIVACY.md` 挂到公开地址                                                                                                                                                                  |
 | `chrome.storage.sync` 已披露               | ✅              | 见 Data Collection 例外 1                                                                                                                                                                           |
 | 无远程代码 / 无混淆                        | ✅              | 全量打包，构建产物不含外链                                                                                                                                                                          |
-| 实机功能验证（面板/弹窗/设置/右键/快捷键） | 🟡 待测         | 装已解压产物后逐项走查：面板列表 / 搜索 / 命令面板 / 设置页 / 右键菜单 / 地址栏 `t` 命令 / 4 条快捷键；SW 控制台应无 error，`chrome.action.getBadgeText()` 与 `chrome.commands.getAll()` 可直读校验 |
+| 实机功能验证（面板/设置/右键/快捷键） | 🟡 待测         | 装已解压产物后逐项走查：面板列表 / 搜索 / 命令面板 / 设置页 / 右键菜单 / 地址栏 `t` 命令 / 4 条快捷键；SW 控制台应无 error，`chrome.action.getBadgeText()`（工具栏图标与角标均依赖 manifest 的 `action` 字段）与 `chrome.commands.getAll()` 可直读校验 |
 | 卸载干净                                   | ✅              | 仅本机存储，卸载即清除                                                                                                                                                                              |

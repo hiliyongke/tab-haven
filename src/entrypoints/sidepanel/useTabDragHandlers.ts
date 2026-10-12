@@ -270,7 +270,10 @@ export function useTabDragHandlers() {
               sourceTab.groupId !== overTab.groupId
             ) {
               // 目标组可能刚被解散：groupTabs 内部降级记录并保持未分组。
-              void groupTabs([sourceTab.id], overTab.groupId);
+              // 分组写入失败同样无 tabs 事件可自愈，必须给用户可见反馈（与相邻分支同口径）。
+              void groupTabs([sourceTab.id], overTab.groupId).catch(() =>
+                notifyError(t('errors.operationFailed'))
+              );
             }
           }
           return;
@@ -298,7 +301,12 @@ export function useTabDragHandlers() {
           const tab = useTabStore
             .getState()
             .tabs.find((candidate) => candidate.id === activeData.tabId);
-          if (tab) void dataStore.addPin(tab);
+          if (tab) {
+            void dataStore
+              .addPin(tab)
+              .then(() => notify(t('toast.pinned')))
+              .catch(() => notifyError(t('errors.operationFailed')));
+          }
         }
         return;
       }
@@ -338,12 +346,14 @@ export function useTabDragHandlers() {
       // 固定条目：同文件夹排序 / 跨文件夹移动。
       if (activeData.type === DragType.FolderItem) {
         if (overData?.type === DragType.FolderItem && isSameContainer(activeData, overData)) {
-          void dataStore.reorderFolderItems({
-            folderId: activeData.folderId,
-            sourceId: activeData.itemId,
-            targetId: overData.itemId,
-            placeAfter: isPlaceAfter(event, activeData, overData)
-          });
+          void dataStore
+            .reorderFolderItems({
+              folderId: activeData.folderId,
+              sourceId: activeData.itemId,
+              targetId: overData.itemId,
+              placeAfter: isPlaceAfter(event, activeData, overData)
+            })
+            .catch(() => notifyError(t('errors.operationFailed')));
           return;
         }
         // 跨文件夹：拖到目标文件夹（或其条目）上时，把条目移入目标文件夹。
@@ -372,11 +382,13 @@ export function useTabDragHandlers() {
 
       // 文件夹排序。
       if (activeData.type === DragType.Folder && overData?.type === DragType.Folder) {
-        void dataStore.moveFolder(
-          activeData.folderId,
-          overData.folderId,
-          isPlaceAfter(event, activeData, overData)
-        );
+        void dataStore
+          .moveFolder(
+            activeData.folderId,
+            overData.folderId,
+            isPlaceAfter(event, activeData, overData)
+          )
+          .catch(() => notifyError(t('errors.operationFailed')));
         return;
       }
 
@@ -385,11 +397,13 @@ export function useTabDragHandlers() {
       // - 有 tabId：SectionList 内浏览器原生置顶组排序（chrome.tabs.move 改浏览器位置）。
       if (activeData.type === DragType.Pin && overData?.type === DragType.Pin) {
         if (activeData.pinId !== undefined && overData.pinId !== undefined) {
-          void dataStore.reorderPins(
-            activeData.pinId,
-            overData.pinId,
-            isPlaceAfter(event, activeData, overData)
-          );
+          void dataStore
+            .reorderPins(
+              activeData.pinId,
+              overData.pinId,
+              isPlaceAfter(event, activeData, overData)
+            )
+            .catch(() => notifyError(t('errors.operationFailed')));
         } else if (activeData.tabId !== undefined && overData.tabId !== undefined) {
           handleReorder(
             activeData.tabId,

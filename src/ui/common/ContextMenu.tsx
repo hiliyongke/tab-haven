@@ -15,6 +15,13 @@ import { useTranslation } from 'react-i18next';
  */
 
 export interface ContextMenuItem {
+  /**
+   * 稳定标识（同时用作 React key）。
+   *
+   * 用数组下标做 key 会让菜单项在条件增减时错位复用（焦点与 disabled 态跟着
+   * 错位），与 CommandPalette 的 `key={cmd.id}` 同口径。
+   */
+  id: string;
   label: string;
   onSelect: () => void;
   /** 危险项（关闭等）用危险色。 */
@@ -164,9 +171,9 @@ export function ContextMenu({
       style={style}
       onContextMenu={(event) => event.preventDefault()}
     >
-      {items.map((item, index) => (
+      {items.map((item) => (
         <button
-          key={index}
+          key={item.id}
           type="button"
           role="menuitem"
           disabled={item.disabled}

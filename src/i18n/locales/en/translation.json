@@ -66,7 +66,7 @@
     "autoDiscarded": "Auto-discarded {{count}} tabs",
     "wakeAll": "Wake all",
     "wakeAllCurrent": "Wake {{count}} sleeping tabs in the current window",
-    "wakeAllHint": "Only wakes sleeping tabs in the current window; for other windows use \u201cWake all\u201d in the auto-sleep notice",
+    "wakeAllHint": "Only wakes sleeping tabs in the current window; for other windows use “Wake all” in the auto-sleep notice",
     "wakeNone": "No discarded tabs to wake",
     "woken": "Woke {{count}} tabs"
   },
@@ -135,7 +135,6 @@
     "keyboardHint": "↑↓ Select · Enter Switch · Esc Clear",
     "clear": "Clear search",
     "noResults": "No matching tabs",
-    "typeHint": "Type a title, URL, or pinyin initials",
     "hits": "{{count}} tabs matched",
     "historyToggle": "Include history (snapshots/archives)",
     "historyToggleOff": "Current tabs only",
@@ -578,7 +577,11 @@
     "reportSnapshots": "Snapshots / Workspaces",
     "reportArchives": "Archived",
     "reportTabs": "Tabs preserved",
-    "evicted": "Snapshot limit reached; the {{count}} oldest were removed (adjust snapshot retention in settings)"
+    "evicted": "Snapshot limit reached; the {{count}} oldest were removed (adjust snapshot retention in settings)",
+    "importWorkonaTooLarge": "This file is larger than 1MB: split the Workona export into several parts and import them one by one",
+    "importWorkonaInvalidJson": "This is not valid JSON: the file may be truncated or corrupted, try exporting it again",
+    "importWorkonaUnrecognized": "This JSON is not a Workona export: it needs a top-level \"Workspaces\" or \"Archived Workspaces\" field",
+    "importWorkonaTruncated": "Some content was not imported: {{tabs}} tabs, {{snapshots}} snapshots (over the storage limit, or not http/https URLs)"
   },
   "tips": {
     "discoverTitle": "Unlock all of Tabs in three steps",
@@ -776,7 +779,7 @@
     "privacy4Title": "Minimal permissions",
     "privacy4Body": "The permission list is frozen in the build config and the privacy docs; any addition must change both first.",
     "privacy5Title": "No browsing content collected",
-    "privacy5Body": "Diagnostic logs only record technical context (time, module, error) — never tab titles or URLs.",
+    "privacy5Body": "Diagnostics log only technical context (time, module, error) — never tab titles or URLs.",
     "trustTitle": "Permissions & purposes (trust panel)",
     "trustIntro": "Below is the complete list of permissions this extension declares and what each is for. The list is frozen in the build config; adding any permission fails the build.",
     "permTabsTitle": "tabs — read tab list",
@@ -800,14 +803,13 @@
     "permDnrTitle": "declarativeNetRequest — response header rewrite",
     "permDnrBody": "Used only by the developer no-cache feature to rewrite response headers for matched sites. Inactive unless you enable that feature.",
     "permSidePanelTitle": "sidePanel — side panel",
-    "permSidePanelBody": "The main UI form of this product: the browser side panel. Declared automatically by the framework.",
+    "permSidePanelBody": "The main UI form of this product: the browser side panel. Declared explicitly in the manifest.",
     "permOptionalHostsTitle": "Optional host permissions",
     "permOptionalHostsBody": "Requested on demand only by the no-cache feature (optional permission): with it off, no all-sites warning appears at install. No other feature needs any host access.",
     "trustDataTitle": "Where your data lives",
     "trustDataBody": "Settings, snapshots, and the fixed space all live in browser local storage; cross-device mirroring (off by default) goes through your own browser account sync channel — Tabs has no server and never sees the content.",
     "trustVerifyTitle": "Verify zero network yourself",
     "trustVerifyBody": "Open DevTools (F12) → Network → check Preserve log → use the extension normally. You will not see any outbound request initiated by this extension. A build-time privacy regression test keeps verifying this in CI.",
-    "privacy5Body": "Diagnostics log only technical context (time, module, error) — never tab titles or URLs.",
     "techTitle": "Technology & license",
     "tech1Title": "Stack",
     "tech1Body": "WXT + React 19 + TypeScript + Tailwind CSS + zustand + zod.",
@@ -816,12 +818,10 @@
     "tech3Title": "Open source",
     "tech3Body": "MIT licensed, auditable, contributions welcome.",
     "footerNote": "No servers of our own, no account, no telemetry, zero outbound requests; your data lives in your browser by default.",
-    "footerLicense": "Open source under the MIT license."
-  },
-  "popup": {
-    "keyboardHint": "↑↓ Navigate · Enter Switch · Esc Close",
-    "loadFailedHint": "Tabs for this window could not be read right now, so search may return nothing. You can retry, or close and reopen this popup.",
-    "loading": "Reading tabs…"
+    "footerLicense": "Open source under the MIT license.",
+    "productName": "Tabs",
+    "permFaviconTitle": "favicon — site icons",
+    "permFaviconBody": "Site icons are read from your browser's own local icon store. Nothing is requested from the sites you visit."
   },
   "dnd": {
     "instructions": "Press Space to pick up, use arrow keys to move, press Space again to drop, press Esc to cancel",

@@ -27,10 +27,13 @@ export function planDuplicateCleanup(
   const bound = new Set(boundTabIds);
   for (const group of index.duplicates()) {
     const { keeper, removable: groupRemovable } = KeeperPolicy.default.select(group);
+    // 固定空间绑定的标签豁免：用户显式保存的资产不参与自动清理。
+    const candidates = groupRemovable.filter((tab) => !bound.has(tab.id));
+    // 仅在该组真的清掉了标签时才记 keeper：整组副本都被绑定（或 keeper 之外
+    // 没有副本）时本次什么都没关，高亮「保留者」会让用户以为刚发生了一次清理。
+    if (candidates.length === 0) continue;
     keepIds.push(keeper.id);
-    for (const tab of groupRemovable) {
-      if (!bound.has(tab.id)) removable.push(tab);
-    }
+    removable.push(...candidates);
   }
   return { removable, keepIds };
 }

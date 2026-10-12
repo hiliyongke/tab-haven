@@ -226,23 +226,37 @@ export async function discardTabSafely(
     notifyUser('Tabs', t('bg.discardNotSafe'));
     return false;
   }
-  const ok = await browser.tabs
-    .discard(tab.id)
-    .then(() => true)
-    .catch(() => false);
+  let ok: boolean;
+  try {
+    await browser.tabs.discard(tab.id);
+    ok = true;
+  } catch {
+    // 已被关闭 / 正在播放音频等浏览器拒绝：按失败反馈，不逃逸为 unhandled rejection。
+    ok = false;
+  }
   if (ok) notifyUser('Tabs', t('bg.discardDone'));
   return ok;
 }
 
-/** 注册/刷新右键菜单（按设置开关与当前文件夹列表）。 */
+/**
+ * 注册/刷新右键菜单（按设置开关与当前文件夹列表）。
+ *
+ * 内部自行兜住异常：调用方（`background.ts` 的 onInstalled / onStartup /
+ * settings watch）都是 `void setupMenus()` 的一次性触发点，reject 会变成
+ * 无归属的 unhandled rejection —— 菜单没建起来这件事在诊断里一条线索都没有。
+ */
 export async function setupMenus(): Promise<void> {
-  const [folders, settings] = await Promise.all([
-    foldersRepository.read(),
-    settingsRepository.read()
-  ]);
-  if (!settings.contextMenusEnabled) {
-    clearContextMenus();
-    return;
+  try {
+    const [folders, settings] = await Promise.all([
+      foldersRepository.read(),
+      settingsRepository.read()
+    ]);
+    if (!settings.contextMenusEnabled) {
+      clearContextMenus();
+      return;
+    }
+    rebuildContextMenus(folders);
+  } catch (error) {
+    logDegraded('contextMenus', '右键菜单重建失败', error);
   }
-  rebuildContextMenus(folders);
 }

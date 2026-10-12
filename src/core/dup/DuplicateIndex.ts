@@ -36,11 +36,17 @@ export class DuplicateIndex {
     return new DuplicateIndex(groupsByKey);
   }
 
-  /** 全部重复组（同键 ≥ 2），按键首次出现顺序排列。 */
+  /**
+   * 全部重复组（同键 ≥ 2），按键首次出现顺序排列。
+   *
+   * 组的 `tabs` 返回**副本**：索引自称只读，但此前直接外泄内部数组引用，
+   * 任何消费方（如按保留策略排序的调用链）原地 `sort` / `push` 都会改动索引
+   * 本身，而索引在渲染期被反复复用 —— 表现为清理目标随渲染次数漂移。
+   */
   duplicates(): DuplicateGroup[] {
     return [...this.groupsByKey.entries()]
       .filter(([, tabs]) => tabs.length >= 2)
-      .map(([key, tabs]) => ({ key, tabs }));
+      .map(([key, tabs]) => ({ key, tabs: [...tabs] }));
   }
 
   /** 每键的份数（含 1）。 */

@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { toGroupColor } from '@/core/group/groupColors';
 import type { Settings, SnapshotTab } from '@/core/schema/models';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
@@ -53,7 +54,7 @@ async function collectWindowTabs(windowId: number): Promise<SnapshotTab[]> {
       pinned: tab.pinned,
       muted: tab.muted ?? false,
       groupTitle: group?.title || undefined,
-      groupColor: group?.color || undefined
+      groupColor: toGroupColor(group?.color)
     });
   }
   return out;

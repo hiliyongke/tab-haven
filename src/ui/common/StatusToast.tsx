@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useUndoStore } from '@/stores/undoStore';
+import { logDegraded } from '@/platform/diagnostics';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
 
@@ -35,7 +36,18 @@ export function StatusToast() {
         </Button>
       )}
       {toast.action && (
-        <Button variant="soft" size="sm" onClick={() => void toast.action?.run()}>
+        <Button
+          variant="soft"
+          size="sm"
+          onClick={() => {
+            // 动作内是异步链路（如「全部唤醒」的 reloadTabs）：reject 无人接住时会
+            // 变成一条无归属的 unhandled rejection，用户只看到按钮点了没反应。
+            // run 的返回类型含 void（同步动作），包一层 Promise 才能统一接住 rejection。
+            void Promise.resolve(toast.action?.run()).catch((error: unknown) => {
+              logDegraded('toast', '提示条动作执行失败', error);
+            });
+          }}
+        >
           {toast.action.label}
         </Button>
       )}

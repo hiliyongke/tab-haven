@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { SnapshotTabSchema, type SnapshotTab } from '@/core/schema/models';
+import { toGroupColor } from '@/core/group/groupColors';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { settingsRepository } from '@/platform/storage/repositories';
@@ -179,7 +180,7 @@ function collectTabs(
       pinned: tab.pinned,
       muted: tab.muted ?? false,
       groupTitle: group?.title || undefined,
-      groupColor: group?.color || undefined
+      groupColor: toGroupColor(group?.color)
     });
   }
   return out;

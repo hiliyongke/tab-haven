@@ -63,17 +63,20 @@ const NETWORK_PATTERNS = [
 ];
 
 /**
- * 图标渲染闸门（P1-4）：`src/ui/common/Favicon.tsx` 是唯一渲染站点图标的地方。
+ * 图标渲染闸门（P1-4）：图标地址由 `src/platform/favicon.ts` 构造，
+ * `src/ui/common/Favicon.tsx` 是唯一渲染站点图标的地方（组件只消费字符串）。
  *
  * 口径（已收紧为**零例外**）：图标只允许来自浏览器自己的 favicon 通道
  * `chrome-extension://<id>/_favicon/`。此前渲染站点自身的图标地址，那是本产品
  * 唯一的第三方出站请求，且在鉴权站点上会被 302 一路带到登录页再跳回来
  * （一次约 25 跳，最终 ERR_TOO_MANY_REDIRECTS）。
  *
- * 门禁只拦「放开」：删掉通道构造、改用任何 http(s) 图标地址、或新增第二个不受
- * `buildFaviconSrc` 约束的 src 渲染点，都会失败。
+ * 门禁只拦「放开」：删掉通道构造、改用任何 http(s) 图标地址、绕过 platform 直连
+ * 浏览器 API、或新增第二个不受 `buildFaviconSrc` 约束的 src 渲染点，都会失败。
  */
 const FAVICON_FILE = join(SRC, 'ui', 'common', 'Favicon.tsx');
+/** 图标地址构造层（platform）：`browser.runtime.id` 只应出现在这里。 */
+const FAVICON_SRC_FILE = join(SRC, 'platform', 'favicon.ts');
 
 /** 存储键字面量：项目内所有存储键统一以 `tabs.` 前缀命名。 */
 const STORAGE_KEY_LITERAL = /['"](tabs\.[a-zA-Z0-9._-]+)['"]/g;
@@ -155,22 +158,38 @@ function readSourceStorageKeys() {
  * 并禁止出现第二个（不受同一判定约束的）src 渲染点。
  */
 function checkFaviconGuard() {
+  if (!existsSync(FAVICON_SRC_FILE)) {
+    issues.push('缺少 src/platform/favicon.ts，图标地址构造闸门无法校验');
+    return;
+  }
   if (!existsSync(FAVICON_FILE)) {
     issues.push('缺少 src/ui/common/Favicon.tsx，图标渲染闸门无法校验');
     return;
   }
   const text = readFileSync(FAVICON_FILE, 'utf8');
+  const srcText = readFileSync(FAVICON_SRC_FILE, 'utf8');
 
   // ① 必须走浏览器自己的 favicon 通道（本产品唯一允许的图标来源）。
-  if (!/_favicon/.test(text)) {
-    issues.push('Favicon.tsx 未使用浏览器 favicon 通道（_favicon）——图标不得来自任何第三方');
+  //    通道地址构造在 platform（那里才允许碰 browser.runtime.id）。
+  if (!/_favicon/.test(srcText)) {
+    issues.push('favicon.ts 未使用浏览器 favicon 通道（_favicon）——图标不得来自任何第三方');
   }
-  if (!/chrome-extension:\/\//.test(text)) {
-    issues.push('Favicon.tsx 图标地址必须是 chrome-extension:// 本扩展通道');
+  if (!/chrome-extension:\/\//.test(srcText)) {
+    issues.push('favicon.ts 图标地址必须是 chrome-extension:// 本扩展通道');
   }
-  // ② 渲染的 src 必须由该通道构造函数产出，不能是任意外来地址。
+  if (!/export\s+function\s+buildFaviconSrc\s*\(/.test(srcText)) {
+    issues.push('favicon.ts 必须导出 buildFaviconSrc(pageUrl) 供 UI 消费');
+  }
+  // ② 渲染的 src 必须由该通道构造函数产出，不能是任意外来地址；
+  //    且 UI 不得自己拼接通道（否则分层与闸门同时失效）。
   if (!/const\s+src\s*=\s*buildFaviconSrc\s*\(/.test(text)) {
     issues.push('Favicon.tsx 的 src 必须来自 buildFaviconSrc(pageUrl)（禁止渲染任意图标地址）');
+  }
+  if (!/from\s+'@\/platform\/favicon'/.test(text)) {
+    issues.push('Favicon.tsx 必须从 @/platform/favicon 取图标地址（UI 不得直连浏览器 API）');
+  }
+  if (/\bbrowser\.(runtime|tabs|storage)\b/.test(text)) {
+    issues.push('Favicon.tsx 出现浏览器 API 直连——图标地址构造必须留在 platform 层');
   }
   // ③ 旧的 http(s) 图标白名单不得再出现（它是「唯一外部请求」时代的产物）。
   if (/SAFE_FAVICON_SRC|isSafeFaviconSrc/.test(text)) {

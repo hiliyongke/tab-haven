@@ -200,7 +200,8 @@ const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
 /**
  * 权限 → 用途映射（P-03 信任面板）：把「零网络」从文档承诺变成可见功能。
  * 键一律字面量：死键守卫靠「源码中出现精确键串」判定，模板拼接会让整批键被判死键。
- * 数据源：wxt.config.ts permissions（10 项）+ WXT 自动追加的 sidePanel + optional host。
+ * 数据源：`wxt.config.ts` 的 permissions（12 项，sidePanel 已显式声明而非由框架
+ * 自动追加）+ optional_host_permissions 的全站 host 权限。
  * privacy-check 校验权限清单与 PRIVACY.md 一致，本面板只做展示，不引入任何监测代码。
  */
 const PERMISSION_FACTS: { titleKey: string; bodyKey: string }[] = [
@@ -213,6 +214,7 @@ const PERMISSION_FACTS: { titleKey: string; bodyKey: string }[] = [
   { titleKey: 'about.permSessionsTitle', bodyKey: 'about.permSessionsBody' },
   { titleKey: 'about.permBookmarksTitle', bodyKey: 'about.permBookmarksBody' },
   { titleKey: 'about.permNotificationsTitle', bodyKey: 'about.permNotificationsBody' },
+  { titleKey: 'about.permFaviconTitle', bodyKey: 'about.permFaviconBody' },
   { titleKey: 'about.permDnrTitle', bodyKey: 'about.permDnrBody' },
   { titleKey: 'about.permSidePanelTitle', bodyKey: 'about.permSidePanelBody' },
   { titleKey: 'about.permOptionalHostsTitle', bodyKey: 'about.permOptionalHostsBody' }
@@ -247,7 +249,7 @@ export function AboutPage() {
         <img src="/icon/logo-light.svg" alt="" className="about-logo-light h-12 w-12" />
         <img src="/icon/logo.svg" alt="" className="about-logo-dark h-12 w-12" />
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Tabs</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('about.productName')}</h1>
           <p className="mt-1 text-sm text-gray-600">{t('about.tagline')}</p>
         </div>
         {version && (

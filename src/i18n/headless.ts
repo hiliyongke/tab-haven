@@ -17,7 +17,10 @@ import { settingsRepository } from '@/platform/storage/repositories';
  */
 
 const browserLanguage = globalThis.navigator?.language ?? '';
-const initialLanguage = browserLanguage.toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
+// 与 UI 轨道（`src/i18n/index.ts`）同一判定：只认中文前缀，其余一律落 en。
+// 此处若反过方向（en 前缀判 en、其余落 zh-CN），日文 / 德文 / 法文用户会得到
+// 中文的右键菜单与通知，而同一浏览器里的面板却是英文 —— 两条轨道必须同解。
+const initialLanguage = browserLanguage.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
 
 const instance = i18next.createInstance();
 void instance.init({
