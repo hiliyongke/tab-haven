@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
@@ -62,7 +62,7 @@ describe('useLocateActive', () => {
     const ctx = setup(undefined);
     ctx.locate();
     // hook 内部走 i18n.t（而非 useTranslation 的 t），避免语言切换重建回调。
-    expect(ctx.notify).toHaveBeenCalledWith(i18n.t('toast.activeTabNotFound'));
+    expect(ctx.notify).toHaveBeenCalledWith(translate('当前没有可定位的标签'));
     expect(ctx.dispatched).toEqual([]);
   });
 

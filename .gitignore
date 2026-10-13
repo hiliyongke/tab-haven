@@ -16,6 +16,15 @@ stats.html
 coverage/
 .vitest-cache/
 
+# ---------- 文案（i18n） ----------
+# 注意：`i18n/source/`、`i18n/translation/`、`i18n/legacy/` 是**词典源**，必须入库
+# ——译文是资产，漏入库等于整包译文丢失且无法回溯。此前整目录忽略是建立在
+# 「i18n/ 里只有报告」的前提上，词典搬进来后该前提不再成立。
+# 条目仍锚定仓库根：不带前导斜杠会匹配任意层级的 i18n 目录，连 src/i18n/ 一起忽略。
+/i18n/report.md
+/i18n/untranslated/
+/i18n/retired/
+
 # ---------- 日志 ----------
 *.log
 npm-debug.log*

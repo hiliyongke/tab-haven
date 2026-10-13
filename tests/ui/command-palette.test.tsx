@@ -7,7 +7,7 @@ import type { Snapshot, UndoBatch } from '@/core/schema/models';
 import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 
 /**
  * 命令面板（⌘/Ctrl+P）。
@@ -103,7 +103,7 @@ describe('CommandPalette 无障碍契约', () => {
     const options = screen.getAllByRole('option');
     // 12 条命令 + 2 个标签
     expect(options).toHaveLength(15);
-    expect(options[0]).toHaveTextContent(i18n.t('discard.allInactive'));
+    expect(options[0]).toHaveTextContent(translate('休眠全部后台标签（释放内存）'));
     expect(options.at(-1)).toHaveTextContent('标签-2');
     expect(input).toBeInTheDocument();
   });
@@ -148,7 +148,7 @@ describe('CommandPalette 键盘漫游与执行', () => {
   it('点击某一项直接执行并关闭', () => {
     const { actions, onClose } = renderPalette();
 
-    fireEvent.click(screen.getByText(i18n.t('settings.title')));
+    fireEvent.click(screen.getByText(translate('设置')));
 
     expect(actions.calls).toEqual(['settings']);
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -213,13 +213,17 @@ describe('CommandPalette 空查询截断', () => {
     // 12 条命令 + 20 个标签（截断），第 21 个起不挂载
     expect(screen.getAllByRole('option')).toHaveLength(33);
     expect(screen.queryByText('标签-21')).not.toBeInTheDocument();
-    expect(screen.getByText(i18n.t('palette.tabsTruncated', { count: 20 }))).toBeInTheDocument();
+    expect(
+      screen.getByText(translate('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: 20 }))
+    ).toBeInTheDocument();
   });
 
   it('截断提示不是 option，键盘漫游的末项是截断边界的标签', () => {
     const { input } = renderPalette(manyTabs());
 
-    const hint = screen.getByText(i18n.t('palette.tabsTruncated', { count: 20 }));
+    const hint = screen.getByText(
+      translate('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: 20 })
+    );
     expect(hint).not.toHaveAttribute('role', 'option');
     // ↑ 环绕到末项：必须是截断边界的第 20 个标签，而非提示行
     fireEvent.keyDown(input, { key: 'ArrowUp' });
@@ -234,7 +238,9 @@ describe('CommandPalette 空查询截断', () => {
     fireEvent.change(input, { target: { value: '标签-2' } });
 
     expect(
-      screen.queryByText(i18n.t('palette.tabsTruncated', { count: 20 }))
+      screen.queryByText(
+        translate('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: 20 })
+      )
     ).not.toBeInTheDocument();
     // 「标签-2」命中 标签-2 / 标签-20…25（含空查询时被截掉的 21-25）
     const options = screen.getAllByRole('option');
@@ -309,7 +315,7 @@ describe('CommandPalette 空查询 dashboard', () => {
     const { input } = renderPalette();
 
     // 最近组标题出现（测试环境 en）
-    expect(screen.getByText(i18n.t('palette.sectionRecent'))).toBeInTheDocument();
+    expect(screen.getByText(translate('最近关闭与快照'))).toBeInTheDocument();
     // 批次条目：最新批次（b2，栈尾）在前
     expect(screen.getByText(/site-b2-0/)).toBeInTheDocument();
     // 快照条目
@@ -338,7 +344,7 @@ describe('CommandPalette 空查询 dashboard', () => {
 
     fireEvent.change(input, { target: { value: '标签' } });
 
-    expect(screen.queryByText(i18n.t('palette.sectionRecent'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('最近关闭与快照'))).not.toBeInTheDocument();
     expect(screen.queryByText('周末阅读')).not.toBeInTheDocument();
   });
 });

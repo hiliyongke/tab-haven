@@ -53,7 +53,10 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   const persisted = await appendAutoDiscardBatch(tabIds, at);
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
-    notifyUser('Tabs', t('bg.autoDiscarded', { count: tabIds.length }));
+    notifyUser(
+      'Tabs',
+      t('已休眠 {{count}} 个标签（可在侧边栏一键唤醒）', { count: tabIds.length })
+    );
   }
   if (!persisted) {
     // 台账未落盘：撤销入口会指向不存在的批次，故不发带 tabIds 的「可撤销」消息
@@ -139,7 +142,7 @@ async function syncAutoDiscardAlarm(settings: Settings): Promise<void> {
   }
 }
 
-/** 休眠当前窗口全部非激活、可安全丢弃的标签（含台账与通知）。 */
+/** 休眠当前窗口全部后台标签、可安全丢弃的标签（含台账与通知）。 */
 async function discardInactiveTabs(): Promise<void> {
   try {
     const [tabs, session] = await Promise.all([
@@ -161,7 +164,7 @@ async function discardInactiveTabs(): Promise<void> {
   } catch (error) {
     // 与 runAutoDiscard 同口径：查询失败等异常不得逃逸为 async 命令监听器的
     // unhandled rejection（浏览器级快捷键路径）。
-    logDegraded('auto-discard', '休眠非激活标签执行失败', error);
+    logDegraded('auto-discard', '休眠后台标签执行失败', error);
   }
 }
 

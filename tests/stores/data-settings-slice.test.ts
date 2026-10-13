@@ -19,13 +19,20 @@ import type { DataContext, DataState } from '@/stores/data/types';
 
 const mocks = vi.hoisted(() => ({
   pull: vi.fn(),
+  // 拉取结果分类：默认「从未同步过」（正常空态）。
+  pullIssue: vi.fn(() => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable'),
   clearAll: vi.fn(async () => {}),
   schedule: vi.fn(),
   applyTheme: vi.fn()
 }));
 
 vi.mock('@/platform/storage/SyncMirror', () => ({
-  syncMirror: { pull: mocks.pull, clearAll: mocks.clearAll, schedule: mocks.schedule }
+  syncMirror: {
+    pull: mocks.pull,
+    readLastPullIssue: mocks.pullIssue,
+    clearAll: mocks.clearAll,
+    schedule: mocks.schedule
+  }
 }));
 
 vi.mock('@/platform/theme/ThemeApplier', () => ({
@@ -82,7 +89,9 @@ async function harness(options: {
     },
     scheduleMirror,
     broadcastSettingsSynced: vi.fn(),
-    reportPersistenceFailure
+    reportPersistenceFailure,
+    // 关闭同步路径会调用它复位镜像失败态（真实 ctx 由 buildDataContext 提供）
+    resetMirrorFailure: vi.fn()
   } as unknown as DataContext;
 
   const slice = createSettingsSlice(ctx) as {

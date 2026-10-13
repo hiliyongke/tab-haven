@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
@@ -21,8 +21,26 @@ import type {
 
 /** 排序关闭时的虚拟化阈值（模块级常量：避免每次渲染重建，且便于统一调整）。 */
 const VIRTUAL_THRESHOLD = 60;
-/** 排序开启时的强制虚拟化阈值（见 RowList 内说明）。 */
-const FORCE_VIRTUAL_THRESHOLD = 120;
+/**
+ * 排序开启时的强制虚拟化阈值。
+ *
+ * 定为 80 的依据是**可视行数与总行数的比例**（几何事实，不依赖性能实测）：
+ * 虚拟列表高度上限 `min(480px, 50vh)`，cozy 档行高 28px —— 无论窗口多大，
+ * 同时可见的只有 **10–17 行**。也就是说 80 行已经是可视区的 5–8 倍：
+ * 用户要在 10 几行的窗口里对第 50 行以外做定位与拖拽，可视跨度与目标跨度
+ * 严重不匹配，区内排序在这个量级上本就难以真正使用。
+ * 与此同时全量渲染 80 行 = 80 个真实 DOM 行，虚拟化后仅约 29 行（可见 + overscan），
+ * 差异 4 倍 —— 换流畅度是划算的。
+ *
+ * 代价（明确接受）：超过本值后区内排序**整体暂停** —— 不只是拖拽，
+ * `Alt+↑↓` 键盘排序也一并停掉（见下方 `reorderEnabled={false}`），
+ * 跨容器拖到固定空间仍可用。因此行内提示必须同时点明两者，
+ * 否则键盘用户试按 Alt+↑↓ 无反应会以为功能坏了。
+ *
+ * 若要放宽：把本值调回 120 即可，需同步 `tests/ui/section-list-virtual.test.tsx`
+ * 中「70 标签不虚拟化」用例的阈值。
+ */
+const FORCE_VIRTUAL_THRESHOLD = 80;
 
 /** 跟踪视口高度：虚拟列表高度随面板可用高度自适应，渲染期直读 window.innerHeight 不会在面板尺寸变化后更新。 */
 function useViewportHeight(): number {
@@ -117,17 +135,28 @@ function RowList({
   if (useVirtual) {
     // itemSize 为估算起步值：VirtualRowList 首行挂载后会实测校准，
     // 字号 / 密度 / 副标题开关调整不再要求同步改这里的公式。
-    // 单行 = 行高 + 垂直 padding（compact 16+4 / cozy 16+8 / large 19+14）；
+    // 单行 = 行高 + 垂直 padding（compact 16+4 / cozy 16+12 / large 19+20）；
+    // 此前 cozy 写 24（按 16+8 算），实际 .density-cozy 是上下各 6px = 28，
+    // 首帧 totalHeight 少 4px，滚动条长度会在挂载后跳一次。
     // showUrl 副标题 compact/cozy 取 +13（10px leading-tight），large 取 +16（12px）。
     const itemSize =
-      (density === 'cozy' ? 24 : density === 'large' ? 33 : 20) +
+      (density === 'cozy' ? 28 : density === 'large' ? 39 : 20) +
       (showUrl ? (density === 'large' ? 16 : 13) : 0);
-    // 虚拟列表高度随面板可用高度自适应（上限 720px）：固定 480px 会让大分区
-    // 变成「列表里套列表」的第三层滚动区，滚轮停在上面时页面滚不动的误判。
-    const virtualMaxHeight = Math.max(240, Math.min(720, viewportHeight - 240));
+    // 虚拟列表高度随面板可用高度自适应（上限 50vh / 480px）：注释的既定目标是
+    // 「避免列表里套列表」，但 720px 上限在 1000px 高的窗口下仍产出 660px 的独立
+    // 滚动区 —— 它就是第三层。收紧到视口一半，让分区与外层主列表的比例稳定。
+    const virtualMaxHeight = Math.max(240, Math.min(480, viewportHeight * 0.5));
     return (
       <>
-        {sortPaused && <p className="virtual-notice">{t('tabs.largeListNotice')}</p>}
+        {sortPaused && (
+          /* role=status：本行是动态插入的，且它告知的是「Alt+↑↓ 排序被暂停」——
+             恰好是键盘用户最依赖的能力，读屏必须播报而不是静默出现。
+             文案必须同时点明拖拽与键盘：虚拟化后两者是一并停的（reorderEnabled=false），
+             只说「不能拖拽」会让键盘用户误以为 Alt+↑↓ 仍可用。 */
+          <p className="virtual-notice" role="status">
+            {t('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）')}
+          </p>
+        )}
         <VirtualRowList
           tabs={tabs}
           itemSize={itemSize}
@@ -280,8 +309,8 @@ function PlayingIndicator({
     <button
       type="button"
       className="section-media-indicator"
-      title={t('status.jumpToPlaying')}
-      aria-label={t('status.jumpToPlaying')}
+      title={t('定位到播放中的标签')}
+      aria-label={t('定位到播放中的标签')}
       onClick={(event) => {
         event.stopPropagation();
         onPlay();
@@ -296,7 +325,7 @@ function PlayingIndicator({
       }}
     >
       <Icon d={Icons.volumeOn} className="h-3 w-3" />
-      <span className="section-media-label">{t('status.playing')}</span>
+      <span className="section-media-label">{t('播放中')}</span>
       <span className="section-media-dot" aria-hidden="true" />
     </button>
   );
@@ -385,8 +414,8 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
           <button
             type="button"
             className="row-action"
-            title={t('fixed.saveGroupAsFolder')}
-            aria-label={t('fixed.saveGroupAsFolder')}
+            title={t('存为文件夹')}
+            aria-label={t('存为文件夹')}
             onClick={(event) => {
               event.stopPropagation();
               rowProps.callbacks.onSaveGroupAsFolder?.(section.groupId);
@@ -398,8 +427,8 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
         <button
           type="button"
           className="row-action"
-          title={t('groups.edit')}
-          aria-label={t('groups.edit')}
+          title={t('编辑标签组')}
+          aria-label={t('编辑标签组')}
           onClick={(event) => {
             event.stopPropagation();
             setEditOpen(true);
@@ -455,9 +484,12 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
         // 影响面写进 title/aria-label：整批关闭是分区头唯一的破坏性操作，
         // 此前只写「关闭该域名的全部标签」而无数量，误点等于一次关掉整个分组。
         // 让用户在点之前就知道会关掉几个（可撤销，故只需数量预览不需二次确认）。
-        closeTitle={t(section.kind === 'site' ? 'sections.closeAll' : 'sections.closeGroupAll', {
-          count
-        })}
+        closeTitle={t(
+          section.kind === 'site'
+            ? '关闭该域名的全部 {{count}} 个标签（可撤销）'
+            : '关闭该分组的全部 {{count}} 个标签（可撤销）',
+          { count }
+        )}
         collapsed={isCollapsed}
       >
         {isCollapsed ? null : renderBody()}

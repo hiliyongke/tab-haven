@@ -53,7 +53,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     for (const tab of matchedTabs) {
       out.push({
         content: `tab:${tab.id}`,
-        description: t('bg.omniboxSwitchTab', {
+        description: t('切换到标签：{{name}}', {
           name: escapeSuggestionText(tab.title || tab.url || '')
         })
       });
@@ -63,7 +63,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     if (!q || folder.name.toLowerCase().includes(q)) {
       out.push({
         content: `folder:${folder.id}`,
-        description: t('bg.omniboxOpenFolder', { name: escapeSuggestionText(folder.name) })
+        description: t('打开文件夹：{{name}}', { name: escapeSuggestionText(folder.name) })
       });
     }
   }
@@ -74,14 +74,14 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     if (!q || host.includes(q) || pin.title.toLowerCase().includes(q)) {
       out.push({
         content: `pin:${pin.url}`,
-        description: t('bg.omniboxOpenPin', { name: escapeSuggestionText(pin.title) })
+        description: t('打开固定：{{name}}', { name: escapeSuggestionText(pin.title) })
       });
     }
   }
   if (q) {
     out.push({
       content: `search:${q}`,
-      description: t('bg.omniboxSearch', { query: escapeSuggestionText(q) })
+      description: t('搜索标签：{{query}}', { query: escapeSuggestionText(q) })
     });
   }
   return out;

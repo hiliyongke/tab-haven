@@ -83,7 +83,11 @@ async function refreshBadge(): Promise<void> {
     await browser.action.setBadgeText({ text });
     await browser.action.setBadgeBackgroundColor({ color });
     await browser.action.setTitle({
-      title: t('bg.badgeTitle', { total, dups: dupCount, discarded })
+      title: t('共 {{total}} 个标签 · {{dups}} 组重复 · {{discarded}} 个已休眠', {
+        total,
+        dups: dupCount,
+        discarded
+      })
     });
   } catch (error) {
     logDegraded('badge', '工具栏角标更新失败', error);

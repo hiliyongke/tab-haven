@@ -64,7 +64,7 @@ describe('SettingsSchema', () => {
   });
 
   it('未知键（非本版本字段）被剥离而非报错', () => {
-    // 本产品未发布过正式版，不存在需要兼容的旧字段；这里守的是 zod 的通用行为：
+    // Tabs未发布过正式版，不存在需要兼容的旧字段；这里守的是 zod 的通用行为：
     // 存储里出现任何当前 schema 未声明的键时解析仍成功并剥离该键，
     // 避免脏写入让整块设置被 DataRepository 判为坏数据而回退默认值。
     const withUnknownKey = { ...DEFAULT_SETTINGS, notAFieldOfThisVersion: false };

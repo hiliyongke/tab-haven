@@ -56,17 +56,25 @@ export function IconButton({
   // 禁用态透明度与 Button 统一为 50（原 35 过淡，几乎看不出是个控件）。
   const className =
     /* cursor-pointer 与 Button 基类统一（Tailwind v4 preflight 不再默认提供） */
-    'relative inline-flex items-center justify-center gap-1 rounded transition-base cursor-pointer hover:bg-gray-100 disabled:cursor-default disabled:opacity-50 ' +
-    (box === 'md' ? 'min-h-7 min-w-7 p-1.5' : 'min-h-6 min-w-6 p-1') +
-    (tone === 'accent' ? ' text-gray-600 hover:text-accent-600' : '') +
-    (isOn ? ' bg-accent-50 text-accent-600 hover:bg-accent-100' : '') +
-    (danger ? ' hover:bg-red-50 hover:text-red-600' : '');
+    /* disabled:hover:* 与 Button 同口径：原生 disabled 按钮在 Chrome 里仍匹配 :hover */
+    'relative inline-flex items-center justify-center gap-1 rounded transition-base cursor-pointer hover:bg-gray-100 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent ' +
+    /* 两档与 Button 同刻度（24 / 32）。原 md 是 min-h-7(28px) + p-1.5(6px)：
+       28 不在刻度上、6 脱网格，且同排混用 sm/md 时高差 4px 造成重心偏移。 */
+    (box === 'md' ? 'min-h-8 min-w-8 p-2' : 'min-h-6 min-w-6 p-1') +
+    (tone === 'accent' ? ' text-gray-600 hover:text-accent-600 disabled:hover:text-gray-600' : '') +
+    (isOn ? ' bg-accent-50 text-accent-600 hover:bg-accent-100 disabled:hover:bg-accent-50' : '') +
+    (danger
+      ? ' hover:bg-red-50 hover:text-red-600 disabled:hover:bg-transparent disabled:hover:text-gray-600'
+      : '');
   return (
     <button
       type="button"
       className={className}
       title={title}
-      aria-label={title}
+      // 角标是 aria-hidden 的纯数字，必须把数量并进可访问名：
+      // 否则读屏用户拿不到「有 7 份快照 / 3 处重复」这类信息（此前只有撤销入口
+      // 手动把数量拼进了 title，三处口径不一致）。
+      aria-label={badge !== undefined && badge > 0 ? `${title}（${badge}）` : title}
       data-dialog-dismiss={dismiss || undefined}
       aria-disabled={disabled || undefined}
       disabled={disabled}

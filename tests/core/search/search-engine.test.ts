@@ -6,7 +6,7 @@ import { SearchEngine } from '@/core/search/SearchEngine';
  */
 const tabs = [
   { id: 1, title: 'GitHub · Tabs 开发', url: 'https://github.com/example', active: false },
-  { id: 2, title: '腾讯云控制台', url: 'https://console.cloud.tencent.com/', active: false },
+  { id: 2, title: '云平台控制台', url: 'https://console.cloud.example.com/', active: false },
   { id: 3, title: '今日热榜', url: 'https://example.com/hot', active: true },
   { id: 4, title: 'GitLab', url: 'https://gitlab.com/', active: false }
 ];
@@ -48,7 +48,7 @@ describe('SearchEngine', () => {
     expect(engine.search('jrrb').some((hit) => hit.tabId === 3)).toBe(true);
   }, 20000);
 
-  it('拼音全拼命中含英文的混合标题（github 命中"腾讯云...GitHub"无关；验证"我的GitHub"式拼接）', async () => {
+  it('拼音全拼命中含英文的混合标题（github 命中"云平台...GitHub"无关；验证"我的GitHub"式拼接）', async () => {
     const engine = new SearchEngine([
       { id: 5, title: '我的GitHub主页', url: 'https://github.com/me', active: false }
     ]);

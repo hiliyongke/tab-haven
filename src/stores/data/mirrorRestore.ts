@@ -48,7 +48,22 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
   const seeded = await ctx.repos.seeded.read();
   if (seeded) return 'already-seeded';
   const mirror = await syncMirror.pull();
-  if (!mirror) return 'no-mirror';
+  // 与 initSlice 同口径：一次落地 pull 的分类（ok / none / chunk-limit /
+  // unreadable），既区分了成因，也让成功路径自动复位上一次的降级提示。
+  // 先记在局部变量里：并发页已置 seeded 时（见下面锁内复核）本次拉取不算本页的
+  // 恢复结论，不得覆盖本页已呈现的分类 —— 否则「已生效」来自另一个上下文的恢复。
+  const pullIssue = syncMirror.readLastPullIssue();
+  if (!mirror) {
+    ctx.set({ mirrorIssue: pullIssue });
+    // 「读不出来」分两种，处置必须相反：
+    //  - 'none'（通道里确实没有镜像）→ 本地即首份，允许调用方推镜像；
+    //  - 'chunk-limit'（镜像**存在**但分块数超出配额）→ 绝不能推：镜像里是旧设备
+    //    的数据，本地此刻是空态，一推就把云端副本覆盖成空，换机恢复永久失效。
+    //    归为 failed：不置 seeded，留给下次启动的 initSlice 拉取分支重试。
+    // 'unreadable' 维持 no-mirror：它包含「通道不可用 / 残留垃圾 meta」等情形，
+    // 若一律不推，一份无关的残留数据就能让同步永久停在「未生效」且无法自愈。
+    return pullIssue === 'chunk-limit' ? 'failed' : 'no-mirror';
+  }
 
   // 镜像来自浏览器账号通道，属外部可控输入（与备份文件同级）：集合必须带体积
   // 上限（与 initSlice 同口径），否则一份异常镜像就能把本地库撑到远超正常使用规模。
@@ -58,14 +73,27 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
   // 任何一边落不了本地时推镜像都会把本地空值覆盖云端对应分区，且永久失去恢复机会。
   if (!parsedFolders.success || !parsedPins.success) {
     ctx.reportPersistenceFailure('dataStore', '同步镜像数据异常，已跳过恢复（下次启动重试）');
+    // 与 initSlice 同口径降级：镜像读得到但内容非法时，状态行不能停在「已生效」。
+    ctx.set({ mirrorIssue: 'unreadable' });
     return 'failed';
   }
 
   let writesOk = true;
 
+  /**
+   * 锁内复核 seeded（TOCTOU）：入口读到的 false 可能是并发页置位之前的旧值。
+   * 置位意味着另一上下文已完成恢复、本地即权威 —— 本页不得再以镜像覆盖
+   * （写侧有 `disk.length > 0` 兜底不会覆盖数据），这次 pull 的分类同样不属于
+   * 本页的恢复结论，不得落地。
+   */
+  let seededInLock = false;
   // 跨页锁 + 锁内重读：并发上下文刚写过本地数据时以本地为准（内存同步为读到的值）。
   let nextFolders = ctx.get().folders;
   const foldersOk = await withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
+    if (await ctx.repos.seeded.read()) {
+      seededInLock = true;
+      return true;
+    }
     const disk = await ctx.repos.folders.read();
     if (disk.length > 0) {
       nextFolders = disk;
@@ -74,6 +102,10 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
     nextFolders = parsedFolders.data;
     return ctx.repos.folders.write(nextFolders);
   });
+  // 并发上下文已完成恢复并置 seeded：本页这次拉取不作为本页的恢复结论落地。
+  if (seededInLock) return 'already-seeded';
+  ctx.set({ mirrorIssue: pullIssue });
+
   if (foldersOk) {
     ctx.set({ folders: nextFolders });
   } else {
@@ -99,7 +131,11 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
     writesOk = false;
   }
 
-  if (!writesOk) return 'failed';
+  // 写盘失败同样降级状态：镜像读到了但一条都没落盘，「已生效」是假象。
+  if (!writesOk) {
+    ctx.set({ mirrorIssue: 'unreadable' });
+    return 'failed';
+  }
   await ctx.repos.seeded.write(true);
   return 'restored';
 }

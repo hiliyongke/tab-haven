@@ -7,7 +7,7 @@ import { useUndoStore } from '@/stores/undoStore';
 
 /**
  * 归档（archive）事务语义：
- *  - 留档失败必须中止关窗（否则就是一次不可撤销的丢标签）；
+ *  - 保存失败必须中止关窗（否则就是一次不可撤销的丢标签）；
  *  - 关闭前登记撤销批次（归档也是关闭动作，关闭后必须有可撤销入口）。
  *
  * 标签查询经 mock 注入：fake-browser 的 windows.getCurrent 无实现，
@@ -50,10 +50,10 @@ describe('snapshotStore 归档事务', () => {
     vi.restoreAllMocks();
   });
 
-  it('留档失败时中止关窗，标签保持打开', async () => {
+  it('保存失败时中止关窗，标签保持打开', async () => {
     const removeSpy = vi.spyOn(fakeBrowser.tabs, 'remove');
 
-    // 只让快照仓库写失败：归档的留档环节失效。
+    // 只让快照仓库写失败：归档的保存环节失效。
     const realSet = fakeBrowser.storage.local.set;
     vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(((
       items: Record<string, unknown>

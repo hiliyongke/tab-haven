@@ -8,6 +8,7 @@ import {
   computeReorderIndex,
   createNewTab,
   discardTab,
+  getTab,
   mapTab,
   moveTab,
   reloadTabs,
@@ -261,5 +262,26 @@ describe('createNewTab', () => {
   it('未指定 windowId 时不传 index（after-active 需窗口上下文）', async () => {
     const created = await createNewTab(undefined, 'after-active');
     expect(created.id).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('getTab', () => {
+  it('Given 存在的标签 When 读取 Then 返回映射后的记录', async () => {
+    const getSpy = vi
+      .spyOn(fakeBrowser.tabs, 'get')
+      .mockResolvedValue({ id: 7, windowId: 1, index: 0, url: 'https://a.com/x' } as never);
+
+    const result = await getTab(7);
+
+    expect(getSpy).toHaveBeenCalledWith(7);
+    expect(result?.id).toBe(7);
+    expect(result?.url).toBe('https://a.com/x');
+  });
+
+  it('Given 标签已关闭（读取抛错）When 读取 Then 返回 undefined 而不是抛出', async () => {
+    // 契约：尽力而为的读取路径，让调用方不必各写一份 catch。
+    const result = await getTab(99999);
+
+    expect(result).toBeUndefined();
   });
 });

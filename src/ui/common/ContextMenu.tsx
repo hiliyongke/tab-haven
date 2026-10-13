@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 
 /**
  * 轻量上下文菜单（R12 / IX-4）。
@@ -154,8 +154,10 @@ export function ContextMenu({
 
   // 贴边收拢：菜单不超出视口（侧边栏宽度有限，右键常在右侧边缘触发）。
   // 估算宽高而非实测：菜单未挂载时拿不到尺寸，实测需二次渲染（闪烁）。
+  // ITEM_H = 28：菜单项 px-3 py-1.5 + text-xs(16px 行高) = 12+16 = 28px。
+  // 此前写 34，每项多留 6px，项数多时菜单整体上移、离触发点越来越远。
   const MENU_W = 180;
-  const ITEM_H = 34;
+  const ITEM_H = 28;
   const maxLeft = Math.max(0, window.innerWidth - MENU_W);
   const maxTop = Math.max(0, window.innerHeight - items.length * ITEM_H - 12);
   const style: React.CSSProperties = {
@@ -166,8 +168,8 @@ export function ContextMenu({
     <div
       ref={ref}
       role="menu"
-      aria-label={t('tabs.contextMenu')}
-      className="modal-panel elev-3 fixed z-50 min-w-[160px] rounded-lg border border-gray-200 bg-surface py-1"
+      aria-label={t('更多操作')}
+      className="modal-panel elev-3 fixed z-50 min-w-40 rounded-lg border border-gray-200 bg-surface py-1"
       style={style}
       onContextMenu={(event) => event.preventDefault()}
     >
@@ -177,8 +179,14 @@ export function ContextMenu({
           type="button"
           role="menuitem"
           disabled={item.disabled}
-          className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 disabled:opacity-50 ${
-            item.danger ? 'text-red-600' : 'text-gray-700'
+          /* focus: 而非仅 focus-visible：菜单由程序化 focus() 打开首项，此时
+             Chrome 的 :focus-visible 启发式不命中（上一次交互是指针），焦点会落在
+             首项却毫无指示 —— 直接按 Enter 会执行一个用户看不见的项。
+             disabled:hover/disabled:focus 屏蔽：disabled 按钮仍匹配 :hover。 */
+          className={`block w-full truncate px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 focus:bg-gray-50 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent disabled:focus:bg-transparent ${
+            item.danger
+              ? 'text-red-600 hover:bg-red-50 focus:bg-red-50 disabled:hover:bg-transparent'
+              : 'text-gray-700'
           }`}
           onClick={() => {
             item.onSelect();

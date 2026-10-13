@@ -25,7 +25,7 @@ function buildTabs(
 ): Array<{ id: number; title: string; url: string; active: boolean }> {
   const sites = [
     'github.com',
-    'cloud.tencent.com',
+    'cloud.example.com',
     'developer.mozilla.org',
     'stackoverflow.com',
     'zh.wikipedia.org',

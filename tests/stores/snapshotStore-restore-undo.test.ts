@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// 顶层静态 import：此前写在用例体内动态 import，模块首次解析的耗时被计入
+// 5s 用例超时，全量跑（并行 worker 抢占 CPU）时首用例稳定超时——门禁因此时红时绿。
+// vi.mock 会被提升到 import 之前，静态 import 拿到的同样是 mock 实现。
+import { queryWindowTabs } from '@/platform/tabs';
+import { restoreSnapshot } from '@/platform/snapshot/snapshots';
+import { useSnapshotStore } from '@/stores/snapshotStore';
 
 /**
  * 快照恢复的可撤销性（R8 / IX-3）。
@@ -69,9 +75,6 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
   });
 
   it('恢复后把本次新建的标签记为 kind=restore 的撤销批次', async () => {
-    const { queryWindowTabs } = await import('@/platform/tabs');
-    const { useSnapshotStore } = await import('@/stores/snapshotStore');
-
     // 恢复前窗口里已有 1 个标签（id 100）；恢复后多了 901 / 902。
     vi.mocked(queryWindowTabs)
       .mockResolvedValueOnce([tab(100)] as never)
@@ -105,10 +108,6 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
   });
 
   it('无新建（恢复 0 条）时不记录撤销批次', async () => {
-    const { queryWindowTabs } = await import('@/platform/tabs');
-    const { restoreSnapshot } = await import('@/platform/snapshot/snapshots');
-    const { useSnapshotStore } = await import('@/stores/snapshotStore');
-
     vi.mocked(restoreSnapshot).mockResolvedValueOnce({ count: 0, degraded: false });
     vi.mocked(queryWindowTabs).mockResolvedValue([tab(100)] as never);
 
@@ -131,10 +130,6 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
   });
 
   it('拿不到「恢复前现场」时不记账（否则撤销会关掉整个窗口）', async () => {
-    const { queryWindowTabs } = await import('@/platform/tabs');
-    const { restoreSnapshot } = await import('@/platform/snapshot/snapshots');
-    const { useSnapshotStore } = await import('@/stores/snapshotStore');
-
     vi.mocked(restoreSnapshot).mockResolvedValueOnce({ count: 2, degraded: false });
     // 差分基线为空 = 「窗口里每个标签都是本次新建的」，撤销会把用户原有标签一并关掉。
     vi.mocked(queryWindowTabs).mockRejectedValueOnce(new Error('query failed'));

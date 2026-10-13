@@ -7,7 +7,7 @@ import {
   type MouseEvent,
   type ReactNode
 } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 
@@ -120,9 +120,16 @@ export const RowItem = memo(
       (isDropTarget ? ' is-drop-target' : '') +
       (indent ? ' has-indent' : '') +
       (container?.className ? ' ' + container.className : '');
+    // 层级缩进：以 .row-item 的 pl-1.5(6px) 为首级，之后每级恒定 +16px。
+    // 此前公式为 `8 + indent*16`：indent=1 得 24px，而 indent=0 走 class 的 6px，
+    // 首级步长变成 18px、后续 16px；min(…,48) 又让 depth≥3 全部塌陷到同一层。
+    // 上限放宽到 70px（4 级）以保留可辨性。
+    //
+    // 仅在 indent 为真时下发内联样式：内联 padding-left 优先级高于样式表，
+    // 无条件下发会让 .row-item[data-split-role] 的 4px 补偿失效（分屏竖线自身占 2px）。
     const style = indent
       ? ({
-          paddingLeft: `${Math.min(8 + indent * 16, 48)}px`,
+          paddingLeft: `${Math.min(6 + indent * 16, 70)}px`,
           ...container?.style
         } as CSSProperties)
       : container?.style;
@@ -172,7 +179,7 @@ export const RowItem = memo(
             )}
             <span
               className="drag-grip"
-              title={dragGripTitle || t('tabs.dragToMove')}
+              title={dragGripTitle || t('拖拽调整顺序（按住此处可拖到固定空间）')}
               aria-hidden="true"
             >
               <Icon d={Icons.grip} className="h-3.5 w-3.5" />

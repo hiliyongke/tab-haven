@@ -90,6 +90,23 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
     await waitFor(() => expect(mountedRows(view)).toHaveLength(3));
   });
 
+  it('虚拟化容器保持列表语义（调用方渲染 <li> 时不产生孤儿 li）', () => {
+    // 行由调用方渲染，TabRow 根元素是 <li>；虚拟化分支外层没有 <ul>（非虚拟分支
+    // 由 sectionCards 提供）——缺 list 语义时读屏会丢失「列表 N 项」与位置播报。
+    const view = render(
+      <VirtualRowList
+        tabs={tabsOf(300)}
+        itemSize={32}
+        maxHeight={400}
+        renderRow={(tab) => <li>row-{tab.id}</li>}
+      />
+    );
+
+    const list = view.container.querySelector('[role="list"]');
+    expect(list).not.toBeNull();
+    expect(list?.querySelectorAll('li').length).toBeGreaterThan(0);
+  });
+
   it('滚动后按偏移平移渲染窗口（translateY 跟随滚动位置）', async () => {
     const { view } = renderVirtual(tabsOf(300));
     const scroller = view.container.querySelector<HTMLElement>('.virtual-row-scroll');

@@ -4,7 +4,7 @@ import { browser } from 'wxt/browser';
  * 站点图标地址构造：一律走浏览器自己的 favicon 通道
  * `chrome-extension://<id>/_favicon/?pageUrl=<url>&size=<n>`（需 `favicon` 权限）。
  *
- * 此前直接把 `tab.favIconUrl`（被浏览站点自己的 URL）渲染进 `<img src>`，那是本产品
+ * 此前直接把 `tab.favIconUrl`（被浏览站点自己的 URL）渲染进 `<img src>`，那是Tabs
  * **唯一的第三方出站请求**，且带来两个实际问题：
  *  1. 鉴权站点的图标地址会 302 到登录页再跳回来，一次渲染产生约 25 跳，最终
  *     `ERR_TOO_MANY_REDIRECTS` —— 用户看到的是少一个图标，代价是 25 次外部请求；

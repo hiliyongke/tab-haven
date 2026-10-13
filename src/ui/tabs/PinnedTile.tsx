@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { hostnameOf } from '@/core/url/UrlInspector';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
@@ -90,8 +90,8 @@ export function PinnedTile({
         <button
           type="button"
           className="row-action pinned-unpin"
-          title={unpinTitle ?? t('tabs.unpin')}
-          aria-label={unpinTitle ?? t('tabs.unpin')}
+          title={unpinTitle ?? t('取消固定')}
+          aria-label={unpinTitle ?? t('取消固定')}
           onClick={onUnpin}
         >
           <Icon d={Icons.close} className="h-3 w-3" />

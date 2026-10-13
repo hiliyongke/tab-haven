@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { hostnameOf } from '@/core/url/UrlInspector';
 import { Favicon } from '@/ui/common/Favicon';
@@ -40,7 +40,7 @@ export function OtherWindowsSection({
         const byHost = new Map<string, TabRecord[]>();
         for (const tab of win.tabs) {
           // 主机名解析走 core/url 唯一实现（不另写 URL 解析）。
-          const key = hostnameOf(tab.url) || t('windows.ungrouped');
+          const key = hostnameOf(tab.url) || t('其他');
           const list = byHost.get(key);
           if (list) list.push(tab);
           else byHost.set(key, [tab]);
@@ -56,7 +56,7 @@ export function OtherWindowsSection({
     return (
       <section className="mt-1">
         <p className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-gray-500">
-          {t('windows.sectionLabel')}
+          {t('其他窗口')}
         </p>
         <div
           role="alert"
@@ -64,14 +64,16 @@ export function OtherWindowsSection({
         >
           <Icon d={Icons.infoAlert} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn-600" />
           <div className="min-w-0 flex-1">
-            <p className="text-3xs leading-relaxed text-warn-700">{t('windows.loadFailed')}</p>
+            <p className="text-3xs leading-relaxed text-warn-700">
+              {t('其他窗口暂时读不出来（浏览器查询失败）。标签数据不受影响，可重试。')}
+            </p>
             {onRetry && (
               <button
                 type="button"
                 className="mt-1 rounded font-medium text-3xs text-warn-700 underline underline-offset-2 transition-base hover:bg-warn-100"
                 onClick={onRetry}
               >
-                {t('errors.retry')}
+                {t('重试')}
               </button>
             )}
           </div>
@@ -85,7 +87,7 @@ export function OtherWindowsSection({
     return (
       <section className="mt-1">
         <p className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-gray-500">
-          {t('windows.sectionLabel')}
+          {t('其他窗口')}
         </p>
         <div className="mx-1 mb-1.5 rounded-lg border border-gray-100 bg-surface px-2.5 py-2">
           <span className="skeleton block h-3 w-24" />
@@ -102,17 +104,19 @@ export function OtherWindowsSection({
     // 不设 aria-label：下方可见标题已提供可访问名，重复会二次播报。
     <section className="mt-1">
       <p className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-gray-500">
-        {t('windows.sectionLabel')}
+        {t('其他窗口')}
       </p>
+      {/* 窗口卡不再 mx-1 内缩：内缩 4px 后其内部内容的竖线必然偏离全局 8px，
+          改为满宽卡（与 .section-card 同一语言）+ 内部 px-2，内容落在 8px 竖线上。 */}
       {bucketsByWindow.map(({ win, buckets }) => (
-        <div key={win.windowId} className="mx-1 mb-1.5">
-          <p className="flex items-center gap-1.5 px-1.5 pb-1 pt-1.5">
+        <div key={win.windowId} className="mb-1.5">
+          <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5">
             <span className="text-2xs font-bold text-gray-500">
-              {t('windows.windowLabel', { count: win.tabs.length })}
+              {t('窗口 · {{count}} 个标签', { count: win.tabs.length })}
             </span>
             {win.hasActive && (
               <span className="rounded-full bg-accent-100 px-1.5 text-2xs text-accent-700">
-                {t('windows.hasActive')}
+                {t('含激活标签')}
               </span>
             )}
           </p>
@@ -123,32 +127,32 @@ export function OtherWindowsSection({
               role="group"
               aria-label={host}
             >
-              <p className="flex items-center gap-1 px-2.5 pb-0.5 pt-1.5 text-2xs font-medium text-gray-400">
+              <p className="flex items-center gap-1 px-2 pb-0.5 pt-1.5 text-3xs font-medium text-gray-500">
                 {host}
                 <span className="text-gray-300">·</span>
                 <span>{tabs.length}</span>
               </p>
               {tabs.map((tab) => (
-                <div key={tab.id} className="flex min-w-0 items-center gap-1.5 px-2.5 py-1">
+                <div key={tab.id} className="flex min-w-0 items-center gap-1.5 px-2 py-1">
                   <Favicon pageUrl={tab.url} title={tab.title || tab.url || ''} />
                   <button
                     type="button"
                     className="min-w-0 flex-1 truncate text-left text-3xs text-gray-700 hover:text-accent-700"
-                    title={t('windows.focusTab')}
+                    title={t('聚焦该标签（切到它所在窗口）')}
                     onClick={() => onFocusTab(tab)}
                   >
                     {tab.title || tab.url}
                     {tab.active && (
                       <span className="ml-1 rounded bg-accent-100 px-1 text-2xs text-accent-700">
-                        {t('windows.active')}
+                        {t('激活')}
                       </span>
                     )}
                   </button>
                   <button
                     type="button"
-                    className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
-                    title={t('windows.closeTab')}
-                    aria-label={t('windows.closeTab')}
+                    className="shrink-0 rounded p-0.5 text-gray-500 transition-base hover:bg-gray-100 hover:text-red-600"
+                    title={t('关闭该标签')}
+                    aria-label={t('关闭该标签')}
                     onClick={() => onCloseTab(tab)}
                   >
                     <Icon d={Icons.close} className="h-3 w-3" />

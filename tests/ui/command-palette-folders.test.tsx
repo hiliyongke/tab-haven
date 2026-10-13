@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { FixedFolder } from '@/core/schema/models';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 
 /**
  * 命令面板文件夹命令（P-04「文件夹即空间」）。
@@ -90,13 +90,13 @@ describe('CommandPalette 文件夹命令（P-04）', () => {
     expect(options).toHaveLength(16);
     expect(options[0]).toHaveTextContent('项目 A');
     expect(options[1]).toHaveTextContent('项目 B');
-    expect(options[2]).toHaveTextContent(i18n.t('discard.allInactive'));
+    expect(options[2]).toHaveTextContent(translate('休眠全部后台标签（释放内存）'));
     expect(input).toBeInTheDocument();
   });
 
   it('无文件夹时不渲染分组标题（不出现空组）', () => {
     renderPalette([]);
-    expect(screen.queryByText(i18n.t('palette.sectionFolders'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('打开固定空间文件夹'))).not.toBeInTheDocument();
   });
 
   it('点击文件夹命令执行 onOpenFolder 并关闭', () => {
@@ -132,7 +132,7 @@ describe('CommandPalette 文件夹命令（P-04）', () => {
     // 文件夹「Settings hub」+ 命令「Settings」（settings.title）同时命中
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveTextContent('Settings hub');
-    expect(options[1]).toHaveTextContent(i18n.t('settings.title'));
+    expect(options[1]).toHaveTextContent(translate('设置'));
   });
 
   it('漫游顺序：ArrowUp 从末项环绕回首项（文件夹命令在前）', () => {
@@ -146,6 +146,6 @@ describe('CommandPalette 文件夹命令（P-04）', () => {
     // 再按一次 Up：末项 → 倒数第二项（命令组最后一项，如 Collapse all groups）
     fireEvent.keyDown(input, { key: 'ArrowUp' });
     const second = input.getAttribute('aria-activedescendant');
-    expect(document.getElementById(second!)).toHaveTextContent(i18n.t('footer.collapseAll'));
+    expect(document.getElementById(second!)).toHaveTextContent(translate('展开 / 收起所有分组'));
   });
 });

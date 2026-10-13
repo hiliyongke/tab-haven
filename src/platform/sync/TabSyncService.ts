@@ -56,7 +56,7 @@ export class TabSyncService {
   /**
    * 全部活跃 start 会话的刷新信号（由 start 注册、cleanup 注销）。
    *
-   * 必须是集合而非单值：sidepanel / popup / options 可各自挂载一个 start 会话，
+   * 必须是集合而非单值：sidepanel / options 可各自挂载一个 start 会话，
    * 只保留最后一个会让 requestRefresh() 打到「别人的」会话 —— 发起请求的页面
    * 收不到这次刷新（表现为「点了没反应，切一下标签才对」），而不展示列表的那个
    * 页面反而白跑一次全窗口查询。

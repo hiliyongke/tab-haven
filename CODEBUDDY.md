@@ -24,7 +24,7 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 1. **零网络**：不引入任何出站请求（埋点、CDN、上报均禁止），`pnpm check:privacy` 把关。
 2. **权限冻结**：新增权限必须同时改 `wxt.config.ts` 与 `PRIVACY.md`。
 3. **校验唯 schema**：数据校验只写在 `core/schema` 的 zod 层，不能只写在 UI 输入处。
-4. **文案双写**：新增 UI 文案同时补 `zh-CN` 与 `en` locale。
+4. **文案只写中文**：源码里写母语原文（`t('编辑标签组')`），跑 `pnpm i18n` 由 `packages/i18n-kit` 自动抽词、编译运行时词条（哈希 key `i18n_xxx`，平铺）；`src/i18n/locales/` 是产物，勿手改。
 
 ## 常用命令
 

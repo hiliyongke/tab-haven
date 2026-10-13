@@ -14,7 +14,7 @@ import { FolderRow } from '@/ui/fixed/FolderRow';
 import { FolderEditDialog } from '@/ui/fixed/FolderEditDialog';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { CREATE_FOLDER_REQUEST_EVENT, LOCATE_TAB_EVENT } from '@/ui/fixed/events';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 
 /**
  * 固定空间（`ui/fixed/**`，872 行，此前接近 0% 覆盖）。
@@ -137,8 +137,8 @@ describe('FixedArea 区域骨架', () => {
 
     renderInDnd(<FixedArea />);
 
-    expect(screen.getByText(i18n.t('fixed.areaTitle'))).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: i18n.t('fixed.newFolder') })).toBeInTheDocument();
+    expect(screen.getByText(translate('固定空间'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('新建文件夹') })).toBeInTheDocument();
     expect(screen.getByText('工作')).toBeInTheDocument();
   });
 
@@ -147,8 +147,10 @@ describe('FixedArea 区域骨架', () => {
 
     renderInDnd(<FixedArea />);
 
-    expect(screen.getByText(i18n.t('fixed.emptyHint'))).toBeInTheDocument();
-    const dismiss = screen.getByTitle(i18n.t('fixed.dismissConcepts'));
+    expect(
+      screen.getByText(translate('点击 + 新建文件夹，或直接把标签/分组拖到这里'))
+    ).toBeInTheDocument();
+    const dismiss = screen.getByTitle(translate('不再显示'));
     fireEvent.click(dismiss);
 
     expect(tryUpdateSettings).toHaveBeenCalledWith({ conceptsSeen: true });
@@ -159,23 +161,25 @@ describe('FixedArea 区域骨架', () => {
 
     renderInDnd(<FixedArea />);
 
-    expect(screen.getByText(i18n.t('fixed.emptyHint'))).toBeInTheDocument();
-    expect(screen.queryByTitle(i18n.t('fixed.dismissConcepts'))).not.toBeInTheDocument();
+    expect(
+      screen.getByText(translate('点击 + 新建文件夹，或直接把标签/分组拖到这里'))
+    ).toBeInTheDocument();
+    expect(screen.queryByTitle(translate('不再显示'))).not.toBeInTheDocument();
   });
 
   it('点击新建 → 确认后创建文件夹并提示', async () => {
     const { createFolder, notify } = stubStores({ folders: [] });
 
     renderInDnd(<FixedArea />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.newFolder') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('新建文件夹') }));
     // 不能按 label 查：fixed.newFolder 与 fixed.newFolderPrompt 文案相同，
     // 按标签会同时命中「新建收藏夹」按钮。此时屏幕上唯一的 textbox 就是弹窗输入框。
     const input = await screen.findByRole('textbox');
     fireEvent.change(input, { target: { value: '新收藏' } });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('确定') }));
 
     await waitFor(() => expect(createFolder).toHaveBeenCalledWith('新收藏'));
-    await waitFor(() => expect(notify).toHaveBeenCalledWith(i18n.t('toast.folderCreated')));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(translate('已新建文件夹')));
   });
 
   it('创建失败时如实提示失败（不谎报成功）', async () => {
@@ -183,17 +187,17 @@ describe('FixedArea 区域骨架', () => {
     spies.createFolder.mockRejectedValueOnce(new Error('quota'));
 
     renderInDnd(<FixedArea />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.newFolder') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('新建文件夹') }));
     // 不能按 label 查：fixed.newFolder 与 fixed.newFolderPrompt 文案相同，
     // 按标签会同时命中「新建收藏夹」按钮。此时屏幕上唯一的 textbox 就是弹窗输入框。
     const input = await screen.findByRole('textbox');
     fireEvent.change(input, { target: { value: 'x' } });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('确定') }));
 
     await waitFor(() =>
-      expect(spies.notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed'))
+      expect(spies.notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
     );
-    expect(spies.notify).not.toHaveBeenCalledWith(i18n.t('toast.folderCreated'));
+    expect(spies.notify).not.toHaveBeenCalledWith(translate('已新建文件夹'));
   });
 });
 
@@ -216,14 +220,14 @@ describe('FixedArea 拖拽建文件夹事件通道', () => {
     const input = await screen.findByRole('textbox');
     expect(input).toHaveValue('来自拖拽');
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('确定') }));
 
     await waitFor(() => expect(createFolder).toHaveBeenCalledWith('来自拖拽'));
     await waitFor(() => expect(addTabsToFolder).toHaveBeenCalled());
     // 只放入请求里点名的标签，不能把整个窗口的标签都塞进去
     const passedTabs = addTabsToFolder.mock.calls[0]![0] as TabRecord[];
     expect(passedTabs.map((item) => item.id).sort()).toEqual([7, 8]);
-    await waitFor(() => expect(notify).toHaveBeenCalledWith(i18n.t('toast.folderCreated')));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(translate('已新建文件夹')));
   });
 
   it.each([
@@ -252,11 +256,11 @@ describe('FolderRow 头部操作', () => {
       .mockResolvedValue(1);
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.openAll') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('打开文件夹全部条目') }));
 
     await waitFor(() => expect(createTabsWithUrls).toHaveBeenCalledWith(['https://closed.com/']));
     await waitFor(() =>
-      expect(spies.notify).toHaveBeenCalledWith(i18n.t('fixed.openedAll', { count: 1 }))
+      expect(spies.notify).toHaveBeenCalledWith(translate('已打开 {{count}} 个条目', { count: 1 }))
     );
   });
 
@@ -270,9 +274,9 @@ describe('FolderRow 头部操作', () => {
       .mockResolvedValue(0);
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.openAll') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('打开文件夹全部条目') }));
 
-    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(i18n.t('fixed.allOpen')));
+    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(translate('文件夹条目均已打开')));
     expect(createTabsWithUrls).not.toHaveBeenCalled();
   });
 
@@ -283,10 +287,12 @@ describe('FolderRow 头部操作', () => {
       .mockResolvedValue(0);
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.toBookmarks') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('导出到浏览器书签') }));
 
     await waitFor(() => expect(save).toHaveBeenCalled());
-    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(i18n.t('fixed.bookmarkEmpty')));
+    await waitFor(() =>
+      expect(spies.notify).toHaveBeenCalledWith(translate('文件夹为空，未导出书签'))
+    );
   });
 
   it('折叠态下点击头部切换折叠状态', () => {
@@ -306,12 +312,14 @@ describe('FolderRow 头部操作', () => {
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
 
-    expect(screen.getByRole('button', { name: i18n.t('fixed.toNativeGroup') })).toBeDisabled();
-    expect(screen.getByRole('button', { name: i18n.t('fixed.edit') })).toBeDisabled();
-    expect(screen.getByRole('button', { name: i18n.t('fixed.deleteFolder') })).toBeDisabled();
+    expect(screen.getByRole('button', { name: translate('恢复为原生标签组') })).toBeDisabled();
+    expect(screen.getByRole('button', { name: translate('编辑文件夹') })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: translate('删除文件夹（标签保留）') })
+    ).toBeDisabled();
     // 不改固定空间数据的两个入口不受影响
-    expect(screen.getByRole('button', { name: i18n.t('fixed.openAll') })).toBeEnabled();
-    expect(screen.getByRole('button', { name: i18n.t('fixed.toBookmarks') })).toBeEnabled();
+    expect(screen.getByRole('button', { name: translate('打开文件夹全部条目') })).toBeEnabled();
+    expect(screen.getByRole('button', { name: translate('导出到浏览器书签') })).toBeEnabled();
   });
 });
 
@@ -320,33 +328,35 @@ describe('FolderRow 弹窗与结果反馈', () => {
     const spies = stubStores({ folders: [folderWith('旧名', ['https://a.com/'])] });
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.edit') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('编辑文件夹') }));
     const input = await screen.findByDisplayValue('旧名');
     fireEvent.change(input, { target: { value: '新名' } });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.save') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('保存') }));
 
     await waitFor(() =>
       expect(spies.renameFolder).toHaveBeenCalledWith(expect.any(String), '新名')
     );
-    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(i18n.t('toast.folderRenamed')));
+    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(translate('已重命名文件夹')));
   });
 
   it('删除必须二次确认；确认后才真删并提示', async () => {
     const spies = stubStores({ folders: [folderWith('工作', ['https://a.com/'])] });
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.deleteFolder') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('删除文件夹（标签保留）') }));
 
     // 确认框出现前不得删除
     expect(spies.deleteFolder).not.toHaveBeenCalled();
     expect(
-      await screen.findByText(i18n.t('fixed.deleteConfirm', { name: '工作' }))
+      await screen.findByText(
+        translate('删除文件夹“{{name}}”？正在打开的标签不会关闭。', { name: '工作' })
+      )
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.confirmDelete') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('确认删除') }));
 
     await waitFor(() => expect(spies.deleteFolder).toHaveBeenCalledWith(expect.any(String)));
-    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(i18n.t('toast.folderRemoved')));
+    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(translate('已删除文件夹')));
   });
 
   it('删除失败时提示失败，绝不谎报已删除', async () => {
@@ -354,31 +364,31 @@ describe('FolderRow 弹窗与结果反馈', () => {
     spies.deleteFolder.mockRejectedValueOnce(new Error('quota'));
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.deleteFolder') }));
-    fireEvent.click(await screen.findByRole('button', { name: i18n.t('fixed.confirmDelete') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('删除文件夹（标签保留）') }));
+    fireEvent.click(await screen.findByRole('button', { name: translate('确认删除') }));
 
     await waitFor(() =>
-      expect(spies.notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed'))
+      expect(spies.notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
     );
-    expect(spies.notify).not.toHaveBeenCalledWith(i18n.t('toast.folderRemoved'));
+    expect(spies.notify).not.toHaveBeenCalledWith(translate('已删除文件夹'));
   });
 
   it('转原生组：确认后按真实结果提示成功 / 跳过 / 失败三种文案', async () => {
     const spies = stubStores({ folders: [folderWith('工作', ['https://a.com/'])] });
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.toNativeGroup') }));
-    fireEvent.click(await screen.findByRole('button', { name: i18n.t('dialog.confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('恢复为原生标签组') }));
+    fireEvent.click(await screen.findByRole('button', { name: translate('确定') }));
 
     await waitFor(() => expect(spies.syncFolderToNativeGroup).toHaveBeenCalled());
-    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(i18n.t('toast.folderConverted')));
+    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(translate('已恢复为原生标签组')));
   });
 
   it('折叠态下弹窗仍能挂载（弹窗不受 GroupCard 的折叠闸门影响）', () => {
     stubStores({ folders: [folderWith('工作', ['https://a.com/'], true)] });
 
     renderInDnd(<FolderRow folder={useDataStore.getState().folders[0]!} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.edit') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('编辑文件夹') }));
 
     // 折叠只影响条目列表，编辑弹窗必须照常出现 —— 否则「折叠后点编辑没反应」
     expect(screen.getByDisplayValue('工作')).toBeInTheDocument();
@@ -448,10 +458,10 @@ describe('PinnedStrip', () => {
 
     const strip = document.querySelector('.pinned-strip');
     expect(strip).not.toBeNull();
-    expect(strip).toHaveAttribute('aria-label', i18n.t('sections.pinned'));
-    expect(strip).toHaveAttribute('data-drop-label', i18n.t('fixed.dragToPin'));
+    expect(strip).toHaveAttribute('aria-label', translate('常驻磁贴'));
+    expect(strip).toHaveAttribute('data-drop-label', translate('拖到磁贴条固定'));
     // 每个磁贴含「磁贴本体」+「取消固定」两个按钮
-    expect(screen.getAllByRole('button', { name: i18n.t('fixed.removePin') })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: translate('从磁贴条移除') })).toHaveLength(2);
   });
 });
 
@@ -469,7 +479,7 @@ describe('FolderEditDialog', () => {
       />
     );
     fireEvent.change(screen.getByDisplayValue('原名'), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.save') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('保存') }));
 
     expect(onRename).toHaveBeenCalledWith('原名');
     expect(onClose).toHaveBeenCalled();
@@ -505,10 +515,10 @@ describe('FolderEditDialog', () => {
         onClose={onClose}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.delete') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('删除文件夹') }));
 
     expect(onDelete).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.cancel') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('取消') }));
     expect(onDelete).not.toHaveBeenCalled();
   });
 
@@ -524,8 +534,8 @@ describe('FolderEditDialog', () => {
         onClose={onClose}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('fixed.delete') }));
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('删除文件夹') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('删除') }));
 
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalled();

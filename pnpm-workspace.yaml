@@ -1,2 +1,6 @@
+packages:
+  # i18n-kit：自研的文案工具集（扫描/编译/守卫），独立成包以便其它项目直接引用
+  - packages/*
+
 allowBuilds:
   simple-git-hooks: true

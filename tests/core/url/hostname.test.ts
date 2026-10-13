@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeHostname } from '@/core/url/hostname';
+import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
 
 /**
  * 行为规格：主机名归一化（`core/url/hostname`）—— 全应用唯一口径。
@@ -153,5 +153,81 @@ describe('normalizeHostname', () => {
       expect(result).toBe(long);
       expect(result).toHaveLength(long.length);
     });
+  });
+});
+
+/**
+ * 行为规格：休眠白名单条目的归一化（用户可粘贴整串 URL）。
+ *
+ * 落盘前必须归一（schema 层完成），否则匹配端与落盘值不一致 —— 表现为
+ * 「白名单里明明有，还是被休眠了」。这里的额外风险是**产出永不命中的垃圾条目**：
+ * 非 http(s) scheme 剥不干净时会留下 `ftp:` 这类值，非空故被保留并占额度。
+ */
+describe('normalizeWhitelistHost', () => {
+  it('Given 粘贴整串 http(s) URL When 归一化 Then 只留 hostname', () => {
+    expect(normalizeWhitelistHost('https://www.a.com/some/path')).toBe('a.com');
+    expect(normalizeWhitelistHost('HTTPS://WWW.Example.com/x')).toBe('example.com');
+  });
+
+  it('Given 非 http(s) scheme When 归一化 Then 也剥离 scheme（不留 `ftp:` 垃圾条目）', () => {
+    // 只剥离 http(s) 时，「去路径」会从第一个 `/` 切走，最终归一出 `ftp:`：
+    // 非空 → 落盘 → 永远匹配不上，还白占一条白名单额度。
+    expect(normalizeWhitelistHost('ftp://a.com')).toBe('a.com');
+  });
+
+  it('Given 不可建标签的 scheme / 裸 scheme 残留 When 归一化 Then 判空丢弃', () => {
+    expect(normalizeWhitelistHost('javascript:alert(1)')).toBe('');
+    expect(normalizeWhitelistHost('ftp:')).toBe('');
+  });
+
+  it('Given 带端口的主机 When 归一化 Then 保留 host:port（本地开发站点是合法白名单项）', () => {
+    expect(normalizeWhitelistHost('localhost:3000')).toBe('localhost:3000');
+    expect(normalizeWhitelistHost('http://localhost:3000/')).toBe('localhost:3000');
+  });
+
+  it('Given 带端口的 IPv6 字面量 When 归一化 Then 保留 [IPv6]:port（方括号内冒号属地址本身）', () => {
+    // 若按「含多个冒号即判空」处理，`https://[::1]:3000` 这类本地开发地址会被整条丢掉
+    expect(normalizeWhitelistHost('[::1]:3000')).toBe('[::1]:3000');
+    expect(normalizeWhitelistHost('https://[::1]:3000/')).toBe('[::1]:3000');
+  });
+
+  it('Given 不带端口的 IPv6 字面量 When 归一化 Then 保留 [IPv6]（与 SiteResolver 的站点键同口径）', () => {
+    // Chrome 对默认端口 IPv6 的 URL 形态就是 `http://[::1]/`；SiteResolver 在无端口
+    // 时同样以 `[::1]` 为站点键。此处若判空丢弃，两处口径就不一致了。
+    expect(normalizeWhitelistHost('[::1]')).toBe('[::1]');
+    expect(normalizeWhitelistHost('https://[::1]/')).toBe('[::1]');
+    expect(normalizeWhitelistHost('[fe80::1]')).toBe('[fe80::1]');
+  });
+
+  it('Given 越界或非数字端口 When 归一化 Then 判空丢弃（永不命中，不该占额度）', () => {
+    expect(normalizeWhitelistHost('a.com:0')).toBe('');
+    expect(normalizeWhitelistHost('a.com:99999')).toBe('');
+    expect(normalizeWhitelistHost('a.com:8080:9090')).toBe('');
+  });
+
+  it('Given 凭据串 When 归一化 Then 判空丢弃（不是 hostname）', () => {
+    expect(normalizeWhitelistHost('user:pass@a.com')).toBe('');
+    expect(normalizeWhitelistHost('user@a.com')).toBe('');
+  });
+
+  it('Given 手输的裸 IPv6（无方括号）When 归一化 Then 补回方括号而非判空', () => {
+    // URL 解析与 SiteResolver 产出的都是 `[::1]`；把 `::1` 判空等于让用户
+    // 「照着地址栏抄一遍」仍然保存不上。
+    expect(normalizeWhitelistHost('::1')).toBe('[::1]');
+    expect(normalizeWhitelistHost('fe80::1')).toBe('[fe80::1]');
+  });
+
+  it('Given 前导零端口 / 端口前的尾点 When 归一化 Then 与 URL 解析结果同形', () => {
+    // 整串归一会把 `a.com.:080` 归一成 `a.com.:80` / `a.com:080`，
+    // 而匹配端拿到的是 URL 解析出的 `a.com:80`，条目因此永不命中。
+    expect(normalizeWhitelistHost('a.com:080')).toBe('a.com:80');
+    expect(normalizeWhitelistHost('a.com.:80')).toBe('a.com:80');
+    expect(normalizeWhitelistHost('WWW.A.com.:080')).toBe('a.com:80');
+  });
+
+  it('Given 中文域名（IDN）When 归一化 Then 落盘为 punycode（匹配端拿到的是 punycode）', () => {
+    // 标签 URL 的 hostname 由浏览器给出，已是 punycode；存中文原文永不命中。
+    expect(normalizeWhitelistHost('中文.cn')).toBe('xn--fiq228c.cn');
+    expect(normalizeWhitelistHost('https://www.中文.cn/x')).toBe('xn--fiq228c.cn');
   });
 });

@@ -1,4 +1,4 @@
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import {
   createFolderItem,
   createFolder as createFolderModel,
@@ -184,6 +184,8 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
             const restored = await written.rollback();
             if (!restored) rollbackFailures.push(written.name);
           }
+          // 仅进诊断日志（logFailure），不进界面，故不翻译
+          // @i18n-ignore
           const message = `导入失败：分区 ${step.name} 写入未成功，已回滚${rollbackFailures.length > 0 ? `；回滚未完成的分区：${rollbackFailures.join(', ')}` : ''}`;
           logFailure('dataStore', message);
           throw new Error(`import-write-failed:${step.name}`);
@@ -263,7 +265,7 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
         if (bar.looseLeaves.length > 0) {
           const leaves = uniqueLeaves(bar.looseLeaves.filter((leaf) => isExportableUrl(leaf.url)));
           if (leaves.length > 0) {
-            const name = i18n.t('fixed.bookmarksImportName');
+            const name = translate('书签导入');
             const items = leaves.map((leaf) =>
               createFolderItem({ url: leaf.url, title: leaf.title })
             );

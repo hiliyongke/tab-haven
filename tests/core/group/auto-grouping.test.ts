@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { groupColorForLabel, planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
+import { AUTO_GROUP_COLOR_NAMES, GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 import type { TemporarySection } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
 import { NO_GROUP } from '@/core/tab-types';
@@ -156,10 +157,14 @@ describe('groupColorForLabel', () => {
     expect(groupColorForLabel('github.com')).toBe(groupColorForLabel('github.com'));
   });
 
-  it('颜色是合法枚举且不含 grey', () => {
-    const valid = new Set(['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']);
+  it('颜色取自自动分组色板：与全部合法色同源、且不含 grey', () => {
+    // 派生关系必须钉死：硬编码 8 个色名会在色板增删时静默过期（新色永远取不到）。
+    expect(AUTO_GROUP_COLOR_NAMES).toEqual(GROUP_COLOR_NAMES.filter((name) => name !== 'grey'));
+    // grey 是 Chrome 新建组的默认色，留给手动建组；自动分组用它会让用户分不清
+    // 「这个组是我建的还是扩展建的」。
+    expect(AUTO_GROUP_COLOR_NAMES).not.toContain('grey');
     for (const label of ['github.com', 'zh-CN', 'a.com', 'b.io', 'c.net']) {
-      expect(valid.has(groupColorForLabel(label))).toBe(true);
+      expect(AUTO_GROUP_COLOR_NAMES).toContain(groupColorForLabel(label));
     }
   });
 });

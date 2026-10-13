@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import i18n from '@/i18n';
+import i18n, { translate } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
 import { useSnapshotStore } from '@/stores/snapshotStore';
@@ -58,8 +58,8 @@ describe('SnapshotsPanel 分组', () => {
     renderPanel();
 
     // 断言用英文文案：i18n 默认语言在测试环境下为 en（不依赖浏览器语言）。
-    const groupNamed = screen.getByText('Named snapshots').closest('div');
-    const groupArchive = screen.getByText('Archives (closed and kept)').closest('div');
+    const groupNamed = screen.getByText(translate('命名快照')).closest('div');
+    const groupArchive = screen.getByText('Archive (closed and saved)').closest('div');
     const groupAuto = screen.getByText('Auto-saved on window close').closest('div');
 
     // 命名快照组含手动快照与轻量空间快照（两者同为「用户主动保存的现场」）
@@ -77,8 +77,8 @@ describe('SnapshotsPanel 分组', () => {
   it('无快照时只显示空态，不渲染任何分组标题', () => {
     renderPanel();
 
-    expect(screen.queryByText('Named snapshots')).toBeNull();
-    expect(screen.queryByText('Archives (closed and kept)')).toBeNull();
+    expect(screen.queryByText(translate('命名快照'))).toBeNull();
+    expect(screen.queryByText('Archive (closed and saved)')).toBeNull();
     expect(screen.queryByText('Auto-saved on window close')).toBeNull();
     expect(i18n.isInitialized).toBe(true);
   });
@@ -106,15 +106,15 @@ describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必�
     renderPanel();
 
     // 点行内恢复按钮：弹确认，不直接执行
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('snapshots.restore') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('恢复') }));
     expect(restore).not.toHaveBeenCalled();
     // 摘要含快照名 / 标签数 / 分组数（测试环境文案为 en；完整句只出现在弹窗里）
     expect(
-      screen.getByText(/Restoring "我的快照" will open 2 tabs \(1 groups\)/)
+      screen.getByText(/Restoring '我的快照' opens 2 tabs \(including 1 tab groups\)/)
     ).toBeInTheDocument();
 
     // 确认后才真正恢复（弹窗内与行内按钮同名，取最后一个即弹窗确认键）
-    fireEvent.click(screen.getAllByRole('button', { name: i18n.t('snapshots.restore') }).at(-1)!);
+    fireEvent.click(screen.getAllByRole('button', { name: translate('恢复') }).at(-1)!);
     expect(restore).toHaveBeenCalledWith('m1');
   });
 
@@ -135,8 +135,8 @@ describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必�
     });
     renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('snapshots.restore') }));
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dialog.cancel') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('恢复') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('取消') }));
 
     expect(restore).not.toHaveBeenCalled();
   });
@@ -152,18 +152,16 @@ describe('SnapshotsPanel 习惯洞察直达（R16 / F-1）', () => {
     renderPanel('report');
 
     // 周报视图独占的四个统计格与洞察标题都应当可见
-    expect(screen.getByText(i18n.t('snapshots.reportHint'))).toBeInTheDocument();
-    expect(screen.getByText(i18n.t('insights.title'))).toBeInTheDocument();
+    expect(screen.getByText(translate('本地聚合，不涉及任何网络或账号'))).toBeInTheDocument();
+    expect(screen.getByText(translate('习惯洞察'))).toBeInTheDocument();
   });
 
   it('默认（initialView 未传）停在快照列表，不暴露周报', () => {
     renderPanel();
 
-    expect(screen.queryByText(i18n.t('snapshots.reportHint'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('本地聚合，不涉及任何网络或账号'))).not.toBeInTheDocument();
     // 列表视图的导入入口仍在（视图确实渲染了，不是空面板）
-    expect(
-      screen.getByRole('button', { name: i18n.t('snapshots.importOneTab') })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('从 OneTab 导入') })).toBeInTheDocument();
   });
 
   it('洞察区块带可定位锚点（直达后滚动定位用）', () => {

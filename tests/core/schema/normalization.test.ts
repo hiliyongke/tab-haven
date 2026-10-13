@@ -61,6 +61,43 @@ describe('折叠站点记录归一化', () => {
 
     expect(parsed).toEqual(['example.com', 'b.com']);
   });
+
+  it('Given 归一化后重复的站点 When 校验 Then 去重（同一站点只占一份额度）', () => {
+    const parsed = SiteCollapseSchema.parse(['WWW.a.com', 'a.com.', 'a.com', 'b.com']);
+
+    expect(parsed).toEqual(['a.com', 'b.com']);
+  });
+});
+
+/**
+ * 上限必须在归一化**之后**生效。
+ *
+ * 写在 transform 之前时，`WWW.a.com` 与 `a.com.` 会各占一份额度（归一化后是同一
+ * 站点），上限因此比实际可折叠的站点数更早触顶；数组内还会残留重复项，放大折叠
+ * 比对与遍历成本。
+ */
+describe('去重与上限的后置语义', () => {
+  it('Given 归一化后重复的条目 When 校验 Then 先去重再判上限（上限不被重复项吃掉）', () => {
+    const repeated = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? 'WWW.a.com' : 'A.com.'));
+    const parsed = SiteCollapseSchema.parse(repeated);
+
+    expect(parsed).toEqual(['a.com']);
+  });
+
+  it('Given 超过上限的不同站点 When 校验 Then 拒绝（上限仍生效）', () => {
+    const many = Array.from({ length: 2001 }, (_, i) => `s${i}.com`);
+    const parsed = SiteCollapseSchema.safeParse(many);
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it('Given 白名单里归一化后重复的条目 When 校验 Then 去重后保留一条', () => {
+    const parsed = SettingsSchema.parse({
+      discardWhitelist: ['WWW.a.com', 'a.com.', 'https://a.com/x', 'b.com']
+    });
+
+    expect(parsed.discardWhitelist).toEqual(['a.com', 'b.com']);
+  });
 });
 
 describe('快照组色收严', () => {
@@ -70,10 +107,50 @@ describe('快照组色收严', () => {
     expect(tab.groupColor).toBe('cyan');
   });
 
-  it('Given 非法色名 When 校验 Then 拒绝（恢复建组时浏览器本就会拒绝）', () => {
-    expect(
-      SnapshotTabSchema.safeParse({ url: 'https://a.com', groupColor: 'chartreuse' }).success
-    ).toBe(false);
+  it('Given 非法色名 When 校验 Then 降级为缺省（不让一条装饰数据判死整份备份）', () => {
+    // 组色只用于重建组时取色：整条 SnapshotTab 校验失败会让 snapshots 数组失败，
+    // 进而整份备份被拒 —— 与 favIconUrl / url 的「归一化而非判坏」必须是同口径。
+    const tab = SnapshotTabSchema.parse({ url: 'https://a.com', groupColor: 'chartreuse' });
+
+    expect(tab.groupColor).toBeUndefined();
+  });
+});
+
+describe('备份导入的坏组色隔离', () => {
+  it('Given 备份里单条组色非法 When 导入 Then 该条降级、其余快照完整导入', () => {
+    const parsed = parseExportFile({
+      format: 'tabs.export',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      fixedFolders: [],
+      persistentPins: [],
+      siteCollapse: [],
+      settings: {},
+      snapshots: [
+        {
+          id: 's1',
+          name: 'Bad color',
+          origin: 'manual',
+          createdAt: 1,
+          tabCount: 1,
+          tabs: [{ url: 'https://a.com', groupColor: 'banana' }]
+        },
+        {
+          id: 's2',
+          name: 'Good',
+          origin: 'manual',
+          createdAt: 2,
+          tabCount: 1,
+          tabs: [{ url: 'https://b.com', groupColor: 'cyan' }]
+        }
+      ]
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.snapshots).toHaveLength(2);
+    expect(parsed.data.snapshots[0]?.tabs[0]?.groupColor).toBeUndefined();
+    expect(parsed.data.snapshots[1]?.tabs[0]?.groupColor).toBe('cyan');
   });
 });
 

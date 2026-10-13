@@ -68,10 +68,11 @@ interface SectionDerivation {
 
 /** 常见语言的 BCP-47 代码 → 展示名（其余回退为大写代码）。 */
 const LANGUAGE_LABELS: Record<string, string> = {
-  'zh-CN': '中文（简体）',
-  'zh-TW': '中文（繁体）',
+  // 语言名以该语言自身写法呈现（英文界面里也写作「中文（简体）」），不是漏译
+  'zh-CN': '中文（简体）', // @i18n-ignore
+  'zh-TW': '中文（繁体）', // @i18n-ignore
   en: 'English',
-  ja: '日本語',
+  ja: '日本語', // @i18n-ignore
   ko: '한국어',
   ru: 'Русский',
   fr: 'Français',
@@ -82,7 +83,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   ar: 'العربية'
 };
 function languageLabel(code: string, t: (key: string) => string): string {
-  if (code === 'unknown') return t('sections.unknownLanguage');
+  if (code === 'unknown') return t('未知语言');
   return LANGUAGE_LABELS[code] ?? code.toUpperCase();
 }
 
@@ -377,7 +378,7 @@ export function deriveSections({
     sections.push({
       kind: 'pinned',
       key: 'pinned',
-      title: t('sections.pinned'),
+      title: t('浏览器固定标签'),
       tabs: pinnedTabs
     });
   }
@@ -431,7 +432,7 @@ export function deriveSections({
     sections.push({
       kind: 'native',
       key: `group-${group.id}`,
-      title: group.title || t('tabs.unnamedGroup'),
+      title: group.title || t('未命名标签组'),
       tabs: groupTabs,
       groupId: group.id,
       color: group.color,
@@ -446,7 +447,7 @@ export function deriveSections({
       sections.push({
         kind: 'ungrouped',
         key: 'opener-tree',
-        title: t('sections.openerTree'),
+        title: t('来源树'),
         tabs: ordered,
         depths
       });
@@ -482,7 +483,7 @@ export function deriveSections({
       sections.push({
         kind: 'ungrouped',
         key: 'ungrouped',
-        title: t('tabs.ungrouped'),
+        title: t('未分组'),
         tabs: sitePlan.singles
       });
     }

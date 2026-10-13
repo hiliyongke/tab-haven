@@ -20,7 +20,7 @@ import {
  * 逻辑回归，快照会**静默丢失**且 UI 毫无征兆。这里锁住四类不变量：
  *
  *  1. 采集口径：只收 http(s)，`chrome://` 等内部页不得进快照（收了就是死条目）；
- *  2. 写入闸门：开关关闭 / 无缓存 / 已留档（skip 标记）三条路径都不得写快照；
+ *  2. 写入闸门：开关关闭 / 无缓存 / 已保存（skip 标记）三条路径都不得写快照；
  *  3. skip 标记语义：一次性消费、仅作用于该窗口、超 TTL 自动失效；
  *  4. 生命周期：窗口关闭后清理激活锚点、在途刷新不得复活幽灵键、防抖合并查询。
  *
@@ -242,7 +242,7 @@ describe('handleWindowRemoved 写入闸门', () => {
   });
 });
 
-describe('skip-auto-save 标记（归档已自行留档，防重复快照）', () => {
+describe('skip-auto-save 标记（归档已自行保存，防重复快照）', () => {
   it('标记存在时跳过本次自动保存（同一预置内容，无标记时本会写入 —— 见上组用例）', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS, autoSaveSnapshots: true });
     const windowId = 3001;

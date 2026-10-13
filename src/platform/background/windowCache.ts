@@ -6,7 +6,7 @@ import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types'
 import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
-import { t } from '@/i18n/headless';
+import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { logDegraded } from '@/platform/diagnostics';
 
 const WINDOW_TABS_KEY = 'tabs.window-tabs.v1';
@@ -17,7 +17,7 @@ const WindowTabsCacheSchema = z.record(z.string(), z.array(SnapshotTabSchema));
 let memWindowTabs: WindowTabsCache = {};
 let windowTabsFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const windowRefreshTimers = new Map<number, ReturnType<typeof setTimeout>>();
-/** 下一次关闭时跳过自动保存的窗口（归档流程已自行留档，防重复快照）。值为发放时间戳。 */
+/** 下一次关闭时跳过自动保存的窗口（归档流程已自行保存，防重复快照）。值为发放时间戳。 */
 const skipAutoSaveWindowIds = new Map<number, number>();
 
 /**
@@ -303,14 +303,14 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
     logDegraded('window-cache', '窗口缓存操作失败', error);
     // 忽略
   }
-  // 归档流程（archiveCurrentWindow）已自行留档并请求跳过本次自动保存。
+  // 归档流程（archiveCurrentWindow）已自行保存并请求跳过本次自动保存。
   if (await consumeSkipAutoSave(windowId)) return;
   if (!tabs || tabs.length === 0) return;
   const settings = await settingsRepository.read();
   if (!settings.autoSaveSnapshots) return;
   const snapshot = buildSnapshot({
     name: '',
-    fallbackName: t('snapshots.defaultAutoName'),
+    fallbackName: DEFAULT_SNAPSHOT_NAMES.auto,
     origin: 'auto',
     windowId,
     tabs

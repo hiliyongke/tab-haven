@@ -4,7 +4,7 @@ import type { Settings, SnapshotTab } from '@/core/schema/models';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
 import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
-import { t } from '@/i18n/headless';
+import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -84,11 +84,11 @@ export async function runAutoSnapshot(): Promise<void> {
         return [] as SnapshotTab[];
       });
       if (tabs.length === 0) continue;
-      // 单窗口场景与上一份完全相同则跳过；多窗口时以首窗口差异判断（其余窗口仍需各自留档）。
+      // 单窗口场景与上一份完全相同则跳过；多窗口时以首窗口差异判断（其余窗口仍需各自保存）。
       if (normalWins.length === 1 && previous !== null && signatureOf(tabs) === previous) continue;
       const snapshot = buildSnapshot({
         name: '',
-        fallbackName: t('snapshots.defaultAutoName'),
+        fallbackName: DEFAULT_SNAPSHOT_NAMES.auto,
         origin: 'auto',
         windowId: win.id,
         tabs

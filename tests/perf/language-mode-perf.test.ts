@@ -33,7 +33,7 @@ const LANGS = ['zh-CN', 'en', 'ja', 'en-US', 'de', 'fr', 'ko', 'ru'] as const;
 function buildTabs(count: number, withLanguage = false): TabRecord[] {
   const sites = [
     'github.com',
-    'cloud.tencent.com',
+    'cloud.example.com',
     'developer.mozilla.org',
     'stackoverflow.com',
     'zh.wikipedia.org',

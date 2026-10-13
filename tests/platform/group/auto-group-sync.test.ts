@@ -131,7 +131,7 @@ describe('AutoGroupSync 生命周期', () => {
     stubTabsQuery({ ungrouped: [2] });
 
     const absorbPlan: AutoGroupPlan = {
-      title: 'yehe.woa.com',
+      title: 'alpha.example.com',
       color: 'blue',
       tabIds: [2],
       absorbIntoGroupId: 7

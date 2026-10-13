@@ -10,7 +10,7 @@ import type { SiteKey } from '@/core/site/SiteKey';
  * 解析管线（按序）：
  *  1. 规约：仅 http(s) 参与，hostname 小写、去 www 前缀、去尾点；
  *  2. 主机归类（HostRules）：本地/IP → 带端口整体为键；托管后缀 → 三级域；
- *  3. 其余：tldts 取注册域（PSL 权威，覆盖国家复合后缀等）；
+ *  3. 其余：tldts 取注册域（PSL 权威，覆盖国家复合后缀、三段城市后缀与私有后缀）；
  *  4. 内网回退：tldts 默认仅认 ICANN 公共后缀，.corp/.local/.internal 等
  *     非标准后缀解析失败时按「最后两段」近似注册域（单标签 host 整体为键），
  *     使内网多子域（通常一个子域一个业务）也能参与归组与子域亚组。

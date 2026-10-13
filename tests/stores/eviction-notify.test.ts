@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { TabRecord } from '@/core/tab-types';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -88,8 +88,12 @@ describe('notifyEviction 会话内合并', () => {
     // 正确结果：回执是主消息，淘汰告知挂在 note 上同槽展示。
     const first = useUndoStore.getState();
     expect(first.batches).toHaveLength(5);
-    expect(first.toast?.message).toBe(i18n.t('undo.closed', { count: 1 }));
-    expect(first.toast?.note).toBe(i18n.t('undo.stackEvicted', { count: 1 }));
+    expect(first.toast?.message).toBe(translate('已关闭 {{count}} 个标签', { count: 1 }));
+    expect(first.toast?.note).toBe(
+      translate('撤销记录已达上限，最早的 {{count}} 次关闭无法恢复（可在设置中调大上限）', {
+        count: 1
+      })
+    );
 
     // 继续关闭仍会淘汰，但同类淘汰本会话内不再提示（逐次提示会互相顶掉且刷屏）
     for (let i = 7; i <= 8; i += 1) {

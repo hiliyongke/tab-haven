@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { Slot, Trans, useTranslation } from '@/i18n';
 import { IconButton } from '@/ui/common/IconButton';
 import { Icons } from '@/ui/common/Icon';
 
@@ -28,10 +28,16 @@ export interface FooterToolbarProps {
   highlightedCount: number;
   /** 撤销栈中可恢复的批次数量（>0 时护盾显示计数，强化「一切可反悔」的信任感）。 */
   undoBatchCount: number;
-  /** 会话快照数量（>0 时快照按钮提示可恢复）。 */
+  /** 快照数量（>0 时快照按钮提示可恢复）。 */
   snapshotCount: number;
   /** 重排进行中：期间禁用入口防重复触发。 */
   quickRegrouping: boolean;
+  /**
+   * 批量操作（休眠全部 / 唤醒全部 / 清理重复）的在途态。
+   * 非 idle 时禁用这三个入口 —— 唤醒全部要 reload N 个标签，耗时可达秒级，
+   * 此前在途期间按钮既不禁用也无提示，连点第二下被静默丢弃。
+   */
+  batchBusy?: 'idle' | 'discard' | 'wake' | 'clean';
   onToggleAllSections: () => void;
   onDiscardInactive: () => void;
   onWakeAll: () => void;
@@ -88,33 +94,34 @@ export function FooterToolbar(props: FooterToolbarProps) {
     onOpenSettings,
     onOpenAbout,
     onOpenPalette,
-    footerLabels
+    footerLabels,
+    batchBusy = 'idle'
   } = props;
 
   return (
-    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5 border-t border-gray-200 px-2.5 py-0.5 text-2xs text-gray-500">
+    // px-2 / py-1：与 .search-bar(4px 8px)、.add-tab-bar(4px 8px)、Toast(8px)
+    // 同为 8px 内容竖线；原 px-2.5(10px) 让「共 N 个标签」比搜索图标右移 2px，
+    // py-0.5(2px) 也让底栏比顶栏紧 2px。
+    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5 border-t border-gray-200 px-2 py-1 text-2xs text-gray-500">
+      {/* 整句化而非拼接：`t('共 ')` + 数量的写法在英文里是「空串 + 数字」，
+          而数量仍要加粗 —— 走 <Trans> + <Slot> 让整句进词典、数字保留强调。 */}
       <span className="whitespace-nowrap">
-        {t('tabs.currentOpen')} <strong>{tabCount}</strong> {t('tabs.tabCountUnit')}
+        <Trans>
+          共 <Slot content={<strong>{tabCount}</strong>} /> 个标签
+        </Trans>
       </span>
-      <nav
-        className="flex min-w-0 flex-wrap items-center gap-0.5"
-        aria-label={t('footer.utilityLabel')}
-      >
+      <nav className="flex min-w-0 flex-wrap items-center gap-0.5" aria-label={t('侧边栏工具')}>
         {/* 组 1 · 视图与组织：命令面板 / 折叠全部 / 快速整理 / 定位 */}
         <IconButton
           icon={Icons.shortcuts}
-          title={t('palette.open')}
-          label={footerLabels ? t('footer.labelPalette') : undefined}
+          title={t('打开命令面板')}
+          label={footerLabels ? t('命令') : undefined}
           onClick={onOpenPalette}
         />
         <IconButton
           icon={allCollapsed ? Icons.expandAll : Icons.collapseAll}
-          title={t(allCollapsed ? 'footer.expandAll' : 'footer.collapseAll')}
-          label={
-            footerLabels
-              ? t(allCollapsed ? 'footer.labelExpandAll' : 'footer.labelCollapseAll')
-              : undefined
-          }
+          title={t(allCollapsed ? '展开所有分组' : '收起所有分组')}
+          label={footerLabels ? t(allCollapsed ? '展开' : '折叠') : undefined}
           disabled={collapsibleCount === 0}
           onClick={onToggleAllSections}
         />
@@ -122,15 +129,17 @@ export function FooterToolbar(props: FooterToolbarProps) {
             虽然低频，但价值不可替代（曾被下沉到命令面板，用户要求恢复常驻）。 */}
         <IconButton
           icon={Icons.quickRegroup}
-          title={t('footer.quickRegroupHint')}
-          label={footerLabels ? t('footer.labelQuickRegroup') : undefined}
+          title={t(
+            '打散当前分组并按当前聚合方式重排；执行前自动存一份快照可回退（保存失败则取消重排）'
+          )}
+          label={footerLabels ? t('重排') : undefined}
           disabled={quickRegrouping}
           onClick={onQuickRegroup}
         />
         <IconButton
           icon={Icons.locate}
-          title={t('tabs.locateActive')}
-          label={footerLabels ? t('footer.labelLocate') : undefined}
+          title={t('定位当前标签')}
+          label={footerLabels ? t('定位') : undefined}
           disabled={activeTabId === undefined}
           onClick={onLocateActive}
         />
@@ -139,9 +148,12 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {duplicateCount > 0 && (
           <IconButton
             icon={Icons.copyX}
-            title={t('duplicates.cleanHint')}
-            label={footerLabels ? t('footer.labelCleanDuplicates') : undefined}
+            title={t(
+              '关闭重复标签：每个网址只留最近访问的一个；常驻磁贴与固定空间条目豁免，可撤销'
+            )}
+            label={footerLabels ? t('清理重复') : undefined}
             badge={duplicateCount}
+            disabled={batchBusy !== 'idle'}
             onClick={onCleanDuplicates}
           />
         )}
@@ -152,8 +164,10 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {insightCount > 0 && (
           <IconButton
             icon={Icons.sparkles}
-            title={t('insights.open', { count: insightCount })}
-            label={footerLabels ? t('footer.labelInsights') : undefined}
+            title={t('查看 {{count}} 条习惯洞察（重复 / 休眠候选 / 滞留）', {
+              count: insightCount
+            })}
+            label={footerLabels ? t('洞察') : undefined}
             badge={insightCount}
             onClick={onOpenInsights}
           />
@@ -163,8 +177,8 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {highlightedCount >= 2 && (
           <IconButton
             icon={Icons.close}
-            title={t('selection.closeSelected', { count: highlightedCount })}
-            label={footerLabels ? t('footer.labelCloseSelected') : undefined}
+            title={t('关闭选中的 {{count}} 个标签', { count: highlightedCount })}
+            label={footerLabels ? t('关闭选中') : undefined}
             badge={highlightedCount}
             onClick={onCloseHighlighted}
           />
@@ -175,10 +189,11 @@ export function FooterToolbar(props: FooterToolbarProps) {
           icon={Icons.snowflake}
           title={
             sleepableCount > 0
-              ? t('discard.allInactiveCount', { count: sleepableCount })
-              : t('discard.allInactive')
+              ? t('休眠 {{count}} 个后台标签（释放内存）', { count: sleepableCount })
+              : t('休眠全部后台标签（释放内存）')
           }
-          label={footerLabels ? t('footer.labelDiscard') : undefined}
+          label={footerLabels ? t('休眠') : undefined}
+          disabled={batchBusy !== 'idle'}
           onClick={onDiscardInactive}
         />
         {discardedCount > 0 && (
@@ -186,8 +201,9 @@ export function FooterToolbar(props: FooterToolbarProps) {
             icon={Icons.wakeAll}
             // 口径明示：这里只唤醒**当前窗口**的休眠标签（自动休眠的「全部唤醒」
             // 按台账 tabIds，可能跨窗口）。不写明会让用户以为一次唤醒所有窗口。
-            title={t('discard.wakeAllCurrent', { count: discardedCount })}
-            label={footerLabels ? t('footer.labelWake') : undefined}
+            title={t('唤醒当前窗口的 {{count}} 个休眠标签', { count: discardedCount })}
+            label={footerLabels ? t('唤醒') : undefined}
+            disabled={batchBusy !== 'idle'}
             onClick={onWakeAll}
           />
         )}
@@ -195,8 +211,8 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {/* 组 3 · 记录与恢复：快照空间 / 撤销历史（均带计数徽章） */}
         <IconButton
           icon={Icons.snapshot}
-          title={t('snapshots.title')}
-          label={footerLabels ? t('footer.labelSnapshots') : undefined}
+          title={t('快照')}
+          label={footerLabels ? t('快照') : undefined}
           badge={snapshotCount > 0 ? snapshotCount : undefined}
           onClick={onOpenSnapshots}
         />
@@ -204,10 +220,10 @@ export function FooterToolbar(props: FooterToolbarProps) {
           icon={Icons.history}
           title={
             undoBatchCount > 0
-              ? t('safety.shieldTitle', { count: undoBatchCount })
-              : t('undo.historyTitle')
+              ? t('本会话已可撤销 {{count}} 次：所有关闭操作都能撤销', { count: undoBatchCount })
+              : t('撤销历史')
           }
-          label={footerLabels ? t('footer.labelHistory') : undefined}
+          label={footerLabels ? t('历史') : undefined}
           badge={undoBatchCount > 0 ? undoBatchCount : undefined}
           onClick={onOpenHistory}
         />
@@ -215,16 +231,18 @@ export function FooterToolbar(props: FooterToolbarProps) {
             此前唯一入口是「设置页 → 关于页」，核心卖点却要三步才摸得到。 */}
         <IconButton
           icon={Icons.shield}
-          title={t('about.open')}
-          label={footerLabels ? t('footer.labelAbout') : undefined}
+          title={t('查看能力总览')}
+          label={footerLabels ? t('关于') : undefined}
           onClick={onOpenAbout}
         />
         <GroupDivider />
+        {/* 不传 box="md"：底栏同排 12 个按钮均为 24px，唯独设置用 28/32px 会把
+            整条底栏行高撑高、其余按钮上下各空 2px，视觉重心右偏。
+            强调语义交给 tone="accent"，不靠尺寸。 */}
         <IconButton
           icon={Icons.settings}
-          title={t('settings.title')}
-          label={footerLabels ? t('footer.labelSettings') : undefined}
-          box="md"
+          title={t('设置')}
+          label={footerLabels ? t('设置') : undefined}
           tone="accent"
           onClick={onOpenSettings}
         />

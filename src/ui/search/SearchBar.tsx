@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
@@ -41,8 +41,8 @@ export function SearchBar({
           ref={inputRef}
           type="search"
           className="search-bar-input"
-          placeholder={t('search.placeholder')}
-          aria-label={t('search.title')}
+          placeholder={t('搜索标签（标题 / 网址 / 拼音）')}
+          aria-label={t('搜索标签')}
           value={query}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
@@ -59,8 +59,8 @@ export function SearchBar({
           <button
             type="button"
             className={'search-bar-history' + (historyOn ? ' is-active' : '')}
-            title={historyOn ? t('search.historyToggle') : t('search.historyToggleOff')}
-            aria-label={historyOn ? t('search.historyToggle') : t('search.historyToggleOff')}
+            title={historyOn ? t('包含历史（快照/归档）') : t('仅搜索当前标签')}
+            aria-label={historyOn ? t('包含历史（快照/归档）') : t('仅搜索当前标签')}
             aria-pressed={historyOn}
             onClick={() => {
               onToggleHistory();
@@ -74,8 +74,8 @@ export function SearchBar({
           <button
             type="button"
             className="search-bar-clear"
-            title={t('search.clear')}
-            aria-label={t('search.clear')}
+            title={t('清除搜索')}
+            aria-label={t('清除搜索')}
             onClick={() => {
               onChange('');
               inputRef.current?.focus();
@@ -87,7 +87,7 @@ export function SearchBar({
       </div>
       {showKeyboardHint && focused && (
         <p className="search-keyboard-hint" aria-hidden="true">
-          {t('search.keyboardHint')}
+          {t('↑↓ 选择 · Enter 切换 · Esc 清除')}
         </p>
       )}
     </>

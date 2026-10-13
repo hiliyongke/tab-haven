@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useUndoStore } from '@/stores/undoStore';
 import { logDegraded } from '@/platform/diagnostics';
 import { Button } from '@/ui/common/Button';
@@ -19,25 +19,32 @@ export function StatusToast() {
 
   return (
     <div
-      className={`status-toast flex items-center gap-2 px-3 py-1.5 text-xs ${
-        isError ? 'text-red-600' : 'text-gray-600'
+      className={`status-toast flex items-center gap-2 py-1.5 pl-2.5 pr-2 text-xs ${
+        isError ? 'is-error text-red-600' : 'text-gray-600'
       }`}
       role={isError ? 'alert' : 'status'}
       aria-live={isError ? 'assertive' : 'polite'}
     >
+      {/* 状态图标 + 左侧色条：让提示一眼可辨（此前灰字灰边，失败常被忽略）。
+          图标取 400/500 档：600 档在深色主题下偏暗，色条与图标会一起发闷。 */}
+      <Icon
+        d={isError ? Icons.infoAlert : Icons.check}
+        className={`h-3.5 w-3.5 flex-none ${isError ? 'text-red-500' : 'text-accent-400'}`}
+      />
       {/* note 是附属信息（淘汰告知）：与回执同槽展示，避免被回执顶掉后永久漏发。 */}
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{toast.message}</span>
         {toast.note && <span className="truncate text-gray-500">{toast.note}</span>}
       </div>
       {toast.canUndo && (
-        <Button variant="soft" size="sm" onClick={() => void undo()}>
-          {t('undo.action')}
+        /* soft-outline：撤销是这条提示的核心动作，灰底弱按钮会让人找不到入口 */
+        <Button variant="soft-outline" size="sm" onClick={() => void undo()}>
+          {t('撤销')}
         </Button>
       )}
       {toast.action && (
         <Button
-          variant="soft"
+          variant="soft-outline"
           size="sm"
           onClick={() => {
             // 动作内是异步链路（如「全部唤醒」的 reloadTabs）：reject 无人接住时会
@@ -54,7 +61,7 @@ export function StatusToast() {
       <button
         type="button"
         className="rounded p-0.5 text-gray-500 transition-base hover:text-gray-700"
-        aria-label={t('undo.dismiss')}
+        aria-label={t('关闭提示')}
         onClick={clearToast}
       >
         <Icon d={Icons.close} className="h-3.5 w-3.5" />

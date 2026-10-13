@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
 import {
@@ -27,6 +27,7 @@ import {
 import { parseWorkona } from '@/core/insights/workonaImport';
 import { newId } from '@/core/util/id';
 import { buildPartialSnapshot } from '@/core/snapshot/snapshotDiff';
+import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 
 /**
@@ -62,7 +63,12 @@ async function recordRestoreForUndo(
 setSnapshotEvictionListener((count) => {
   // 走 notifyEviction 合并：逐份导入 Workona（每份各走一次 persistSnapshot）会
   // 连续淘汰，逐次提示会互相顶掉且刷屏。同类淘汰本会话内只提示一次。
-  useUndoStore.getState().notifyEviction('snapshots', i18n.t('snapshots.evicted', { count }));
+  useUndoStore.getState().notifyEviction(
+    'snapshots',
+    translate('快照已达上限，最早的 {{count}} 份已被移除（可在设置中调整快照保留数量）', {
+      count
+    })
+  );
 });
 
 /**
@@ -80,7 +86,7 @@ interface SnapshotState {
   saveCurrentWindow: (name?: string) => Promise<void>;
   /** 把当前窗口标签存为轻量「工作区」快照（复用快照能力，OQ-3 最小版）。 */
   saveSpace: (name?: string) => Promise<void>;
-  /** 归档当前窗口：留档并关闭全部标签，返回留档标签数。 */
+  /** 归档当前窗口：保存并关闭全部标签，返回保存标签数。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
   /** 从 OneTab 导出文本导入为快照，返回导入标签数。 */
   importOneTab: (text: string, name?: string) => Promise<number>;
@@ -167,10 +173,10 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const snapshot = buildSnapshot({
       name: name ?? '',
-      fallbackName: i18n.t('snapshots.defaultName'),
+      fallbackName: DEFAULT_SNAPSHOT_NAMES.manual,
       origin: 'manual',
       // windowId 必须取实际采集窗口：标签来自 currentWindow 查询，而
-      // getLastFocused 在 popup/多窗口场景可能指向另一个窗口，记录与实际
+      // getLastFocused 在多窗口场景可能指向另一个窗口，记录与实际
       // 内容不一致会让未来「恢复回原窗口」的逻辑直接出错。
       windowId: tabs[0]?.windowId,
       tabs: snapTabs
@@ -185,7 +191,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const snapshot = buildSnapshot({
       name: name ?? '',
-      fallbackName: i18n.t('snapshots.defaultSpaceName'),
+      fallbackName: DEFAULT_SNAPSHOT_NAMES.space,
       origin: 'space',
       windowId: tabs[0]?.windowId,
       tabs: snapTabs
@@ -202,7 +208,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     if (snapTabs.length > 0) {
       const snapshot = buildSnapshot({
         name: name ?? '',
-        fallbackName: i18n.t('snapshots.defaultArchiveName'),
+        fallbackName: DEFAULT_SNAPSHOT_NAMES.archive,
         origin: 'archive',
         windowId,
         tabs: snapTabs
@@ -211,17 +217,17 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
         const next = await persistSnapshot(snapshot);
         set({ snapshots: next });
       } catch (error) {
-        // 留档失败绝不关闭标签：归档的语义是「留档 + 关闭」，
+        // 保存失败绝不关闭标签：归档的语义是「保存 + 关闭」，
         // 只完成后者会变成一次不可撤销的丢标签事故。此处中止，标签保持打开。
-        logFailure('snapshotStore', '归档留档失败，已中止关窗，标签保持打开', error);
+        logFailure('snapshotStore', '归档保存失败，已中止关窗，标签保持打开', error);
         throw error;
       }
     }
-    // 只关闭已留档的可恢复标签：chrome:// 等内部页无法入档，保留在原窗口（不静默丢失）。
+    // 只关闭已保存的可恢复标签：chrome:// 等内部页无法入档，保留在原窗口（不静默丢失）。
     const closableIds = tabs
       .filter((tab) => typeof tab.id === 'number' && tab.url && /^https?:\/\//i.test(tab.url))
       .map((tab) => tab.id!);
-    // 若关闭后窗口将随之关闭（全部标签都已留档），提前请求跳过本次关窗自动保存，
+    // 若关闭后窗口将随之关闭（全部标签都已保存），提前请求跳过本次关窗自动保存，
     // 避免 background 再写一条同内容的 auto 快照。
     if (windowId !== undefined && closableIds.length > 0 && closableIds.length === tabs.length) {
       // 必须 ack：SW 休眠唤醒慢于 tabs.remove 的事件派发时，fire-and-forget 会让
@@ -256,7 +262,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     if (tabs.length === 0) return 0;
     const snapshot = buildSnapshot({
       name: name ?? '',
-      fallbackName: i18n.t('snapshots.oneTabImportName'),
+      fallbackName: DEFAULT_SNAPSHOT_NAMES.oneTab,
       origin: 'manual',
       windowId: undefined,
       tabs

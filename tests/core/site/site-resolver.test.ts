@@ -27,8 +27,8 @@ describe('SiteResolver', () => {
   });
 
   it('国家复合后缀取三级域（.com.cn）', () => {
-    const key = siteResolver.resolve('https://news.tencent.com.cn/a');
-    expect(key?.value).toBe('tencent.com.cn');
+    const key = siteResolver.resolve('https://news.example.com.cn/a');
+    expect(key?.value).toBe('example.com.cn');
   });
 
   it('本地主机带端口为键：不同端口不同组', () => {
@@ -40,10 +40,10 @@ describe('SiteResolver', () => {
   });
 
   it('子域归入注册域（FR-D3.1）', () => {
-    const cloud = siteResolver.resolve('https://cloud.tencent.com/products');
-    const news = siteResolver.resolve('https://news.tencent.com/');
-    expect(cloud?.value).toBe('tencent.com');
-    expect(news?.value).toBe('tencent.com');
+    const cloud = siteResolver.resolve('https://cloud.example.com/products');
+    const news = siteResolver.resolve('https://news.example.com/');
+    expect(cloud?.value).toBe('example.com');
+    expect(news?.value).toBe('example.com');
     expect(cloud?.subdomain).toBe('cloud');
   });
 

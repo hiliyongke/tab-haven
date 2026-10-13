@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DialogShell } from '@/ui/dialog/Dialog';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 
 /**
  * 弹窗外壳的三段式结构与可见关闭入口。
@@ -30,7 +30,7 @@ describe('DialogShell 可见的关闭入口', () => {
       </DialogShell>
     );
 
-    const closeButton = screen.getByRole('button', { name: i18n.t('dialog.close') });
+    const closeButton = screen.getByRole('button', { name: translate('关闭') });
     fireEvent.click(closeButton);
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -49,7 +49,7 @@ describe('DialogShell 可见的关闭入口', () => {
 
     expect(document.activeElement).toBe(screen.getByLabelText('文件夹名称'));
     expect(document.activeElement).not.toBe(
-      screen.getByRole('button', { name: i18n.t('dialog.close') })
+      screen.getByRole('button', { name: translate('关闭') })
     );
   });
 

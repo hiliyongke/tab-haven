@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /** 卡片头部：标题 + 计数胶囊；可点击折叠，可选关闭（解散网站组）。
@@ -14,6 +14,7 @@ export function SectionHead({
   count,
   onToggle,
   expanded,
+  panelId,
   onClose,
   closeTitle,
   action,
@@ -29,6 +30,9 @@ export function SectionHead({
   onToggle?: () => void;
   /** 折叠按钮的 aria-expanded（存在 onToggle 时必传，读屏用户据此感知展开/折叠态）。 */
   expanded?: boolean;
+  /** 被折叠内容容器的 id：与 aria-expanded 配套的 aria-controls，
+      否则读屏无法把「开关」与「被折叠的内容」关联起来。 */
+  panelId?: string;
   onClose?: () => void;
   closeTitle?: string;
   /** 标题行右侧的可选操作按钮（如「存为固定文件夹」）。 */
@@ -63,10 +67,10 @@ export function SectionHead({
         <button
           type="button"
           className="row-action section-drag-handle"
-          title={t('tabs.dragToMove')}
+          title={t('拖拽调整顺序（按住此处可拖到固定空间）')}
           ref={dragKeyboard.activatorRef}
           {...dragKeyboard.attributes}
-          aria-label={t('tabs.dragToMove')}
+          aria-label={t('拖拽调整顺序（按住此处可拖到固定空间）')}
           onKeyDown={dragKeyboard.listeners?.onKeyDown}
         >
           <Icon d={Icons.grip} className="h-3 w-3" />
@@ -78,6 +82,7 @@ export function SectionHead({
           className="toggle"
           aria-label={title}
           aria-expanded={expanded}
+          aria-controls={panelId}
           onClick={onToggle}
         >
           {content}
@@ -85,7 +90,11 @@ export function SectionHead({
       ) : (
         <div className="toggle">{content}</div>
       )}
-      <span className="count-pill">{count}</span>
+      {/* 裸数字对读屏是孤立量词（「12」），可见数字对读屏隐藏、改播完整语义 */}
+      <span className="count-pill" aria-hidden="true">
+        {count}
+      </span>
+      <span className="sr-only">{t('共 {{count}} 个标签', { count })}</span>
       {mediaIndicator}
       {action && (
         <span className="section-head-actions" onPointerDown={(event) => event.stopPropagation()}>

@@ -90,7 +90,7 @@ function createRepositories(): Repositories {
     ),
     // 首次启动标志：false 表示新设备（可从浏览器同步通道镜像恢复）。
     seeded: new DataRepository<boolean>('tabs.sync-seeded.v1', z.boolean(), false),
-    // 会话快照列表（命名快照 + 关窗自动保存），本地优先、零账号。
+    // 快照列表（命名快照 + 关窗自动保存），本地优先、零账号。
     snapshots: new DataRepository<Snapshot[]>('tabs.snapshots.v1', SnapshotSchema.array(), [])
   };
 }

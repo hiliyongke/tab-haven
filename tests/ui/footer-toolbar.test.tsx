@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
-import i18n from '@/i18n';
+import i18n, { translate } from '@/i18n';
 
 /**
  * 底栏工具区。
@@ -54,19 +54,61 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * 标签计数：整句翻译（`<Trans>` + `<Slot>`）的**渲染**回归。
+ *
+ * 词典层面的两条语言轨道已由 `tests/core/i18n/runtime-resolution.test.ts` 全量守卫，
+ * 但那里查的是 `t()` 的字符串解析——`<Trans>` 走的是 i18next 的节点解析（把
+ * `<1></1>` 占位符换回子节点），这是本项目第一次用它，且两种语言下的 defaults
+ * 与译文结构都不同，必须各渲染一次才能证明占位符没有漏到界面上。
+ */
+describe('FooterToolbar 标签计数整句', () => {
+  const countSpan = (): HTMLSpanElement | null => document.querySelector('footer > span');
+
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  it('Given 英文模式 When 渲染 Then 输出整句，数字仍加粗（不再出现「空串 + 数字」）', () => {
+    renderFooter({ tabCount: 2 });
+
+    const span = countSpan();
+    expect(span?.textContent).toBe('2 tabs');
+    expect(span?.querySelector('strong')?.textContent).toBe('2');
+  });
+
+  it('Given 中文模式 When 渲染 Then 输出中文整句，且不残留 <1></1> 占位符', async () => {
+    await i18n.changeLanguage('zh-CN');
+    renderFooter({ tabCount: 2 });
+
+    const span = countSpan();
+    expect(span?.textContent).toBe('共 2 个标签');
+    expect(span?.textContent).not.toContain('<1>');
+    expect(span?.querySelector('strong')?.textContent).toBe('2');
+  });
+});
+
 describe('FooterToolbar 清理重复入口', () => {
   it('无重复标签时不渲染清理入口', () => {
     renderFooter({ duplicateCount: 0 });
 
     expect(
-      screen.queryByRole('button', { name: i18n.t('duplicates.cleanHint') })
+      screen.queryByRole('button', {
+        name: translate(
+          '关闭重复标签：每个网址只留最近访问的一个；常驻磁贴与固定空间条目豁免，可撤销'
+        )
+      })
     ).not.toBeInTheDocument();
   });
 
   it('有重复标签时出现入口、徽章显示待清理数、点击触发清理', () => {
     const props = renderFooter({ duplicateCount: 3 });
 
-    const button = screen.getByRole('button', { name: i18n.t('duplicates.cleanHint') });
+    // 用 getByTitle 而非 getByRole(name)：IconButton 会把角标数量并进可访问名
+    // （读屏用户需要听到「有 3 处重复」），因此 name 不再等于 title。
+    const button = screen.getByTitle(
+      translate('关闭重复标签：每个网址只留最近访问的一个；常驻磁贴与固定空间条目豁免，可撤销')
+    );
     expect(button).toHaveTextContent('3');
 
     fireEvent.click(button);
@@ -83,7 +125,11 @@ describe('FooterToolbar 重排分组入口', () => {
   it('常驻显示，点击触发重排', () => {
     const props = renderFooter();
 
-    const button = screen.getByRole('button', { name: i18n.t('footer.quickRegroupHint') });
+    const button = screen.getByRole('button', {
+      name: translate(
+        '打散当前分组并按当前聚合方式重排；执行前自动存一份快照可回退（保存失败则取消重排）'
+      )
+    });
     fireEvent.click(button);
 
     expect(props.onQuickRegroup).toHaveBeenCalledTimes(1);
@@ -92,7 +138,13 @@ describe('FooterToolbar 重排分组入口', () => {
   it('重排进行中时禁用入口（防重复触发）', () => {
     renderFooter({ quickRegrouping: true });
 
-    expect(screen.getByRole('button', { name: i18n.t('footer.quickRegroupHint') })).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: translate(
+          '打散当前分组并按当前聚合方式重排；执行前自动存一份快照可回退（保存失败则取消重排）'
+        )
+      })
+    ).toBeDisabled();
   });
 });
 
@@ -100,9 +152,7 @@ describe('FooterToolbar 多选批量关闭入口', () => {
   it('多选 ≥2 个时出现入口，点击触发批量关闭', () => {
     const props = renderFooter({ highlightedCount: 3 });
 
-    const button = screen.getByRole('button', {
-      name: i18n.t('selection.closeSelected', { count: 3 })
-    });
+    const button = screen.getByTitle(translate('关闭选中的 {{count}} 个标签', { count: 3 }));
     expect(button).toHaveTextContent('3');
 
     fireEvent.click(button);
@@ -113,7 +163,7 @@ describe('FooterToolbar 多选批量关闭入口', () => {
     renderFooter({ highlightedCount: 1 });
 
     expect(
-      screen.queryByRole('button', { name: i18n.t('selection.closeSelected', { count: 1 }) })
+      screen.queryByRole('button', { name: translate('关闭选中的 {{count}} 个标签', { count: 1 }) })
     ).not.toBeInTheDocument();
   });
 });
@@ -128,7 +178,9 @@ describe('FooterToolbar 习惯洞察直达入口（R16 / F-1）', () => {
   it('有洞察项时出现入口、徽章显示条数、点击直达洞察', () => {
     const props = renderFooter({ insightCount: 3 });
 
-    const button = screen.getByRole('button', { name: i18n.t('insights.open', { count: 3 }) });
+    const button = screen.getByTitle(
+      translate('查看 {{count}} 条习惯洞察（重复 / 休眠候选 / 滞留）', { count: 3 })
+    );
     expect(button).toHaveTextContent('3');
 
     fireEvent.click(button);
@@ -152,13 +204,17 @@ describe('FooterToolbar 休眠入口影响面提示', () => {
     renderFooter({ sleepableCount: 4 });
 
     expect(
-      screen.getByRole('button', { name: i18n.t('discard.allInactiveCount', { count: 4 }) })
+      screen.getByRole('button', {
+        name: translate('休眠 {{count}} 个后台标签（释放内存）', { count: 4 })
+      })
     ).toBeInTheDocument();
   });
 
   it('无可休眠标签时回落到通用文案（不显示 0 个）', () => {
     renderFooter({ sleepableCount: 0 });
 
-    expect(screen.getByRole('button', { name: i18n.t('discard.allInactive') })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: translate('休眠全部后台标签（释放内存）') })
+    ).toBeInTheDocument();
   });
 });

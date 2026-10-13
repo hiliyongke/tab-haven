@@ -8,7 +8,7 @@ import { prepare, single, type Prepared, type Result } from 'fuzzysort';
  *  - 拼音支持：中文标题同时建「首字母串」与「全拼串」两套目标（如 "tb" 与 "taobao"
  *    都能命中 "淘宝"）。
  *    拼音词典（pinyin-pro，体积约 1MB+）**按需动态加载**——只在开启拼音搜索且
- *    首次构造引擎时异步拉取，绝不进 popup / sidepanel 的初始解析。关闭拼音搜索
+ *    首次构造引擎时异步拉取，绝不进侧边栏的初始解析。关闭拼音搜索
  *    （settings.pinyinSearch=false）时完全不加载该词典。
  *  - 结果排序：命中分数降序，激活标签优先；
  *  - 命中高亮：toSegments 输出纯文本命中分段（无 HTML），由渲染层负责加粗，
@@ -17,7 +17,7 @@ import { prepare, single, type Prepared, type Result } from 'fuzzysort';
 
 /**
  * pinyin-pro 动态加载器（模块级缓存单例）。
- * 静态 import 会把整本拼音词典打进 popup 初始包，拖垮"秒开"切换器；
+ * 静态 import 会把整本拼音词典打进侧边栏初始包，拖垮"秒开"切换器；
  * 改为 import() 后 Vite 自动拆为独立 chunk，且仅在首次用到时下载。
  */
 type PinyinFn = (typeof import('pinyin-pro'))['pinyin'];

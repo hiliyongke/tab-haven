@@ -6,7 +6,7 @@ import { useUndoStore } from '@/stores/undoStore';
 import { ErrorBoundary } from '@/ui/common/ErrorBoundary';
 import { UndoHistoryPanel } from '@/ui/common/UndoHistoryPanel';
 import type { RecentClosedEntry } from '@/platform/sessions';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 
 /**
  * `ui/common` 里此前 0% 覆盖的两个组件。
@@ -126,7 +126,7 @@ describe('ErrorBoundary', () => {
     );
 
     expect(screen.getByText('正常内容')).toBeInTheDocument();
-    expect(screen.queryByText(i18n.t('errors.boundaryTitle'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('出了点意外'))).not.toBeInTheDocument();
   });
 
   it('子节点抛错时降级为错误页并把异常与组件栈写入诊断', () => {
@@ -136,8 +136,12 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText(i18n.t('errors.boundaryTitle'))).toBeInTheDocument();
-    expect(screen.getByText(i18n.t('errors.boundaryBody'))).toBeInTheDocument();
+    expect(screen.getByText(translate('出了点意外'))).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        translate('界面遇到了无法自行恢复的错误。你的数据仍保存在本地，可以重试或重载页面。')
+      )
+    ).toBeInTheDocument();
     // 错误信息本身要展示出来，用户反馈问题时有据可依
     expect(screen.getByText('渲染炸了')).toBeInTheDocument();
 
@@ -158,13 +162,9 @@ describe('ErrorBoundary', () => {
     );
 
     // 断言取的是 i18n 键解析结果，而非某段中文字面量
-    expect(screen.getByText(i18n.t('errors.boundaryTitle'))).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: i18n.t('errors.boundaryRetry') })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: i18n.t('errors.boundaryReload') })
-    ).toBeInTheDocument();
+    expect(screen.getByText(translate('出了点意外'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('重试') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('重载') })).toBeInTheDocument();
   });
 
   it('点击「重试」清空错误态并重新渲染子树', () => {
@@ -182,10 +182,10 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('首次渲染失败')).toBeInTheDocument();
 
     shouldThrow = false;
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('errors.boundaryRetry') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('重试') }));
 
     expect(screen.getByText('恢复了')).toBeInTheDocument();
-    expect(screen.queryByText(i18n.t('errors.boundaryTitle'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('出了点意外'))).not.toBeInTheDocument();
   });
 
   it('「重新加载」调用 location.reload（最后手段）', () => {
@@ -200,7 +200,7 @@ describe('ErrorBoundary', () => {
         <Boom shouldThrow />
       </ErrorBoundary>
     );
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('errors.boundaryReload') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('重载') }));
 
     expect(reload).toHaveBeenCalled();
   });
@@ -211,16 +211,20 @@ describe('UndoHistoryPanel 空态与引导', () => {
     primeUndoStore();
     renderPanel();
 
-    expect(await screen.findByText(i18n.t('undo.historyEmpty'))).toBeInTheDocument();
+    expect(await screen.findByText(translate('暂无撤销记录'))).toBeInTheDocument();
   });
 
   it('空历史但有快照时给出崩溃引导，点击可跳转快照面板', async () => {
     primeUndoStore();
     const { onOpenSnapshots } = renderPanel({ hasSnapshots: true });
 
-    expect(await screen.findByText(i18n.t('snapshots.crashGuidance'))).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        translate('本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。')
+      )
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('snapshots.openSnapshots') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('查看我的快照') }));
 
     expect(onOpenSnapshots).toHaveBeenCalled();
   });
@@ -230,9 +234,13 @@ describe('UndoHistoryPanel 空态与引导', () => {
     renderPanel({ hasSnapshots: true });
 
     await waitFor(() =>
-      expect(screen.queryByText(i18n.t('undo.historyEmpty'))).not.toBeInTheDocument()
+      expect(screen.queryByText(translate('暂无撤销记录'))).not.toBeInTheDocument()
     );
-    expect(screen.queryByText(i18n.t('snapshots.crashGuidance'))).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        translate('本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。')
+      )
+    ).not.toBeInTheDocument();
   });
 
   it('最近关闭读取失败时降级为空列表（不抛错、不显示错误页）', async () => {
@@ -241,7 +249,7 @@ describe('UndoHistoryPanel 空态与引导', () => {
 
     renderPanel();
 
-    expect(await screen.findByText(i18n.t('undo.historyEmpty'))).toBeInTheDocument();
+    expect(await screen.findByText(translate('暂无撤销记录'))).toBeInTheDocument();
   });
 });
 
@@ -252,7 +260,7 @@ describe('UndoHistoryPanel 撤销栈', () => {
     });
     renderPanel();
 
-    const buttons = await screen.findAllByTitle(i18n.t('undo.restoreBatch'));
+    const buttons = await screen.findAllByTitle(translate('恢复该批次关闭的标签'));
     expect(buttons).toHaveLength(2);
     // 栈数组按时间正序存放，展示时 reverse：最新（newer）在最上
     expect(buttons[0]!.textContent).toContain('newer0.com');
@@ -263,7 +271,7 @@ describe('UndoHistoryPanel 撤销栈', () => {
     primeUndoStore({ batches: [batch('b1', 3)] as never });
     renderPanel();
 
-    const button = await screen.findByTitle(i18n.t('undo.restoreBatch'));
+    const button = await screen.findByTitle(translate('恢复该批次关闭的标签'));
     expect(button.textContent).toContain('+2');
   });
 
@@ -271,7 +279,7 @@ describe('UndoHistoryPanel 撤销栈', () => {
     const { undoBatch } = primeUndoStore({ batches: [batch('target')] as never });
     renderPanel();
 
-    fireEvent.click(await screen.findByTitle(i18n.t('undo.restoreBatch')));
+    fireEvent.click(await screen.findByTitle(translate('恢复该批次关闭的标签')));
 
     expect(undoBatch).toHaveBeenCalledWith('target');
   });
@@ -288,7 +296,7 @@ describe('UndoHistoryPanel 撤销栈', () => {
     });
     renderPanel();
 
-    const button = await screen.findByTitle(i18n.t('undo.restoreBatch'));
+    const button = await screen.findByTitle(translate('恢复该批次关闭的标签'));
     expect(button.textContent).not.toContain('undefined');
   });
 });
@@ -304,7 +312,9 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
 
     expect(await screen.findByText('我的页面')).toBeInTheDocument();
     expect(screen.getByText('a.com')).toBeInTheDocument();
-    expect(screen.getByText(i18n.t('undo.recentWindow', { count: 4 }))).toBeInTheDocument();
+    expect(
+      screen.getByText(translate('窗口（{{count}} 个标签）', { count: 4 }))
+    ).toBeInTheDocument();
   });
 
   it('恢复成功提示成功', async () => {
@@ -314,7 +324,7 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
 
     fireEvent.click(await screen.findByText('标题-s1'));
 
-    await waitFor(() => expect(notify).toHaveBeenCalledWith(i18n.t('undo.recentRestored')));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(translate('已从浏览器最近关闭中恢复')));
   });
 
   it('恢复失败（返回 false）提示失败，不谎报成功', async () => {
@@ -325,8 +335,10 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
 
     fireEvent.click(await screen.findByText('标题-s1'));
 
-    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed')));
-    expect(notify).not.toHaveBeenCalledWith(i18n.t('undo.recentRestored'));
+    await waitFor(() =>
+      expect(notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+    );
+    expect(notify).not.toHaveBeenCalledWith(translate('已从浏览器最近关闭中恢复'));
   });
 
   it('恢复抛错（sessionId 失效）也会复位按钮，不永久 disabled 卡死', async () => {
@@ -338,7 +350,9 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
     const row = await screen.findByText('标题-s1');
     fireEvent.click(row);
 
-    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(i18n.t('errors.operationFailed')));
+    await waitFor(() =>
+      expect(notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+    );
 
     // 关键：按钮必须恢复可用（finally 复位 restoringId）
     await waitFor(() => {

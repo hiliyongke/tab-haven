@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SortableContext } from '@dnd-kit/sortable';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { TabRow } from '@/ui/tabs/TabRow';
 import { DndRoot } from '@/ui/dnd/DndRoot';
@@ -75,21 +75,22 @@ describe('TabRow', () => {
   it('渲染标题与全部无障碍操作标签', () => {
     renderTabRow(tabOf());
     expect(screen.getByText('示例页面')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: i18n.t('tabs.pin') })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: i18n.t('tabs.closeTab') })).toBeInTheDocument();
+    // 与组件同口径：固定是**动作**，用 context 与分区标题「固定标签」区分译法
+    expect(screen.getByRole('button', { name: translate('固定标签') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('关闭标签') })).toBeInTheDocument();
     // audible=false 且 muted=false：不渲染静音按钮
-    expect(screen.queryByRole('button', { name: i18n.t('tabs.mute') })).toBeNull();
+    expect(screen.queryByRole('button', { name: translate('静音') })).toBeNull();
   });
 
   it('点击主按钮激活标签', () => {
     const props = renderTabRow(tabOf());
-    fireEvent.click(screen.getByTitle(i18n.t('tabs.switchTo', { title: '示例页面' })));
+    fireEvent.click(screen.getByTitle(translate('切换到：{{title}}', { title: '示例页面' })));
     expect(props.onActivate).toHaveBeenCalledWith(11);
   });
 
   it('点击关闭按钮触发 onClose', () => {
     const props = renderTabRow(tabOf());
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('tabs.closeTab') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('关闭标签') }));
     expect(props.onClose).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }));
   });
 
@@ -97,7 +98,7 @@ describe('TabRow', () => {
     const props = renderTabRow(tabOf());
     // fireEvent 无 auxClick 快捷方法：派发原生 auxclick（React 合成事件映射 onAuxClick）
     fireEvent(
-      screen.getByTitle(i18n.t('tabs.switchTo', { title: '示例页面' })),
+      screen.getByTitle(translate('切换到：{{title}}', { title: '示例页面' })),
       new MouseEvent('auxclick', { button: 1, bubbles: true })
     );
     expect(props.onClose).toHaveBeenCalledTimes(1);
@@ -106,7 +107,7 @@ describe('TabRow', () => {
   it('closeOnMiddleClick 关闭时中键不关闭', () => {
     const props = renderTabRow(tabOf(), { closeOnMiddleClick: false });
     fireEvent(
-      screen.getByTitle(i18n.t('tabs.switchTo', { title: '示例页面' })),
+      screen.getByTitle(translate('切换到：{{title}}', { title: '示例页面' })),
       new MouseEvent('auxclick', { button: 1, bubbles: true })
     );
     expect(props.onClose).not.toHaveBeenCalled();
@@ -114,14 +115,14 @@ describe('TabRow', () => {
 
   it('audible 时渲染静音按钮，点击触发 onToggleMute', () => {
     const props = renderTabRow(tabOf({ audible: true }));
-    const mute = screen.getByRole('button', { name: i18n.t('tabs.mute') });
+    const mute = screen.getByRole('button', { name: translate('静音') });
     fireEvent.click(mute);
     expect(props.onToggleMute).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }));
   });
 
   it('muted 时按钮语义切换为取消静音', () => {
     renderTabRow(tabOf({ audible: true, muted: true }));
-    expect(screen.getByRole('button', { name: i18n.t('tabs.unmute') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('取消静音') })).toBeInTheDocument();
   });
 
   it('duplicateCount > 0 时展示重复角标（n×）', () => {

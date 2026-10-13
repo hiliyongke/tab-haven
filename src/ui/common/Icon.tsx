@@ -89,7 +89,7 @@ export const Icons = {
   trash: Trash2,
   /** 安全网指示：所有关闭都可撤销。 */
   shield: Shield,
-  /** 会话快照（命名快照 / 关窗自动保存）。 */
+  /** 快照（命名快照 / 关窗自动保存）。 */
   snapshot: Camera,
   /** 保存为工作区：层叠表达「一组标签的工作集」（区别于文件夹/快照相机）。 */
   layers: Layers,
@@ -101,19 +101,33 @@ export const Icons = {
   sparkles: Sparkles
 } as const;
 
-/** 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。 */
+/**
+ * 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。
+ *
+ * 历史坑：此前只解构 { d, className, title }，调用方传 `aria-label` 会被静默丢弃
+ * （图标默认 aria-hidden），导致「已固定」这类仅靠图标表达的状态对读屏完全不存在。
+ * 需要可访问名时显式传 ariaLabel，或在外层并列一个 sr-only 文本。
+ */
 export function Icon({
   d,
   className,
-  title
+  title,
+  ariaLabel
 }: {
   d: LucideIcon;
   className?: string;
   title?: string;
+  ariaLabel?: string;
 }) {
   const Cmp = d;
+  const hidden = ariaLabel ? undefined : title ? undefined : 'true';
   return (
-    <Cmp className={className} aria-hidden={title ? undefined : 'true'}>
+    <Cmp
+      className={className}
+      aria-hidden={hidden}
+      role={ariaLabel ? 'img' : undefined}
+      aria-label={ariaLabel}
+    >
       {title ? <title>{title}</title> : null}
     </Cmp>
   );

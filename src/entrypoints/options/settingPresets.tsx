@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { openSidePanelInCurrentWindow } from '@/platform/sidePanel';
 import { useDataStore } from '@/stores/dataStore';
 import type { Settings } from '@/core/schema/models';
@@ -25,8 +25,8 @@ type PresetProfile = {
 const PRESET_PROFILES: PresetProfile[] = [
   {
     id: 'researcher',
-    nameKey: 'presets.researcher',
-    descKey: 'presets.researcherDesc',
+    nameKey: '研究者',
+    descKey: '按项目收纳：站点聚合 + 最近访问排序 + 拼音搜索',
     patch: {
       groupMode: 'site',
       aggregationThreshold: 2,
@@ -37,14 +37,14 @@ const PRESET_PROFILES: PresetProfile[] = [
   },
   {
     id: 'saver',
-    nameKey: 'presets.saver',
-    descKey: 'presets.saverDesc',
+    nameKey: '内存节俭者',
+    descKey: '自动休眠闲置标签释放内存，固定条目默认豁免',
     patch: { autoDiscardEnabled: true, autoDiscardMinutes: 30, discardNotifyEnabled: true }
   },
   {
     id: 'efficiency',
-    nameKey: 'presets.efficiency',
-    descKey: 'presets.efficiencyDesc',
+    nameKey: '效率玩家',
+    descKey: '键盘优先：行操作常显、中键关闭、拼音搜索',
     patch: {
       rowActionsVisible: true,
       closeOnMiddleClick: true,
@@ -82,9 +82,9 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
     const ok = await tryUpdateSettings(preset.patch);
     if (ok) {
       setUndoPatch({ patch: preset.patch, before });
-      onApplied(t('presets.applied', { name: t(preset.nameKey) }));
+      onApplied(t('已应用「{{name}}」预设', { name: t(preset.nameKey) }));
     } else {
-      onApplied(t('settings.saveFailed'));
+      onApplied(t('设置未保存：存储不可用，请重试'));
     }
   };
 
@@ -93,24 +93,25 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
     const { before } = undoPatch;
     setUndoPatch(null);
     const ok = await tryUpdateSettings(before);
-    onApplied(ok ? t('presets.reverted') : t('settings.saveFailed'));
+    onApplied(ok ? t('已撤销预设更改') : t('设置未保存：存储不可用，请重试'));
   };
 
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-700">{t('presets.title')}</h2>
+        <h2 className="text-sm font-semibold text-gray-700">{t('快速预设')}</h2>
         {undoPatch && (
           <button
             type="button"
             className="rounded px-2 py-1 text-2xs font-medium text-accent-600 transition-base hover:bg-accent-50"
             onClick={() => void revertPreset()}
           >
-            {t('presets.undo')}
+            {t('撤销预设')}
           </button>
         )}
       </div>
-      <p className="mb-3 text-2xs text-gray-600">{t('presets.hint')}</p>
+      {/* 11px：与同文件预设描述（text-3xs）同档，此前比它们小一号 */}
+      <p className="mb-3 text-3xs text-gray-600">{t('一键套用适合你的配置，之后仍可逐项微调')}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {PRESET_PROFILES.map((preset) => {
           const active = isActive(preset);
@@ -132,7 +133,7 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
                 {active && (
                   <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-accent-100 px-1.5 py-px text-3xs font-medium text-accent-700">
                     <Icon d={Icons.check} className="h-3 w-3" />
-                    {t('presets.active')}
+                    {t('使用中')}
                   </span>
                 )}
               </span>
@@ -144,13 +145,15 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
         {!PRESET_PROFILES.some((preset) => isActive(preset)) && (
           <div className="flex flex-col items-start gap-1 rounded-lg border border-dashed border-gray-300 bg-surface px-3 py-2 sm:col-span-3">
             <span className="flex w-full items-center justify-between gap-1">
-              <span className="text-sm font-medium text-gray-700">{t('presets.custom')}</span>
+              <span className="text-sm font-medium text-gray-700">{t('自定义')}</span>
               <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-px text-3xs font-medium text-gray-600">
                 <Icon d={Icons.check} className="h-3 w-3" />
-                {t('presets.active')}
+                {t('使用中')}
               </span>
             </span>
-            <span className="text-3xs leading-snug text-gray-600">{t('presets.customDesc')}</span>
+            <span className="text-3xs leading-snug text-gray-600">
+              {t('当前配置由你手动调整，不对应任何预设；可点击上方预设一键套用')}
+            </span>
           </div>
         )}
       </div>
@@ -160,12 +163,32 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
 
 /** 能力发现清单：用图标 + 一句话 +「试用」把藏得深的能力推到用户面前。 */
 const CAPABILITIES = [
-  { icon: Icons.menu, titleKey: 'cap.contextMenuTitle', howKey: 'cap.contextMenuHow' },
-  { icon: Icons.search, titleKey: 'cap.omniboxTitle', howKey: 'cap.omniboxHow' },
-  { icon: Icons.shortcuts, titleKey: 'cap.paletteTitle', howKey: 'cap.paletteHow' },
-  { icon: Icons.pin, titleKey: 'cap.pinTitle', howKey: 'cap.pinHow' },
-  { icon: Icons.snapshot, titleKey: 'cap.snapshotTitle', howKey: 'cap.snapshotHow' },
-  { icon: Icons.history, titleKey: 'cap.undoTitle', howKey: 'cap.undoHow' }
+  {
+    icon: Icons.menu,
+    titleKey: '右键菜单',
+    howKey: '在页面、链接或标签栏右键，快速休眠 / 固定 / 按域名搜索'
+  },
+  {
+    icon: Icons.search,
+    titleKey: '地址栏 t 命令',
+    howKey: '地址栏输入 t + 关键词，直达标签与固定空间条目'
+  },
+  {
+    icon: Icons.shortcuts,
+    titleKey: '命令面板（⌘P）',
+    howKey: '搜索并直接执行动作：休眠全部、存快照、开设置'
+  },
+  {
+    icon: Icons.pin,
+    titleKey: '固定空间',
+    howKey: '把常用页面拖到顶部常驻磁贴，或拖入固定空间的文件夹，随时一键直达'
+  },
+  {
+    icon: Icons.snapshot,
+    titleKey: '快照',
+    howKey: '关窗自动保存，也可手动把当前窗口存为快照随时恢复'
+  },
+  { icon: Icons.history, titleKey: '撤销安全网', howKey: '所有关闭操作都可撤销，误关也不怕' }
 ] as const;
 
 export function CapabilitiesGuide() {
@@ -178,7 +201,7 @@ export function CapabilitiesGuide() {
     void openSidePanelInCurrentWindow();
   };
   return (
-    <Section title={t('settings.capabilitiesGuide')}>
+    <Section title={t('你能做什么')}>
       <div className="divide-y divide-gray-100">
         {CAPABILITIES.map((cap) => (
           <div key={cap.titleKey} className="flex items-center gap-3 px-4 py-3">
@@ -194,7 +217,7 @@ export function CapabilitiesGuide() {
               size="sm"
               onClick={() => void openSidePanelInCurrentWindow()}
             >
-              {t('settings.capTry')}
+              {t('在侧边栏试用')}
             </Button>
           </div>
         ))}
@@ -203,13 +226,13 @@ export function CapabilitiesGuide() {
             <Icon d={Icons.sparkles} className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-gray-800">{t('settings.replayTour')}</p>
+            <p className="text-sm text-gray-800">{t('重新观看引导')}</p>
             <p className="mt-0.5 text-3xs leading-snug text-gray-600">
-              {t('settings.replayTourHint')}
+              {t('下次打开侧边栏时重新播放首启引导（误按 Esc 关闭后可从这里找回）')}
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={() => void replayTour()}>
-            {t('settings.replayTourAction')}
+            {t('重新观看')}
           </Button>
         </div>
       </div>

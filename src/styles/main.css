@@ -27,9 +27,19 @@
 
 @theme {
   /* 字号刻度：text-xs(12px) 向下一步即为最小字号，供密集侧栏小字使用。
-     10px 仅用于图标内文与徽角等极窄容器，正文说明一律 ≥ 11px。 */
+     10px 仅用于图标内文与徽角等极窄容器，正文说明一律 ≥ 11px。
+
+     伴生行高必须声明：不声明时 Tailwind v4 的 text-2xs/3xs 只输出 font-size，
+     元素行高回落到继承值（≈1.5），于是「同类徽章并排差 5px」——高度取决于
+     外层行高而非自身字号，改一处外层就漂一处。
+     取值：2xs(10px) 只服务徽角/图标内文 → 1；3xs(11px) 大量用作正文说明 → 1.45
+     （与 body 默认观感一致）。需要紧凑的徽角用 .chip 覆盖为 1，长段落用
+     leading-relaxed 覆盖 —— Tailwind v4 里 leading-* 排在 text-* 之后输出，
+     同特异性下后者胜出，故显式 leading 不受本声明影响。 */
   --text-2xs: 0.625rem; /* 10px */
+  --text-2xs--line-height: 1;
   --text-3xs: 0.6875rem; /* 11px */
+  --text-3xs--line-height: 1.45;
 
   /* 间距基准：4px。显式声明（即便与 Tailwind 默认值相同）是为了让「本项目
      用 4px 网格、一切间距都是它的整数倍」成为可被工具校验的事实，而不是口头约定。 */
@@ -804,10 +814,23 @@ html.theme-transition *::after {
    全局环（outline 2px + canvas 内描边 1px）+ 控件自身边框 + 聚焦边框色四层叠加，
    在暖色主题（sunset）下会被直接误读为「错误态」（用户实测反馈）。
    收敛为「1px 品牌色边框 + 1px 同色内环」共 2px 视觉厚度。 */
-:where(input, textarea, select):focus-visible {
+/* 排除 radio / checkbox：色块类控件（.swatch 16px / .theme-swatch 20px）走这条收敛
+   规则只有 2px 厚度，且 box-shadow 会**替换**掉自身的 inset 白内环，聚焦瞬间色块
+   与选中外环贴死。它们应走与按钮同档的全局 2px 环（下方显式补回 inset 内环）。 */
+:where(input:not([type='radio']):not([type='checkbox']), textarea, select):focus-visible {
   outline: none;
   border-color: var(--c-brand-500);
   box-shadow: 0 0 0 1px var(--c-brand-500);
+}
+
+/* 色块类单选：拿回全局 2px 环，同时保留自身 inset 内描边（不被 box-shadow 顶掉）。 */
+.swatch:focus-visible,
+.theme-swatch:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  box-shadow:
+    inset 0 0 0 1px var(--surface),
+    0 0 0 1px var(--canvas);
 }
 
 /* 轻微按下反馈（带快入慢出曲线） */
@@ -954,20 +977,47 @@ html.theme-transition *::after {
 /* 计数徽章（工具条角标等）：品牌绿底，满足对比度；
    11px 迷你尺寸挂在 24px 图标按钮角落，外圈 canvas 描边与图标视觉分离；
    两位数自动呈小胶囊（min-width + 横向 padding），不挤成正圆大球。 */
+/* 14px 高 + 10px 字（原 13px / 9px）：13 与 9 都不在刻度上，且 9px 是全文最小字，
+   暗色下可读性最差。字号回落到 --text-2xs(10px) 刻度内。 */
 .count-badge {
   display: inline-grid;
-  min-width: 13px;
-  height: 13px;
+  min-width: 14px;
+  height: 14px;
   place-items: center;
   padding: 0 4px;
   border-radius: 999px;
   background: var(--count-badge-bg);
   color: var(--c-on-accent);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
   box-shadow: 0 0 0 1px var(--canvas);
+}
+
+/* ---------- chip：徽角 / 小胶囊的紧凑排版 ----------
+ * 只给 10-11px 的窄容器用（徽章、来源标记、计数胶囊、chip 按钮）。长段落正文禁用。
+ *
+ * 历史问题：同类元素一半写了 leading-none、一半没写，高度随继承行高（≈1.5）浮动，
+ * 并排时同类徽章差约 5px。
+ * 现在 @theme 已声明 --text-2xs/3xs--line-height（默认 1 / 1.45），浮动问题消失；
+ * 本类的价值是「徽角要的是 1，而不是 3xs 默认的 1.45」——一行字重 + 紧凑行高，
+ * 让所有徽角共用同一个度量，不必在每处重复写 leading-none。 */
+.chip {
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1;
+}
+/* 含汉字词的徽角用 11px：汉字在 10px 下笔画糊（纯数字不受影响，保持 10px）。 */
+.chip--cjk {
+  font-size: var(--text-3xs);
+}
+
+/* Tailwind v4 的 preflight 不再给 button 手型光标（Button/IconButton 已各自显式声明），
+   但绕过这两个组件的手写 <button>（新建标签页、搜索清除、菜单项、面板行…）全都漏了，
+   表现为「可点但光标是箭头」。统一在原生层补上，禁用态保持 default。 */
+button:not([disabled]) {
+  cursor: pointer;
 }
 
 /* ---------- 常驻顶部搜索框（替代弹窗式覆盖层） ---------- */
@@ -981,6 +1031,10 @@ html.theme-transition *::after {
   padding: 4px 8px;
   background: var(--canvas);
   border-bottom: 1px solid var(--border-subtle);
+  /* 聚焦指示（底边框 + inset 指示条）此前是硬切，聚焦瞬间闪一下 */
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 /* 键盘流主入口：聚焦时由容器整体给出焦点指示 ——
    底边框转品牌色 + 底部 2px 指示条（下划线式，干净且醒目）。
@@ -1088,16 +1142,34 @@ html.theme-transition *::after {
 /* Toast 浮层不参与主内容排版，避免撤销提示出现时标签列表跳动。
    bottom 取 72px：抬到「新建标签页」栏（约 33px）+ 底部工具条（约 28px）之上，
    否则悬浮在最常用的「新建标签页」入口上遮挡最长 7 秒。 */
+/* ---------- 状态提示条（「+ 新建标签」与底栏之间，实体占位） ----------
+ * 此前是 absolute 浮层压在列表中间，会盖住用户正在操作的行；
+ * 改为流式占位（挂载点在 App 的 add-tab-bar 之后），出现时列表让位而非被盖住。
+ * 品牌色描边 + 左侧色条 + elev-2 投影：提示必须一眼可辨，
+ * 此前灰字灰边混在列表里，失败提示也常常被忽略。 */
 .status-toast {
-  position: absolute;
-  right: 8px;
-  bottom: 72px;
-  left: 8px;
+  margin: 4px 8px 2px;
   z-index: 35;
+  /* 描边保持中性：品牌色与边框色混合后的「暗绿描边」在深色主题下浑浊发脏，
+     各主题色预设（data-hue）深浅不一，混出来不可控；品牌感交给色条与图标。 */
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 94%, var(--c-brand-50));
   box-shadow: var(--elev-2);
+}
+/* 左侧状态色条：取 400 档（亮暗分支都刻意提亮过），任何主题色预设下都清晰；
+   600 档在深色下是为「更深一档强调」设计的，做色条会显得浑浊。
+   align-self: stretch 让它随两行提示（消息 + note）一起变高。 */
+.status-toast::before {
+  content: '';
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--c-brand-400);
+}
+.status-toast.is-error::before {
+  background: var(--c-red-500);
 }
 
 /* ---------- 弹窗宽度刻度（两档收敛，替代散落的任意宽度值） ---------- */
@@ -1131,10 +1203,12 @@ html.theme-transition *::after {
 }
 
 /* ---------- 分类模块外壳：固定空间 / 站点分组 ---------- */
-/* 左 0 + 内部 .section-head padding-left 8px：内容起始与 .pinned-strip / .section-card 统一到距侧边栏 8px */
+/* 左 0 + 内部 .section-head padding-left 8px：内容起始与 .pinned-strip / .section-card 统一到距侧边栏 8px。
+   纵向 6/8：此前 .fixed-area 另写一份 padding: 8px 0 7px 覆盖掉共享声明的 6px，
+   导致固定空间与 .module-shell（站点分组）上留白差 2px，且共享声明对它成了死规则。 */
 .fixed-area,
 .module-shell {
-  padding: 6px 0 7px 0;
+  padding: 6px 0 8px 0;
 }
 /* 固定空间：与列表同一套扁平语言（零背景、零边框），
    身份由「一条中性分隔线 + 更大的上下留白 + 标题前的文件夹图标」承担 ——
@@ -1144,34 +1218,43 @@ html.theme-transition *::after {
   max-height: min(34vh, 280px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px 0 7px;
   border-bottom: 1px solid var(--border-subtle);
-  /* 滚动边界提示（R15 / P-1）：固定空间是列表内的嵌套滚动区（max-height 截断），
-     内容溢出时若没有底部内阴影，用户会以为「已经到底了」而漏看后面的文件夹。
-     阴影随滚动位置由 JS 切换 .is-scrolled-to-end 显隐（见 FixedArea.tsx）。 */
+}
+
+/* ---------- 内滚区底部渐隐（滚动边界提示） ----------
+ * 侧边栏里被 max-height 截断的内滚区（固定空间 / 快照详情 / 命令面板结果 /
+ * 虚拟列表）缺少可见的底部边界，用户滚到一半会误判「已经到底了」。
+ * 底部渐隐随滚动位置由 useScrollFade 切换 .is-scrolled-to-end 显隐 ——
+ * 必须配套这个 JS 切换：常驻渐隐会变成「到底了还提示有更多」的反向误导，
+ * 这正是此前只抽了工具类又撤掉的原因。
+ * 配色走 --scroll-fade 令牌（浅 6% / 深 24%），不硬编码 rgba。
+ * background-attachment: scroll 把渐隐钉在**容器可视底边**：若用 local，渐隐会
+ * 跟随滚动内容停在内容末端 —— 滚动过程中它在视口外看不见，滚到底时又被
+ * .is-scrolled-to-end 撤掉，整个效果等于空转。
+ * 「内容不足一屏时不该凭空出现阴影」由 JS 侧负责（不可滚动时不加本 class）。 */
+.scroll-fade {
   background-image: linear-gradient(to bottom, transparent, var(--scroll-fade));
   background-size: 100% 12px;
   background-repeat: no-repeat;
   background-position: bottom;
-  background-attachment: local;
+  background-attachment: scroll;
 }
-/* 已滚到底：撤掉底部阴影，避免「到底了还提示有更多」的反向误导。 */
-.fixed-area.is-scrolled-to-end {
+.scroll-fade.is-scrolled-to-end {
   background-image: none;
 }
-@media (prefers-reduced-motion: reduce) {
-  .fixed-area {
-    background-attachment: scroll;
-  }
-}
+/* 固定空间历史上把这套写死在自己身上，现统一走 .scroll-fade（class 在 TSX 上加）。 */
 /* 分组模块（站点分组大壳）：同样一条中性分隔线，与下方未分组区断开 */
 .module-shell {
   border-bottom: 1px solid var(--border-subtle);
 }
-/* 紧跟 module-shell 的下一块不再画 border-top，避免与上一块的 border-bottom 叠成双线 */
+/* 紧跟 module-shell 的下一块不再画 border-top（上一块的 border-bottom 已是分隔线），
+   但要把省掉的 border+padding 折算回 margin-top 4px，让间距与模块内部相邻分区
+   （margin 2 + border 1 + padding 1 = 4px）完全一致。 */
 .module-shell + .section-card,
 .module-shell + .module-shell {
   border-top: 0;
+  padding-top: 0;
+  margin-top: 4px;
 }
 /* 固定空间头部/文件夹/条目的视觉壳复用分组模块的 .section-card / .section-head /
    .row-item 系列（见「分组」区块），以下仅保留固定空间特有的少量样式。 */
@@ -1182,13 +1265,14 @@ html.theme-transition *::after {
    首屏必现的内容（固定空间为空时）。
    字号取 --text-3xs(11px) 而非 2xs(10px)：本文是需要阅读的正文说明，
    遵守本文件顶部自订的「正文说明一律 ≥ 11px」。
-   左缩进 6px 与标签行 pl-1.5 对齐（列表内容统一从 6px 起），不再跟随
-   section-head 的 8px，避免与下方主列表行缩进不一致。
-   颜色用 gray-400：暗色下比 gray-500 更淡，空态文字不抢眼。 */
+   左缩进 8px：与 .section-head 前导色条、行内 favicon 同处一条内容竖线
+   （8px = .section-body 2px + .row-item pl-1.5 6px）。
+   颜色用 gray-500：空态文字是需要阅读的正文说明，gray-400 对画布仅约 2.7:1
+   （不达 AA），不能再下调 —— 想让它「不抢眼」靠字号与留白，不靠降对比度。 */
 .fixed-area-empty {
   margin: 2px 0 0;
-  padding: 0 12px;
-  color: var(--c-gray-400);
+  padding: 0 8px;
+  color: var(--c-gray-500);
   font-size: var(--text-3xs);
   line-height: 1.4;
 }
@@ -1203,14 +1287,22 @@ html.theme-transition *::after {
 /* ---------- 顶部常驻磁贴区 ---------- */
 /* 不再画分隔线：磁贴自身的圆角面 + 上下留白已足以把它与列表分开，
    少一条横线换一分呼吸感（一屏横线从 8-9 条压到 4-5 条）。 */
+/* 自身只承担纵向留白（上 6 + 下 2）；横向 8px 由内部 .pinned-grid 提供，
+   让磁贴与 .section-head 前导色条、行内 favicon 同处一条内容竖线。
+   此前贴在 .pinned-strip 上写 padding-left 0、指望「内部 .pinned-grid 补 8px」，
+   但 PinnedStrip 从未渲染 .pinned-grid 这层，磁贴实际贴死在 x=0。 */
 .pinned-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  /* flex: none：同列的 .search-bar / .add-tab-bar / .fixed-area 都是 flex:none，
+     唯独磁贴条没有 —— 空间不足时它会被压缩并与下方固定空间重叠。 */
+  flex: none;
   margin: 0 0 6px;
-  /* 左 0 + 内部 .pinned-grid padding-left 8px，让磁贴与 module-shell 内色条对齐到距侧边栏 8px */
-  padding: 6px 0 5px 0;
+  padding: 6px 0 2px;
   isolation: isolate;
+  /* 投放高亮此前是硬切（.row-item 有 transition-base，两处分区级落点没有） */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .pinned-strip.is-drop-target {
@@ -1337,12 +1429,20 @@ html.theme-transition *::after {
 }
 
 /* 列表内「固定标签」区：紧凑图标网格（与顶部 PinnedStrip 视觉一致） */
+/* 磁贴网格是唯一的横向留白来源（左右各 8px），不再嵌套在 .section-body 内
+   —— 此前 .section-body 8px + 本类 8px 双重缩进，置顶区磁贴落到 16px。 */
 .pinned-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  /* padding-left 8px 与 module-shell 内 section-head 对齐，让磁贴起始在距侧边栏 8px */
-  padding: 0 4px 4px 8px;
+  /* 行距 6px / 列距 4px：磁贴 36px 高，hover 时 translateY(-1px) + elev-1 向下扩散约
+     3px，行距 4px 时阴影直接压到下一排；.pinned-unpin 的 top:-4px 也恰好占满 4px
+     行距，角标顶到上一排磁贴底边（后渲染的在上层，看着像挂错磁贴）。 */
+  gap: 6px 4px;
+  padding: 0 8px 4px;
+  /* 两行封顶（36+6+36+4 = 82px）：20+ 枚磁贴时磁贴区会把固定空间与主列表挤出首屏 */
+  max-height: 84px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .pinned-tile .pinned-unpin {
   position: absolute;
@@ -1404,21 +1504,37 @@ html.theme-transition *::after {
    副标题（tab-url 10px）与徽章字号保持不变：它们只是辅助信息。
    14px 直接写字面量：--text-sm 是 Tailwind 内部变量、未在本文件 @theme 声明，
    设计令牌守卫会将其判为未受控引用。 */
-.row-item.density-large {
-  padding-top: 7px;
-  padding-bottom: 7px;
+/* 10px（原 7px）：与 cozy 的 6px 只差 1px 时档位形同虚设，且 7px 脱 4px 网格。
+   三档 2 / 6 / 10 逐级差 4px，切换密度时变化可辨。
+   选择器并列两条：
+   - .row-item.density-large —— 行显式收到 density prop 时命中（主列表）；
+   - [data-density='large'] .row-item —— 祖先下发时命中（固定空间的条目行不
+     经 RowItem 的 density prop，只能靠 .app 上的属性驱动）。两者同值，
+     互补覆盖两条渲染链，不产生冲突。 */
+.row-item.density-large,
+[data-density='large'] .row-item {
+  padding-top: 10px;
+  padding-bottom: 10px;
   font-size: 0.875rem;
 }
-.row-item.density-large .title-text {
+.row-item.density-large .title-text,
+[data-density='large'] .row-item .title-text {
   line-height: 1.35;
 }
 /* 副标题（完整网址）同步放大 10px → 12px：它同属正文级信息，只放大标题
    会让大字号档位半途而废（读得清标题、读不清网址）。徽章保持原尺寸（辅助标记）。 */
-.row-item.density-large .tab-url {
+.row-item.density-large .tab-url,
+[data-density='large'] .row-item .tab-url {
   font-size: 0.75rem;
   line-height: 1.3;
 }
-/* 分组标题同步放大（导航级文字）：density 标记由 SectionList 根节点下发 */
+/* 同样的两条链：cozy 档也补属性选择器，否则固定空间在「舒适」档下
+   拿不到 6px 上下留白（它只能继承到 class 版，而 class 版由 prop 决定）。 */
+[data-density='cozy'] .row-item:not(.density-large) {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* 分组标题同步放大（导航级文字）：density 标记由 .app 根节点下发 */
 [data-density='large'] .section-head .title {
   font-size: 0.875rem;
 }
@@ -1477,12 +1593,28 @@ body.dnd-just-dropped .row-item .drag-grip {
 /* 浮层浮现时让位：次要徽章（播放/拆分等）淡出，改由浮现的快捷操作承担；
    但「重复 n×」与休眠雪花是**决策信息**（决定要不要关闭/去重），必须常显 ——
    悬停准备操作时信息消失会让用户失去判断依据。keep 类徽章不参与淡出。 */
-.row-badges .status-badge {
-  transition: opacity var(--dur-fast) var(--ease-out);
+/* 徽章组宽度预算：此前 .row-badges 只有 inline-flex shrink-0，五枚徽章
+   （重复 12× + 播放中 + 拆 + 伴 + 禁）约 154px，在 320px 面板下会把标题挤成 0 宽
+   并与 favicon 重叠、向右溢出。上限取 38%（≈110px @300px），超出裁掉；
+   「重复 n×」与休眠雪花由 StatusBadges 前置渲染，保证不被裁。 */
+.row-badges {
+  max-width: 38%;
+  overflow: hidden;
 }
+/* 用 display:none 而非 opacity:0 —— opacity 只隐藏视觉、宽度照样占着，
+   悬停时 150px 操作区 + 全部徽章宽度会把标题挤成 0 宽并溢出右边缘。
+   （@media (hover:none) 分支早已是 display:none，此处对齐同一口径。） */
 .row-item:hover .status-badge:not(.status-keep),
 .row-item:focus-within .status-badge:not(.status-keep) {
-  opacity: 0;
+  display: none;
+}
+/* 「操作常显」档（设置项 rowActionsVisible）：复用 .row-actions 的宽度预算与
+   ≤300px 收窄，但不参与「max-width:0 塌陷 + 悬停展开」—— 它是常驻的。 */
+.row-actions--static {
+  max-width: 150px;
+  padding-left: 8px;
+  opacity: 1;
+  pointer-events: auto;
 }
 /* 拖拽排序中不浮现操作，避免干扰落点判断 */
 .row-item.is-sorting .row-actions {
@@ -1607,9 +1739,11 @@ body.dnd-dragging .row-item .row-actions {
 /* 分屏组指示：分屏的「连续」标签段左侧一条高亮竖线贯穿（简约醒目）。
    用 data-split-role 属性选择器（不依赖 class 拼接，避免被 Tailwind utilities 覆盖）。
    配「拆/伴」徽章，一眼即知两个 tab 同屏。 */
+/* padding-left 4px（而非 6px）：2px 竖线自身占位，4+2 = 6px 与 .row-item 的
+   pl-1.5 等值，分屏行与普通行的 favicon 才落在同一条 8px 内容竖线上。 */
 .row-item[data-split-role] {
   border-left: 2px solid color-mix(in srgb, var(--c-brand-500) 34%, transparent);
-  padding-left: 6px;
+  padding-left: 4px;
   z-index: 1;
 }
 /* 状态层级：激活标签是主状态，搜索只提供辅助提示，不覆盖激活圆点。 */
@@ -1677,6 +1811,10 @@ body.dnd-dragging .row-item .row-actions {
 .section-card {
   border-top: 1px solid var(--border-subtle);
   padding-top: 1px;
+  /* 拖拽落点高亮此前是硬切（.row-item 有 transition-base，分区级落点没有） */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 .section-card:first-child {
   border-top: 0;
@@ -1690,9 +1828,12 @@ body.dnd-dragging .row-item .row-actions {
 .section-card.is-pinned {
   /* 固定（原生钉住）分类的视觉标识：零背景，常驻于滚动区之外始终可见 */
 }
-/* 分组强调色：count 胶囊随组色轻染（accent 圆点用内联样式在 SectionHead 渲染） */
+/* 分组强调色：count 胶囊随组色轻染（accent 圆点用内联样式在 SectionHead 渲染）。
+   去掉 border-top 的同时补回 padding-top 2px：否则相邻分区间距为
+   margin 2 + padding 1 = 3px，而无强调色分区是 2+1+1 = 4px —— 同列两种间距。 */
 .section-card.is-accented {
   border-top: 0;
+  padding-top: 2px;
 }
 .section-card.is-accented .count-pill {
   background: color-mix(in srgb, var(--accent) 14%, var(--c-gray-100));
@@ -1733,8 +1874,8 @@ body.dnd-dragging .row-item .row-actions {
 .section-head button.toggle {
   cursor: pointer;
   border-radius: 6px;
-  padding: 1px 3px;
-  margin: -1px -3px;
+  padding: 2px 4px;
+  margin: -2px -4px;
 }
 /* 分组头键盘拖拽手柄：整头鼠标可拖（指针），手柄承担键盘拖拽（Space + 方向键）。
    绝对定位覆盖头部前导（色条/chevron 原位），零布局占位；
@@ -1767,7 +1908,7 @@ body.dnd-dragging .row-item .row-actions {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   min-height: 22px;
   padding: 2px 6px;
   border: 1px solid color-mix(in srgb, var(--c-brand-500) 48%, var(--border-subtle));
@@ -1826,9 +1967,13 @@ body.dnd-dragging .row-item .row-actions {
 .section-head-actions {
   display: contents;
 }
+/* 内容竖线口径（此前注释与实现长期不符，本次对齐为唯一事实）：
+   分区头前导色条 = .section-head padding-left 8px；
+   行内 favicon   = .section-body 2px + .row-item pl-1.5 6px = 8px。
+   二者同处一条 8px 竖线。.section-body 只留 2px：行需近满宽（hover 底色成连续色带、
+   长标题可多出 12px），缩进全部交给行自身的 pl-1.5，改行内边距不必再动容器。 */
 .section-body {
-  /* 左右 8px 与 .section-head 对齐，让色条与标签行 favicon 左边缘对齐 */
-  padding: 0 8px 2px;
+  padding: 0 2px 2px;
 }
 
 /* 虚拟列表滚动容器（VirtualRowList）。
@@ -1841,9 +1986,10 @@ body.dnd-dragging .row-item .row-actions {
 }
 
 /* 超阈值分区被强制虚拟化、列表内排序暂停时的行内说明（RowList 顶部）。 */
+/* 左 6px：本元素渲染在 .section-body 内（2px），6+2 = 8px 与全局内容竖线一致。 */
 .virtual-notice {
   margin: 0;
-  padding: 2px 8px 4px;
+  padding: 2px 6px 4px;
   color: var(--c-gray-500);
   font-size: var(--text-3xs);
   line-height: 1.4;
@@ -1855,7 +2001,7 @@ body.dnd-dragging .row-item .row-actions {
 .add-tab-bar {
   flex: none;
   background: var(--canvas);
-  padding: 5px 8px 4px;
+  padding: 4px 8px 4px;
 }
 .add-tab-btn {
   display: flex;
@@ -1916,7 +2062,13 @@ body.dnd-dragging .row-item .row-actions {
 
 /* 更窄档（≤300px，Chrome 侧边栏拖到最窄）：再退一级，
    只保留标题、计数与核心动作；「新建标签页」收为纯图标，
-   媒体播放指示整块隐藏（其信息已由行内徽章承载，不丢状态）。 */
+   媒体播放指示整块隐藏（其信息已由行内徽章承载，不丢状态）。
+
+   刻意**不再**收窄 .section-body：此前该档把 body 从 8px 收到 4px，而
+   .section-head 仍是 8px —— 内容竖线在窄档突然与标题错开 4px，且 .pinned-grid
+   仍是 8px，一屏出现三条左边缘。内容竖线必须与宽度档位无关：
+   宽档/窄档一律 8px（body 2px + 行 pl-1.5 6px）。窄档要省宽度应靠隐藏元素，
+   而不是拆掉对齐。 */
 @container (max-width: 300px) {
   .add-tab-btn span {
     display: none;
@@ -1927,8 +2079,16 @@ body.dnd-dragging .row-item .row-actions {
   .section-media-indicator {
     display: none;
   }
-  .section-body {
-    padding: 0 4px 2px;
+  /* 固定空间是 flex:none 的定高块，窄面板下必须让位给主列表 */
+  .fixed-area {
+    max-height: min(24vh, 160px);
+  }
+  /* 行尾操作在窄档收窄，避免与徽章合计挤出右边缘。
+     118px 而非 104px：max-width 是 border-box，要扣掉 padding-left 8px，
+     104px 时内容区仅 96px < 五按钮实宽 110px，末尾「关闭」会被裁掉约 14px。 */
+  .row-item:hover .row-actions,
+  .row-item:focus-within .row-actions {
+    max-width: 118px;
   }
 }
 

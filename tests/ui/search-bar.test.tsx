@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { SearchBar } from '@/ui/search/SearchBar';
 
 /**
@@ -32,8 +32,8 @@ describe('SearchBar', () => {
   it('渲染搜索框与无障碍标签（aria-label）', () => {
     renderSearchBar();
     const input = screen.getByRole('searchbox');
-    expect(input).toHaveAccessibleName(i18n.t('search.title'));
-    expect(input).toHaveAttribute('placeholder', i18n.t('search.placeholder'));
+    expect(input).toHaveAccessibleName(translate('搜索标签'));
+    expect(input).toHaveAttribute('placeholder', translate('搜索标签（标题 / 网址 / 拼音）'));
   });
 
   it('输入实时上抛 onChange', () => {
@@ -50,7 +50,7 @@ describe('SearchBar', () => {
 
   it('有查询时显示清除按钮，点击后清空并聚焦回输入框', () => {
     const { props } = renderSearchBar({ query: 'git' });
-    const clear = screen.getByRole('button', { name: i18n.t('search.clear') });
+    const clear = screen.getByRole('button', { name: translate('清除搜索') });
     fireEvent.click(clear);
     expect(props.onChange).toHaveBeenCalledWith('');
     // 聚焦回归：inputRef 在点击后应指向获得焦点的元素
@@ -59,6 +59,6 @@ describe('SearchBar', () => {
 
   it('空查询时不渲染清除按钮', () => {
     renderSearchBar({ query: '' });
-    expect(screen.queryByRole('button', { name: i18n.t('search.clear') })).toBeNull();
+    expect(screen.queryByRole('button', { name: translate('清除搜索') })).toBeNull();
   });
 });

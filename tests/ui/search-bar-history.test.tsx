@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { SearchBar } from '@/ui/search/SearchBar';
 
 /**
@@ -30,18 +30,18 @@ function renderSearchBar(overrides: Partial<Parameters<typeof SearchBar>[0]> = {
 describe('SearchBar 历史开关（P-01）', () => {
   it('未装配历史开关时不渲染按钮（popup 等场景波及面为零）', () => {
     renderSearchBar();
-    expect(screen.queryByRole('button', { name: i18n.t('search.historyToggle') })).toBeNull();
+    expect(screen.queryByRole('button', { name: translate('包含历史（快照/归档）') })).toBeNull();
   });
 
   it('开关渲染且默认关闭态：aria-pressed=false、提示为「仅当前」文案', () => {
     renderSearchBar({ showHistoryToggle: true, historyOn: false, onToggleHistory: vi.fn() });
-    const toggle = screen.getByRole('button', { name: i18n.t('search.historyToggleOff') });
+    const toggle = screen.getByRole('button', { name: translate('仅搜索当前标签') });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('开启态：aria-pressed=true、类名带 is-active、提示为「包含历史」文案', () => {
     renderSearchBar({ showHistoryToggle: true, historyOn: true, onToggleHistory: vi.fn() });
-    const toggle = screen.getByRole('button', { name: i18n.t('search.historyToggle') });
+    const toggle = screen.getByRole('button', { name: translate('包含历史（快照/归档）') });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     expect(toggle.className).toContain('is-active');
   });
@@ -49,7 +49,7 @@ describe('SearchBar 历史开关（P-01）', () => {
   it('点击开关：回调触发一次，焦点回归输入框', () => {
     const onToggleHistory = vi.fn();
     renderSearchBar({ showHistoryToggle: true, historyOn: false, onToggleHistory });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('search.historyToggleOff') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('仅搜索当前标签') }));
     expect(onToggleHistory).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(screen.getByRole('searchbox'));
   });

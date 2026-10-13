@@ -16,6 +16,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const SRC = join(ROOT, 'src');
 const OUT = join(ROOT, '.output', 'chrome-mv3');
+const PUBLIC_DIR = join(ROOT, 'public');
+/** 工作区包（packages/*）：随包发布的运行时代码，与 src/ 同级需要进门禁。 */
+const PACKAGES = join(ROOT, 'packages');
 const MANIFEST = join(OUT, 'manifest.json');
 const PRIVACY_DOC = join(ROOT, 'PRIVACY.md');
 
@@ -59,7 +62,12 @@ const NETWORK_PATTERNS = [
   /\bsrc\s*=\s*["'`]https?:\/\//,
   /\bimport\s*\(\s*['"]https?:\/\//,
   /\bruntime\.connect\s*\(/,
-  /<script[^>]+src=["']https?:\/\//
+  /<script[^>]+src=["']https?:\/\//,
+  // 静态页（public/*.html、产物 HTML）的外引资源：此前只扫 .js，HTML 完全不在
+  // 门禁内，而 PRIVACY.md 明确承诺卸载挽留页「无任何外链」——承诺必须有校验。
+  /<link[^>]+href=["']https?:\/\//,
+  /@import\s+["']https?:\/\//,
+  /\burl\(\s*["']?https?:\/\//
 ];
 
 /**
@@ -87,14 +95,25 @@ const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
 /** 非存储用途的 `tabs.` 字面量：导出文件格式标识。 */
 const NON_STORAGE_KEYS = new Set(['tabs.export']);
 
-/** 静态资源引用（img src 等）本身不是扩展发起的网络通道，单独放行。 */
-const NETWORK_EXEMPT = /^\s*(?:\/\/|\*|\/\*)/;
+/**
+ * 源码里的注释行（`//` / `/*` / `* `）：示例与说明中的 URL 不是真实调用，放行。
+ *
+ * **只对源码生效**：`public/*.html` 是被保护对象本身（它们随包分发、由浏览器
+ * 直接打开），若连 `<!--` 注释也一并放行，注释里写一句 `<link href="https://…">`
+ * 就能永久豁免 —— 对 HTML 必须连注释一起扫。
+ */
+const NETWORK_EXEMPT_CODE = /^\s*(?:\/\/|\*|\/\*)/;
+/** 静态页（HTML）：不豁免注释行，见上。空行与纯空白行仍跳过。 */
+const NETWORK_EXEMPT_HTML = /^\s*$/;
 
 const SCANNABLE = new Set(['.ts', '.tsx', '.html', '.js']);
 
 function walk(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
+    // 依赖目录不进门禁：packages/*/node_modules 是工作区包的依赖，
+    // 扫它等于把第三方库误判为本产品源码。
+    if (entry === 'node_modules') continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...walk(full));
     else if (SCANNABLE.has(full.slice(full.lastIndexOf('.')))) out.push(full);
@@ -295,10 +314,11 @@ function scanFiles(files, label) {
   let hits = 0;
   for (const file of files) {
     const lines = readFileSync(file, 'utf8').split('\n');
+    const exempt = file.endsWith('.html') ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
     let fileHits = 0;
     lines.forEach((line, i) => {
       if (fileHits >= MAX_HITS_PER_FILE) return;
-      if (NETWORK_EXEMPT.test(line)) return;
+      if (exempt.test(line)) return;
       for (const pattern of NETWORK_PATTERNS) {
         if (pattern.test(line)) {
           issues.push(
@@ -321,8 +341,27 @@ scanFiles(walk(SRC), '源码');
 // 的承诺——用户安装的是 .output，不是 src。
 if (existsSync(OUT)) {
   scanFiles(
-    walk(OUT).filter((f) => f.endsWith('.js')),
+    walk(OUT).filter((f) => f.endsWith('.js') || f.endsWith('.html')),
     '构建产物'
+  );
+}
+
+// 随包静态页（public/*.html，如卸载挽留页）同样要扫：它们被浏览器直接打开，
+// 页面里一个外链字体或统计像素就是一次真实出站请求，而此前只扫 src/ 与产物 JS。
+if (existsSync(PUBLIC_DIR)) {
+  scanFiles(
+    walk(PUBLIC_DIR).filter((f) => f.endsWith('.html')),
+    '静态页'
+  );
+}
+
+// 工作区包（packages/*）同样要扫：packages/i18n-kit 的运行时（src/index.ts /
+// react.tsx）被 src/i18n 直接引用，是随包发布的运行时代码。此前只靠产物扫描
+// 间接覆盖 —— 改了包内源码而不重新构建，门禁完全看不见。
+if (existsSync(PACKAGES)) {
+  scanFiles(
+    walk(PACKAGES).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')),
+    '工作区包'
   );
 }
 
@@ -334,10 +373,17 @@ if (issues.length > 0) {
 
 const sourceCount = walk(SRC).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')).length;
 const bundleCount = existsSync(OUT) ? walk(OUT).filter((f) => f.endsWith('.js')).length : 0;
+const htmlCount =
+  (existsSync(OUT) ? walk(OUT).filter((f) => f.endsWith('.html')).length : 0) +
+  (existsSync(PUBLIC_DIR) ? walk(PUBLIC_DIR).filter((f) => f.endsWith('.html')).length : 0);
+const packageCount = existsSync(PACKAGES)
+  ? walk(PACKAGES).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')).length
+  : 0;
 console.log(
   `隐私回归检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
     `主机权限 ${[...hostPermissions].sort().join(', ')}，` +
-    `网络通道调用 0（源码 ${sourceCount} 个 + 产物 ${bundleCount} 个），` +
+    `网络通道调用 0（源码 ${sourceCount} 个 + 工作区包 ${packageCount} 个 + ` +
+    `产物 ${bundleCount} 个 JS / ${htmlCount} 个 HTML），` +
     `权限清单与 PRIVACY.md 一致，` +
     `存储键 ${sourceKeys.size} 个与 PRIVACY.md 第 3 节一致，图标渲染闸门在位`
 );

@@ -12,12 +12,26 @@ import { tabSyncService } from '@/platform/sync/TabSyncService';
 import type { DataContext, DataState } from './types';
 
 /** 磁贴切片：常驻磁贴的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
+import { PINS_LIMIT } from '@/core/schema/models';
+
 export function createPinsSlice(ctx: DataContext): Partial<DataState> {
   return {
     addPin: async (tab) => {
       if (!tab.url) return;
       const pin = pinFromTab({ url: tab.url, title: tab.title || '', favIconUrl: tab.favIconUrl });
       if (!pin) return;
+      // 与 createFolder 同款预检：PINS_LIMIT 只在落盘 schema 生效，超限会被整批拒绝，
+      // 而内存已 set —— 界面显示已固定、重启后消失。先拦住并明说原因。
+      if (
+        ctx.get().pins.length >= PINS_LIMIT &&
+        !ctx.get().pins.some((p) => p.identity === pin.identity)
+      ) {
+        ctx.reportPersistenceFailure(
+          'dataStore',
+          `常驻磁贴数量已达上限 ${PINS_LIMIT} 个，本次未固定（请先移除不再需要的磁贴）`
+        );
+        return;
+      }
       await ctx.writePins((current) =>
         dedupePins([...current.filter((p) => p.identity !== pin.identity), pin])
       );

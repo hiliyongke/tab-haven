@@ -1,7 +1,7 @@
 /**
  * 跨页面互斥锁（Web Locks API）。
  *
- * 扩展的 sidepanel / popup / options / background 是各自独立的 JS 上下文，
+ * 扩展的 sidepanel / options / background 是各自独立的 JS 上下文，
  * 模块级 promise 链只能串行化「本页面」的异步操作；两个页面并发读写同一
  * storage key 时，read-modify-write 仍会交错互覆（last-writer-wins）。
  * Web Locks 是 MV3 各上下文（含 SW）都可用的跨上下文互斥原语。
@@ -41,7 +41,7 @@ export async function withCrossPageLock<T>(name: string, fn: () => Promise<T>): 
 export const FOLDERS_RMW_LOCK = 'tabs.folders-rmw';
 export const PINS_RMW_LOCK = 'tabs.pins-rmw';
 export const AUTO_GROUPS_RMW_LOCK = 'tabs.auto-groups-rmw';
-/** settings 分区：options / sidepanel / popup 各有独立 dataStore，
+/** settings 分区：options / sidepanel 各有独立 dataStore，
  *  整对象写必须以「锁内重读 → 合并 → 写」执行，否则并发页互丢字段级更新。 */
 export const SETTINGS_RMW_LOCK = 'tabs.settings-rmw';
 /** collapse 分区：与 settings 同为「多入口各自一份内存」的整表写分区，

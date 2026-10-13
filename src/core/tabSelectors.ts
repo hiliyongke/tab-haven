@@ -38,7 +38,7 @@ export function planDuplicateCleanup(
   return { removable, keepIds };
 }
 
-/** 可安全休眠的标签（口径唯一来源）：非激活、未休眠、未被固定空间绑定、可安全休眠。 */
+/** 可安全休眠的标签（口径唯一来源）：后台标签、未休眠、未被固定空间绑定、可安全休眠。 */
 export function selectSleepableTabs(
   tabs: readonly TabRecord[],
   boundTabIds: readonly number[]

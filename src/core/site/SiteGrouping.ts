@@ -80,7 +80,7 @@ export function aggregateBySite(
       continue;
     }
     const { key } = bucket;
-    // 子域非空：组键/标题用「子域.注册域」（cloud.tencent.com），不丢子域信息；
+    // 子域非空：组键/标题用「子域.注册域」（cloud.example.com），不丢子域信息；
     // 空子域（裸域 / 本地 / IP / 托管后缀）：沿用解析器原始键（保留端口）。
     const value = subLabel(key.subdomain, key.registrableDomain);
     const groupKey: SiteKey =

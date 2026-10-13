@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 
 /**
  * 设置页侧栏目录（大纲）。
@@ -59,11 +59,9 @@ export function SettingsOutline({ items }: { items: OutlineItem[] }) {
   };
 
   return (
-    <nav aria-label={t('settings.outline')} className="hidden w-40 shrink-0 lg:block">
+    <nav aria-label={t('目录')} className="hidden w-40 shrink-0 lg:block">
       <div className="sticky top-10">
-        <p className="mb-2 px-2 text-2xs font-semibold tracking-wide text-gray-500">
-          {t('settings.outline')}
-        </p>
+        <p className="mb-2 px-2 text-2xs font-semibold tracking-wide text-gray-500">{t('目录')}</p>
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => {
             const active = item.id === activeId;

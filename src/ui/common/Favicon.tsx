@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { buildFaviconSrc } from '@/platform/favicon';
 
 /**
@@ -22,11 +22,14 @@ export function Favicon({
   cssSized?: boolean;
 }) {
   const fallback = (title || '?').trim().charAt(0).toUpperCase();
-  const [broken, setBroken] = useState(false);
+  /** 记录「哪个 src 加载失败」而非布尔失败态：src 变化即自动脱离失败态。 */
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
   const src = buildFaviconSrc(pageUrl);
-
-  // src 变化时重置失败态，避免复用旧的错误状态。
-  useEffect(() => setBroken(false), [src]);
+  // 派生而非 effect：此前用 `useEffect(() => setBroken(false), [src])` 重置，
+  // 会先渲染一轮旧的失败态再纠正（多一次渲染，且中间帧闪一下首字母方块）。
+  // src 为 null 表示「无可用图标」，与 brokenSrc 初值同形，必须排除，否则无图标
+  // 的条目会被误判成「加载失败」而永远走首字母回退。
+  const broken = src !== null && brokenSrc === src;
 
   const style = cssSized ? undefined : { width: size, height: size };
 
@@ -43,6 +46,6 @@ export function Favicon({
   }
 
   return (
-    <img src={src} alt="" className="shrink-0" style={style} onError={() => setBroken(true)} />
+    <img src={src} alt="" className="shrink-0" style={style} onError={() => setBrokenSrc(src)} />
   );
 }

@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 
@@ -29,13 +29,16 @@ export function RestoreConfirmDialog({
   const groupCount = new Set(snapshot.tabs.map((tab) => tab.groupTitle).filter(Boolean)).size;
   return (
     <ConfirmDialog
-      title={t('snapshots.restore')}
-      message={t('snapshots.restoreConfirm', {
-        name: snapshot.name,
-        count: snapshot.tabCount,
-        groups: groupCount
-      })}
-      confirmLabel={t('snapshots.restore')}
+      title={t('恢复')}
+      message={t(
+        '恢复「{{name}}」将打开 {{count}} 个标签（含 {{groups}} 个标签组）。当前已打开的标签不受影响。',
+        {
+          name: snapshot.name,
+          count: snapshot.tabCount,
+          groups: groupCount
+        }
+      )}
+      confirmLabel={t('恢复')}
       onConfirm={onConfirm}
       onCancel={onCancel}
     />

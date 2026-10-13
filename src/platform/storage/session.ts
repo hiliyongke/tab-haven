@@ -96,7 +96,7 @@ export interface MutateSessionResult {
  * 基于当前会话数据做变换（页内串行 + 跨页互斥）。
  *
  * 并发安全：页内所有 read-modify-write 经模块级串行队列执行；跨页面实例
- * （popup/sidepanel/background 同时存在）由 SESSION_RMW_LOCK 串行化 ——
+ * （sidepanel / background 同时存在）由 SESSION_RMW_LOCK 串行化 ——
  * 整个 read → modify → write 都在锁内完成，后写覆盖先写的问题由此根治。
  */
 export function mutateSession(

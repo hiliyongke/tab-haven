@@ -120,7 +120,7 @@ describe('runAutoDiscard 安全集', () => {
     expect(await autoDiscardRepository.read()).toEqual([]);
   });
 
-  it('休眠超时未访问的非激活标签，并记录可撤销台账', async () => {
+  it('休眠超时未访问的后台标签，并记录可撤销台账', async () => {
     await applySettings({ autoDiscardEnabled: true, autoDiscardMinutes: 30 });
     installTabsApi([
       makeTab({ id: 1, url: 'https://a.com/' }),
@@ -235,7 +235,7 @@ describe('runAutoDiscard 安全集', () => {
 });
 
 describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', () => {
-  it('休眠当前窗口非激活的安全标签并写台账', async () => {
+  it('休眠当前窗口后台标签的安全标签并写台账', async () => {
     await applySettings({ autoDiscardEnabled: true, discardNotifyEnabled: true });
     installTabsApi([
       makeTab({ id: 1, url: 'https://a.com/' }),
@@ -268,6 +268,6 @@ describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', 
 
     await expect(discardInactiveTabs()).resolves.toBeUndefined();
 
-    expect(readDiagnostics().some((e) => e.message.includes('休眠非激活标签执行失败'))).toBe(true);
+    expect(readDiagnostics().some((e) => e.message.includes('休眠后台标签执行失败'))).toBe(true);
   });
 });

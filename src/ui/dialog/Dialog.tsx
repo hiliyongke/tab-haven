@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { Icons } from '@/ui/common/Icon';
 import { IconButton } from '@/ui/common/IconButton';
@@ -70,6 +70,9 @@ function supportsInert(): boolean {
   return typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype;
 }
 
+/** `dataset` 里的哨兵：标记目标元素原本**没有** `aria-hidden` 属性。 */
+const ARIA_HIDDEN_ABSENT = '@absent';
+
 function applyBackgroundInert(inert: boolean): void {
   if (typeof document === 'undefined') return;
   const targets = document.querySelectorAll<HTMLElement>(INERT_TARGET_SELECTOR);
@@ -78,9 +81,26 @@ function applyBackgroundInert(inert: boolean): void {
     if (useInert) {
       el.inert = inert;
     } else if (inert) {
+      // 记下原本的 aria-hidden：解除时若无条件 removeAttribute，会顺手摘掉目标
+      // 元素**自带**的 aria-hidden（某块内容本就对读屏隐藏），弹窗一开一关
+      // 就把它变成可见，而没有任何一处代码"故意"这么做过。
+      // 用 dataset 而不是模块级 Map：元素可能在弹窗期间被替换（路由/重挂载），
+      // 跟着元素走才不会记错对象。
+      if (el.dataset.inertAriaHidden === undefined) {
+        // `'@'` 前缀同时编码「属性是否存在」与「原值」：只存原值的话，
+        // `aria-hidden=""`（无值）与「属性不存在」会存成同一个空串，恢复时
+        // 只能二选一 —— 用哨兵前缀把两者区分开。
+        const raw = el.getAttribute('aria-hidden');
+        el.dataset.inertAriaHidden = raw === null ? ARIA_HIDDEN_ABSENT : `@${raw}`;
+      }
       el.setAttribute('aria-hidden', 'true');
     } else {
-      el.removeAttribute('aria-hidden');
+      const previous = el.dataset.inertAriaHidden;
+      // 没有记录说明这一次不是本函数置上的，不能动它。
+      if (previous === undefined) continue;
+      delete el.dataset.inertAriaHidden;
+      if (previous === ARIA_HIDDEN_ABSENT) el.removeAttribute('aria-hidden');
+      else el.setAttribute('aria-hidden', previous.slice(1));
     }
   }
 }
@@ -233,24 +253,20 @@ export function DialogShell({
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
+        {/* px-4：与内容区（px-4）同线。此前标题栏/底栏 12px、内容区 16px，
+            三段式各自一条竖线：标题比输入框靠外 4px、× 比输入框右边缘多 4px。 */}
+        <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2">
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800">
             {title}
           </h2>
           {/* 可见的关闭入口：此前只有 Esc / 点遮罩两条隐藏路径。
               dismiss 标记让「打开聚焦首项」跳过它（焦点应落在输入框或主按钮上）。 */}
-          <IconButton
-            icon={Icons.close}
-            box="md"
-            title={t('dialog.close')}
-            dismiss
-            onClick={onClose}
-          />
+          <IconButton icon={Icons.close} box="md" title={t('关闭')} dismiss onClick={onClose} />
         </div>
         {/* min-h-0：flex 子项默认 min-height:auto，会顶破父级 max-h 而滚不起来。 */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-3 py-2">
+          <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-4 py-2">
             {footer}
           </div>
         )}
@@ -293,10 +309,10 @@ export function PromptDialog({
       footer={
         <>
           <Button variant="secondary" onClick={onCancel}>
-            {t('dialog.cancel')}
+            {t('取消')}
           </Button>
           <Button disabled={!canSubmit} onClick={submit}>
-            {t('dialog.confirm')}
+            {t('确定')}
           </Button>
         </>
       }
@@ -343,10 +359,10 @@ export function ConfirmDialog({
       footer={
         <>
           <Button variant="secondary" onClick={onCancel}>
-            {t('dialog.cancel')}
+            {t('取消')}
           </Button>
           <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
-            {confirmLabel ?? t('dialog.confirm')}
+            {confirmLabel ?? t('确定')}
           </Button>
         </>
       }

@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { LucideIcon } from 'lucide-react';
 import type { FixedFolder, Snapshot } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
@@ -14,6 +14,7 @@ import { logDegraded } from '@/platform/diagnostics';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { IconButton } from '@/ui/common/IconButton';
 import { Favicon } from '@/ui/common/Favicon';
+import { useScrollFade } from '@/ui/common/useScrollFade';
 import { useModalA11y } from '@/ui/dialog/Dialog';
 
 /** 命令面板的动作回调集合（由 sidepanel App 注入，复用既有 handler）。 */
@@ -51,7 +52,15 @@ interface CommandItem {
   current?: boolean;
   /** 可选说明行：破坏性操作（如重排分组）需要在这里讲清影响面。 */
   hint?: string;
-  run: () => void;
+  /**
+   * 执行命令。
+   *
+   * 返回 `false` 表示「本命令需要留在面板里继续交互」，调用方不得关闭面板：
+   * 快照恢复要先弹影响面确认，而确认框是本面板的子树——面板一卸载，待确认的
+   * 快照与确认框同时消失，入口等于静默失效（既不恢复也不提示）。
+   * 其余命令返回 `undefined`，关闭行为不变。
+   */
+  run: () => void | boolean;
 }
 
 /** 空查询时标签项的挂载上限（含 Favicon 的行有真实渲染成本；输入后过滤路径不受限）。 */
@@ -79,7 +88,8 @@ function PaletteOption({
       // 聚焦（DOM 焦点始终留在 combobox 输入框，靠 aria-activedescendant 漫游）。
       tabIndex={-1}
       className={
-        'flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm outline-none ' +
+        /* transition-colors：↑↓ 漫游时的选中底色此前是硬切，面板里唯一没有过渡的交互元素 */
+        'flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm outline-none transition-colors ' +
         (selected ? 'bg-accent-50 text-accent-700' : 'text-gray-700 hover:bg-gray-50')
       }
       onMouseEnter={onSelect}
@@ -97,12 +107,13 @@ function PaletteOption({
         {/* 字号走 text-3xs：项目纪律「正文说明 ≥ 11px」（text-2xs 仅限图标内文/徽角），
             由 design-tokens 守卫强制。 */}
         {cmd.hint && (
-          <span className="block truncate text-3xs leading-snug text-gray-400">{cmd.hint}</span>
+          <span className="block truncate text-3xs leading-snug text-gray-500">{cmd.hint}</span>
         )}
       </span>
+      {/* py-px + leading-none：徽章高度由显式行高决定，不再随继承行高浮动。 */}
       {cmd.current && (
-        <span className="shrink-0 rounded bg-accent-100 px-1 text-3xs font-medium text-accent-700">
-          {t('palette.current')}
+        <span className="chip chip--cjk shrink-0 rounded bg-accent-100 px-1 py-px text-accent-700">
+          {t('当前')}
         </span>
       )}
     </div>
@@ -133,6 +144,8 @@ export function CommandPalette({
   const panelRef = useRef<HTMLDialogElement>(null);
   /** listbox 的稳定 id：aria-controls / aria-activedescendant 的组合依赖它。 */
   const listId = useId();
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  useScrollFade(listScrollRef);
   // 与弹窗族统一的行为契约：焦点陷阱 + 关闭后焦点恢复。
   // Esc 由 <dialog> 的 cancel 事件接管（原生模态语义），故此处不再重复处理。
   useModalA11y(panelRef, onClose);
@@ -180,7 +193,7 @@ export function CommandPalette({
       ),
     [folders, pinyinSearch]
   );
-  // 拼音词典异步就绪后触发重算（与 popup / useSearchController 同口径）。
+  // 拼音词典异步就绪后触发重算（与 useSearchController 同口径）。
   const [pinyinTick, setPinyinTick] = useState(0);
   useEffect(() => {
     if (engine.pinyinReady && folderEngine.pinyinReady) return;
@@ -212,90 +225,92 @@ export function CommandPalette({
       id: `folder-${folder.id}`,
       label: folder.name,
       icon: Icons.folder,
-      hint: t('palette.openFolderHint', { count: folder.items.length }),
+      hint: t('打开该文件夹的全部 {{count}} 个条目', { count: folder.items.length }),
       run: () => actions.onOpenFolder(folder.id)
     }));
     const base: CommandItem[] = [
       {
         id: 'discard',
-        label: t('discard.allInactive'),
+        label: t('休眠全部后台标签（释放内存）'),
         icon: Icons.snowflake,
         run: actions.onDiscardInactive
       },
       {
         id: 'wake',
-        label: t('discard.wakeAll'),
+        label: t('全部唤醒'),
         icon: Icons.wakeAll,
         // 口径明示：两条唤醒路径覆盖的窗口范围不同（这条只看当前窗口，
         // 自动休眠的「全部唤醒」按台账 tabIds，可能跨窗口）。
-        hint: t('discard.wakeAllHint'),
+        hint: t('只唤醒当前窗口的休眠标签；其他窗口的休眠标签请从自动休眠提示里点「全部唤醒」'),
         run: actions.onWakeAll
       },
       {
         id: 'regroup',
-        label: t('footer.quickRegroup'),
+        label: t('重排临时区分组'),
         icon: Icons.quickRegroup,
-        hint: t('footer.quickRegroupHint'),
+        hint: t(
+          '打散当前分组并按当前聚合方式重排；执行前自动存一份快照可回退（保存失败则取消重排）'
+        ),
         run: actions.onQuickRegroup
       },
       {
         id: 'cleanDuplicates',
-        label: t('duplicates.clean'),
+        label: t('清理重复标签'),
         icon: Icons.copyX,
         run: actions.onCleanDuplicates
       },
       {
         id: 'locate',
-        label: t('tabs.locateActive'),
+        label: t('定位当前标签'),
         icon: Icons.locate,
         run: actions.onLocateActive
       },
       {
         id: 'history',
-        label: t('undo.historyTitle'),
+        label: t('撤销历史'),
         icon: Icons.history,
         run: actions.onOpenHistory
       },
       {
         id: 'snapshots',
-        label: t('snapshots.title'),
+        label: t('快照'),
         icon: Icons.snapshot,
         run: actions.onOpenSnapshots
       },
       {
         id: 'saveSnapshot',
-        label: t('snapshots.saveCurrent'),
+        label: t('保存当前窗口为快照'),
         icon: Icons.snapshot,
         run: actions.onSaveSnapshot
       },
       {
         id: 'saveSpace',
-        label: t('snapshots.saveSpacePalette'),
+        label: t('保存当前窗口为工作区'),
         icon: Icons.layers,
         run: actions.onSaveSpace
       },
       {
         id: 'archive',
-        label: t('snapshots.archiveCurrent'),
+        label: t('归档当前窗口（关闭并保存）'),
         icon: Icons.snapshot,
         run: actions.onArchiveWindow
       },
       {
         id: 'settings',
-        label: t('settings.title'),
+        label: t('设置'),
         icon: Icons.settings,
         run: actions.onOpenSettings
       },
       {
         id: 'about',
-        label: t('about.open'),
+        label: t('查看能力总览'),
         icon: Icons.shield,
-        hint: t('about.entryHint'),
+        hint: t('打开独立页面，完整浏览产品的全部能力与快捷键'),
         run: actions.onOpenAbout
       },
       {
         id: 'toggle',
-        label: t('footer.collapseAll'),
+        label: t('展开 / 收起所有分组'),
         icon: Icons.collapseAll,
         run: actions.onToggleAllSections
       }
@@ -332,8 +347,11 @@ export function CommandPalette({
             id: `undo-${batch.id}`,
             label:
               batch.entries.length > 1
-                ? t('palette.recentClosedMany', { count: batch.entries.length, name: firstName })
-                : t('palette.recentClosedOne', { name: firstName }),
+                ? t('恢复刚关闭的 {{count}} 个标签（{{name}} 等）', {
+                    count: batch.entries.length,
+                    name: firstName
+                  })
+                : t('恢复刚关闭：{{name}}', { name: firstName }),
             icon: Icons.history,
             // undoBatch 自带互斥与成功/失败 toast，无需额外反馈。
             run: () => void useUndoStore.getState().undoBatch(batch.id)
@@ -344,13 +362,18 @@ export function CommandPalette({
           id: `snap-${snap.id}`,
           label: snap.name,
           icon: Icons.snapshot,
-          hint: t('palette.recentSnapshotHint', { count: snap.tabCount }),
+          hint: t('{{count}} 个标签', { count: snap.tabCount }),
           // 不直接恢复：恢复会新建整批标签，必须先弹影响面确认
           // （与快照面板同一闸门），确认由下方弹窗执行。
           // 注：恢复产生的这批标签**已被登记进撤销栈**（见 snapshotStore 的
           // recordRestoreForUndo），可整批撤销回去；这里要拦的是「用户没意识到
           // 会新建 N 个标签」，不是「关不掉」。
-          run: () => setPendingRestore(snap)
+          // 返回 false：确认框挂在本面板内，此处关闭面板会让它连同待确认的
+          // 快照一起消失，恢复入口变成静默无响应。
+          run: () => {
+            setPendingRestore(snap);
+            return false;
+          }
         });
       }
       return {
@@ -413,8 +436,8 @@ export function CommandPalette({
       // 口径一致（`selectedSearchTabId === undefined` 时直接 return）。
       // 否则用户在「什么都没选中」的状态下按回车会莫名关闭面板，只能重新唤起再输入。
       if (!command) return;
-      command.run();
-      onClose();
+      // run 返回 false = 命令需要留在面板内继续交互（如快照恢复要先过确认闸门）。
+      if (command.run() !== false) onClose();
     }
     // Esc 由 useModalA11y 统一处理（capture 阶段），此处不再重复。
   };
@@ -436,8 +459,10 @@ export function CommandPalette({
     >
       <dialog
         ref={panelRef}
-        className="modal-panel elev-3 relative m-0 w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-surface p-0"
-        aria-label={t('palette.title')}
+        /* dialog-md 而非 max-w-md(448px)：后者既不在 .dialog-sm/.dialog-md 两档刻度内，
+         也没有 vw 兜底，300px 侧边栏下会被外层 padding 挤成 268px，与同档弹窗不同宽。 */
+        className="dialog-md modal-panel elev-3 relative m-0 overflow-hidden rounded-xl border border-gray-200 bg-surface p-0"
+        aria-label={t('命令面板')}
         onCancel={(event) => {
           event.preventDefault();
           onClose();
@@ -449,7 +474,8 @@ export function CommandPalette({
           if (event.target === event.currentTarget) onClose();
         }}
       >
-        <div className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
+        {/* px-4：与下方选项（px-4）同线，此前头部 12px / 列表 16px */}
+        <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2">
           <Icon d={Icons.search} className="h-4 w-4 text-gray-500" />
           {/* combobox 四件套：role + aria-expanded + aria-controls + aria-activedescendant。
               此前只有 activedescendant 而缺少 listbox 上下文，读屏会直接忽略该属性，
@@ -458,8 +484,8 @@ export function CommandPalette({
             ref={inputRef}
             type="text"
             className="w-full bg-transparent text-sm text-gray-800 placeholder:text-gray-500"
-            placeholder={t('palette.placeholder')}
-            aria-label={t('palette.placeholder')}
+            placeholder={t('输入命令或搜索标签…')}
+            aria-label={t('输入命令或搜索标签…')}
             role="combobox"
             aria-expanded={commands.length > 0}
             aria-controls={listId}
@@ -473,13 +499,7 @@ export function CommandPalette({
           />
           {/* 可见的关闭入口：命令面板此前也只有 Esc / 点遮罩两条隐藏路径。
               放在输入框之后 —— 「打开聚焦首项」仍落在输入框上。 */}
-          <IconButton
-            icon={Icons.close}
-            box="md"
-            title={t('dialog.close')}
-            dismiss
-            onClick={onClose}
-          />
+          <IconButton icon={Icons.close} box="md" title={t('关闭')} dismiss onClick={onClose} />
         </div>
         {/*
           刻意不使用原生 <select> + <option>：可自定义 select（option 内可放图标）
@@ -491,23 +511,29 @@ export function CommandPalette({
         <div
           id={listId}
           role="listbox"
-          aria-label={t('palette.title')}
-          className="max-h-72 overflow-y-auto py-1"
+          aria-label={t('命令面板')}
+          /* overscroll-contain：本列表是浮层内的独立滚动区，不隔离会带动外层页面
+             scroll-fade：结果被 max-h-72 截断，底部渐隐提示「还有更多」 */
+          ref={listScrollRef}
+          className="scroll-fade max-h-72 overflow-y-auto overscroll-contain py-1"
         >
           {commands.length === 0 && (
             /* 与截断提示同口径：listbox 语义内只允许 option，说明性文本放外面
                （读屏可达，且不混入键盘漫游序列）。 */
             <div
               role="presentation"
-              className="px-4 py-3 text-center text-2xs text-gray-500"
+              className="px-4 py-3 text-center text-3xs text-gray-500"
               aria-live="polite"
             >
-              {t('palette.empty')}
+              {t('没有匹配的命令或标签')}
             </div>
           )}
           {folderItems.length > 0 && (
-            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
-              {t('palette.sectionFolders')}
+            <div
+              role="presentation"
+              className="px-4 pb-1 pt-2 text-3xs font-medium tracking-wide text-gray-500"
+            >
+              {t('打开固定空间文件夹')}
             </div>
           )}
           {folderItems.map((cmd, folderIndex) => (
@@ -518,16 +544,19 @@ export function CommandPalette({
               selected={folderIndex === index}
               onSelect={() => setIndex(folderIndex)}
               onRun={() => {
-                cmd.run();
-                onClose();
+                // 与键盘 Enter 同口径：run 返回 false 时保留面板（快照恢复的确认闸门）。
+                if (cmd.run() !== false) onClose();
               }}
             />
           ))}
           {commandItems.length > 0 && (
             /* 分组标题对读屏隐藏（role=presentation）：listbox 语义内只保留 option，
              分组信息通过命令/标签的 label 本身已可区分。 */
-            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
-              {t('palette.sectionCommands')}
+            <div
+              role="presentation"
+              className="px-4 pb-1 pt-2 text-3xs font-medium tracking-wide text-gray-500"
+            >
+              {t('命令')}
             </div>
           )}
           {commandItems.map((cmd, i) => (
@@ -537,14 +566,17 @@ export function CommandPalette({
               selected={folderItems.length + i === index}
               onSelect={() => setIndex(folderItems.length + i)}
               onRun={() => {
-                cmd.run();
-                onClose();
+                // 与键盘 Enter 同口径：run 返回 false 时保留面板（快照恢复的确认闸门）。
+                if (cmd.run() !== false) onClose();
               }}
             />
           ))}
           {recentItems.length > 0 && (
-            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
-              {t('palette.sectionRecent')}
+            <div
+              role="presentation"
+              className="px-4 pb-1 pt-2 text-3xs font-medium tracking-wide text-gray-500"
+            >
+              {t('最近关闭与快照')}
             </div>
           )}
           {recentItems.map((cmd, i) => (
@@ -555,14 +587,17 @@ export function CommandPalette({
               selected={folderItems.length + commandItems.length + i === index}
               onSelect={() => setIndex(folderItems.length + commandItems.length + i)}
               onRun={() => {
-                cmd.run();
-                onClose();
+                // 与键盘 Enter 同口径：run 返回 false 时保留面板（快照恢复的确认闸门）。
+                if (cmd.run() !== false) onClose();
               }}
             />
           ))}
           {tabItems.length > 0 && (
-            <div role="presentation" className="px-4 pb-1 pt-2 text-2xs font-medium text-gray-400">
-              {t('palette.sectionTabs')}
+            <div
+              role="presentation"
+              className="px-4 pb-1 pt-2 text-3xs font-medium tracking-wide text-gray-500"
+            >
+              {t('切换到标签')}
             </div>
           )}
           {tabItems.map((cmd, groupIndex) => (
@@ -577,8 +612,8 @@ export function CommandPalette({
                 setIndex(folderItems.length + commandItems.length + recentItems.length + groupIndex)
               }
               onRun={() => {
-                cmd.run();
-                onClose();
+                // 与键盘 Enter 同口径：run 返回 false 时保留面板（快照恢复的确认闸门）。
+                if (cmd.run() !== false) onClose();
               }}
             />
           ))}
@@ -586,8 +621,8 @@ export function CommandPalette({
         {tabTruncated && (
           /* 截断提示放在 listbox 外：listbox 语义内只允许 option，提示行若藏进
              listbox 只能 role=presentation，读屏用户无从得知列表被截断。 */
-          <div className="border-t border-gray-100 px-4 py-1.5 text-2xs text-gray-400">
-            {t('palette.tabsTruncated', { count: EMPTY_QUERY_TAB_LIMIT })}
+          <div className="border-t border-gray-100 px-4 py-1.5 text-3xs text-gray-500">
+            {t('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: EMPTY_QUERY_TAB_LIMIT })}
           </div>
         )}
         {/* 快照恢复闸门：与快照面板同一组件（恢复可整批撤销，但仍需前置影响面确认）。
@@ -603,18 +638,21 @@ export function CommandPalette({
                 .restore(snap.id)
                 .then(({ count, degraded }) => {
                   if (count === 0) {
-                    useUndoStore.getState().notify(t('snapshots.empty'));
+                    useUndoStore.getState().notify(t('该快照没有可恢复的标签'));
                     return;
                   }
                   useUndoStore
                     .getState()
                     .notify(
                       degraded
-                        ? t('snapshots.restoredDegraded', { count })
-                        : t('snapshots.restored', { count })
+                        ? t(
+                            '已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面',
+                            { count }
+                          )
+                        : t('已恢复 {{count}} 个标签', { count })
                     );
                 })
-                .catch(() => useUndoStore.getState().notifyError(t('errors.operationFailed')));
+                .catch(() => useUndoStore.getState().notifyError(t('操作失败，请稍后重试')));
               onClose();
             }}
             onCancel={() => setPendingRestore(null)}

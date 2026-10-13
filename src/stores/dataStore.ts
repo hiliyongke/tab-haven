@@ -30,6 +30,9 @@ export const useDataStore = create<DataState>()((set, get) => {
     settings: DEFAULT_SETTINGS,
     boundTabIds: [],
     storageDegraded: false,
+    // null = 本次会话还没拉取过镜像（已 seeded 的设备不拉取，状态行不渲染）
+    mirrorIssue: null,
+    mirrorWriteFailed: false,
     importing: false,
     ready: false,
 

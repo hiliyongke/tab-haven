@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { Icon, Icons } from '@/ui/common/Icon';
 
@@ -31,10 +31,14 @@ export function SpaceStrip({
   const { t } = useTranslation();
   if (spaces.length === 0) return null;
   return (
+    // flex-wrap 而非 overflow-x-auto：侧边栏最窄 300px，横向滚动会让整条面板
+    // 溢出出横向滚动条；chip 换行为代价更小。左右 px-2 让首枚 chip 落在全局 8px 内容竖线。
     <div
-      className="mb-2.5 flex shrink-0 items-center gap-1 overflow-x-auto px-1"
+      /* max-h-16 + 内滚：10 个工作区（含长名）换行后可占 140-160px，会把磁贴区、
+         固定空间与主列表一起挤出首屏。两行封顶，超出在条内滚动。 */
+      className="mb-2 flex max-h-16 shrink-0 flex-wrap items-center gap-1 overflow-y-auto overscroll-contain px-2"
       role="group"
-      aria-label={t('spaces.stripLabel')}
+      aria-label={t('工作区')}
       aria-busy={switching}
     >
       {activeSpaceId !== undefined && (
@@ -42,11 +46,11 @@ export function SpaceStrip({
           type="button"
           aria-pressed={false}
           disabled={switching}
-          title={t('spaces.allTabs')}
+          title={t('全部标签')}
           onClick={onExit}
-          className="shrink-0 rounded-full border border-gray-200 bg-surface px-2.5 py-1 text-3xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          className="chip chip--cjk rounded-full border border-gray-200 bg-surface px-2 py-1 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
         >
-          {t('spaces.allTabs')}
+          {t('全部标签')}
         </button>
       )}
       {spaces.map((space) => {
@@ -60,14 +64,16 @@ export function SpaceStrip({
             title={space.name}
             onClick={() => onSwitch(space)}
             className={
-              'shrink-0 rounded-full border px-2.5 py-1 text-3xs transition-colors disabled:opacity-50 ' +
+              'chip chip--cjk flex max-w-[140px] items-center gap-1 rounded-full border px-2 py-1 transition-colors disabled:opacity-50 ' +
+              /* 激活态此前没有 hover 分支：鼠标悬停在已选工作区上零反馈 */
               (active
-                ? 'border-accent-500 bg-accent-500 font-medium text-on-accent'
+                ? 'border-accent-500 bg-accent-500 text-on-accent hover:bg-accent-600'
                 : 'border-gray-200 bg-surface text-gray-600 hover:bg-gray-50')
             }
           >
-            {space.name}
-            <span className="ml-1 opacity-70">{space.tabCount}</span>
+            {/* 名称截断点：空间名由用户输入，无长度上限，不截断会把整条撑出横向滚动条 */}
+            <span className="truncate">{space.name}</span>
+            <span className="shrink-0 opacity-70">{space.tabCount}</span>
           </button>
         );
       })}
@@ -75,10 +81,10 @@ export function SpaceStrip({
         type="button"
         disabled={switching}
         onClick={onSaveAs}
-        className="flex shrink-0 items-center gap-0.5 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-3xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+        className="chip chip--cjk flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-1 text-gray-500 transition-colors hover:text-gray-700 disabled:opacity-50"
       >
         <Icon d={Icons.plus} className="h-3 w-3" />
-        {t('spaces.saveAs')}
+        {t('存为工作区')}
       </button>
     </div>
   );

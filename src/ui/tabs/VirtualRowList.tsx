@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TabRecord } from '@/core/tab-types';
+import { useScrollFade } from '@/ui/common/useScrollFade';
 
 /** 预渲染的视口外缓冲行数，滚动时避免白屏。 */
 const OVERSCAN = 6;
@@ -47,6 +48,8 @@ export function VirtualRowList({
   renderRow: (tab: TabRecord) => ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 底部渐隐边界提示（三层滚动链最内层，截断处需要「还有更多」的可见信号）
+  useScrollFade(scrollRef);
   /** 当前渲染窗口首行的外层定高 wrapper（行高实测的挂载点）。 */
   const firstRowRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -94,11 +97,16 @@ export function VirtualRowList({
     Math.max(0, total - 1)
   );
   useEffect(() => {
+    // 已校准过就不再测：`start` 每移动一行都会变，跟着它重测等于每次滚动都强制
+    // 一次同步布局（getBoundingClientRect 会打断浏览器的渲染流水线）。
+    // 虚拟列表用的是**统一**行高，一次校准足够；结构变化（密度档位 / 是否显示
+    // 网址副标题）由上面的 effect 把 measuredSize 置回 null 来触发重新校准。
+    if (measuredSize !== null) return;
     const inner = firstRowRef.current?.firstElementChild;
     if (!(inner instanceof HTMLElement)) return;
     const height = Math.round(inner.getBoundingClientRect().height);
     if (height > 0 && Math.abs(height - effectiveItemSize) >= 1) setMeasuredSize(height);
-  }, [start, effectiveItemSize]);
+  }, [start, effectiveItemSize, measuredSize]);
 
   const totalHeight = total * effectiveItemSize;
   const containerHeight = Math.min(totalHeight, maxHeight);
@@ -183,16 +191,25 @@ export function VirtualRowList({
   return (
     <div
       ref={scrollRef}
-      className="virtual-row-scroll"
+      /* scroll-fade：本区是「固定空间 → 主列表 → 虚拟列表」三层滚动链的最内层，
+         被 maxHeight 截断却没有底部边界提示，滚到一半会误判到底。 */
+      className="virtual-row-scroll scroll-fade"
       onScroll={handleScroll}
       style={{ height: containerHeight, overflowY: totalHeight > maxHeight ? 'auto' : 'hidden' }}
     >
       <div style={{ height: totalHeight, position: 'relative' }}>
-        <div style={{ transform: `translateY(${start * effectiveItemSize}px)` }}>
+        {/*
+          role="list"：行由调用方渲染，TabRow 根元素是 <li>，而虚拟化分支外层没有
+          <ul>（非虚拟分支由 sectionCards 提供）——缺了这个角色，渲染出的就是
+          「父非 ul/ol 的孤儿 li」，读屏会丢失「列表 N 项」语义与位置播报。
+          行 wrapper 标为 presentation，让 <li> 直接挂回 list 的语义上下文。
+        */}
+        <div role="list" style={{ transform: `translateY(${start * effectiveItemSize}px)` }}>
           {visible.map((tab, index) => (
             <div
               key={tab.id}
               ref={index === 0 ? firstRowRef : undefined}
+              role="presentation"
               style={{ height: effectiveItemSize }}
             >
               {renderRow(tab)}

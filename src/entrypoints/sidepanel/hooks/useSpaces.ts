@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
 import { useDataStore } from '@/stores/dataStore';
@@ -64,16 +64,16 @@ export function useSpaces(): {
       if (target.id === useDataStore.getState().settings.activeSpaceId) return;
       // 目标空间可能已被删除：先校验，避免「关了标签却恢复 0 条」+ 激活悬空 id。
       if (!useSnapshotStore.getState().snapshots.some((snap) => snap.id === target.id)) {
-        notifyError(t('errors.operationFailed'));
+        notifyError(t('操作失败，请稍后重试'));
         return;
       }
       switchingRef.current = true;
       setSwitching(true);
       void (async () => {
         try {
-          // 现场为空时不写回（保留原空间内容），此时直接中止切换并提示。
+          // 现场为空时不写回（保留原工作区内容），此时直接中止切换并提示。
           if (!(await flushCurrentSpace())) {
-            notify(t('spaces.emptyScene'));
+            notify(t('当前窗口没有可保存的标签，已保留原工作区内容'));
             return;
           }
           const tabs = await queryCurrentWindowTabs();
@@ -88,15 +88,19 @@ export function useSpaces(): {
             );
           }
           // 显式同一窗口：缺省会走 getLastFocused，中途焦点移动会关 A 开 B。
-          const count = await useSnapshotStore.getState().restore(target.id, targetWindowId);
+          const restored = await useSnapshotStore.getState().restore(target.id, targetWindowId);
+          const count = restored.count;
           await useDataStore.getState().tryUpdateSettings({ activeSpaceId: target.id });
           notify(
             closable.length === 0
-              ? t('spaces.switchedNoClose', { name: target.name, count })
-              : t('spaces.switched', { name: target.name, count })
+              ? t('已切换到「{{name}}」，恢复 {{count}} 个标签', { name: target.name, count })
+              : t('已切换到「{{name}}」，恢复 {{count}} 个标签；刚才关闭的可通过撤销找回', {
+                  name: target.name,
+                  count
+                })
           );
         } catch {
-          notifyError(t('errors.operationFailed'));
+          notifyError(t('操作失败，请稍后重试'));
         } finally {
           switchingRef.current = false;
           setSwitching(false);
@@ -114,13 +118,13 @@ export function useSpaces(): {
     void (async () => {
       try {
         if (!(await flushCurrentSpace())) {
-          notify(t('spaces.emptyScene'));
+          notify(t('当前窗口没有可保存的标签，已保留原工作区内容'));
           return;
         }
         await useDataStore.getState().tryUpdateSettings({ activeSpaceId: undefined });
-        notify(t('spaces.exited'));
+        notify(t('已退出工作区，回到全部标签（原工作区已保存）'));
       } catch {
-        notifyError(t('errors.operationFailed'));
+        notifyError(t('操作失败，请稍后重试'));
       } finally {
         switchingRef.current = false;
         setSwitching(false);
@@ -129,9 +133,11 @@ export function useSpaces(): {
   }, [flushCurrentSpace, notify, notifyError, setSwitching, t]);
 
   const saveAsSpace = useCallback(() => {
+    // 不传名字：命名统一由 store 的 fallbackName 决定（此处传 t('工作区') 会把
+    // 保存时的语言写进落盘快照名，换语言后新旧记录名称不一致）。
     void useSnapshotStore
       .getState()
-      .saveSpace(t('snapshots.space'))
+      .saveSpace()
       .then(() => {
         // 激活刚保存的空间（saveSpace 用当前时间戳，列表里最新即它）。
         const latest = useSnapshotStore
@@ -141,9 +147,9 @@ export function useSpaces(): {
         if (latest) {
           void useDataStore.getState().tryUpdateSettings({ activeSpaceId: latest.id });
         }
-        notify(t('snapshots.saved'));
+        notify(t('已保存快照'));
       })
-      .catch(() => notifyError(t('errors.operationFailed')));
+      .catch(() => notifyError(t('操作失败，请稍后重试')));
   }, [notify, notifyError, t]);
 
   return { spaces, activeSpaceId, switching, switchSpace, exitSpace, saveAsSpace };

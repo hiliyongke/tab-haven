@@ -105,10 +105,25 @@ export default defineConfig({
     // 会因此多出几十到一百多毫秒的按需下载（副作用），对扩展 UI 可接受，
     // 换取的代价是消除全部 3 条 preload 警告与潜在的渲染阻塞。
     build: {
+      // 目标锁定 Chrome 114（与 manifest.minimum_chrome_version 同口径）：不做多余的
+      // 语法降级与 polyfill，产物更紧凑，SW 冷启动的解析开销也更低。
+      target: 'chrome114',
+      // 体积报告要逐 chunk 跑一遍 gzip，是构建期纯开销；体积另有 check 阶段把关。
+      reportCompressedSize: false,
+      // 压缩器沿用 Vite 8 默认（Rolldown + oxc），不显式指定：本项目构建链是
+      // Vite 8 / Rolldown，指定 esbuild 会触发已废弃的 transformWithEsbuild 路径并报错。
+      // 默认阈值 500 会让本项目每次构建都刷告警；按实际量级设定，保留真正的异常告警。
+      chunkSizeWarningLimit: 600,
+      // 4KB 以下资源内联：扩展内文件更少，省掉加载往返。
+      assetsInlineLimit: 4096,
+      // 不产出 sourcemap：扩展产物不便于外部取用，且会显著增大上架包。
+      sourcemap: false,
       modulePreload: {
         polyfill: false,
         resolveDependencies: () => []
       }
     }
+    // 注意：不要启用任何 drop-console / 移除 console 的压缩选项 ——
+    // 诊断日志（logDegraded）依赖 console，清掉会让「导出诊断信息」导出空报告。
   })
 });

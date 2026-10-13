@@ -102,4 +102,40 @@ describe('撤销 kind=restore 的批次', () => {
     expect(closeTabs).not.toHaveBeenCalled();
     expect(state.toast?.message).toBeTruthy();
   });
+
+  it('目标窗口读不到时中止：绝不退回当前窗口匹配（否则会关掉同网址的无关标签）', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: false });
+    // 事故原型：此前 `queryWindowTabs` 失败会退回 tabStore 的**当前窗口**标签集，
+    // 再按 URL 匹配关闭 —— 目标窗口是 B、当前是 A 时，关掉的是 A 里与本次恢复
+    // 毫无关系的同网址标签。读不到就应当什么都不关。
+    queryWindowTabs.mockRejectedValue(new Error('window gone'));
+    useUndoStore.setState({ batches: [restoreBatch('restore-3')], ready: true });
+
+    await useUndoStore.getState().undo();
+
+    const state = useUndoStore.getState();
+    expect(closeTabs).not.toHaveBeenCalled();
+    // 批次保留（这次只是读不到窗口，不是撤销对象消失了）
+    expect(state.batches).toHaveLength(1);
+    // 测试环境默认语言为 en，故断言英文译文（断言的是「有明确告知」这件事）。
+    expect(state.toast?.message).toContain('Could not read the target window');
+    expect(state.toast?.tone).toBe('error');
+  });
+
+  it('窗口仍有标签但匹配不上时保留批次：不说「已不在窗口中」', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: false });
+    // 窗口里有标签，只是网址被导航改过 —— 匹配不到 ≠ 标签已被关掉。
+    // 此前沿用关闭批次的口径直接出栈，撤销入口凭空消失还附一句与事实相反的提示。
+    queryWindowTabs.mockResolvedValue([
+      { id: 9, windowId: 1, index: 0, url: 'https://other.example/', title: 'x' } as never
+    ]);
+    useUndoStore.setState({ batches: [restoreBatch('restore-4')], ready: true });
+
+    await useUndoStore.getState().undo();
+
+    const state = useUndoStore.getState();
+    expect(closeTabs).not.toHaveBeenCalled();
+    expect(state.batches).toHaveLength(1);
+    expect(state.toast?.message).toContain('Could not locate the tabs restored this time');
+  });
 });

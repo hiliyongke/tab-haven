@@ -10,7 +10,7 @@
 
 **Short Description**（132 字符内）
 
-> Organize, search, and recover your tabs from a local side panel — grouped by site, saved in collections, always undoable.
+> Organize, search, and recover your tabs from a local side panel — grouped by site, saved in folders, always undoable.
 
 中文（商店本地化文案）：
 
@@ -22,11 +22,11 @@
 >
 > Everything happens on your own computer. There is no account to create, no sign-in, and nothing is uploaded: the extension never contacts a server of its own, and it contains no analytics or tracking of any kind.
 >
-> Group tabs by site automatically, or drag them into your own collections. Pin the pages you always come back to. Search by title, address, or even pinyin initials and jump straight to a tab. Close a batch by accident? Undo it — repeatedly. Save the whole window as a snapshot before you shut down, and restore only what you actually need later. Freeze tabs you are not using to free up memory, then wake them all with one click. Clean up duplicates in one pass, keeping the tab you were actually using.
+> Group tabs by site automatically, or drag them into Fixed space. Pin the pages you always come back to. Search by title, address, or even pinyin initials and jump straight to a tab. Close a batch by accident? Undo it — repeatedly. Save the whole window as a snapshot before you shut down, and restore only what you actually need later. Hibernate tabs you are not using to free up memory, then wake them all with one click. Clean up duplicates in one pass, keeping the tab you were actually using.
 >
 > Open the panel from the toolbar icon, a keyboard shortcut, the right-click menu, or by typing `t` in the address bar. Drag to reorder anything. Everything is keyboard-navigable, and the interface ships in English and Simplified Chinese with light, dark, and system themes.
 >
-> Your data stays in your browser's own local storage. If you turn on the optional cross-device switch, your collections, pins, and settings are mirrored through your own browser account's sync — Tabs never operates that channel and never sees the data. It is off by default, and turning it off deletes the mirror. You can export everything to a JSON file at any time, and uninstalling removes all local data.
+> Your data stays in your browser's own local storage. If you turn on the optional cross-device switch, your folders, always-on tiles, and settings are mirrored through your own browser account's sync — Tabs never operates that channel and never sees the data. It is off by default, and turning it off deletes the mirror. You can export everything to a JSON file at any time, and uninstalling removes all local data.
 >
 > Site icons shown next to tabs come from your browser's own local icon store — Tabs makes no request to the sites you visit.
 >
@@ -42,16 +42,16 @@
 
 ## Graphics & Assets
 
-| Asset                          | Dimensions          | Status         | Filename                              |
-| ------------------------------ | ------------------- | -------------- | ------------------------------------- |
-| Store Icon [REQUIRED]          | 128×128 PNG         | ✅ Ready       | `public/icon/128.png`                 |
-| Screenshot 1 [REQUIRED]        | 1280×800 或 640×400 | ⬜ Not created | 主界面：侧边栏标签列表 + 站点聚合分组 |
-| Screenshot 2 [RECOMMENDED]     | 同上                | ⬜ Not created | 搜索：模糊搜索命中高亮 + 键盘导航     |
-| Screenshot 3 [RECOMMENDED]     | 同上                | ⬜ Not created | 固定空间：文件夹 + 常驻磁贴           |
-| Screenshot 4                   | 同上                | ⬜ Not created | 撤销历史面板：多层撤销 + 最近关闭     |
+| Asset                          | Dimensions          | Status         | Filename                                  |
+| ------------------------------ | ------------------- | -------------- | ----------------------------------------- |
+| Store Icon [REQUIRED]          | 128×128 PNG         | ✅ Ready       | `public/icon/128.png`                     |
+| Screenshot 1 [REQUIRED]        | 1280×800 或 640×400 | ⬜ Not created | 主界面：侧边栏标签列表 + 站点聚合分组     |
+| Screenshot 2 [RECOMMENDED]     | 同上                | ⬜ Not created | 搜索：模糊搜索命中高亮 + 键盘导航         |
+| Screenshot 3 [RECOMMENDED]     | 同上                | ⬜ Not created | 固定空间：文件夹 + 常驻磁贴               |
+| Screenshot 4                   | 同上                | ⬜ Not created | 撤销历史面板：多层撤销 + 最近关闭         |
 | Screenshot 5                   | 同上                | ⬜ Not created | 信任面板：全部权限 + 可选主机权限逐条说明 |
-| Small Promo Tile [RECOMMENDED] | 440×280             | ⬜ Not created |                                       |
-| Marquee Promo Tile             | 1400×560            | ⬜ Not created |                                       |
+| Small Promo Tile [RECOMMENDED] | 440×280             | ⬜ Not created |                                           |
+| Marquee Promo Tile             | 1400×560            | ⬜ Not created |                                           |
 
 ### Screenshot Notes
 
@@ -74,7 +74,7 @@
 | `sessions`              | permissions               | 在撤销历史面板中显示浏览器最近关闭的标签与窗口，供你一键恢复（浏览器自身的会话数据，本扩展不保存）。                                                         |
 | `bookmarks`             | permissions               | 仅在**你主动点击**时使用：把固定文件夹导出为书签，或从书签栏导入为固定文件夹。不会在后台读取书签。                                                           |
 | `notifications`         | permissions               | 执行自动休眠或后台动作后，在本机弹出一次系统通知告知结果（通知内容仅为本机文案）。                                                                           |
-| `favicon`               | permissions               | 读取浏览器自己的本地站点图标库来显示标签旁的站点图标。Tabs 不向你访问的站点发起任何请求（图标不经第三方）。                                                   |
+| `favicon`               | permissions               | 读取浏览器自己的本地站点图标库来显示标签旁的站点图标。Tabs 不向你访问的站点发起任何请求（图标不经第三方）。                                                  |
 | `sidePanel`             | permissions               | 在浏览器侧边栏中展示主界面（这是本扩展的默认形态）。                                                                                                         |
 | `declarativeNetRequest` | permissions               | 供可选的开发者功能「指定站点禁缓存」：按你填写的站点改写该站点响应的缓存头。**不拦截请求、不读取页面内容、不上传任何数据。**                                 |
 | `<all_urls>`            | optional_host_permissions | **默认不授予**。仅当你主动开启「禁缓存」开关时由浏览器弹窗询问，用于让上一条的响应头改写在你指定的站点上生效；拒绝则该功能保持关闭，可随时在扩展详情页收回。 |
@@ -152,23 +152,23 @@
 
 ## 发布前自查（Pre-Publish Checklist）
 
-| 项                                         | 状态            | 说明                                                                                                                                                                                                |
-| ------------------------------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| manifest_version = 3                       | ✅              | WXT 生成                                                                                                                                                                                            |
-| 版本号 > 已发布版本                        | ✅              | 首次提交 1.0.0                                                                                                                                                                                      |
-| name 与本文档一致                          | ✅              | `Tabs`                                                                                                                                                                                              |
-| manifest description ≤ 132 字符            | ✅              | `_locales/*/messages.json` 的 `extDescription`                                                                                                                                                      |
-| ZIP 不含开发文件                           | 🟡 需确认       | `pnpm zip` 走 WXT 打包；**需额外排除 `.codebuddy/`、`.output/` 之外的覆盖率目录**，并确认 `CHROMEWEBSTORE.md` / `README.md` / `docs/` 未进包                                                        |
-| ZIP < 10MB                                 | 🟡 待测         | 构建后确认                                                                                                                                                                                          |
-| 权限最小化 + 逐项理由                      | ✅              | 见上表；`<all_urls>` 为 optional                                                                                                                                                                    |
-| 无未使用权限                               | ✅              | `check:privacy` 双向比对                                                                                                                                                                            |
-| 描述具体、无夸大、无关键词堆砌             | ✅              | 见 Store Listing                                                                                                                                                                                    |
-| 无商标侵权                                 | ✅              | 名称 `Tabs` 为通用词，需注意商店内同名产品，必要时加后缀                                                                                                                                            |
-| 联系邮箱有效                               | ⬜ 待填         |                                                                                                                                                                                                     |
-| 128×128 图标                               | ✅              | `public/icon/128.png`                                                                                                                                                                               |
-| 至少 1 张 1280×800 截图                    | ⬜ **阻塞上架** | 必须先出图                                                                                                                                                                                          |
-| 隐私政策 URL 可访问且与披露一致            | ⬜ **阻塞上架** | 必须先把 `PRIVACY.md` 挂到公开地址                                                                                                                                                                  |
-| `chrome.storage.sync` 已披露               | ✅              | 见 Data Collection 例外 1                                                                                                                                                                           |
-| 无远程代码 / 无混淆                        | ✅              | 全量打包，构建产物不含外链                                                                                                                                                                          |
+| 项                                    | 状态            | 说明                                                                                                                                                                                                                                                   |
+| ------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| manifest_version = 3                  | ✅              | WXT 生成                                                                                                                                                                                                                                               |
+| 版本号 > 已发布版本                   | ✅              | 首次提交 1.0.0                                                                                                                                                                                                                                         |
+| name 与本文档一致                     | ✅              | `Tabs`                                                                                                                                                                                                                                                 |
+| manifest description ≤ 132 字符       | ✅              | `_locales/*/messages.json` 的 `extDescription`                                                                                                                                                                                                         |
+| ZIP 不含开发文件                      | 🟡 需确认       | `pnpm zip` 走 WXT 打包；**需额外排除 `.codebuddy/`、`.output/` 之外的覆盖率目录**，并确认 `CHROMEWEBSTORE.md` / `README.md` / `docs/` 未进包                                                                                                           |
+| ZIP < 10MB                            | 🟡 待测         | 构建后确认                                                                                                                                                                                                                                             |
+| 权限最小化 + 逐项理由                 | ✅              | 见上表；`<all_urls>` 为 optional                                                                                                                                                                                                                       |
+| 无未使用权限                          | ✅              | `check:privacy` 双向比对                                                                                                                                                                                                                               |
+| 描述具体、无夸大、无关键词堆砌        | ✅              | 见 Store Listing                                                                                                                                                                                                                                       |
+| 无商标侵权                            | ✅              | 名称 `Tabs` 为通用词，需注意商店内同名产品，必要时加后缀                                                                                                                                                                                               |
+| 联系邮箱有效                          | ⬜ 待填         |                                                                                                                                                                                                                                                        |
+| 128×128 图标                          | ✅              | `public/icon/128.png`                                                                                                                                                                                                                                  |
+| 至少 1 张 1280×800 截图               | ⬜ **阻塞上架** | 必须先出图                                                                                                                                                                                                                                             |
+| 隐私政策 URL 可访问且与披露一致       | ⬜ **阻塞上架** | 必须先把 `PRIVACY.md` 挂到公开地址                                                                                                                                                                                                                     |
+| `chrome.storage.sync` 已披露          | ✅              | 见 Data Collection 例外 1                                                                                                                                                                                                                              |
+| 无远程代码 / 无混淆                   | ✅              | 全量打包，构建产物不含外链                                                                                                                                                                                                                             |
 | 实机功能验证（面板/设置/右键/快捷键） | 🟡 待测         | 装已解压产物后逐项走查：面板列表 / 搜索 / 命令面板 / 设置页 / 右键菜单 / 地址栏 `t` 命令 / 4 条快捷键；SW 控制台应无 error，`chrome.action.getBadgeText()`（工具栏图标与角标均依赖 manifest 的 `action` 字段）与 `chrome.commands.getAll()` 可直读校验 |
-| 卸载干净                                   | ✅              | 仅本机存储，卸载即清除                                                                                                                                                                              |
+| 卸载干净                              | ✅              | 仅本机存储，卸载即清除                                                                                                                                                                                                                                 |

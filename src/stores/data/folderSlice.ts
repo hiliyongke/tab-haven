@@ -1,5 +1,5 @@
 import { createFolder as createFolderModel, createFolderItem } from '@/core/fixed/FolderOps';
-import type { FixedFolder } from '@/core/schema/models';
+import { FOLDERS_LIMIT, type FixedFolder } from '@/core/schema/models';
 import {
   computeAddTabsToFolder,
   computeMoveFolder,
@@ -39,6 +39,16 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
   return {
     createFolder: async (name) => {
       const folder = createFolderModel(name);
+      // 上限预检：FOLDERS_LIMIT 此前只在**落盘 schema** 生效，超限会被 zod 整批拒绝，
+      // 而内存已经 set 过 —— 表现为「界面显示已创建、重启后凭空消失」，且只有一条
+      // 泛化的存储降级横幅。写之前就拦住，并给出**可操作**的说明。
+      if (ctx.get().folders.length >= FOLDERS_LIMIT) {
+        ctx.reportPersistenceFailure(
+          'dataStore',
+          `固定文件夹数量已达上限 ${FOLDERS_LIMIT} 个，本次未创建（请先删除不再需要的文件夹）`
+        );
+        return folder;
+      }
       await ctx.writeFolders((current) => [...current, folder]);
       return folder;
     },
@@ -352,7 +362,7 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
     reconcileWithTabs: async (tabs) => {
       // 初始化完成前 folders 为初始空值，不是真实状态：若此时执行绑定协调，
       // reconcileBindings 会把磁盘上全部 item↔tab 绑定判定为「条目已不存在」
-      // 并整表写空（sidepanel/popup 每次挂载的首帧都会触发，属确定性数据丢失）。
+      // 并整表写空（侧边栏每次挂载的首帧都会触发，属确定性数据丢失）。
       // ready 后才允许协调；同时保证 ready 切换后至少重跑一次见入口层依赖。
       if (!ctx.get().ready) return;
       // 挂起条目转正

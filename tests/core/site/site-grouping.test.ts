@@ -26,28 +26,28 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
 describe('aggregateBySite', () => {
   it('同子域站点达到默认阈值成组，单标签站点归独立', () => {
     const tabs = [
-      makeTab({ id: 1, index: 0, url: 'https://cloud.tencent.com/a' }),
-      makeTab({ id: 2, index: 1, url: 'https://cloud.tencent.com/b' }),
+      makeTab({ id: 1, index: 0, url: 'https://cloud.example.com/a' }),
+      makeTab({ id: 2, index: 1, url: 'https://cloud.example.com/b' }),
       makeTab({ id: 3, index: 2, url: 'https://example.com/c' })
     ];
     const { groups, singles } = aggregateBySite(tabs);
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.key.value).toBe('cloud.tencent.com');
+    expect(groups[0]?.key.value).toBe('cloud.example.com');
     expect(groups[0]?.tabs).toHaveLength(2);
     expect(singles.map((tab) => tab.id)).toEqual([3]);
   });
 
   it('永远平铺：同注册域不同子域各自成组/归独立，无折叠父组', () => {
-    // 截图场景：woa.com 下 yehe(2) + tapd(1)。旧折叠模式产出 woa.com 父组嵌套
-    // 两个子域亚组；平铺规则下 yehe 独立成组、tapd 单标签归 singles，无 woa.com 父组。
+    // 截图场景：example.com 下 alpha(2) + gamma(1)。旧折叠模式产出 example.com 父组嵌套
+    // 两个子域亚组；平铺规则下 alpha 独立成组、gamma 单标签归 singles，无 example.com 父组。
     const tabs = [
-      makeTab({ id: 1, index: 0, url: 'https://yehe.woa.com/1' }),
-      makeTab({ id: 2, index: 1, url: 'https://yehe.woa.com/2' }),
-      makeTab({ id: 3, index: 2, url: 'https://tapd.woa.com/' })
+      makeTab({ id: 1, index: 0, url: 'https://alpha.example.com/1' }),
+      makeTab({ id: 2, index: 1, url: 'https://alpha.example.com/2' }),
+      makeTab({ id: 3, index: 2, url: 'https://gamma.example.com/' })
     ];
     const { groups, singles } = aggregateBySite(tabs);
-    expect(groups.map((group) => group.key.value)).toEqual(['yehe.woa.com']);
-    expect(groups.find((group) => group.key.value === 'woa.com')).toBeUndefined();
+    expect(groups.map((group) => group.key.value)).toEqual(['alpha.example.com']);
+    expect(groups.find((group) => group.key.value === 'example.com')).toBeUndefined();
     expect(singles.map((tab) => tab.id)).toEqual([3]);
   });
 

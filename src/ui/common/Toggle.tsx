@@ -1,3 +1,5 @@
+import { useControlId } from '@/ui/common/controlId';
+
 /**
  * 开关控件（设置页与后续表单共用）。
  *
@@ -11,20 +13,25 @@ export function Toggle({
   checked,
   onChange,
   ariaLabel,
+  id,
   size = 'md'
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   ariaLabel?: string;
+  /** 供外层 <label for> 关联；不传则取 ControlIdContext（设置页 Row 下发）。 */
+  id?: string;
   /** sm = 32×18（密集表单）；md = 36×20（设置页默认）。 */
   size?: 'sm' | 'md';
 }) {
+  const resolvedId = useControlId(id);
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
+      id={resolvedId}
       onClick={() => onChange(!checked)}
       className={'switch' + (size === 'sm' ? ' switch--sm' : '')}
     >

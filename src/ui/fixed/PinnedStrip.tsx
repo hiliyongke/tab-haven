@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import type { PersistentPin } from '@/core/schema/models';
@@ -43,36 +43,40 @@ export function PinnedStrip() {
   if (pins.length === 0) return null;
 
   const handleMiddleClick = makePinMiddleClickHandler(closeTabs);
-  const unpinTitle = t('fixed.removePin');
+  const unpinTitle = t('从磁贴条移除');
 
   return (
     <SortableContext items={pinIds} strategy={rectSortingStrategy}>
       <section
         ref={setNodeRef}
         className={'pinned-strip' + (isOver ? ' is-drop-target' : '')}
-        aria-label={t('sections.pinned')}
-        data-drop-label={t('fixed.dragToPin')}
+        aria-label={t('常驻磁贴')}
+        data-drop-label={t('拖到磁贴条固定')}
       >
-        {pins.map((pin: PersistentPin) => {
-          const runtime = runtimeIndex.get(pin.identity) ?? CLOSED_PIN_RUNTIME;
-          return (
-            <SortablePinnedTile
-              key={pin.id}
-              id={pin.id}
-              pinId={pin.id}
-              title={pin.title}
-              favIconUrl={pin.favIconUrl}
-              url={pin.url}
-              isActive={runtime.isActive}
-              isAudible={runtime.isAudible}
-              isDiscarded={runtime.isDiscarded}
-              onOpen={() => void openPin(pin)}
-              onMiddleClick={() => handleMiddleClick(pin)}
-              onUnpin={() => void removePin(pin)}
-              unpinTitle={unpinTitle}
-            />
-          );
-        })}
+        {/* .pinned-grid 是横向留白的唯一来源（左右各 8px）：没有这一层，
+            磁贴会贴死在 x=0，与搜索栏图标 / 分区头色条 / 行内 favicon 的 8px 竖线错开。 */}
+        <div className="pinned-grid">
+          {pins.map((pin: PersistentPin) => {
+            const runtime = runtimeIndex.get(pin.identity) ?? CLOSED_PIN_RUNTIME;
+            return (
+              <SortablePinnedTile
+                key={pin.id}
+                id={pin.id}
+                pinId={pin.id}
+                title={pin.title}
+                favIconUrl={pin.favIconUrl}
+                url={pin.url}
+                isActive={runtime.isActive}
+                isAudible={runtime.isAudible}
+                isDiscarded={runtime.isDiscarded}
+                onOpen={() => void openPin(pin)}
+                onMiddleClick={() => handleMiddleClick(pin)}
+                onUnpin={() => void removePin(pin)}
+                unpinTitle={unpinTitle}
+              />
+            );
+          })}
+        </div>
       </section>
     </SortableContext>
   );

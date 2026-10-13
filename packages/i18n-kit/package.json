@@ -1,0 +1,39 @@
+{
+  "name": "i18n-kit",
+  "version": "0.1.0",
+  "description": "写母语原文、自动出哈希 key 词典的 i18n 工具集：扫描源码抽词、编译运行时词条、守卫未登记与未翻译",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.tsx",
+    "./node": "./src/node.ts"
+  },
+  "bin": {
+    "i18n-kit": "./bin/i18n-kit.mjs"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@babel/parser": "^8.0.7"
+  },
+  "peerDependencies": {
+    "i18next": ">=23",
+    "react": ">=18",
+    "react-i18next": ">=15"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-i18next": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

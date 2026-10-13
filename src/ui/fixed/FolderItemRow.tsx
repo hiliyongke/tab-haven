@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useSortable } from '@dnd-kit/sortable';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { canSafelyDiscardTab, type TabRecord } from '@/core/tab-types';
@@ -78,9 +78,7 @@ export const FolderItemRow = memo(function FolderItemRow({
   const handleOpen = useCallback(() => void openSavedItem(item), [openSavedItem, item]);
 
   const titleNode = useMemo(
-    () => (
-      <span className={isOpen ? undefined : 'text-gray-500'}>{item.title || t('tabs.newTab')}</span>
-    ),
+    () => <span className={isOpen ? undefined : 'text-gray-500'}>{item.title || t('无标题')}</span>,
     [isOpen, item.title, t]
   );
 
@@ -99,8 +97,8 @@ export const FolderItemRow = memo(function FolderItemRow({
           <button
             type="button"
             className="row-action"
-            title={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
-            aria-label={runtimeTab.muted ? t('tabs.unmute') : t('tabs.mute')}
+            title={runtimeTab.muted ? t('取消静音') : t('静音')}
+            aria-label={runtimeTab.muted ? t('取消静音') : t('静音')}
             onClick={() => void toggleMute(runtimeTab)}
           >
             <Icon d={runtimeTab.muted ? Icons.volumeOff : Icons.volumeOn} className="h-3.5 w-3.5" />
@@ -113,8 +111,8 @@ export const FolderItemRow = memo(function FolderItemRow({
             <button
               type="button"
               className="row-action"
-              title={t('tabs.discard')}
-              aria-label={t('tabs.discard')}
+              title={t('休眠标签（释放内存）')}
+              aria-label={t('休眠标签（释放内存）')}
               onClick={() => void discardTab(runtimeTab.id)}
             >
               <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
@@ -123,8 +121,8 @@ export const FolderItemRow = memo(function FolderItemRow({
         <button
           type="button"
           className="row-action is-danger"
-          title={t('fixed.itemClose')}
-          aria-label={t('fixed.itemClose')}
+          title={t('移出文件夹（已打开会一并关闭）')}
+          aria-label={t('移出文件夹（已打开会一并关闭）')}
           disabled={importing}
           onClick={() => {
             const allTabs = useTabStore.getState().tabs;
@@ -209,7 +207,7 @@ export const FolderItemRow = memo(function FolderItemRow({
         title={titleNode}
         badges={badges}
         actions={actions}
-        dragGripTitle={t('fixed.reorderItem')}
+        dragGripTitle={t('拖拽调整顺序')}
         container={container}
       />
     </li>

@@ -6,6 +6,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "resolveJsonModule": true,
+    // i18n-kit 的源码由 Node 直接加载（原生 ESM 不做扩展名补全），故相对导入
+    // 一律带 `.ts` 后缀；TS 侧需显式允许这种写法才能跟着检查包内代码。
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"]

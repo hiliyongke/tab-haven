@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
@@ -62,7 +62,7 @@ export function useLocateActive(params: {
 
   return useCallback(() => {
     if (activeTabId === undefined) {
-      notify(i18n.t('toast.activeTabNotFound'));
+      notify(translate('当前没有可定位的标签'));
       return;
     }
     const requestId = ++locateRequestRef.current;

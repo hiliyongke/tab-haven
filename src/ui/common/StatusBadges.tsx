@@ -1,5 +1,5 @@
 import type { TabRecord } from '@/core/tab-types';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
@@ -32,12 +32,28 @@ export function StatusBadges({
     badges.push(
       <span
         key="dup"
-        className="status-badge status-keep rounded bg-warn-100 px-1 text-2xs font-medium text-warn-700"
-        title={t('status.duplicateTitle', { count: duplicateCount })}
+        className="status-badge status-keep chip rounded bg-warn-100 px-1 text-warn-700"
+        title={t('此网址在当前窗口共有 {{count}} 份', { count: duplicateCount })}
       >
         <span aria-hidden="true">{duplicateCount}×</span>
-        <span className="sr-only">{t('status.duplicateTitle', { count: duplicateCount })}</span>
+        <span className="sr-only">
+          {t('此网址在当前窗口共有 {{count}} 份', { count: duplicateCount })}
+        </span>
       </span>
+    );
+  }
+
+  // 决策徽章（重复 n×、休眠雪花）必须排在次要徽章之前：.row-badges 有 38% 宽度上限，
+  // 溢出时裁的是末尾，若雪花的 snowflake 排在第 5 位会第一个被裁掉，
+  // 而它恰恰是「要不要唤醒/去重」的判断依据。
+  if (tab.discarded) {
+    badges.push(
+      <Icon
+        key="frozen"
+        d={Icons.snowflake}
+        className="status-badge status-keep h-3 w-3 text-gray-500"
+        title={t('已休眠（点击唤醒）')}
+      />
     );
   }
 
@@ -46,18 +62,24 @@ export function StatusBadges({
       <span
         key="audible"
         className="media-playing-badge status-badge"
-        title={t('status.audible')}
-        aria-label={t('status.audible')}
+        title={t('正在播放媒体声音')}
+        aria-label={t('正在播放媒体声音')}
       >
         <Icon d={Icons.volumeOn} className="h-3 w-3" />
-        <span>{t('status.playing')}</span>
+        <span>{t('播放中')}</span>
       </span>
     );
   } else if (tab.muted) {
     badges.push(
-      <span key="muted" className="status-badge text-2xs text-gray-500" title={t('status.muted')}>
-        <span aria-hidden="true">{t('status.mutedGlyph')}</span>
-        <span className="sr-only">{t('status.muted')}</span>
+      /* 与同组徽章同构（rounded + bg + px-1 + font-medium）：此前「静」是唯一
+         没有内边距与底色的徽章，并排时高度与水平度量都和邻居不同，像漏渲染。 */
+      <span
+        key="muted"
+        className="status-badge chip chip--cjk rounded bg-gray-100 px-1 text-gray-600"
+        title={t('已静音')}
+      >
+        <span aria-hidden="true">{t('静')}</span>
+        <span className="sr-only">{t('已静音')}</span>
       </span>
     );
   }
@@ -66,11 +88,13 @@ export function StatusBadges({
     badges.push(
       <span
         key="split"
-        className="status-badge rounded bg-accent-500 px-1 text-2xs font-medium text-on-accent"
-        title={t('status.split')}
+        /* 与「伴」同构（浅底深字）：此前「拆」是行内唯一带饱和实底的徽章，
+           比主信息（标签标题）还抢眼；分屏的强调由 data-split-role 的左侧竖线承担。 */
+        className="status-badge chip chip--cjk rounded bg-accent-100 px-1 text-accent-700"
+        title={t('正在分屏显示')}
       >
-        <span aria-hidden="true">{t('status.splitGlyph')}</span>
-        <span className="sr-only">{t('status.split')}</span>
+        <span aria-hidden="true">{t('拆')}</span>
+        <span className="sr-only">{t('正在分屏显示')}</span>
       </span>
     );
   }
@@ -79,23 +103,12 @@ export function StatusBadges({
     badges.push(
       <span
         key="companion"
-        className="status-badge rounded bg-accent-100 px-1 text-2xs font-medium text-accent-700"
-        title={t('status.companion')}
+        className="status-badge chip chip--cjk rounded bg-accent-100 px-1 text-accent-700"
+        title={t('与当前标签同屏分屏')}
       >
-        <span aria-hidden="true">{t('status.companionGlyph')}</span>
-        <span className="sr-only">{t('status.companion')}</span>
+        <span aria-hidden="true">{t('伴')}</span>
+        <span className="sr-only">{t('与当前标签同屏分屏')}</span>
       </span>
-    );
-  }
-
-  if (tab.discarded) {
-    badges.push(
-      <Icon
-        key="frozen"
-        d={Icons.snowflake}
-        className="status-badge status-keep h-3 w-3 text-gray-500"
-        title={t('status.discarded')}
-      />
     );
   }
 
@@ -103,11 +116,11 @@ export function StatusBadges({
     badges.push(
       <span
         key="noCache"
-        className="status-badge rounded bg-warn-100 px-1 text-2xs font-medium text-warn-700"
-        title={t('status.noCacheTitle')}
+        className="status-badge chip chip--cjk rounded bg-warn-100 px-1 text-warn-700"
+        title={t('此站点已设为打开时不使用缓存')}
       >
-        <span aria-hidden="true">{t('status.noCacheGlyph')}</span>
-        <span className="sr-only">{t('status.noCacheTitle')}</span>
+        <span aria-hidden="true">{t('禁')}</span>
+        <span className="sr-only">{t('此站点已设为打开时不使用缓存')}</span>
       </span>
     );
   }

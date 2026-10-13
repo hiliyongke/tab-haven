@@ -5,7 +5,7 @@ import {
   normalizeNoCachePattern
 } from '@/core/nocache/noCachePattern';
 import { COLOR_THEME_IDS } from '@/core/theme/colorThemes';
-import { GROUP_COLOR_NAMES } from '@/core/group/groupColors';
+import { toGroupColor } from '@/core/group/groupColors';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
 
@@ -98,8 +98,12 @@ export type PersistentPin = z.infer<typeof PersistentPinSchema>;
  */
 export const SiteCollapseSchema = z
   .array(z.string().max(HOST_MAX_LENGTH))
-  .max(SITE_COLLAPSE_LIMIT)
-  .transform((hosts) => hosts.map(normalizeHostname).filter((host) => host.length > 0));
+  .transform((hosts) => [
+    ...new Set(hosts.map(normalizeHostname).filter((host) => host.length > 0))
+  ])
+  // 上限与去重都必须在归一化**之后**生效：写在 transform 之前时，`WWW.a.com` 与
+  // `a.com.` 会各占一份额度（归一化后是同一站点），且数组内留重复项放大折叠比对。
+  .pipe(z.array(z.string()).max(SITE_COLLAPSE_LIMIT));
 export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
 
 /**
@@ -146,7 +150,7 @@ export const SettingsSchema = z.object({
   sortMode: z.enum(['browser', 'recency']).default('browser'),
 
   // —— 能力 capabilities ——
-  /** 自动休眠：超过等待时长未访问的非激活标签自动冻结释放内存。 */
+  /** 自动休眠：超过等待时长未访问的后台标签自动休眠释放内存。 */
   autoDiscardEnabled: z.boolean().default(false),
   /** 自动休眠等待时长（分钟），5–240。 */
   autoDiscardMinutes: z.number().int().min(5).max(240).default(30),
@@ -201,9 +205,13 @@ export const SettingsSchema = z.object({
    */
   discardWhitelist: z
     .array(z.string().max(HOST_MAX_LENGTH))
-    .max(DISCARD_WHITELIST_LIMIT)
     .default([])
-    .transform((hosts) => hosts.map(normalizeWhitelistHost).filter((host) => host.length > 0)),
+    .transform((hosts) => [
+      ...new Set(hosts.map(normalizeWhitelistHost).filter((host) => host.length > 0))
+    ])
+    // 上限与去重同样后置于归一化（与 SiteCollapseSchema 同口径）：否则同一站点的
+    // 多种写法各占一份额度，重复项还会放大 `isWhitelisted` 的 O(n) 遍历。
+    .pipe(z.array(z.string()).max(DISCARD_WHITELIST_LIMIT)),
   /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
   searchAllWindows: z.boolean().default(false),
   /** 自动休眠完成时的系统通知（通知面板内始终有「全部唤醒」可撤销）。 */
@@ -269,7 +277,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
  * 派生后 schema 是默认值的唯一来源，`language` 等可选字段也自动保持缺省语义。
  *
  * **约定（新增设置项必须遵守）**：`SettingsSchema` 中每个字段都必须带 `.default()`，
- * 否则 `SettingsSchema.parse({})` 会在模块加载期抛错，使所有入口（popup / sidepanel /
+ * 否则 `SettingsSchema.parse({})` 会在模块加载期抛错，使所有入口（sidepanel / options /
  * background）导入即崩溃。新增字段时务必补 `.default()`，并跑 `models.test.ts` 的
  * 解析断言守住这条约束。
  */
@@ -327,20 +335,27 @@ export const SnapshotTabSchema = z.object({
   /**
    * 快照时所在原生组颜色（Chrome 色名字符串，重建组时还原）。
    *
-   * 收严为浏览器色名枚举：恢复快照时该值会原样传给 `tabGroups.update`，任意
-   * 字符串会被浏览器拒绝（整组还原失败）。运行时来源恒为 Chrome 自身的
-   * `group.color`，收紧不会误伤本机数据；被收紧掉的是构造出来的备份文件。
+   * 非法色名**降级为缺省**而非判坏：该值只用于重建组时的取色，一条
+   * `groupColor: "banana"` 若让整条 SnapshotTab 校验失败，会连带 `snapshots`
+   * 数组失败、整份备份被拒（与 `favIconUrl` / `url` 的「归一化而非判坏」
+   * 同口径——一条畸形装饰数据不该把整份备份判死）。运行时来源恒为 Chrome
+   * 自身的 `group.color`，降级不会误伤本机数据；被降级掉的是构造出来的备份文件。
    */
-  groupColor: z.enum(GROUP_COLOR_NAMES).optional()
+  // 只需末尾一层 `.optional()`：transform 之后的 schema 不再是 optional，键会变成
+  // 必填（值可为 undefined），波及所有构造该对象字面量的调用点。降级逻辑不变。
+  // 内层那层 `.optional()` 是死代码——外层 ZodOptional 遇到 `undefined` 直接短路，
+  // 内层永远走不到，却多包一层 Effects（且让「键缺失」与「显式 undefined」
+  // 的输出签名变得难以推断）。
+  groupColor: z.string().transform(toGroupColor).optional()
 });
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
 
-/** 会话快照（命名快照 + 关窗自动保存），本地优先、零账号。 */
+/** 快照（命名快照 + 关窗自动保存），本地优先、零账号。 */
 export const SnapshotSchema = z
   .object({
     id: z.string(),
     name: z.string(),
-    /** manual 用户手动命名 / auto 关窗自动保存 / archive 归档中心（关闭但留档）/ space 轻量空间（复用快照）。 */
+    /** manual 用户手动命名 / auto 关窗自动保存 / archive 归档（关闭但保存）/ space 工作区（复用快照）。 */
     origin: z.enum(['manual', 'auto', 'archive', 'space']),
     createdAt: z.number(),
     windowId: z.number().optional(),
@@ -361,7 +376,7 @@ export type Snapshot = z.infer<typeof SnapshotSchema>;
  * 「猜字段是否存在」来兼容。带版本号后，导入端只需比对字面量——**相同才收，
  * 不同即拒**，不按版本分发、不做跨版本升格解析。
  *
- * 本产品不做跨版本兼容：备份格式随主版本演进，旧备份交给对应版本的扩展导入，
+ * Tabs不做跨版本兼容：备份格式随主版本演进，旧备份交给对应版本的扩展导入，
  * 而不是让当前版本去猜旧结构。
  */
 export const EXPORT_FILE_VERSION = 1;

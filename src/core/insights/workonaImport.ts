@@ -184,7 +184,13 @@ export function parseWorkona(
 
   const snapshots: Snapshot[] = [];
   let skippedWorkspaces = 0;
-  let totalTabs = 0;
+  /**
+   * 被标签上限截断的标签数。
+   *
+   * 口径与 `totalTabs` **不同源**：这里累加的是「工作区内超出上限而被丢弃」的
+   * 标签（含那些整份被快照数上限截断的工作区），`totalTabs` 只统计最终落盘的
+   * 快照里的标签。两者并列展示时含义是「落盘 N / 丢弃 M」，不是同一分母的分配。
+   */
   let truncatedTabs = 0;
 
   const emit = (workspace: WorkonaWorkspace, origin: Snapshot['origin']): void => {
@@ -205,7 +211,6 @@ export function parseWorkona(
       tabCount: tabs.length,
       tabs
     });
-    totalTabs += tabs.length;
   };
 
   // 顶层键大小写混合：官方导出为大写 Workspaces，三方转换文件可能是小写。
@@ -229,6 +234,9 @@ export function parseWorkona(
   // 在此按同一上限收敛，并把丢弃的份数如实回传（不静默丢量）。
   const kept = snapshots.slice(0, SNAPSHOTS_LIMIT);
   const truncatedSnapshots = snapshots.length - kept.length;
+  // totalTabs 按**实际落盘的份**重算：在 emit 阶段累加会把被截断掉的快照的标签数
+  // 也算进来，UI 报「导入 N 条」大于真实落盘数 —— 正是要消除的「不知少了多少」。
+  const totalTabs = kept.reduce((sum, snapshot) => sum + snapshot.tabs.length, 0);
   return {
     snapshots: kept,
     skippedWorkspaces,

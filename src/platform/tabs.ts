@@ -110,6 +110,20 @@ export async function queryWindowGroups(windowId?: number): Promise<TabGroupReco
   return groups.map(mapTabGroup);
 }
 
+/**
+ * 读取单个标签（锚点定位 / `onReplaced` 后取新标签等场景）。
+ *
+ * 读取失败返回 undefined 而非抛错：这类调用点几乎都是「拿不到就跳过」的
+ * 尽力而为路径（标签可能在查询与读取之间被关闭），让调用方不必各写一份 catch。
+ */
+export async function getTab(tabId: number): Promise<TabRecord | undefined> {
+  try {
+    return mapTab(await browser.tabs.get(tabId));
+  } catch {
+    return undefined;
+  }
+}
+
 export async function activateTab(tabId: number): Promise<void> {
   try {
     await browser.tabs.update(tabId, { active: true });
@@ -236,9 +250,10 @@ export async function updateTabUrl(tabId: number, url: string): Promise<boolean>
  * index 为目标窗口内位置（0 起、连续）；跨固定/未固定边界由 Chrome 处理。
  * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态，不视为错误）。
  */
-export async function moveTab(tabId: number, index: number): Promise<boolean> {
+export async function moveTab(tabId: number, index: number, windowId?: number): Promise<boolean> {
   try {
-    await browser.tabs.move(tabId, { index });
+    // 带 windowId 时是跨窗口移动（新建标签落位到指定窗口），缺省为同窗口内移动。
+    await browser.tabs.move(tabId, windowId === undefined ? { index } : { index, windowId });
     return true;
   } catch (error) {
     logDegraded('tabs', `移动标签 ${tabId} 到索引 ${index} 失败`, error);

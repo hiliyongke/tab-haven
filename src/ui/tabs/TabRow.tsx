@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
@@ -17,6 +17,7 @@ import { RowItem } from '@/ui/common/RowItem';
 import { ContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { StatusBadges } from '@/ui/common/StatusBadges';
 import { useUndoStore } from '@/stores/undoStore';
+import { writeClipboardText } from '@/platform/clipboard';
 import { DragType } from '@/ui/dnd/types';
 
 /**
@@ -160,12 +161,12 @@ export const TabRow = memo(function TabRow({
   const copyTabUrl = useCallback(
     async (target: TabRecord) => {
       const url = target.url ?? '';
-      try {
-        await navigator.clipboard.writeText(url);
-        useUndoStore.getState().notify(t('tabs.urlCopied'));
-      } catch {
+      // 走 platform 唯一出口：ui 不直连浏览器 API（分层红线）。
+      if (await writeClipboardText(url)) {
+        useUndoStore.getState().notify(t('已复制网址'));
+      } else {
         // 失败必须报错：与成功同文案会让用户以为已复制，粘贴时才发现剪贴板没变。
-        useUndoStore.getState().notifyError(t('errors.operationFailed'));
+        useUndoStore.getState().notifyError(t('操作失败，请稍后重试'));
       }
     },
     [t]
@@ -185,19 +186,21 @@ export const TabRow = memo(function TabRow({
 
   const menuItems = useMemo<ContextMenuItem[]>(
     () => [
-      { id: 'copy-url', label: t('tabs.copyUrl'), onSelect: () => void copyTabUrl(tab) },
+      { id: 'copy-url', label: t('复制网址'), onSelect: () => void copyTabUrl(tab) },
       {
         id: 'toggle-pin',
-        label: tab.pinned ? t('tabs.unpin') : t('tabs.pin'),
+        // context: 'action' —— 与分区标题「固定标签」同文但词性不同（动作 vs 名词），
+        // 哈希词典里同文共用一个译文，靠 context 拆出「Pin this tab」而不动中文原文。
+        label: tab.pinned ? t('取消固定') : t('固定标签'),
         onSelect: () => onTogglePin(tab)
       },
       ...(onDiscard && !tab.discarded && !tab.active
-        ? [{ id: 'discard', label: t('tabs.discard'), onSelect: () => onDiscard(tab) }]
+        ? [{ id: 'discard', label: t('休眠标签（释放内存）'), onSelect: () => onDiscard(tab) }]
         : []),
       ...(onDuplicate
-        ? [{ id: 'duplicate', label: t('tabs.duplicate'), onSelect: () => onDuplicate(tab) }]
+        ? [{ id: 'duplicate', label: t('打开副本'), onSelect: () => onDuplicate(tab) }]
         : []),
-      { id: 'close', label: t('tabs.closeTab'), onSelect: () => onClose(tab), danger: true }
+      { id: 'close', label: t('关闭标签'), onSelect: () => onClose(tab), danger: true }
     ],
     [tab, t, onTogglePin, onDiscard, onDuplicate, onClose, copyTabUrl]
   );
@@ -240,8 +243,8 @@ export const TabRow = memo(function TabRow({
           <button
             type="button"
             className="row-action"
-            title={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
-            aria-label={tab.muted ? t('tabs.unmute') : t('tabs.mute')}
+            title={tab.muted ? t('取消静音') : t('静音')}
+            aria-label={tab.muted ? t('取消静音') : t('静音')}
             onClick={() => onToggleMute(tab)}
           >
             <Icon d={tab.muted ? Icons.volumeOff : Icons.volumeOn} className="h-3.5 w-3.5" />
@@ -250,8 +253,8 @@ export const TabRow = memo(function TabRow({
         <button
           type="button"
           className="row-action"
-          title={tab.pinned ? t('tabs.unpin') : t('tabs.pin')}
-          aria-label={tab.pinned ? t('tabs.unpin') : t('tabs.pin')}
+          title={tab.pinned ? t('取消固定') : t('固定标签')}
+          aria-label={tab.pinned ? t('取消固定') : t('固定标签')}
           onClick={() => onTogglePin(tab)}
         >
           <Icon d={Icons.pin} className={'h-3.5 w-3.5' + (tab.pinned ? ' text-accent-500' : '')} />
@@ -260,8 +263,8 @@ export const TabRow = memo(function TabRow({
           <button
             type="button"
             className="row-action"
-            title={t('tabs.duplicate')}
-            aria-label={t('tabs.duplicate')}
+            title={t('打开副本')}
+            aria-label={t('打开副本')}
             onClick={() => onDuplicate(tab)}
           >
             <Icon d={Icons.copy} className="h-3.5 w-3.5" />
@@ -271,8 +274,8 @@ export const TabRow = memo(function TabRow({
           <button
             type="button"
             className="row-action"
-            title={t('tabs.discard')}
-            aria-label={t('tabs.discard')}
+            title={t('休眠标签（释放内存）')}
+            aria-label={t('休眠标签（释放内存）')}
             onClick={() => onDiscard(tab)}
           >
             <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
@@ -281,8 +284,8 @@ export const TabRow = memo(function TabRow({
         <button
           type="button"
           className="row-action is-danger"
-          title={t('tabs.closeTab')}
-          aria-label={t('tabs.closeTab')}
+          title={t('关闭标签')}
+          aria-label={t('关闭标签')}
           onClick={() => onClose(tab)}
         >
           <Icon d={Icons.close} className="h-3.5 w-3.5" />
@@ -301,12 +304,14 @@ export const TabRow = memo(function TabRow({
   );
   const trailing = useMemo(
     () =>
+      /* 不用 <Icon aria-label>：Icon 的 props 只解构 { d, className, title }，
+         aria-label 会被静默丢弃（图标是 aria-hidden）。改为 sr-only 文本承载语义，
+         与 StatusBadges 同款口径。 */
       tab.pinned ? (
-        <Icon
-          d={Icons.pin}
-          className="h-3 w-3 shrink-0 text-accent-500"
-          aria-label={t('tabs.pinned')}
-        />
+        <>
+          <Icon d={Icons.pin} className="h-3 w-3 shrink-0 text-accent-500" />
+          <span className="sr-only">{t('已固定')}</span>
+        </>
       ) : null,
     [tab.pinned, t]
   );
@@ -387,8 +392,8 @@ export const TabRow = memo(function TabRow({
         onClick={handleActivate}
         onAuxClick={handleAuxClick}
         onKeyDown={handleRowKeyDown}
-        buttonTitle={t('tabs.switchTo', { title: tab.title || '' })}
-        title={tab.title || t('tabs.untitled')}
+        buttonTitle={t('切换到：{{title}}', { title: tab.title || '' })}
+        title={tab.title || t('无标题标签')}
         secondary={secondary}
         trailing={trailing}
         badges={badges}

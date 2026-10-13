@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { TFunction } from 'i18next';
-import { useTranslation } from 'react-i18next';
+import type { Translate } from 'i18n-kit';
+import { useTranslation } from '@/i18n';
 import {
   DndContext,
   DragOverlay,
@@ -159,26 +159,26 @@ function dragLabel(data: DragData | undefined): string {
  * 导出理由同 dragCollisionDetection：这些回调藏在 DndContext 内部，
  * 不导出就没有任何回归保护。
  */
-export function buildDragAccessibility(t: TFunction): {
+export function buildDragAccessibility(t: Translate): {
   screenReaderInstructions: ScreenReaderInstructions;
   announcements: Announcements;
 } {
   return {
     screenReaderInstructions: {
-      draggable: t('dnd.instructions')
+      draggable: t('按空格键开始拖拽，用方向键移动，再次按空格键放置，按 Esc 取消')
     },
     announcements: {
       onDragStart: ({ active }) =>
-        t('dnd.grabbed', { title: dragLabel(active.data.current as DragData | undefined) }),
+        t('已抓取 {{title}}', { title: dragLabel(active.data.current as DragData | undefined) }),
       onDragOver: ({ over }) =>
         over
-          ? t('dnd.over', { title: dragLabel(over.data.current as DragData | undefined) })
+          ? t('移动到 {{title}}', { title: dragLabel(over.data.current as DragData | undefined) })
           : undefined,
       onDragEnd: ({ over }) =>
         over
-          ? t('dnd.dropped', { title: dragLabel(over.data.current as DragData | undefined) })
-          : t('dnd.droppedNowhere'),
-      onDragCancel: () => t('dnd.cancelled')
+          ? t('已放置 {{title}}', { title: dragLabel(over.data.current as DragData | undefined) })
+          : t('已放置回原位'),
+      onDragCancel: () => t('已取消拖拽')
     }
   };
 }

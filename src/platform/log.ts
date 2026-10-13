@@ -37,7 +37,7 @@ const buffer: DiagnosticEntry[] = [];
  *   ③ 含用户信息：`https://user:pass@example.com/`（旧正则只替换 `https://` 之后的
  *      整段，看似命中，但裸写 `user:pass@example.com` 时不带协议头就会漏）
  *
- * 诊断日志的定位是「本地排障」，且本产品无遥测、日志只在用户主动导出时离开设备；
+ * 诊断日志的定位是「本地排障」，且Tabs无遥测、日志只在用户主动导出时离开设备；
  * 但导出文件常被用户贴到 issue 里求援 —— 脱漏 URL 等于把浏览记录公开出去。
  * 因此宁可**过度脱敏**（把可疑的主机名一并替换为 <url>），也不漏一条。
  */
@@ -116,6 +116,11 @@ export function logDegraded(
   options?: { quiet?: boolean }
 ): void {
   push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
+  // console 输出只在开发期保留：生产构建里 import.meta.env.DEV 被替换为 false，
+  // 整段由 DCE 移除，产物中不留 console.warn / console.debug。
+  // 诊断记录已在上一行 push() 完成（进内存缓冲 + 投递落盘订阅者），
+  // 因此移除 console 输出**不影响**「导出诊断信息」的完整性。
+  if (!import.meta.env.DEV) return;
   const line = `[Tabs][${scope}] ${message}`;
   if (options?.quiet) console.debug(line, error ?? '');
   else console.warn(line, error ?? '');
@@ -124,6 +129,8 @@ export function logDegraded(
 /** 记录一次真实失败（操作未达成且无法自动恢复）。 */
 export function logFailure(scope: string, message: string, error?: unknown): void {
   push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
+  // 真实失败保留 error 级输出：chrome://extensions 的「错误」面板会收录扩展
+  // 上下文的 error 级 console，这是用户/开发者现场发现故障的最后一条可见路径。
   console.error(`[Tabs][${scope}] ${message}`, error ?? '');
 }
 

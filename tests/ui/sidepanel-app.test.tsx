@@ -10,7 +10,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import App from '@/entrypoints/sidepanel/App';
 
 /**
@@ -80,7 +80,7 @@ describe('侧边栏 App（渲染冒烟）', () => {
     // 搜索入口与新建标签按钮是面板的两个恒定锚点
     // 注意 SearchBar 的 input 是 type="search"，无障碍角色为 searchbox（不是 textbox）
     expect(screen.getByRole('searchbox')).toBeInTheDocument();
-    expect(screen.getByText(i18n.t('tabs.newTab'))).toBeInTheDocument();
+    expect(screen.getByText(translate('新建标签'))).toBeInTheDocument();
   });
 
   it('无标签但已就绪时展示空态（而不是一直停在加载骨架）', async () => {
@@ -94,7 +94,7 @@ describe('侧边栏 App（渲染冒烟）', () => {
     // 在 SectionList 的内部空兜底里也被使用，只看文案无法区分「空态分支生效」与
     // 「退到了 SectionList 的空兜底」—— 后者正是删掉空态分支后的表现，会形成假绿。
     expect(
-      await screen.findByRole('button', { name: i18n.t('empty.openNewTab') })
+      await screen.findByRole('button', { name: translate('打开新标签') })
     ).toBeInTheDocument();
   });
 
@@ -107,7 +107,7 @@ describe('侧边栏 App（渲染冒烟）', () => {
     const { container } = render(<App />);
 
     // 骨架屏不含空态文案，也不含标签行
-    expect(screen.queryByText(i18n.t('empty.title'))).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('这个窗口还没有标签'))).not.toBeInTheDocument();
     expect(container.querySelector('.app')).not.toBeNull();
   });
 
@@ -119,7 +119,9 @@ describe('侧边栏 App（渲染冒烟）', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(i18n.t('errors.storageDegraded'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      translate('最近的改动可能没能保存到本地：请检查浏览器存储空间是否已满，或扩展权限是否被收回')
+    );
   });
 });
 

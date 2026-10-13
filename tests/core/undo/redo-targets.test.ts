@@ -125,3 +125,31 @@ describe('selectRedoTargets', () => {
     expect(targets.map((tab) => tab.id)).toEqual([1, 3]);
   });
 });
+
+describe('撤销「快照恢复」批次时的固定标签（includePinned）', () => {
+  /**
+   * 事故原型：快照恢复会按快照里的 pinned 状态**新建固定标签**，而这批标签
+   * 正是撤销该批次要关掉的对象。沿用默认（redo 用）的固定豁免会让它们永远
+   * 匹配不上：整批都是固定标签时结果为空，撤销入口消失，还会弹出
+   * 「这些标签已不在窗口中」这种与事实相反的提示。
+   */
+  it('Given 恢复出的标签是固定标签 When 撤销 restore 批次 Then 固定标签照常命中', () => {
+    const tabs = [
+      makeTab({ id: 1, url: 'https://a.com/', pinned: true }),
+      makeTab({ id: 2, url: 'https://b.com/', pinned: true })
+    ];
+
+    const targets = selectRedoTargets(tabs, [record('https://a.com/'), record('https://b.com/')], {
+      includePinned: true
+    });
+
+    expect(targets.map((tab) => tab.id)).toEqual([1, 2]);
+  });
+
+  it('Given 同上 When 未显式放行固定（redo 默认）Then 固定标签仍被豁免', () => {
+    // 口径必须保持两套：redo 关的是用户自己固定的页面，不能因为给撤销开了口子就连带放宽。
+    const tabs = [makeTab({ id: 1, url: 'https://a.com/', pinned: true })];
+
+    expect(selectRedoTargets(tabs, [record('https://a.com/')])).toEqual([]);
+  });
+});

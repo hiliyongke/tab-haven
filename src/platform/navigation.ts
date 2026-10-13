@@ -5,7 +5,7 @@ import { logDegraded } from '@/platform/diagnostics';
  * 导航类能力（打开设置页 / 在标签中打开 URL）。
  *
  * 收敛到 platform 的原因：`browser.runtime.openOptionsPage` 与
- * `browser.tabs.create({ url })` 此前散落在 sidepanel / popup / options 三个入口
+ * `browser.tabs.create({ url })` 此前散落在 sidepanel / options 等入口
  * 共 5 处，其中「打开设置页」还被原样复制了两遍。集中后入口层不再触碰 chrome API，
  * 也消除了重复的降级处理。
  */

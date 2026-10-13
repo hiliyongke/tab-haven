@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Snapshot } from '@/core/schema/models';
 import { SpaceStrip } from '@/ui/common/SpaceStrip';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 
 /** 造一份空间快照。 */
 function space(id: string, name: string, tabCount: number, createdAt: number): Snapshot {
@@ -46,7 +46,7 @@ describe('SpaceStrip（C1 工作空间切换条）', () => {
     expect(screen.getByRole('button', { name: /工作/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /学习/ })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: new RegExp(i18n.t('spaces.saveAs')) })
+      screen.getByRole('button', { name: new RegExp(translate('存为工作区')) })
     ).toBeInTheDocument();
   });
 
@@ -55,27 +55,27 @@ describe('SpaceStrip（C1 工作空间切换条）', () => {
 
     expect(screen.getByRole('button', { name: /工作/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /学习/ })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: i18n.t('spaces.allTabs') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: translate('全部标签') })).toBeInTheDocument();
   });
 
   it('未激活空间时不显示「全部标签」出口（本来就在该态）', () => {
     renderStrip({ activeSpaceId: undefined });
 
-    expect(screen.queryByRole('button', { name: i18n.t('spaces.allTabs') })).toBeNull();
+    expect(screen.queryByRole('button', { name: translate('全部标签') })).toBeNull();
   });
 
   it('切换在途时全部入口禁用（防连点重入）', () => {
     renderStrip({ activeSpaceId: 's1', switching: true });
 
     expect(screen.getByRole('button', { name: /学习/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: i18n.t('spaces.allTabs') })).toBeDisabled();
+    expect(screen.getByRole('button', { name: translate('全部标签') })).toBeDisabled();
   });
 
   it('点击「全部标签」触发退出空间', () => {
     const onExit = vi.fn();
     renderStrip({ activeSpaceId: 's1', onExit });
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('spaces.allTabs') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('全部标签') }));
 
     expect(onExit).toHaveBeenCalledTimes(1);
   });
@@ -88,7 +88,7 @@ describe('SpaceStrip（C1 工作空间切换条）', () => {
     fireEvent.click(screen.getByRole('button', { name: /学习/ }));
     expect(onSwitch).toHaveBeenCalledWith(spaces[0]);
 
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(i18n.t('spaces.saveAs')) }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(translate('存为工作区')) }));
     expect(onSaveAs).toHaveBeenCalledTimes(1);
   });
 

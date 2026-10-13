@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDataStore } from '@/stores/dataStore';
@@ -9,6 +9,7 @@ import { PromptDialog } from '@/ui/dialog/Dialog';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { useScrollFade } from '@/ui/common/useScrollFade';
 import { FIXED_AREA_DROPPABLE } from '@/ui/dnd/types';
 import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
 import { FolderRow } from './FolderRow';
@@ -70,32 +71,11 @@ export function FixedArea() {
     return () => window.removeEventListener(CREATE_FOLDER_REQUEST_EVENT, handleCreateRequest);
   }, []);
 
-  /**
-   * 滚动边界提示（R15 / P-1）。
-   *
-   * 固定空间是嵌套滚动区（max-height: min(34vh, 280px)），内容溢出时没有明确的
-   * 底部边界 —— 用户滚到一半会以为到底了，漏看后面的文件夹。这里监听滚动位置，
-   * 到底时给容器加 .is-scrolled-to-end（样式见 main.css .fixed-area）。
-   */
-  useEffect(() => {
-    // 作用域限定在本组件挂载的节点上（经 attachNodeRef 拿到），不是全局查询。
-    const el = scrollRef.current;
-    if (!el) return;
-    const update = () => {
-      const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
-      el.classList.toggle('is-scrolled-to-end', atEnd);
-    };
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    // 内容变化（增删文件夹/条目）会改变 scrollHeight，用 ResizeObserver 兜底。
-    // 该类在 jsdom 下不存在（测试环境）：这是纯增强，缺失时只退化为「滚动时才更新」。
-    const ro = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update);
-    ro?.observe(el);
-    return () => {
-      el.removeEventListener('scroll', update);
-      ro?.disconnect();
-    };
-  }, []);
+  // 滚动边界提示（R15 / P-1）：抽出为 useScrollFade，供其余内滚区复用。
+  // 传 collapsed 作重挂信号：折叠闸门 `{!collapsed && children}` 会**整体替换**
+  // 内容层节点，而 hook 默认只在挂载时跑一次——不重挂的话它观察的还是上一个
+  // 已失效的内容节点，展开/折叠后渐隐状态不再更新。
+  useScrollFade(scrollRef, collapsed);
 
   const handleConfirmDrop = (name: string) => {
     const request = dropRequest;
@@ -107,18 +87,18 @@ export function FixedArea() {
       await addTabsToFolder(targetTabs, folder.id);
       // 新建的文件夹可能落在固定空间的滚动区之外（固定区上限 34vh），
       // 不给反馈的话用户会以为「拖过去没反应」。
-      notify(t('toast.folderCreated'));
-    })().catch(() => notifyError(t('errors.operationFailed')));
+      notify(t('已新建文件夹'));
+    })().catch(() => notifyError(t('操作失败，请稍后重试')));
   };
 
   return (
     <>
       <SortableContext items={folderSortableIds} strategy={verticalListSortingStrategy}>
         <CategoryModule
-          title={t('fixed.areaTitle')}
+          title={t('固定空间')}
           count={folders.length}
-          aria-label={t('fixed.areaLabel')}
-          className="module-shell fixed-area"
+          aria-label={t('固定空间')}
+          className="module-shell fixed-area scroll-fade"
           setNodeRef={attachNodeRef}
           isOver={isOver}
           /* 身份标识不用容器边框（会与密集列表的扁平语言冲突），
@@ -137,28 +117,30 @@ export function FixedArea() {
             <button
               type="button"
               className="row-action"
-              title={t('fixed.newFolder')}
-              aria-label={t('fixed.newFolder')}
+              title={t('新建文件夹')}
+              aria-label={t('新建文件夹')}
               onClick={() => setCreating(true)}
             >
               <Icon d={Icons.plus} className="h-3.5 w-3.5" />
-              <span className="sr-only">{t('fixed.newFolder')}</span>
+              <span className="sr-only">{t('新建文件夹')}</span>
             </button>
           }
         >
           {folders.length === 0 && (
             <>
-              <p className="fixed-area-empty">{t('fixed.emptyHint')}</p>
+              <p className="fixed-area-empty">
+                {t('点击 + 新建文件夹，或直接把标签/分组拖到这里')}
+              </p>
               {!settings.conceptsSeen && (
                 <div className="relative mt-1">
                   <FixedConceptsMap />
                   <button
                     type="button"
-                    className="absolute right-1 top-0.5 shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium text-gray-400 transition-base hover:bg-gray-100 hover:text-gray-600"
+                    className="chip chip--cjk absolute right-1 top-0.5 shrink-0 rounded px-1.5 py-1 text-gray-500 transition-base hover:bg-gray-100 hover:text-gray-600"
                     onClick={() => void tryUpdateSettings({ conceptsSeen: true })}
-                    title={t('fixed.dismissConcepts')}
+                    title={t('不再显示')}
                   >
-                    {t('fixed.dismissConcepts')}
+                    {t('不再显示')}
                   </button>
                 </div>
               )}
@@ -174,15 +156,15 @@ export function FixedArea() {
           （FolderRow / sectionCards 的同型历史坑）。弹窗经 Portal 挂到 body。 */}
       {creating && (
         <PromptDialog
-          title={t('fixed.newFolderPrompt')}
+          title={t('新建文件夹')}
           /* 空输入框 + 聚焦态边框在无 placeholder 时会被误读为「出错了」：
              补上示例文案，同时让「确定」为何禁用（空值）一目了然。 */
-          placeholder={t('fixed.folderNamePlaceholder')}
+          placeholder={t('文件夹名称')}
           onConfirm={(name) => {
             setCreating(false);
             void createFolder(name).then(
-              () => notify(t('toast.folderCreated')),
-              () => notifyError(t('errors.operationFailed'))
+              () => notify(t('已新建文件夹')),
+              () => notifyError(t('操作失败，请稍后重试'))
             );
           }}
           onCancel={() => setCreating(false)}
@@ -190,9 +172,9 @@ export function FixedArea() {
       )}
       {dropRequest && (
         <PromptDialog
-          title={t('fixed.newFolderPrompt')}
+          title={t('新建文件夹')}
           initialValue={dropRequest.name}
-          placeholder={t('fixed.folderNamePlaceholder')}
+          placeholder={t('文件夹名称')}
           onConfirm={handleConfirmDrop}
           onCancel={() => setDropRequest(null)}
         />

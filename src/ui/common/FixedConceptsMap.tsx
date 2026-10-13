@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
@@ -9,13 +9,17 @@ import { Icon, Icons } from '@/ui/common/Icon';
 export function FixedConceptsMap({ className }: { className?: string }) {
   const { t } = useTranslation();
   const items = [
-    { icon: Icons.pin, name: t('fixedMap.tilesName'), how: t('fixedMap.tilesHow') },
-    { icon: Icons.folder, name: t('fixedMap.collName'), how: t('fixedMap.collHow') },
-    { icon: Icons.anchor, name: t('fixedMap.nativeName'), how: t('fixedMap.nativeHow') }
+    { icon: Icons.pin, name: t('常驻磁贴'), how: t('随时切换的常用页；拖到顶部磁贴条，一点直达') },
+    { icon: Icons.folder, name: t('文件夹'), how: t('长期保存的容器；拖入标签或分组，按主题归类') },
+    {
+      icon: Icons.anchor,
+      name: t('浏览器固定标签'),
+      how: t('由浏览器固定，不参与临时区聚合与自动休眠；与其他标签分开显示')
+    }
   ];
   return (
     <div className={className}>
-      <p className="px-1 pb-1.5 text-3xs font-medium text-gray-500">{t('fixedMap.title')}</p>
+      <p className="px-1 pb-1.5 text-3xs font-medium text-gray-500">{t('固定概念一览')}</p>
       <ul className="flex flex-col gap-1.5">
         {items.map((item) => (
           // 刻意不加边框、背景压到 gray-50：这组条目纯展示、无任何点击行为，
@@ -31,7 +35,9 @@ export function FixedConceptsMap({ className }: { className?: string }) {
           </li>
         ))}
       </ul>
-      <p className="px-1 pt-1.5 text-3xs leading-snug text-gray-600">{t('fixedMap.note')}</p>
+      <p className="px-1 pt-1.5 text-3xs leading-snug text-gray-600">
+        {t('原生标签组是浏览器分组，不属于以上任何一种')}
+      </p>
     </div>
   );
 }

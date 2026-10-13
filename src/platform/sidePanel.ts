@@ -8,7 +8,7 @@ import { logDegraded } from '@/platform/diagnostics';
  * 读取当前布局 / 主动打开面板。集中在此后可统一处理「API 不存在」的降级，
  * 入口层不必各写一遍可选链与 try/catch。
  *
- * 注：这是**运行环境能力探测**，不是「本应用旧版本兼容」——本产品尚未发布正式版，
+ * 注：这是**运行环境能力探测**，不是「本应用旧版本兼容」——Tabs尚未发布正式版，
  * 不存在需要兼容的旧安装。
  */
 
@@ -38,5 +38,21 @@ export async function openSidePanelInCurrentWindow(): Promise<void> {
     await browser.sidePanel?.open?.({ windowId: win.id });
   } catch (error) {
     logDegraded('side-panel', '打开侧边栏失败', error);
+  }
+}
+
+/**
+ * 对齐「点击工具栏图标」的行为：true = 打开侧边栏，false = 不弹面板
+ * （由 SW 在 onClicked 里后台整理标签）。
+ *
+ * `setPanelBehavior` 不跨浏览器会话持久，SW 每次唤醒/设置变更都要对齐一次；
+ * 收敛到此处可让入口层不再直接触碰 `browser.sidePanel`，也让该行为可被单测驱动。
+ */
+export async function setActionClickBehavior(openPanelOnActionClick: boolean): Promise<void> {
+  if (!browser.sidePanel?.setPanelBehavior) return;
+  try {
+    await browser.sidePanel.setPanelBehavior({ openPanelOnActionClick });
+  } catch (error) {
+    logDegraded('side-panel', '对齐工具栏点击行为失败', error);
   }
 }

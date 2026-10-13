@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -19,8 +19,8 @@ import { SnapshotRow } from '@/ui/common/SnapshotRow';
 const INSIGHTS_ANCHOR_ID = 'snapshots-insights';
 
 /**
- * 会话快照面板：命名快照、归档中心与 OneTab / Workona 导入。
- * 把当前窗口存为命名快照/空间，归档关闭并留档，从 OneTab / Workona 导入，
+ * 快照面板：命名快照、归档中心与 OneTab / Workona 导入。
+ * 把当前窗口存为命名快照/工作区，归档（关闭并保存），从 OneTab / Workona 导入，
  * 查看本地周报（统计 + 习惯洞察）；恢复走 platform/restoreSnapshot，提示走 undoStore。
  */
 export interface SnapshotsPanelProps {
@@ -33,7 +33,7 @@ export interface SnapshotsPanelProps {
   initialView?: 'list' | 'import' | 'report';
   /** 习惯洞察行动出口（P-05）：由 App 注入既有 handler，面板内不重复实现。 */
   onCleanDuplicates: () => void;
-  /** 一键休眠全部非激活标签（洞察「休眠候选」出口）。 */
+  /** 一键休眠全部后台标签（洞察「休眠候选」出口）。 */
   onDiscardInactive: () => void;
   /** 归档当前窗口（洞察「滞留预警」出口）。 */
   onArchiveWindow: () => void;
@@ -147,7 +147,7 @@ export function SnapshotsPanel({
 
   /**
    * 按生命周期分组展示（概念收敛）：
-   * 命名快照（手动 + 轻量空间）/ 归档 / 关窗自动保存。
+   * 命名快照（手动 + 工作区）/ 归档 / 关窗自动保存。
    *
    * 此前四种 origin 混排在一个列表里，只靠徽标区分——用户无法判断
    * 「这个对象是持续更新的、已经关闭标签的、还是系统自动兜底的」。
@@ -158,20 +158,20 @@ export function SnapshotsPanel({
       [
         {
           key: 'named' as const,
-          title: t('snapshots.groupNamed'),
-          desc: t('snapshots.groupNamedDesc'),
+          title: t('命名快照'),
+          desc: t('手动保存的窗口，长期留存，恢复时重新打开标签（含按主题归类的工作区）'),
           items: ordered.filter((snap) => snap.origin === 'manual' || snap.origin === 'space')
         },
         {
           key: 'archive' as const,
-          title: t('snapshots.groupArchive'),
-          desc: t('snapshots.groupArchiveDesc'),
+          title: t('归档（关闭并保存）'),
+          desc: t('关闭窗口时自动留存，原标签已关闭，可随时完整恢复'),
           items: ordered.filter((snap) => snap.origin === 'archive')
         },
         {
           key: 'auto' as const,
-          title: t('snapshots.groupAuto'),
-          desc: t('snapshots.groupAutoDesc'),
+          title: t('关窗自动保存'),
+          desc: t('窗口意外关闭的兜底快照，系统自动留存'),
           items: ordered.filter((snap) => snap.origin === 'auto')
         }
       ].filter((group) => group.items.length > 0),
@@ -195,9 +195,9 @@ export function SnapshotsPanel({
     try {
       await saveCurrentWindow(name.trim() || undefined);
       setName('');
-      notify(t('snapshots.saved'));
+      notify(t('已保存快照'));
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     } finally {
       saveInFlight.current = false;
       setSaving(false);
@@ -206,10 +206,13 @@ export function SnapshotsPanel({
 
   const handleSaveSpace = async () => {
     try {
-      await saveSpace(t('snapshots.space'));
-      notify(t('snapshots.saved'));
+      // 不传名字：默认名由 store 统一持有（`DEFAULT_SNAPSHOT_NAMES.space`），
+      // 与 useSpaces / App 的保存入口同口径。名字是落盘数据，不按界面语言生成，
+      // 否则换语言后新旧工作区记录会变成两种名字。
+      await saveSpace();
+      notify(t('已保存快照'));
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     }
   };
 
@@ -221,15 +224,17 @@ export function SnapshotsPanel({
         // 「文件拿错了」「文件不是 JSON」「JSON 不是 Workona 导出」三种失败
         // 此前统一表现为「导入 0 条」，用户无从判断下一步该做什么。
         if (result.reason === 'too-large') {
-          notify(t('snapshots.importWorkonaTooLarge'));
+          notify(t('文件太大（超过 1MB），请分成几份分别导入'));
           return;
         }
         if (result.reason === 'invalid-json') {
-          notify(t('snapshots.importWorkonaInvalidJson'));
+          notify(t('这不是合法的 JSON：文件可能被截断或损坏，请重新导出一次'));
           return;
         }
         if (result.reason === 'unrecognized') {
-          notify(t('snapshots.importWorkonaUnrecognized'));
+          notify(
+            t('这段 JSON 不是 Workona 导出：顶层需要有 "Workspaces" 或 "Archived Workspaces" 字段')
+          );
           return;
         }
         if (result.snapshots === 0) {
@@ -237,14 +242,19 @@ export function SnapshotsPanel({
           notify(
             importText.trim()
               ? result.skipped > 0
-                ? t('snapshots.importWorkonaSkipped', { count: result.skipped })
-                : t('snapshots.importUnparsed')
-              : t('snapshots.empty')
+                ? t('识别到 {{count}} 个工作区，但其中没有可打开的网页地址', {
+                    count: result.skipped
+                  })
+                : t('没找到网址：请粘贴 OneTab 导出的文本（每行一个网址），内容不超过 1MB')
+              : t('该快照没有可恢复的标签')
           );
           return;
         }
+        // `tabs` 是**落盘**标签数（parseWorkona 的 totalTabs 按最终保留的份重算），
+        // 与下面「未导入」里的 truncatedTabs 不是一个分母：两句分别是「进了多少」
+        // 和「丢了多少」，不能相加也不能互相折算。
         notify(
-          t('snapshots.importWorkonaDone', {
+          t('已导入 {{snapshots}} 份快照（共 {{tabs}} 个标签）', {
             snapshots: result.snapshots,
             tabs: result.tabs
           })
@@ -252,10 +262,13 @@ export function SnapshotsPanel({
         // 截断必须显式告知：导入成功但静默少了一批标签/快照，是最难自查的一类问题。
         if (result.truncatedTabs > 0 || result.truncatedSnapshots > 0) {
           notify(
-            t('snapshots.importWorkonaTruncated', {
-              tabs: result.truncatedTabs,
-              snapshots: result.truncatedSnapshots
-            })
+            t(
+              '部分内容未导入：{{tabs}} 个标签、{{snapshots}} 份快照（超出存储上限，或不是 http/https 网址）',
+              {
+                tabs: result.truncatedTabs,
+                snapshots: result.truncatedSnapshots
+              }
+            )
           );
         }
         setImportText('');
@@ -268,22 +281,28 @@ export function SnapshotsPanel({
         // 区分「用户没粘贴内容」与「粘贴了但解析不出条目」：后者可能是因为
         // 超 1MB 被直接拒收，或整段都不是 http(s) 网址。笼统提示「快照为空」
         // 会让用户以为导入成功却得到一个空快照，无从排查。
-        notify(importText.trim() ? t('snapshots.importUnparsed') : t('snapshots.empty'));
+        notify(
+          importText.trim()
+            ? t(
+                '没能解析出网址：请确认粘贴的是 OneTab 导出的文本（每行一个 http/https 网址），且内容不超过 1MB'
+              )
+            : t('该快照没有可恢复的标签')
+        );
         return;
       }
-      notify(t('snapshots.imported', { count }));
+      notify(t('已导入 {{count}} 个标签', { count }));
       setImportText('');
       setImportName('');
       setView('list');
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     }
   };
 
   /** 行内「恢复」入口：先弹影响面确认（N 标签 + M 组），确认后才真正恢复。 */
   const requestRestore = (id: string, tabCount: number) => {
     if (tabCount === 0) {
-      notify(t('snapshots.empty'));
+      notify(t('该快照没有可恢复的标签'));
       return;
     }
     setConfirmRestoreId(id);
@@ -291,7 +310,7 @@ export function SnapshotsPanel({
 
   const handleRestore = async (id: string, tabCount: number) => {
     if (tabCount === 0) {
-      notify(t('snapshots.empty'));
+      notify(t('该快照没有可恢复的标签'));
       return;
     }
     // 互斥：恢复期间再点会基于同一窗口现状并发 create，可能把同一批标签开两份
@@ -302,11 +321,13 @@ export function SnapshotsPanel({
     try {
       const { count, degraded } = await restore(id);
       notify(
-        degraded ? t('snapshots.restoredDegraded', { count }) : t('snapshots.restored', { count })
+        degraded
+          ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', { count })
+          : t('已恢复 {{count}} 个标签', { count })
       );
       onClose();
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     } finally {
       restoreInFlight.current = false;
       setRestoringId(null);
@@ -320,14 +341,14 @@ export function SnapshotsPanel({
    */
   const handleRestoreSelected = (id: string, tabCount: number) => {
     if (tabCount === 0) {
-      notify(t('snapshots.restoreSelectedEmpty'));
+      notify(t('请先勾选要恢复的条目'));
       return;
     }
     const snap = snapshots.find((entry) => entry.id === id);
     if (!snap) return;
     const selectedTabs = snap.tabs.filter((tab, index) => selectedKeys.has(`${index}-${tab.url}`));
     if (selectedTabs.length === 0) {
-      notify(t('snapshots.restoreSelectedEmpty'));
+      notify(t('请先勾选要恢复的条目'));
       return;
     }
     setConfirmRestoreSelected(buildPartialSnapshot(snap, selectedTabs));
@@ -342,11 +363,13 @@ export function SnapshotsPanel({
     try {
       const { count, degraded } = await restoreSelected(partial.id, partial.tabs);
       notify(
-        degraded ? t('snapshots.restoredDegraded', { count }) : t('snapshots.restored', { count })
+        degraded
+          ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', { count })
+          : t('已恢复 {{count}} 个标签', { count })
       );
       onClose();
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     } finally {
       restoreInFlight.current = false;
       setRestoringId(null);
@@ -362,7 +385,7 @@ export function SnapshotsPanel({
     try {
       await deleteSnapshot(id);
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     } finally {
       deleteInFlight.current = false;
     }
@@ -376,7 +399,7 @@ export function SnapshotsPanel({
     try {
       if (editingId) await renameSnapshot(editingId, editingName);
     } catch {
-      notifyError(t('errors.operationFailed'));
+      notifyError(t('操作失败，请稍后重试'));
     } finally {
       setEditingId(null);
       setEditingName('');
@@ -418,54 +441,58 @@ export function SnapshotsPanel({
   }, [initialView, view]);
 
   return (
-    <DialogShell title={t('snapshots.title')} onClose={onClose} widthClassName="dialog-md">
+    <DialogShell title={t('快照')} onClose={onClose} widthClassName="dialog-md">
       {view === 'import' ? (
         <div className="flex flex-col gap-2">
-          {/* 源切换：OneTab 文本 / Workona JSON（迁移矩阵入口，互斥单选） */}
+          {/* 源切换：OneTab 文本 / Workona JSON（迁移矩阵入口，互斥单选）。
+              用 role=group + aria-pressed 而非 role=tablist/tab：后者要求配套的
+              tabpanel / aria-controls / 方向键漫游 / roving tabindex，这里只实现了一半，
+              读屏被承诺「选项卡」却按不出对应行为（工作区切换条 SpaceStrip 同口径）。 */}
           <div
-            role="tablist"
-            aria-label={t('snapshots.importSourceLabel')}
+            role="group"
+            aria-label={t('选择导入源')}
             className="flex gap-1 self-start rounded-lg border border-gray-200 bg-gray-50 p-0.5"
           >
             <button
               type="button"
-              role="tab"
-              aria-selected={importSource === 'onetab'}
+              aria-pressed={importSource === 'onetab'}
+              // py-1.5：py-1 + 10px 字仅 23px，低于 24px 命中下限
               className={
-                'rounded px-2 py-1 text-2xs font-medium transition-base ' +
+                'chip chip--cjk rounded px-2 py-1.5 font-medium transition-base ' +
                 (importSource === 'onetab'
                   ? 'bg-surface text-gray-800 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700')
               }
               onClick={() => setImportSource('onetab')}
             >
-              {t('snapshots.importOneTab')}
+              {t('从 OneTab 导入')}
             </button>
             <button
               type="button"
-              role="tab"
-              aria-selected={importSource === 'workona'}
+              aria-pressed={importSource === 'workona'}
               className={
-                'rounded px-2 py-1 text-2xs font-medium transition-base ' +
+                'chip chip--cjk rounded px-2 py-1.5 font-medium transition-base ' +
                 (importSource === 'workona'
                   ? 'bg-surface text-gray-800 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700')
               }
               onClick={() => setImportSource('workona')}
             >
-              {t('snapshots.importWorkona')}
+              {t('从 Workona 导入')}
             </button>
           </div>
-          <p className="text-2xs text-gray-500">
+          <p className="text-3xs text-gray-500">
             {importSource === 'onetab'
-              ? t('snapshots.importOneTabHint')
-              : t('snapshots.importWorkonaHint')}
+              ? t('把 OneTab 导出的文本粘贴到这里，我们会解析其中的网址并保存为一个快照')
+              : t(
+                  '把 Workona 导出的 JSON 全文粘贴到这里：每个工作区会转换成一份快照（含归档工作区），仅导入 http/https 网址'
+                )}
           </p>
           {importSource === 'onetab' && (
             <TextField
               size="sm"
-              placeholder={t('snapshots.namePlaceholder')}
-              ariaLabel={t('snapshots.namePlaceholder')}
+              placeholder={t('为这个快照起个名字（可留空）')}
+              ariaLabel={t('为这个快照起个名字（可留空）')}
               value={importName}
               onChange={setImportName}
             />
@@ -475,10 +502,10 @@ export function SnapshotsPanel({
             className="h-40"
             placeholder={
               importSource === 'onetab'
-                ? t('snapshots.importOneTabPlaceholder')
-                : t('snapshots.importWorkonaPlaceholder')
+                ? t('https://example.com - 网页标题')
+                : t('{ "Workspaces": [ … ] }')
             }
-            ariaLabel={t('snapshots.importTitle')}
+            ariaLabel={t('导入')}
             value={importText}
             onChange={setImportText}
           />
@@ -488,36 +515,36 @@ export function SnapshotsPanel({
               className="rounded px-2 py-1 text-2xs text-gray-500 hover:bg-gray-100"
               onClick={() => setView('list')}
             >
-              {t('dialog.cancel')}
+              {t('取消')}
             </button>
             <button
               type="button"
               className="rounded bg-accent-600 px-2 py-1 text-2xs font-medium text-on-accent hover:bg-accent-700"
               onClick={() => void handleImport()}
             >
-              {t('snapshots.importTitle')}
+              {t('导入')}
             </button>
           </div>
         </div>
       ) : view === 'report' ? (
         <div className="flex flex-col gap-3">
-          <p className="text-2xs text-gray-600">{t('snapshots.reportHint')}</p>
+          <p className="text-3xs text-gray-600">{t('本地聚合，不涉及任何网络或账号')}</p>
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-gray-200 bg-surface px-3 py-2">
               <p className="text-lg font-semibold text-gray-800">{weekSnapCount}</p>
-              <p className="text-2xs text-gray-500">{t('snapshots.reportSnapshots')}</p>
+              <p className="text-3xs text-gray-500">{t('快照 / 工作区')}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-surface px-3 py-2">
               <p className="text-lg font-semibold text-gray-800">{weekArchives}</p>
-              <p className="text-2xs text-gray-500">{t('snapshots.reportArchives')}</p>
+              <p className="text-3xs text-gray-500">{t('归档')}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-surface px-3 py-2">
               <p className="text-lg font-semibold text-gray-800">{weekSpaces}</p>
-              <p className="text-2xs text-gray-500">{t('snapshots.space')}</p>
+              <p className="text-3xs text-gray-500">{t('工作区')}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-surface px-3 py-2">
               <p className="text-lg font-semibold text-gray-800">{weekTabs}</p>
-              <p className="text-2xs text-gray-500">{t('snapshots.reportTabs')}</p>
+              <p className="text-3xs text-gray-500">{t('累计归档标签')}</p>
             </div>
           </div>
           {/* 习惯洞察（P-05）：从当前窗口实时推导行动建议，全部本地计算。
@@ -527,72 +554,77 @@ export function SnapshotsPanel({
             tabIndex={-1}
             className="flex flex-col gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2.5"
           >
-            <p className="text-2xs font-semibold text-accent-700">{t('insights.title')}</p>
-            <p className="text-3xs leading-relaxed text-accent-700/90">{t('insights.subtitle')}</p>
+            <p className="text-2xs font-semibold text-accent-700">{t('习惯洞察')}</p>
+            <p className="text-3xs leading-relaxed text-accent-700/90">
+              {t('全部本地计算，零上报——从当前窗口实时推导的行动建议')}
+            </p>
             {insights.duplicateHotspots.length > 0 && (
               <div className="flex flex-col gap-1">
-                <p className="text-3xs font-medium text-gray-600">
-                  {t('insights.duplicatesTitle')}
-                </p>
+                <p className="text-3xs font-medium text-gray-600">{t('重复重灾区')}</p>
                 {insights.duplicateHotspots.map((hotspot) => (
                   <p key={hotspot.host} className="text-3xs text-gray-600">
                     <span className="font-medium text-gray-800">{hotspot.host}</span>
                     {' · '}
-                    {t('insights.duplicatesEntry', { count: hotspot.count })}
+                    {t('{{count}} 个重复标签', { count: hotspot.count })}
                   </p>
                 ))}
                 <button
                   type="button"
-                  className="self-start rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+                  /* min-h-6：py-0.5 + 11px 字仅约 20.5px，低于 24px 命中下限 */
+                  className="chip chip--cjk min-h-6 self-start rounded px-2 py-1 font-medium text-accent-700 transition-base hover:bg-accent-100"
                   onClick={onCleanDuplicates}
                 >
-                  {t('insights.actionClean')}
+                  {t('清理重复标签')}
                 </button>
               </div>
             )}
             {insights.discardableCount > 0 && (
               <div className="flex flex-col gap-1">
-                <p className="text-3xs font-medium text-gray-600">
-                  {t('insights.discardableTitle')}
-                </p>
+                <p className="text-3xs font-medium text-gray-600">{t('休眠候选')}</p>
                 <p className="text-3xs text-gray-600">
-                  {t('insights.discardableEntry', {
+                  {t('{{count}} 个标签可安全休眠（已休眠 {{discarded}} 个）', {
                     count: insights.discardableCount,
                     discarded: insights.discardedCount
                   })}
                 </p>
                 <button
                   type="button"
-                  className="self-start rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+                  /* min-h-6：py-0.5 + 11px 字仅约 20.5px，低于 24px 命中下限 */
+                  className="chip chip--cjk min-h-6 self-start rounded px-2 py-1 font-medium text-accent-700 transition-base hover:bg-accent-100"
                   onClick={onDiscardInactive}
                 >
-                  {t('insights.actionDiscard')}
+                  {t('一键休眠')}
                 </button>
               </div>
             )}
             {insights.staleTabs.length > 0 && (
               <div className="flex flex-col gap-1">
-                <p className="text-3xs font-medium text-gray-600">{t('insights.staleTitle')}</p>
+                <p className="text-3xs font-medium text-gray-600">
+                  {t('滞留预警（超过 7 天未激活）')}
+                </p>
                 {insights.staleTabs.map((stale) => (
                   <p key={stale.id} className="text-3xs text-gray-600">
                     <span className="font-medium text-gray-800">{stale.label}</span>
                     {' · '}
-                    {t('insights.staleEntry', { days: stale.days })}
+                    {t('已滞留 {{days}} 天', { days: stale.days })}
                   </p>
                 ))}
                 <button
                   type="button"
-                  className="self-start rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+                  /* min-h-6：py-0.5 + 11px 字仅约 20.5px，低于 24px 命中下限 */
+                  className="chip chip--cjk min-h-6 self-start rounded px-2 py-1 font-medium text-accent-700 transition-base hover:bg-accent-100"
                   onClick={onArchiveWindow}
                 >
-                  {t('insights.actionArchive')}
+                  {t('归档当前窗口')}
                 </button>
               </div>
             )}
             {insights.duplicateHotspots.length === 0 &&
               insights.discardableCount === 0 &&
               insights.staleTabs.length === 0 && (
-                <p className="text-3xs text-gray-600">{t('insights.empty')}</p>
+                <p className="text-3xs text-gray-600">
+                  {t('窗口状态很健康：没有重复、无需休眠、也没有滞留标签')}
+                </p>
               )}
           </div>
           <button
@@ -600,7 +632,7 @@ export function SnapshotsPanel({
             className="self-start rounded px-2 py-1 text-2xs text-gray-500 hover:bg-gray-100"
             onClick={() => setView('list')}
           >
-            {t('dialog.cancel')}
+            {t('取消')}
           </button>
         </div>
       ) : (
@@ -610,19 +642,22 @@ export function SnapshotsPanel({
               <button
                 type="button"
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-accent-300 bg-accent-50 px-3 py-2 text-sm font-medium text-accent-700 transition-base hover:bg-accent-100"
+                title={t('把当前窗口的标签存为一份快照，随时可整体恢复；不会出现在顶部切换条')}
                 onClick={() => setSaving(true)}
               >
                 <Icon d={Icons.snapshot} className="h-4 w-4" />
-                {t('snapshots.saveCurrent')}
+                {t('保存当前窗口为快照')}
               </button>
               <button
                 type="button"
-                title={t('snapshots.saveSpaceHint')}
+                title={t(
+                  '把当前窗口存为一份「工作区」快照，可在顶部切换条一键切换；切走前会先保存当前窗口。每次保存都新增一条，不覆盖旧版'
+                )}
                 className="flex items-center justify-center gap-2 rounded-lg border border-control bg-surface px-3 py-2 text-sm font-medium text-gray-600 transition-base hover:bg-gray-50"
                 onClick={() => void handleSaveSpace()}
               >
                 <Icon d={Icons.layers} className="h-4 w-4" />
-                {t('snapshots.saveSpaceAction')}
+                {t('保存为工作区')}
                 {/* 感叹号提醒：该按钮语义不直观（每次保存都新增一条，不覆盖），悬停看完整说明 */}
                 <Icon d={Icons.infoAlert} className="h-3.5 w-3.5 text-gray-400" />
               </button>
@@ -633,8 +668,8 @@ export function SnapshotsPanel({
               <input
                 type="text"
                 className="min-w-0 flex-1 bg-transparent text-sm text-gray-800 "
-                placeholder={t('snapshots.namePlaceholder')}
-                aria-label={t('snapshots.namePlaceholder')}
+                placeholder={t('为这个快照起个名字（可留空）')}
+                aria-label={t('为这个快照起个名字（可留空）')}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
@@ -650,7 +685,7 @@ export function SnapshotsPanel({
                 className="rounded bg-accent-600 px-2 py-1 text-2xs font-medium text-on-accent hover:bg-accent-700"
                 onClick={() => void handleSave()}
               >
-                {t('snapshots.save')}
+                {t('保存')}
               </button>
               <button
                 type="button"
@@ -660,26 +695,30 @@ export function SnapshotsPanel({
                   setName('');
                 }}
               >
-                {t('dialog.cancel')}
+                {t('取消')}
               </button>
             </div>
           )}
 
-          <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto pr-1">
+          {/* 不再自套 max-h + overflow：DialogShell 的内容区已是 flex-1 overflow-y-auto、
+              外壳 max-h-[85vh]，再嵌一层会出现两条滚动条且高度互相打架
+              （UndoHistoryPanel 已按此约定实现）。pr-1 也去掉 —— 内容区 px-4 之外
+              再多 4px 会让列表右边缘比标题栏 × 少 4px。 */}
+          <div className="flex flex-col gap-2">
             {ordered.length === 0 ? (
               /* 复用通用空态：与面板其余空态同款（图标 + 说明），此前这里手写
                  一行居中文本，三处空态三种观感。 */
               <EmptyState
                 icon={<Icon d={Icons.snapshot} className="h-4 w-4" />}
-                title={t('snapshots.emptyHint')}
+                title={t('还没有快照。误关窗口后会自动保存，也可以随时手动保存当前窗口。')}
               />
             ) : (
               groups.map((group) => (
                 <div key={group.key}>
-                  <h3 className="mb-1 flex items-baseline gap-1 text-2xs font-medium text-gray-500">
+                  <h3 className="mb-1 flex items-baseline gap-1 text-3xs font-medium tracking-wide text-gray-500">
                     {group.title}
-                    <span className="text-gray-400">
-                      {t('snapshots.groupCount', { count: group.items.length })}
+                    <span className="text-gray-500">
+                      {t('{{count}} 份', { count: group.items.length })}
                     </span>
                   </h3>
                   {group.desc && (
@@ -722,24 +761,24 @@ export function SnapshotsPanel({
               className="flex-1 rounded px-2 py-1 text-2xs text-gray-500 hover:bg-gray-100"
               onClick={() => setView('import')}
             >
-              {t('snapshots.importOneTab')}
+              {t('从 OneTab 导入')}
             </button>
             <button
               type="button"
               className="flex-1 rounded px-2 py-1 text-2xs text-gray-500 hover:bg-gray-100"
               onClick={() => setView('report')}
             >
-              {t('snapshots.reportTitle')}
+              {t('本周周报')}
             </button>
           </div>
         </div>
       )}
       {confirmDeleteId !== null && (
         <ConfirmDialog
-          title={t('dialog.confirmTitle')}
-          message={t('snapshots.deleteConfirm')}
+          title={t('确认操作')}
+          message={t('删除这份快照？删除后无法恢复')}
           danger
-          confirmLabel={t('fixed.confirmDelete')}
+          confirmLabel={t('确认删除')}
           onConfirm={() => void performDelete(confirmDeleteId)}
           onCancel={() => setConfirmDeleteId(null)}
         />

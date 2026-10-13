@@ -54,9 +54,12 @@ stores / ui / entrypoints
 新增权限必须**同时**改 `wxt.config.ts` 与 `PRIVACY.md`，否则 `check:privacy` 失败。
 `<all_urls>` 等主机权限同样在冻结清单内。
 
-### 4. 文案双写
+### 4. 文案只写中文，词条由工具链生成
 
-新增 UI 文案必须同时补 `zh-CN` 与 `en` 两份 locale，键集合必须一致，否则 `check:i18n` 失败。
+代码里只写中文原文（`t('编辑标签组')`），**不要手改** `src/i18n/locales/`（那是
+`pnpm i18n` 的编译产物）。写完跑 `pnpm i18n`：扫描器抽出原文进 `i18n/source/zh-CN.json`，
+缺译进 `i18n/untranslated/en.json`，译文填回 `i18n/translation/en.json` 后再次运行即编译进运行时。
+`check:i18n` 会拦「未登记原文」（英文模式露中文）与「未翻译」。详见 README「文案（i18n）体系」。
 
 ### 5. 持久化数据变更要同步 schema 与隐私说明
 

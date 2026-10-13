@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
@@ -39,6 +39,7 @@ function SectionListImpl({
   highlightedIds,
   searchActiveTabId,
   noCacheTabIds,
+  groupMode = 'site',
   callbacks
 }: {
   sections: readonly TemporarySection[];
@@ -57,6 +58,8 @@ function SectionListImpl({
   highlightedIds?: ReadonlySet<number>;
   searchActiveTabId?: number;
   noCacheTabIds?: ReadonlySet<number>;
+  /** 临时区聚合方式：分区标题必须与实际聚合维度一致（按域名时叫「站点分组」）。 */
+  groupMode?: 'site' | 'opener' | 'language';
   callbacks: SectionCallbacks;
 }) {
   const { t } = useTranslation();
@@ -64,6 +67,13 @@ function SectionListImpl({
     () => (collapsedSites instanceof Set ? collapsedSites : new Set(collapsedSites)),
     [collapsedSites]
   );
+  // 分区标题随聚合方式变化：按语言聚合时里面是语言组，写死「域名分组」会名不符实。
+  const groupsTitle =
+    groupMode === 'language'
+      ? t('语言分组')
+      : groupMode === 'opener'
+        ? t('来源树分组')
+        : t('站点分组');
 
   // 定位事件处理器读取的是「触发那一刻」的最新值，但这些值（sections 等）
   // 每次过滤都会变。若直接进依赖数组，每次搜索输入都会解绑/重绑 window 监听。
@@ -136,19 +146,21 @@ function SectionListImpl({
 
   return (
     <SortableContext items={sortableSectionKeys} strategy={verticalListSortingStrategy}>
-      {/* data-density 下发给分组标题等非行内文字：大字号档位需要同步放大导航级文字 */}
-      <div className="flex flex-col gap-1" data-density={density}>
+      {/* 间距统一交给 .section-card / .module-shell 的 margin+border+padding：
+          此处再叠一层 gap-1 会让「模块外壳 → 首个分区」变成 4+1=5px，
+          而模块内部相邻分区是 4px —— 同一列两种间距。 */}
+      <div className="flex flex-col" data-density={density}>
         {sections.length === 0 ? (
           <EmptyState
             icon={<Icon d={Icons.search} className="h-6 w-6" />}
-            title={t('empty.title')}
-            hint={t('empty.hint')}
+            title={t('这个窗口还没有标签')}
+            hint={t('新建标签会自动显示在这里；把常用页拖到顶部常驻磁贴，随时一键直达。')}
           />
         ) : (
           <>
             {nativeSiteSections.length > 0 && (
               <CategoryModule
-                title={t('groups.label')}
+                title={groupsTitle}
                 count={nativeSiteSections.length}
                 className="module-shell groups-module"
               >

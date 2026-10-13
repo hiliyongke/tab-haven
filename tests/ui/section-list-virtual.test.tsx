@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
 import { SectionList } from '@/ui/tabs/SectionList';
@@ -147,7 +147,7 @@ describe('SectionList 分区整批关闭（同一域名）', () => {
     const native: TemporarySection = {
       kind: 'native',
       key: 'group-5',
-      title: 'buy.cloud.tencent.com',
+      title: 'buy.cloud.example.com',
       tabs: tabsOf(2),
       groupId: 5,
       collapsed: false
@@ -190,15 +190,22 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
       expect(mountedRows(view).length).toBeGreaterThan(0);
       expect(mountedRows(view).length).toBeLessThan(40);
     });
-    expect(view.container.textContent).toContain(i18n.t('tabs.largeListNotice'));
+    expect(view.container.textContent).toContain(
+      translate('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）')
+    );
   });
 
-  it('100 标签且排序开启：不进入虚拟化（全量挂载，拖拽排序不受影响）', async () => {
-    // 排序开启时的强制阈值是 120（高于排序关闭时的 60）：排序是默认开启的高频
+  it('70 标签且排序开启：不进入虚拟化（全量挂载，拖拽排序不受影响）', async () => {
+    // 排序开启时的强制阈值是 80（高于排序关闭时的 60）：排序是默认开启的高频
     // 能力，过早虚拟化会大面积剥夺它，因此让排序优先，直到行数大到必须让步。
-    const view = renderSectionList(100, true);
-    await waitFor(() => expect(mountedRows(view)).toHaveLength(100));
-    expect(view.container.textContent).not.toContain(i18n.t('tabs.largeListNotice'));
+    // 阈值由 120 下调到 80：侧边栏可用高度有限，120 行意味着首屏外还有约 90 行
+    // 真实 DOM 参与每次重排/搜索重算，是折叠展开卡顿的来源。代价是 80–120 行的
+    // 分区失去拖拽排序（由本组相邻的 150 标签用例锚定降级侧行为）。
+    const view = renderSectionList(70, true);
+    await waitFor(() => expect(mountedRows(view)).toHaveLength(70));
+    expect(view.container.textContent).not.toContain(
+      translate('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）')
+    );
   });
 
   it('150 标签且排序开启：越过强制阈值，虚拟化并提示排序已暂停', async () => {
@@ -207,7 +214,9 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
       expect(mountedRows(view).length).toBeGreaterThan(0);
       expect(mountedRows(view).length).toBeLessThan(40);
     });
-    expect(view.container.textContent).toContain(i18n.t('tabs.largeListNotice'));
+    expect(view.container.textContent).toContain(
+      translate('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）')
+    );
   });
 
   it('排序关闭 + 超过 60 标签：虚拟化但不显示排序暂停提示（用户自己的选择）', async () => {
@@ -216,7 +225,9 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
       expect(mountedRows(view).length).toBeGreaterThan(0);
       expect(mountedRows(view).length).toBeLessThan(40);
     });
-    expect(view.container.textContent).not.toContain(i18n.t('tabs.largeListNotice'));
+    expect(view.container.textContent).not.toContain(
+      translate('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）')
+    );
   });
 
   it('定位事件让虚拟列表滚到目标行：深处的目标行挂载进 DOM（⌘J 关键路径）', async () => {

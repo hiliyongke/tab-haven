@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
@@ -28,7 +27,7 @@ import {
 import { logFailure } from '@/platform/diagnostics';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
-import i18n from '@/i18n';
+import { translate, useTranslation } from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -55,6 +54,7 @@ import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
 import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
 import { useSpaces } from '@/entrypoints/sidepanel/hooks/useSpaces';
+import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { useOtherWindows } from '@/ui/tabs/useOtherWindows';
 import { OtherWindowsSection } from '@/ui/tabs/OtherWindowsSection';
 import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
@@ -118,16 +118,23 @@ export default function App() {
    * 批量操作（休眠全部 / 唤醒全部 / 清理重复）的在途互斥。
    *
    * 这些入口此前没有并发守卫：连点会并发执行同一批操作（重复 IPC、叠加多条
-   * toast）。用 ref 而非 state：操作在百毫秒级完成，无需按钮态反馈。
+   * toast）。
+   *
+   * 用 state 而非 ref：ref 不触发重渲染，在途期间按钮既不禁用也没有进行中态，
+   * 而「唤醒全部」是 reloadTabs(N 个标签)、耗时远超注释里假设的百毫秒级 ——
+   * 用户连点第二下完全静默，表现为「点了没反应」。在途必须可感知。
    */
-  const batchBusyRef = useRef(false);
-  const runBatch = useCallback((action: () => void | Promise<void>) => {
-    if (batchBusyRef.current) return;
-    batchBusyRef.current = true;
-    void Promise.resolve(action()).finally(() => {
-      batchBusyRef.current = false;
-    });
-  }, []);
+  const [batchBusy, setBatchBusy] = useState<'idle' | 'discard' | 'wake' | 'clean'>('idle');
+  const runBatch = useCallback(
+    (kind: 'discard' | 'wake' | 'clean', action: () => void | Promise<void>) => {
+      if (batchBusy !== 'idle') return;
+      setBatchBusy(kind);
+      void Promise.resolve(action()).finally(() => {
+        setBatchBusy('idle');
+      });
+    },
+    [batchBusy]
+  );
   const [showHistory, setShowHistory] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -257,15 +264,15 @@ export default function App() {
    */
   const showDiscardUndoToast = useCallback(
     (batch: { tabIds: number[]; count: number }) => {
-      notify(i18n.t('discard.autoDiscarded', { count: batch.count }), {
-        label: i18n.t('discard.wakeAll'),
+      notify(translate('已自动休眠 {{count}} 个标签', { count: batch.count }), {
+        label: translate('唤醒这些标签'),
         run: async () => {
           const woken = (await reloadTabs(batch.tabIds)).length;
           // 只清掉这一轮：台账是多批次滚动保留的，整表清空会连带抹掉更早几轮
           // 仍处休眠的标签的唤醒出口。摘除走台账模块的跨页锁，避免与 SW 侧
           // 「追加新批次 / 淘汰失效批次」的整表写互相覆盖。
           await removeAutoDiscardBatch(batch.tabIds);
-          useUndoStore.getState().notify(i18n.t('discard.woken', { count: woken }));
+          useUndoStore.getState().notify(translate('已唤醒 {{count}} 个标签', { count: woken }));
         }
       });
     },
@@ -295,7 +302,10 @@ export default function App() {
     locateActiveRef.current();
   }, [releaseScrollControl]);
   /** 重复标签复用提示。 */
-  const notifyDuplicateReused = useCallback(() => notify(i18n.t('duplicates.reused')), [notify]);
+  const notifyDuplicateReused = useCallback(
+    () => notify(translate('已切到已打开的标签，并关掉重复的那个')),
+    [notify]
+  );
   /** 打开命令面板。 */
   const openPalette = useCallback(() => setShowPalette(true), []);
 
@@ -335,7 +345,7 @@ export default function App() {
     // 避免面板永久停在 Loading 骨架屏。
     void initializeData().catch(() => {
       if (cancelled) return;
-      notify(i18n.t('errors.dataLoadFailed'));
+      notify(translate('数据加载失败，请检查扩展权限'));
       retryTimerRef.current = window.setTimeout(() => {
         void initializeData().catch(() => {
           // 自动重试仍失败：转错误态（手动重试 / 重新打开面板），不再静默。
@@ -386,7 +396,7 @@ export default function App() {
 
   // 复用引擎（同网址唯一化）关闭的标签 → 登记进撤销栈。
   // 该能力默认开启，关闭发生在 SW 内（面板拿不到标签快照），不回传就形成一条
-  // 「经本产品执行却不可撤销」的关闭路径。消息经既有 runtime 协议，不自造通道。
+  // 「经Tabs执行却不可撤销」的关闭路径。消息经既有 runtime 协议，不自造通道。
   useEffect(
     () =>
       onRuntimeMessage((message) => {
@@ -628,7 +638,7 @@ export default function App() {
    * 清理本身进撤销栈、可一键反悔，因此不需要阻断式确认。
    */
   const handleCloseDuplicates = useCallback(() => {
-    runBatch(() => {
+    runBatch('clean', () => {
       const liveTabs = useTabStore.getState().tabs;
       const plan = planDuplicateCleanup(
         DuplicateIndex.build(liveTabs),
@@ -636,7 +646,7 @@ export default function App() {
       );
       if (plan.removable.length === 0) {
         // 入口条件出现（>0 才显示），但命令面板常驻：无候选时不能静默。
-        notify(t('duplicates.cleanNone'));
+        notify(t('没有可清理的重复标签'));
         return;
       }
       // 关闭是异步的（tabs 事件回灌后才移除行）；保留项始终在 DOM 里，可立即脉冲。
@@ -659,10 +669,10 @@ export default function App() {
       void togglePinned(tab).then((ok) => {
         // 平台层真实结果驱动反馈：失败（标签已关闭/不可固定）时不提示「已固定」。
         if (!ok) {
-          notifyError(t('errors.operationFailed'));
+          notifyError(t('操作失败，请稍后重试'));
           return;
         }
-        notify(t(tab.pinned ? 'toast.unpinned' : 'toast.pinned'));
+        notify(t(tab.pinned ? '已取消固定' : '已固定标签'));
         // 固定↔取消固定会改变标签在分组的归属（置顶区 ↔ 站点分组/未分组）：
         // 主动刷新快照，让标签立即按新 pinned 状态归类，不依赖事件回灌时序。
         tabSyncService.requestRefresh();
@@ -672,27 +682,25 @@ export default function App() {
   );
   const handleDuplicateTab = useCallback(
     (tab: TabRecord) => {
-      void duplicateTab(tab.id).then((ok) =>
-        notify(t(ok ? 'toast.duplicated' : 'errors.operationFailed'))
-      );
+      void duplicateTab(tab.id).then((ok) => notify(t(ok ? '已复制标签' : '操作失败，请稍后重试')));
     },
     [duplicateTab, notify, t]
   );
   const handleDiscardTab = useCallback(
     (tab: TabRecord) => {
       if (!canSafelyDiscardTab(tab) || useDataStore.getState().boundTabIds.includes(tab.id)) {
-        notify(t('toast.discardSkipped'));
+        notify(t('这个标签正在使用（播放声音或尚未加载完），已跳过'));
         return;
       }
       void discardTab(tab.id).then((discarded) =>
-        notify(discarded ? t('toast.discarded') : t('toast.discardSkipped'))
+        discarded ? notify(t('已休眠标签')) : notifyError(t('休眠失败，请稍后重试'))
       );
     },
-    [discardTab, notify, t]
+    [discardTab, notify, notifyError, t]
   );
-  // 一键休眠全部非激活、未固定的标签（释放内存）。
+  // 一键休眠全部后台标签、未固定的标签（释放内存）。
   const handleDiscardInactive = useCallback(() => {
-    runBatch(async () => {
+    runBatch('discard', async () => {
       const allInactive = useTabStore
         .getState()
         .tabs.filter((tab) => !tab.active && !tab.discarded);
@@ -701,7 +709,7 @@ export default function App() {
       // 无任何候选时必须给反馈（FooterToolbar / 命令面板按钮恒可用）：
       // 静默空跑会被当成「按钮坏了」。
       if (targets.length === 0 && allInactive.length === 0) {
-        notify(t('discard.allInactiveNone'));
+        notify(t('没有可休眠的后台标签'));
         return;
       }
       const results = await Promise.all(targets.map((tab) => discardTab(tab.id)));
@@ -712,28 +720,33 @@ export default function App() {
       if (discardedCount > 0) {
         notify(
           skippedCount === 0
-            ? t('toast.discardedMany', { count: discardedCount })
-            : t('toast.discardedManySkipped', { count: discardedCount, skipped: skippedCount })
+            ? t('已休眠 {{count}} 个标签', { count: discardedCount })
+            : t('已休眠 {{count}} 个标签，另有 {{skipped}} 个正在使用中已跳过', {
+                count: discardedCount,
+                skipped: skippedCount
+              })
         );
-      } else if (allInactive.length > 0) {
-        notify(t('toast.discardSkippedMany', { count: allInactive.length }));
+      } else if (targets.length > 0) {
+        notify(t('{{count}} 个标签正在使用中，已跳过', { count: targets.length }));
+      } else {
+        notify(t('没有可休眠的后台标签'));
       }
     });
   }, [runBatch, boundTabIds, discardTab, notify, t]);
   // 一键唤醒全部休眠标签（与批量休眠成对）。
   const handleWakeAll = useCallback(() => {
-    runBatch(() => {
+    runBatch('wake', () => {
       const discardedIds = useTabStore
         .getState()
         .tabs.filter((tab) => tab.discarded)
         .map((tab) => tab.id);
       if (discardedIds.length === 0) {
         // 命令面板/底栏入口恒可用：无休眠标签时点按不能静默。
-        notify(t('discard.wakeNone'));
+        notify(t('当前没有休眠中的标签'));
         return;
       }
       return reloadTabs(discardedIds).then((woken) =>
-        notify(t('discard.woken', { count: woken.length }))
+        notify(t('已唤醒 {{count}} 个标签', { count: woken.length }))
       );
     });
   }, [runBatch, notify, t]);
@@ -748,7 +761,7 @@ export default function App() {
     const closable = selectArchivableTabs(useTabStore.getState().tabs);
     if (closable.length === 0) {
       // 入口常驻（命令面板 / 洞察出口）：无可归档标签时点按不能静默。
-      notify(t('snapshots.archiveNone'));
+      notify(t('当前窗口没有可归档的标签'));
       return;
     }
     setPendingArchiveCount(closable.length);
@@ -759,8 +772,8 @@ export default function App() {
     void useSnapshotStore
       .getState()
       .archiveCurrentWindow()
-      .then((count) => notify(t('snapshots.archived', { count })))
-      .catch(() => notifyError(t('errors.operationFailed')));
+      .then((count) => notify(t('已归档 {{count}} 个标签', { count })))
+      .catch(() => notifyError(t('操作失败，请稍后重试')));
   }, [notify, notifyError, t]);
 
   /**
@@ -774,9 +787,9 @@ export default function App() {
       .exportData()
       .then((payload) => {
         downloadJsonFile(datedJsonFilename('tabs-backup'), JSON.stringify(payload, null, 2));
-        notify(t('settings.exportSuccess'));
+        notify(t('备份已导出'));
       })
-      .catch(() => notifyError(t('settings.exportFailed')));
+      .catch(() => notifyError(t('导出失败：本地数据读取未完成')));
   }, [notify, notifyError, t]);
 
   const discardedCount = tabs.filter((tab) => tab.discarded).length;
@@ -790,12 +803,11 @@ export default function App() {
   const handleSaveGroupAsFolder = useCallback(
     (groupId: number) => {
       const name =
-        useTabStore.getState().groups.find((g) => g.id === groupId)?.title ||
-        t('tabs.unnamedGroup');
+        useTabStore.getState().groups.find((g) => g.id === groupId)?.title || t('未命名标签组');
       const groupTabs = useTabStore.getState().tabs.filter((tab) => tab.groupId === groupId);
       void createFolderFromNativeGroup(name, groupTabs).then((saved) =>
-        // 组内无可收藏网页标签时不建空夹（返回 false），用区分文案而非“已保存”。
-        notify(t(saved ? 'toast.savedAsFolder' : 'fixed.saveEmpty'))
+        // 组内无可收藏标签时不建空夹（返回 false），用区分文案而非“已保存”。
+        notify(t(saved ? '已存为文件夹' : '该分组里没有可保存的标签'))
       );
     },
     [createFolderFromNativeGroup, notify, t]
@@ -825,29 +837,31 @@ export default function App() {
       threshold: settings.aggregationThreshold
     });
     if (plan.ungroupTabIds.length === 0 && plan.plans.length === 0) {
-      notify(t('footer.quickRegroupNone'));
+      notify(t('没有需要重新分组的标签'));
       return;
     }
     // 产品决策 D2（2026-09-30）：点击即执行，不弹确认。
-    // 快速整理打散并重建浏览器原生组、不进撤销栈，是本产品唯一不可反悔的破坏性动作，
+    // 快速整理打散并重建浏览器原生组、不进撤销栈，是Tabs唯一不可反悔的破坏性动作，
     // 与「一切关闭都可反悔」的核心承诺冲突。因此执行前先存一份现场快照当回退点：
-    // 存不进去就中止重排，绝不裸奔执行（与归档同款纪律：留档失败不关标签）。
+    // 存不进去就中止重排，绝不裸奔执行（与归档同款纪律：保存失败不关标签）。
     setQuickRegrouping(true);
     void (async () => {
       try {
-        await useSnapshotStore.getState().saveCurrentWindow(t('snapshots.beforeRegroupName'));
+        // 名字是落盘数据（会进导出备份），必须用常量而不是 t()：否则英文界面
+        // 保存的是译文、中文界面是中文，同一批数据出现两种名字。
+        await useSnapshotStore.getState().saveCurrentWindow(DEFAULT_SNAPSHOT_NAMES.regroup);
       } catch (error) {
         logFailure('sidepanel', '重排前保存现场快照失败，已取消重排', error);
-        notifyError(t('footer.quickRegroupSnapshotFailed'));
+        notifyError(t('无法保存重排前的现场快照，已取消重排（标签与分组未改动）'));
         return;
       }
       const count = await regroupTempArea(plan.ungroupTabIds, plan.plans);
       // 快速整理直接打散并重建浏览器原生组：显式请求快照刷新，让整理结果
       // 立即呈现（与事件驱动刷新共用 signal 合并，不会重复查询）。
       tabSyncService.requestRefresh();
-      notify(t('footer.quickRegroupDone', { count }));
+      notify(t('已重新分组 {{count}} 个组 · 重排前现场已存入快照，可回退', { count }));
     })()
-      .catch(() => notifyError(t('errors.operationFailed')))
+      .catch(() => notifyError(t('操作失败，请稍后重试')))
       .finally(() => setQuickRegrouping(false));
   }, [
     quickRegrouping,
@@ -936,14 +950,14 @@ export default function App() {
           !liveTabs.some((tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito)
       );
       if (missing.length === 0) {
-        notify(t('fixed.allOpen'));
+        notify(t('文件夹条目均已打开'));
         return;
       }
       void createTabsWithUrls(
         missing.map((item) => item.url).filter((u): u is string => Boolean(u))
       )
-        .then((created) => notify(t('fixed.openedAll', { count: created })))
-        .catch(() => notifyError(t('errors.operationFailed')));
+        .then((created) => notify(t('已打开 {{count}} 个条目', { count: created })))
+        .catch(() => notifyError(t('操作失败，请稍后重试')));
     },
     [notify, notifyError, t]
   );
@@ -969,7 +983,7 @@ export default function App() {
       onOpenHistory: () => setShowHistory(true),
       onOpenSettings: openOptionsPage,
       // 信任面板此前只有「底栏设置 → 设置页 → 关于页」一条三步路径，
-      // 而「自证零网络」是本产品的核心卖点 —— 命令面板一次直达。
+      // 而「自证零网络」是Tabs的核心卖点 —— 命令面板一次直达。
       onOpenAbout: openAboutPage,
       onToggleAllSections: handleToggleAllSections,
       onSwitchTab: (tabId: number) => void smartActivate(tabId),
@@ -978,14 +992,16 @@ export default function App() {
         void useSnapshotStore
           .getState()
           .saveCurrentWindow()
-          .then(() => notify(t('snapshots.saved')))
-          .catch(() => notifyError(t('errors.operationFailed'))),
+          .then(() => notify(t('已保存快照')))
+          .catch(() => notifyError(t('操作失败，请稍后重试'))),
       onSaveSpace: () =>
+        // 与 useSpaces / SnapshotsPanel 同口径：不传名字，命名交给 store 的
+        // fallbackName，避免把界面语言写进落盘快照名。
         void useSnapshotStore
           .getState()
-          .saveSpace(t('snapshots.space'))
-          .then(() => notify(t('snapshots.saved')))
-          .catch(() => notifyError(t('errors.operationFailed'))),
+          .saveSpace()
+          .then(() => notify(t('已保存快照')))
+          .catch(() => notifyError(t('操作失败，请稍后重试'))),
       onArchiveWindow: requestArchive,
       onOpenFolder: handleOpenFolder
     }),
@@ -1009,8 +1025,8 @@ export default function App() {
   const handleHistoryOpenUrl = useCallback(
     (url: string) => {
       void createTabsWithUrls([url])
-        .then(() => notify(t('search.historyOpened')))
-        .catch(() => notifyError(t('errors.operationFailed')));
+        .then(() => notify(t('已打开该页面')))
+        .catch(() => notifyError(t('操作失败，请稍后重试')));
     },
     [notify, notifyError, t]
   );
@@ -1019,7 +1035,7 @@ export default function App() {
   const handleHistoryRestoreSnapshot = useCallback(
     (snapshotId: string, tabCount: number) => {
       if (tabCount === 0) {
-        notify(t('snapshots.empty'));
+        notify(t('该快照没有可恢复的标签'));
         return;
       }
       const snapshot = useSnapshotStore
@@ -1033,11 +1049,13 @@ export default function App() {
           .then(({ count, degraded }) =>
             notify(
               degraded
-                ? t('snapshots.restoredDegraded', { count })
-                : t('snapshots.restored', { count })
+                ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', {
+                    count
+                  })
+                : t('已恢复 {{count}} 个标签', { count })
             )
           )
-          .catch(() => notifyError(t('errors.operationFailed')));
+          .catch(() => notifyError(t('操作失败，请稍后重试')));
         return;
       }
       setPendingHistoryRestore(snapshot);
@@ -1046,11 +1064,14 @@ export default function App() {
   );
 
   return (
-    <main className="app flex h-full flex-col">
+    /* data-density 提到 .app：密度要覆盖固定空间与主列表两条渲染链。
+       此前只挂在 SectionList 上，固定空间的条目行（不经 RowItem 的 density
+       prop）切换档位时纹丝不动 —— 大字号档位「半途而废」。 */
+    <main className="app flex h-full flex-col" data-density={settings.density}>
       {/* h1 此前完全缺失：侧边栏直接从 <main> 进入列表，标题层级断裂，
           读屏用户无法用「跳到标题」快速定位，也拿不到页面主题。
           视觉上隐藏——面板顶部已有搜索框与品牌标识，再加一个可见标题是噪音。 */}
-      <h1 className="sr-only">{t('tabs.panelTitle')}</h1>
+      <h1 className="sr-only">{t('当前窗口的标签')}</h1>
       <DndRoot onDragEnd={onDragEnd}>
         <SettingsSync />
         <SearchBar
@@ -1066,7 +1087,7 @@ export default function App() {
         />
         {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status；视觉用户有列表过滤反馈，读屏用户此前无感知） */}
         <output className="sr-only" aria-live="polite">
-          {isFiltering ? t('search.hits', { count: filteredTabs.length }) : ''}
+          {isFiltering ? t('命中 {{count}} 个标签', { count: filteredTabs.length }) : ''}
         </output>
         {/* 落盘失败横幅：由「最近一次持久化是否成功」驱动（成功写会复位标志），
             因此它表达的是「此刻存储可能不可写」，而非「历史上有过失败」。
@@ -1078,7 +1099,9 @@ export default function App() {
           >
             <Icon d={Icons.infoAlert} className="mt-0.5 h-4 w-4 shrink-0 text-warn-600" />
             <p className="min-w-0 flex-1 text-3xs leading-relaxed text-warn-700">
-              {t('errors.storageDegraded')}
+              {t(
+                '最近的改动可能没能保存到本地：请检查浏览器存储空间是否已满，或扩展权限是否被收回'
+              )}
             </p>
           </div>
         )}
@@ -1088,9 +1111,13 @@ export default function App() {
           <div className="mx-1 mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2">
             <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
             <div className="min-w-0 flex-1">
-              <p className="text-3xs font-semibold text-accent-700">{t('tips.discoverTitle')}</p>
+              <p className="text-3xs font-semibold text-accent-700">
+                {t('三处入口用满 Tabs 的能力')}
+              </p>
               <p className="mt-0.5 text-3xs leading-relaxed text-accent-700/90">
-                {t('tips.discoverBody')}
+                {t(
+                  '① 页面 / 链接 / 标签栏右键可休眠、固定、按域名搜索；② 地址栏输入 t 后输关键词直达；③ ⌘P（Ctrl+P）打开命令面板，一步执行休眠 / 存快照 / 开设置。'
+                )}
               </p>
             </div>
             <button
@@ -1098,7 +1125,7 @@ export default function App() {
               className="shrink-0 rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
               onClick={() => void tryUpdateSettings({ tipSeen: true })}
             >
-              {t('tips.gotIt')}
+              {t('知道了')}
             </button>
           </div>
         )}
@@ -1121,49 +1148,54 @@ export default function App() {
             count={pinnedSection.tabs.length}
             className="shrink-0 is-pinned"
           >
-            <div className="section-body">
-              <SortableContext items={pinnedSortableIds} strategy={rectSortingStrategy}>
-                <div className="pinned-grid">
-                  {pinnedSection.tabs.map((tab) => (
-                    <SortablePinnedTile
-                      key={tab.id}
-                      id={tab.id}
-                      tabId={tab.id}
-                      title={tab.title || ''}
-                      favIconUrl={tab.favIconUrl}
-                      url={tab.url}
-                      isActive={tab.active}
-                      isDiscarded={tab.discarded}
-                      isAudible={tab.audible}
-                      onOpen={() => activateTab(tab.id)}
-                      onMiddleClick={() => handleCloseTab(tab)}
-                      // 与行内取消固定同一入口：裸 togglePinned 无任何反馈，当
-                      // showPinnedStrip 关闭或置顶区滚出视野时用户无从确认生效。
-                      onUnpin={() => handleTogglePin(tab)}
-                      unpinTitle={t('tabs.unpin')}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </div>
+            <SortableContext items={pinnedSortableIds} strategy={rectSortingStrategy}>
+              <div className="pinned-grid">
+                {pinnedSection.tabs.map((tab) => (
+                  <SortablePinnedTile
+                    key={tab.id}
+                    id={tab.id}
+                    tabId={tab.id}
+                    title={tab.title || ''}
+                    favIconUrl={tab.favIconUrl}
+                    url={tab.url}
+                    isActive={tab.active}
+                    isDiscarded={tab.discarded}
+                    isAudible={tab.audible}
+                    onOpen={() => activateTab(tab.id)}
+                    onMiddleClick={() => handleCloseTab(tab)}
+                    // 与行内取消固定同一入口：裸 togglePinned 无任何反馈，当
+                    // showPinnedStrip 关闭或置顶区滚出视野时用户无从确认生效。
+                    onUnpin={() => handleTogglePin(tab)}
+                    unpinTitle={t('取消固定')}
+                  />
+                ))}
+              </div>
+            </SortableContext>
           </CategoryModule>
         )}
-        <div className="px-1 py-0.5">
+        {/* 不加横向 padding：8px 内容竖线由 .section-head / .section-body 统一给出。
+            此前这里套了一层 px-1(4px)，使固定空间与主列表整体右移 4px，
+            与顶栏搜索图标（8px）、Toast（8px）、新建栏（8px）不同线。 */}
+        <div className="py-0.5">
           <FixedArea />
         </div>
-        <StatusToast />
         <div
-          className="flex-1 overflow-y-auto px-1 py-0.5"
+          /* overscroll-contain：这是「固定空间 → 主列表 → 虚拟列表」三层滚动链的中间层，
+             内外两层都有隔离，唯独中间层没有 —— 内层滚到边界会带着主列表一起滚。 */
+          className="flex-1 overflow-y-auto overscroll-contain py-0.5"
           onWheel={markUserScroll}
           onTouchMove={markUserScroll}
         >
-          {!dataReady ? (
+          {/* tabSyncReady 必须与 dataReady 一起守卫：标签首帧同步未回时 tabs 恒为 []，
+              只判 dataReady 会先闪一屏「这个窗口还没有标签 + 打开新标签」再跳成列表。 */}
+          {!dataReady || !tabSyncReady ? (
             loadFailed ? (
               /* 自动重试仍失败：给出说明与手动出口，不留无出口的骨架屏 */
               <LoadErrorState onRetry={handleRetryLoad} />
             ) : (
               // 加载骨架：区分「同步中」与「真的没有标签」
-              <LoadingSkeleton />
+              // 传 density：骨架复用真实行的盒模型，档位不同则加载完成时行高会跳
+              <LoadingSkeleton density={settings.density} />
             )
           ) : tabs.length === 0 ? (
             <EmptyTabs
@@ -1196,6 +1228,7 @@ export default function App() {
                 highlightedIds={highlightedIds}
                 searchActiveTabId={selectedNavTabId}
                 noCacheTabIds={noCacheTabIds}
+                groupMode={settings.groupMode}
                 callbacks={sectionCallbacks}
               />
             </>
@@ -1224,11 +1257,24 @@ export default function App() {
         )}
 
         <div className="add-tab-bar">
-          <button type="button" className="add-tab-btn" onClick={() => void createNewTab()}>
+          {/* aria-label 不能省：≤300px 档的 CSS 会把 <span> 文字 display:none，
+              display:none 同时把文本移出可访问树 —— 窄面板下这个按钮会变成
+              一个没有名称的空「按钮」，而它是侧栏最核心的入口。 */}
+          <button
+            type="button"
+            className="add-tab-btn"
+            aria-label={t('新建标签')}
+            title={t('新建标签')}
+            onClick={() => void createNewTab()}
+          >
             <Icon d={Icons.plus} className="h-4 w-4" />
-            <span>{t('tabs.newTab')}</span>
+            <span>{t('新建标签')}</span>
           </button>
         </div>
+
+        {/* 提示条挂在「+ 新建标签」与底栏之间（实体占位，不再是浮层）：
+            此前 absolute 浮层压在列表中间，会盖住用户正在操作的行。 */}
+        <StatusToast />
 
         <FooterToolbar
           tabCount={tabs.length}
@@ -1247,6 +1293,8 @@ export default function App() {
           highlightedCount={highlightedIds.size}
           quickRegrouping={quickRegrouping}
           onToggleAllSections={handleToggleAllSections}
+          // 在途态下传：对应入口在批量操作期间禁用，避免「点了没反应」
+          batchBusy={batchBusy}
           onDiscardInactive={handleDiscardInactive}
           onWakeAll={handleWakeAll}
           onQuickRegroup={handleQuickRegroup}
@@ -1287,11 +1335,13 @@ export default function App() {
                 .then(({ count, degraded }) =>
                   notify(
                     degraded
-                      ? t('snapshots.restoredDegraded', { count })
-                      : t('snapshots.restored', { count })
+                      ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', {
+                          count
+                        })
+                      : t('已恢复 {{count}} 个标签', { count })
                   )
                 )
-                .catch(() => notifyError(t('errors.operationFailed')));
+                .catch(() => notifyError(t('操作失败，请稍后重试')));
             }}
             onCancel={() => setPendingHistoryRestore(null)}
           />
@@ -1308,10 +1358,12 @@ export default function App() {
         {/* 归档确认：与恢复确认对称的破坏性动作闸门（不阻断高频操作）。 */}
         {pendingArchiveCount !== null && (
           <ConfirmDialog
-            title={t('snapshots.archiveCurrent')}
-            message={t('snapshots.archiveConfirm', { count: pendingArchiveCount })}
+            title={t('归档当前窗口（关闭并保存）')}
+            message={t('将关闭 {{count}} 个标签并归档为快照，可撤销。归档失败不会关闭任何标签。', {
+              count: pendingArchiveCount
+            })}
             danger
-            confirmLabel={t('snapshots.archiveCurrent')}
+            confirmLabel={t('归档')}
             onConfirm={performArchive}
             onCancel={() => setPendingArchiveCount(null)}
           />

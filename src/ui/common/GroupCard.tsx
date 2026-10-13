@@ -1,4 +1,9 @@
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import {
+  useId,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode
+} from 'react';
 import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -80,6 +85,9 @@ export function GroupCard({
     transition: sortable.transition,
     ...(accent ? ({ '--accent': accent } as CSSProperties) : {})
   };
+  // 折叠体 id：给 SectionHead 的 aria-controls 用（aria-expanded 只有配了 controls
+  // 才能让读屏把开关与被折叠的内容关联起来）。
+  const panelId = useId();
   return (
     <section ref={sortable.setNodeRef} className={cardClass} style={style}>
       <SectionHead
@@ -89,6 +97,7 @@ export function GroupCard({
         count={count}
         onToggle={onToggle}
         expanded={onToggle ? !collapsed : undefined}
+        panelId={panelId}
         onClose={onClose}
         closeTitle={closeTitle}
         mediaIndicator={mediaIndicator}
@@ -96,7 +105,9 @@ export function GroupCard({
         dragHandleProps={disabled ? undefined : headPointerListeners}
         dragKeyboard={dragKeyboard}
       />
-      {!collapsed && children}
+      {/* id 与 SectionHead 的 aria-controls 对应；折叠时不渲染，controls 指向的
+          目标随之消失是 ARIA 允许的（配合 aria-expanded=false 语义一致）。 */}
+      {!collapsed && <div id={panelId}>{children}</div>}
     </section>
   );
 }

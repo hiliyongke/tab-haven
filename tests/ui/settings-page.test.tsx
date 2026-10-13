@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { SettingsPage } from '@/entrypoints/options/SettingsPage';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository } from '@/platform/storage/repositories';
@@ -36,8 +36,8 @@ beforeEach(() => {
  * 分区标题的可访问名含计数徽章（如「外观 8」），且侧栏目录里有同名链接，
  * 故按 role + 前缀匹配定位标题本身。
  */
-function sectionHeading(key: string): HTMLElement {
-  return screen.getByRole('heading', { name: (name) => name.startsWith(i18n.t(key)) });
+function sectionHeading(text: string): HTMLElement {
+  return screen.getByRole('heading', { name: (name) => name.startsWith(translate(text)) });
 }
 
 describe('SettingsPage（渲染冒烟）', () => {
@@ -47,20 +47,15 @@ describe('SettingsPage（渲染冒烟）', () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByRole('heading', { name: i18n.t('settings.title') })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: translate('设置') })).toBeInTheDocument();
     // 首屏分区（外观/行为/休眠内存/分组搜索/高级恢复）均以标题形式出现。
     // 用 heading role + 前缀匹配：分区标题内含计数徽章（如「外观 8」），
     // 且侧栏目录里有同名链接，纯 getByText 会命中多个元素。
     await waitFor(() => {
-      expect(sectionHeading('settings.appearance')).toBeInTheDocument();
+      expect(sectionHeading('外观与布局')).toBeInTheDocument();
     });
-    for (const key of [
-      'settings.behavior',
-      'settings.memory',
-      'settings.groupSearch',
-      'settings.advanced'
-    ]) {
-      expect(sectionHeading(key)).toBeInTheDocument();
+    for (const text of ['交互行为', '休眠与内存', '分组与搜索', '高级与恢复']) {
+      expect(sectionHeading(text)).toBeInTheDocument();
     }
   });
 
@@ -68,36 +63,37 @@ describe('SettingsPage（渲染冒烟）', () => {
     useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
     render(<SettingsPage />);
 
-    const outline = await screen.findByRole('navigation', { name: i18n.t('settings.outline') });
-    expect(
-      within(outline).getByRole('link', { name: i18n.t('settings.advanced') })
-    ).toHaveAttribute('href', '#settings.advanced');
+    const outline = await screen.findByRole('navigation', { name: translate('目录') });
+    expect(within(outline).getByRole('link', { name: translate('高级与恢复') })).toHaveAttribute(
+      'href',
+      '#settings.advanced'
+    );
 
     // 折叠机制已取消（目录接管了导航职责）：页面不应再有 details 元素，
     // 「高级与恢复」的内容直接可见。
     expect(document.querySelector('details')).toBeNull();
-    expect(screen.getByText(i18n.t('settings.badgeMode'), { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(translate('工具栏角标'), { exact: false })).toBeInTheDocument();
   });
 
   it('设置搜索框可用：输入关键词过滤设置项', async () => {
     useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
     render(<SettingsPage />);
 
-    const search = await screen.findByPlaceholderText(i18n.t('settings.searchPlaceholder'));
+    const search = await screen.findByPlaceholderText(translate('搜索设置…'));
     expect(search).toBeInTheDocument();
   });
 
   it('就绪前显示加载态（不渲染空设置页）', () => {
     useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: false });
     render(<SettingsPage />);
-    expect(screen.queryByRole('heading', { name: i18n.t('settings.title') })).toBeNull();
+    expect(screen.queryByRole('heading', { name: translate('设置') })).toBeNull();
   });
 
   it('渲染恢复默认按钮（一键重置入口）', async () => {
     useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
     render(<SettingsPage />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: i18n.t('settings.resetAll') })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: translate('恢复默认') })).toBeInTheDocument();
     });
   });
 
@@ -106,7 +102,7 @@ describe('SettingsPage（渲染冒烟）', () => {
     render(<SettingsPage />);
     // 主题偏好行存在（受控组件渲染当前值）
     await waitFor(() => {
-      expect(screen.getByText(i18n.t('settings.theme'))).toBeInTheDocument();
+      expect(screen.getByText(translate('主题'))).toBeInTheDocument();
     });
   });
 });

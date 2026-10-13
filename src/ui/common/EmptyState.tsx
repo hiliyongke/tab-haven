@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * 通用空态（sidepanel / popup 共用）：图标 + 标题 + 提示 + 可选动作。
+ * 通用空态（侧边栏与设置页共用）：图标 + 标题 + 提示 + 可选动作。
  * 遵循「说明原因 + 提供下一步操作」的 UX 规范。
  */
 export function EmptyState({

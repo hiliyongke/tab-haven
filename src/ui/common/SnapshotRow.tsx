@@ -1,8 +1,10 @@
-import { useTranslation } from 'react-i18next';
+import { useRef } from 'react';
+import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import type { SnapshotDiffResult } from '@/core/snapshot/snapshotDiff';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
+import { useScrollFade } from '@/ui/common/useScrollFade';
 import { formatTime } from '@/ui/common/format';
 
 function originBadge(
@@ -11,13 +13,15 @@ function originBadge(
 ): { label: string; className: string } {
   switch (origin) {
     case 'auto':
-      return { label: t('snapshots.auto'), className: 'bg-gray-100 text-gray-500' };
+      // gray-600 而非 gray-500：仓库自测 gray-500 在 gray-100 底上仅 3.92:1（不达 AA），
+      // gray-600 达 6.8:1（见 main.css .count-pill 注释）。
+      return { label: t('自动'), className: 'bg-gray-100 text-gray-600' };
     case 'archive':
-      return { label: t('snapshots.archive'), className: 'bg-warn-100 text-warn-700' };
+      return { label: t('归档'), className: 'bg-warn-100 text-warn-700' };
     case 'space':
-      return { label: t('snapshots.space'), className: 'bg-accent-100 text-accent-700' };
+      return { label: t('工作区'), className: 'bg-accent-100 text-accent-700' };
     default:
-      return { label: t('snapshots.manual'), className: 'bg-accent-50 text-accent-600' };
+      return { label: t('手动'), className: 'bg-accent-50 text-accent-600' };
   }
 }
 
@@ -65,15 +69,18 @@ export function SnapshotRow({
   onRestoreSelected
 }: SnapshotRowProps) {
   const { t } = useTranslation();
+  const detailScrollRef = useRef<HTMLUListElement>(null);
+  // 详情列表是条件渲染的，必须把开关作为依赖传入，否则容器出现后不会补挂监听
+  useScrollFade(detailScrollRef, isDetailOpen);
   return (
-    <li key={snap.id} className="px-2.5 py-2">
+    <li key={snap.id} className="px-3 py-2">
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           {isEditing ? (
             <TextField
               size="sm"
               value={editingName}
-              ariaLabel={t('snapshots.rename')}
+              ariaLabel={t('重命名')}
               onChange={onEditingNameChange}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void onCommitRename();
@@ -84,16 +91,20 @@ export function SnapshotRow({
           ) : (
             <span className="block truncate text-xs font-medium text-gray-700">{snap.name}</span>
           )}
-          <span className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
+          {/* 容器与文本都要 min-w-0：父级 :71 的 min-w-0 只保证父能收缩，
+              本行 span 的 min-content 仍会把内容撑到右侧 shrink-0 的操作组下方。 */}
+          {/* 含汉字的正文说明走 11px（text-3xs）：10px 下汉字笔画糊 */}
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-3xs text-gray-500">
             <span
               className={
-                'rounded px-1 py-px text-2xs leading-none ' + originBadge(snap.origin, t).className
+                'chip chip--cjk shrink-0 rounded px-1 py-px ' +
+                originBadge(snap.origin, t).className
               }
             >
               {originBadge(snap.origin, t).label}
             </span>
-            <span>
-              {snap.tabCount} {t('tabs.tabCountUnit')} · {formatTime(snap.createdAt)}
+            <span className="min-w-0 truncate">
+              {snap.tabCount} {t('个标签')} · {formatTime(snap.createdAt)}
             </span>
           </span>
         </div>
@@ -101,8 +112,8 @@ export function SnapshotRow({
           {/* 查看详情：展开快照内的标签清单（恢复前可确认内容） */}
           <button
             type="button"
-            title={t('snapshots.detail')}
-            aria-label={t('snapshots.detail')}
+            title={t('查看快照内标签')}
+            aria-label={t('查看快照内标签')}
             aria-expanded={isDetailOpen}
             className="rounded p-1 text-gray-500 hover:bg-gray-100"
             onClick={() => onToggleDetail(snap.id)}
@@ -114,8 +125,8 @@ export function SnapshotRow({
           </button>
           <button
             type="button"
-            title={t('snapshots.restore')}
-            aria-label={t('snapshots.restore')}
+            title={t('恢复')}
+            aria-label={t('恢复')}
             disabled={restoring}
             className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600 disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={() => void onRestore(snap.id, snap.tabCount)}
@@ -124,8 +135,8 @@ export function SnapshotRow({
           </button>
           <button
             type="button"
-            title={t('snapshots.rename')}
-            aria-label={t('snapshots.rename')}
+            title={t('重命名')}
+            aria-label={t('重命名')}
             className="rounded p-1 text-gray-500 hover:bg-gray-100"
             onClick={() => onBeginRename(snap.id, snap.name)}
           >
@@ -133,8 +144,8 @@ export function SnapshotRow({
           </button>
           <button
             type="button"
-            title={t('snapshots.delete')}
-            aria-label={t('snapshots.delete')}
+            title={t('删除')}
+            aria-label={t('删除')}
             className="rounded p-1 text-gray-500 hover:bg-red-50 hover:text-red-600"
             onClick={() => void onDelete(snap.id)}
           >
@@ -145,30 +156,36 @@ export function SnapshotRow({
       {isDetailOpen && (
         <div className="mt-1.5 rounded-md border border-gray-100 bg-gray-50/70">
           {snap.tabs.length === 0 ? (
-            <p className="py-2 text-center text-2xs text-gray-500">{t('snapshots.empty')}</p>
+            <p className="py-2 text-center text-3xs text-gray-500">{t('该快照没有可恢复的标签')}</p>
           ) : (
             <>
               {diff && (
-                <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-gray-100 px-2 py-1.5 text-2xs text-gray-500">
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-gray-100 px-2 py-1.5 text-3xs text-gray-500">
                   <span className="font-medium text-gray-600">
-                    {t('snapshots.previewSummary', {
+                    {t('预览：将新建 {{create}} · 已存在 {{existing}} · 不恢复 {{skipped}}', {
                       create: diff.counts.create,
                       existing: diff.counts.existing,
                       skipped: diff.counts.skipped
                     })}
                   </span>
                   <span className="text-accent-600">
-                    {t('snapshots.previewWillCreate')} {diff.counts.create}
+                    {t('将新建')} {diff.counts.create}
                   </span>
-                  <span className="text-gray-400">
-                    {t('snapshots.previewExisting')} {diff.counts.existing}
+                  <span className="text-gray-500">
+                    {t('已存在')} {diff.counts.existing}
                   </span>
-                  <span className="text-gray-400">
-                    {t('snapshots.previewSkipped')} {diff.counts.skipped}
+                  <span className="text-gray-500">
+                    {t('不恢复')} {diff.counts.skipped}
                   </span>
                 </p>
               )}
-              <ul className="max-h-44 divide-y divide-gray-100 overflow-y-auto px-2 py-1">
+              {/* overscroll-contain：本列表是弹窗内容区（已滚动）内的第二层滚动，
+                  不隔离会带动弹窗内容区一起滚并把分组标题顶走。
+                  scroll-fade：被 max-h-44 截断，底部渐隐提示「还有更多标签」。 */}
+              <ul
+                ref={detailScrollRef}
+                className="scroll-fade max-h-44 divide-y divide-gray-100 overflow-y-auto overscroll-contain px-2 py-1"
+              >
                 {snap.tabs.map((tab, index) => {
                   const key = `${index}-${tab.url}`;
                   const entry = diff?.willCreate.find(
@@ -195,22 +212,26 @@ export function SnapshotRow({
                         />
                       )}
                       {tab.pinned && (
-                        <Icon d={Icons.pin} className="h-3 w-3 shrink-0 text-gray-400" />
+                        <Icon d={Icons.pin} className="h-3 w-3 shrink-0 text-gray-500" />
                       )}
-                      <span className="min-w-0 flex-1 truncate text-2xs text-gray-700">
+                      <span className="min-w-0 flex-1 truncate text-3xs text-gray-700">
                         {tab.title || tab.url}
                       </span>
                       {diff && isExisting && (
-                        <span className="shrink-0 rounded bg-gray-100 px-1 py-px text-3xs leading-none text-gray-500">
-                          {t('snapshots.previewExisting')}
+                        <span className="chip chip--cjk shrink-0 rounded bg-gray-100 px-1 py-px text-gray-600">
+                          {t('已存在')}
                         </span>
                       )}
                       {diff && isSkipped && (
-                        <span className="shrink-0 rounded bg-gray-100 px-1 py-px text-3xs leading-none text-gray-400">
-                          {t('snapshots.previewSkipped')}
+                        <span className="chip chip--cjk shrink-0 rounded bg-gray-100 px-1 py-px text-gray-600">
+                          {t('不恢复')}
                         </span>
                       )}
-                      <span className="max-w-[45%] truncate text-3xs text-gray-400">{tab.url}</span>
+                      {/* min-w-0 不可省：无它时 min-width:auto 会击穿 max-w-[45%]，
+                          长 URL 直接撑满并顶开同行元素。 */}
+                      <span className="min-w-0 max-w-[45%] truncate text-3xs text-gray-500">
+                        {tab.url}
+                      </span>
                     </li>
                   );
                 })}
@@ -223,7 +244,7 @@ export function SnapshotRow({
                     className="w-full rounded px-2 py-1 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-50 disabled:opacity-40 disabled:hover:bg-transparent"
                     onClick={() => void onRestoreSelected(snap.id, selectedKeys.size)}
                   >
-                    {t('snapshots.restoreSelected', { count: selectedKeys.size })}
+                    {t('恢复勾选（{{count}}）', { count: selectedKeys.size })}
                   </button>
                 </div>
               )}

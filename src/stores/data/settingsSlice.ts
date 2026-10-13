@@ -90,13 +90,24 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
           // 必须 await：与 resetSettings 同口径，调用方返回时云端数据已确认删除。
           if (partial.syncMirrorEnabled === false && wasMirrorEnabled) {
             await syncMirror.clearAll();
+            ctx.resetMirrorFailure();
           }
         });
         if (mirrorJustEnabled) {
           // 恢复失败（写盘/镜像解析失败）时不得推首次镜像：本地仍是空态，
           // 推上云会覆盖旧设备的镜像。此时 seeded 未置位，下次启动由
           // initSlice 的镜像拉取分支重试自愈。
-          const outcome = await restoreFromMirrorOnEnable(ctx);
+          //
+          // 抛错同样按 failed 处理：跨页锁拿不到（AbortError）、存储读失败都会让
+          // 它 reject，而本函数是 `void updateSettings()` 的常见调用路径——
+          // 不接住就是一次 unhandled rejection，且失败被当成成功去推镜像。
+          const outcome = await restoreFromMirrorOnEnable(ctx).catch(() => {
+            ctx.reportPersistenceFailure(
+              'dataStore',
+              '从同步镜像恢复失败，本次未推送镜像（下次启动重试）'
+            );
+            return 'failed' as const;
+          });
           if (outcome !== 'failed') ctx.scheduleMirror(ctx.get());
         }
       }),
@@ -125,6 +136,7 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
           }
           if (wasMirrorEnabled && !DEFAULT_SETTINGS.syncMirrorEnabled) {
             await syncMirror.clearAll();
+            ctx.resetMirrorFailure();
           }
           ctx.set({ settings: DEFAULT_SETTINGS });
           applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
@@ -164,6 +176,10 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
             collapsedSites: [],
             settings: DEFAULT_SETTINGS,
             boundTabIds: [],
+            // 镜像已随 clearAllStoredData 一并删除：写失败态与拉取分类同样不再有
+            // 对应数据（后者不清会带着清空前的结论，等用户重新开启同步时才显示）。
+            mirrorWriteFailed: false,
+            mirrorIssue: null,
             ready: true
           });
           applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);

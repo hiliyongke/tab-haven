@@ -1,4 +1,5 @@
 import type { ChangeEvent, KeyboardEvent, RefObject } from 'react';
+import { useControlId } from '@/ui/common/controlId';
 
 /** 单行与多行共用的元素类型（textarea 没有 type/min/max）。 */
 type FieldElement = HTMLInputElement | HTMLTextAreaElement;
@@ -29,6 +30,7 @@ export function TextField({
   onBlur,
   inputRef,
   ariaLabel,
+  id,
   inputProps
 }: {
   type?: 'text' | 'number' | 'search' | 'password';
@@ -52,7 +54,9 @@ export function TextField({
   inputRef?: RefObject<FieldElement | null>;
   /** 程序化标签：placeholder 不能替代 label，读屏需要 aria-label 关联。 */
   ariaLabel?: string;
-  /** 额外的原生属性透传（如 popup 搜索框的 role/aria-activedescendant）。 */
+  /** 供外层 <label for> 关联；不传则取 ControlIdContext（设置页 Row 下发）。 */
+  id?: string;
+  /** 额外的原生属性透传（如搜索框的 role/aria-activedescendant）。 */
   inputProps?: Record<string, unknown>;
 }) {
   const shared = {
@@ -61,6 +65,7 @@ export function TextField({
     defaultValue,
     placeholder,
     'aria-label': ariaLabel,
+    id: useControlId(id),
     onChange: onChange
       ? (event: ChangeEvent<FieldElement>) => onChange(event.target.value)
       : undefined,
@@ -69,11 +74,14 @@ export function TextField({
     ...inputProps
   } as const;
 
+  /* 三档高度下限与 Button 同刻度（sm/xs 24px、md 32px、lg 36px）。
+     此前三档都没有 min-h：sm 实测 22px，低于 WCAG 2.5.8 的 24px 下限，
+     且 px-1.5(6px) / py-0.5(2px) 脱 4px 网格。 */
   const base =
     'w-full rounded border border-control bg-surface text-gray-800 transition-base focus:border-accent-500' +
-    (size === 'lg' ? ' px-3 py-2 text-sm' : '') +
-    (size === 'md' ? ' px-2 py-1.5 text-sm' : '') +
-    (size === 'sm' ? ' px-1.5 py-0.5 text-xs' : '') +
+    (size === 'lg' ? ' px-3 py-1.5 text-sm min-h-9' : '') +
+    (size === 'md' ? ' px-2 py-1 text-sm min-h-8' : '') +
+    (size === 'sm' ? ' px-2 py-0.5 text-xs min-h-6' : '') +
     (className ? ' ' + className : '');
 
   if (multiline) {

@@ -14,7 +14,10 @@ export function RowActions({
   children: ReactNode;
 }) {
   if (forceVisible) {
-    return <span className="flex shrink-0 items-center gap-0.5">{children}</span>;
+    /* 仍挂 .row-actions 基类：此前这档是裸 flex，既没有 max-width 收放，
+       也享受不到 ≤300px 档的 118px 收窄 —— 五个按钮常驻刚性占位约 110px，
+       叠加徽章后窄档下标题直接归零。这里改为常显但不参与宽度塌陷。 */
+    return <span className="row-actions row-actions--static">{children}</span>;
   }
   return <span className="row-actions">{children}</span>;
 }

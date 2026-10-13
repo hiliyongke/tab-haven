@@ -209,7 +209,7 @@ export async function addEntryToFolder(
     if (!ok) {
       // 只有失败分支在此发通知：成功与「已存在」由调用方按结果各发一次，
       // 避免同一动作出现两条语义冲突的通知。
-      notifyUser('Tabs', t('bg.addToFolderFailed'));
+      notifyUser('Tabs', t('保存失败，请重试'));
       return 'failed';
     }
     return 'added';
@@ -223,7 +223,7 @@ export async function discardTabSafely(
   if (!rawTab || rawTab.id === undefined) return false;
   const tab = mapTab(rawTab);
   if (!canSafelyDiscardTab(tab)) {
-    notifyUser('Tabs', t('bg.discardNotSafe'));
+    notifyUser('Tabs', t('这个标签正在使用（播放声音或尚未加载完），无法休眠'));
     return false;
   }
   let ok: boolean;
@@ -234,7 +234,7 @@ export async function discardTabSafely(
     // 已被关闭 / 正在播放音频等浏览器拒绝：按失败反馈，不逃逸为 unhandled rejection。
     ok = false;
   }
-  if (ok) notifyUser('Tabs', t('bg.discardDone'));
+  if (ok) notifyUser('Tabs', t('已休眠标签'));
   return ok;
 }
 

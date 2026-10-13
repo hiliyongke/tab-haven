@@ -91,7 +91,7 @@ export const LocateActiveMessageSchema = z.object({
   at: z.number().optional()
 });
 
-/** UI → SW：下一次该窗口关闭时跳过关窗自动快照（归档流程已自行留档，防重复保存）。 */
+/** UI → SW：下一次该窗口关闭时跳过关窗自动快照（归档流程已自行保存，防重复保存）。 */
 export const SkipAutoSaveOnceMessageSchema = z.object({
   type: z.literal('skip-auto-save-once'),
   windowId: z.number().int()

@@ -48,6 +48,14 @@ export function buildDataContext(
   // 写合并保留 DataRepository.write 的 boolean 语义，便于写失败时上报降级。
   // 落盘经跨页锁：background 右键菜单对同一分区的 RMW（锁内重读再合并）
   // 与面板「末值落盘」交错时会互相覆盖（静默丢条目），双方共用一把锁串行化。
+  /**
+   * 落盘通道：写「本页内存算好的整表」，锁只负责与增量写方串行化。
+   *
+   * 不能改成「锁内以磁盘为基线重算」：合并窗口内可能排了多次变更
+   * （createFolder → addTabsToFolder），磁盘此时还没有前一次的结果，拿它当基线
+   * 会让后一次变更算在旧表上，把排队中的改动直接抹掉（已实测会丢条目绑定）。
+   * 内存才是含全部排队变更的权威基线；并发上下文的写入由 value watcher 回放进来。
+   */
   const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[], boolean>({
     write: (value) => withCrossPageLock(FOLDERS_RMW_LOCK, () => repos.folders.write(value))
   });
@@ -63,8 +71,16 @@ export function buildDataContext(
    * 可见」的纪律（只是 scope 独立，不会被其它分区的写成功连坐清除）。
    */
   syncMirror.setMirrorResultHandlers({
-    onFailure: (message) => reportPersistenceFailure(SYNC_MIRROR_SCOPE, message),
-    onSuccess: () => clearDegraded(SYNC_MIRROR_SCOPE)
+    onFailure: (message) => {
+      reportPersistenceFailure(SYNC_MIRROR_SCOPE, message);
+      // 同步状态行必须反映写结果：配额超限等故障下云端仍留着旧镜像，
+      // pull 分类保持 'ok'，只靠它会显示「已生效」，而本次改动其实没上传。
+      if (!get().mirrorWriteFailed) set({ mirrorWriteFailed: true });
+    },
+    onSuccess: () => {
+      clearDegraded(SYNC_MIRROR_SCOPE);
+      if (get().mirrorWriteFailed) set({ mirrorWriteFailed: false });
+    }
   });
 
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
@@ -108,6 +124,19 @@ export function buildDataContext(
   function resetDegraded(): void {
     degradedScopes.clear();
     if (get().storageDegraded) set({ storageDegraded: false });
+  }
+
+  /**
+   * 复位镜像失败态（关闭同步 / 清空数据时调用）。
+   *
+   * 镜像的降级计数只由写成功回调（`onSuccess`）复位，而**关闭同步后不再有任何
+   * 镜像写入**——那条回调永远不会到来。若不在此显式复位，「镜像写入失败」的
+   * 降级横幅与 `mirrorWriteFailed` 会永久粘住，而此时本地数据其实完好、用户
+   * 也已经明确关掉了同步：提示既过时又错配。
+   */
+  function resetMirrorFailure(): void {
+    clearDegraded(SYNC_MIRROR_SCOPE);
+    if (get().mirrorWriteFailed) set({ mirrorWriteFailed: false });
   }
 
   async function writeFolders(
@@ -167,7 +196,7 @@ export function buildDataContext(
     if (ok !== false) scheduleMirror(get());
   }
 
-  // 跨页面设置同步：设置页 / 侧边栏 / popup 各自持有独立 dataStore 实例，
+  // 跨页面设置同步：设置页与侧边栏各自持有独立 dataStore 实例，
   // 通过 storage.onChanged 感知其他页面写入的设置并实时应用（否则改完设置需重开面板才生效）。
   // 另提供 refreshSettings（重新读存储）与 settings-synced 广播消息作为双保险。
   const syncSettingsFromStorage = async (): Promise<void> => {
@@ -244,6 +273,7 @@ export function buildDataContext(
     reportPersistenceFailure,
     clearDegraded,
     resetDegraded,
+    resetMirrorFailure,
     applyBindings,
     syncSettingsFromStorage,
     broadcastSettingsSynced,

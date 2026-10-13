@@ -6,6 +6,20 @@ import { logDegraded } from '@/platform/diagnostics';
 const QUARANTINE_ENTRY_LIMIT = 32 * 1024;
 
 /**
+ * 深拷贝（结构化克隆优先，不可用时退化为 JSON 往返）。
+ *
+ * 仓库默认值与落盘数据都是 JSON 同构的纯数据，两种方式等价；structuredClone
+ * 在极端环境（旧运行时）缺失时不能让读取降级链路崩掉，故保留 JSON 兜底。
+ *
+ * 注意：**仅用于 JSON 同构值** —— JSON 兜底会丢掉 `undefined`、函数、
+ * Map/Date 等非 JSON 值（Date 退化为字符串），本仓库不涉及这类值。
+ */
+function cloneValue<V>(value: V): V {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as V;
+}
+
+/**
  * 数据仓库：单 key 的读写 + 校验 + 变更订阅（chrome.storage.local 通道）。
  *
  * 读写管线：
@@ -31,16 +45,34 @@ export class DataRepository<T> {
     private readonly options: DataRepositoryOptions = {}
   ) {}
 
+  /**
+   * 默认值的深拷贝（经 schema 重解析）。
+   *
+   * 直接把 `this.defaultValue` 交出去等于把仓库持有的同一对象给了调用方：默认值
+   * 多是字面量 `[]`，任一消费方原地 `push/sort` 即永久污染默认值，此后每次读盘
+   * 都带脏数据。`watch()` 已为同一隐患做了防护（见其注释），`read()` 同口径。
+   */
+  private cloneDefault(): T {
+    // 默认值本身不合法时不能抛：本方法被 read() 的降级分支调用（含 try 之外的
+    // 「存储不可用」分支），抛错会把「降级返回默认值」变成「读取整条链路崩掉」。
+    // schema 化克隆失败时退回结构化深拷贝——共享引用被消费方原地改动的隐患
+    // 仍在防护范围内，只是不再附带归一化。
+    const parsed = this.schema.safeParse(this.defaultValue);
+    if (parsed.success) return parsed.data;
+    logDegraded('storage', `默认值未通过 schema 校验（${this.key}），已回退为原始默认值`);
+    return cloneValue(this.defaultValue);
+  }
+
   async read(): Promise<T> {
     const area = browser.storage?.local;
     if (!area) {
       this.options.onUnavailable?.();
-      return this.defaultValue;
+      return this.cloneDefault();
     }
     try {
       const stored = await area.get(this.key);
       const raw = stored[this.key];
-      if (raw === undefined) return this.defaultValue;
+      if (raw === undefined) return this.cloneDefault();
       const parsed = this.schema.safeParse(raw);
       if (parsed.success) return parsed.data;
 
@@ -66,11 +98,11 @@ export class DataRepository<T> {
 
       // 坏数据隔离：不扩散、可诊断
       await this.isolateCorrupted(raw);
-      return this.defaultValue;
+      return this.cloneDefault();
     } catch (error) {
       logDegraded('storage', `数据读取失败（${this.key}）`, error);
       this.options.onUnavailable?.();
-      return this.defaultValue;
+      return this.cloneDefault();
     }
   }
 
@@ -98,9 +130,12 @@ export class DataRepository<T> {
       const change = changes[this.key];
       if (!change) return;
       if (change.newValue === undefined) {
-        // 经 schema 重解析出一份深拷贝：直接传 defaultValue 引用会让订阅方
+        // 经 cloneDefault 出一份深拷贝：直接传 defaultValue 引用会让订阅方
         // 拿到仓库持有的同一对象，将来任一订阅方原地修改数组即污染默认值。
-        onChange(this.schema.parse(this.defaultValue));
+        // 必须走 cloneDefault：schema.parse 在默认值不合法时会**抛出**，而本回调
+        // 运行在 storage.onChanged 监听器内，抛出既不会被 read() 的 try 捕获，
+        // 也没有调用方可捕获 —— 一次坏默认值就让整条订阅链路静默失效。
+        onChange(this.cloneDefault());
         return;
       }
       const parsed = this.schema.safeParse(change.newValue);

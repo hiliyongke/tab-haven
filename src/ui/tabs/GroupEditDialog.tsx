@@ -1,9 +1,32 @@
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { DialogShell } from '@/ui/dialog/Dialog';
+import { Button } from '@/ui/common/Button';
 import { TextField } from '@/ui/common/TextField';
 import { groupAccentVar } from '@/ui/tabs/accent';
 import { GROUP_COLOR_NAMES } from '@/core/group/groupColors';
+
+/**
+ * 组色 → 中文原文。
+ *
+ * 形如 `groups.color.<色名>` 的动态拼接 key 静态扫描拿不到完整字符串，
+ * 运行时在英文模式下会直接露中文。改为按色名取原文，再由运行时按原文算哈希查词典。
+ *
+ * 属性名以 `Key` 结尾是扫描器的抽取约定：常量表不是调用点，只有 `*Key` 属性会被
+ * 抽进词典。此前靠 `@i18n-ignore-start/end` 豁免 zh-linter，注释还写着「值会经
+ * `t()` 进词典」—— 实际一条都没进（英文模式下九个色名全是中文，而 check 绿灯）。
+ */
+const GROUP_COLOR_LABELS: Record<string, { labelKey: string }> = {
+  grey: { labelKey: '灰色' },
+  blue: { labelKey: '蓝色' },
+  red: { labelKey: '红色' },
+  yellow: { labelKey: '黄色' },
+  green: { labelKey: '绿色' },
+  pink: { labelKey: '粉色' },
+  purple: { labelKey: '紫色' },
+  cyan: { labelKey: '青色' },
+  orange: { labelKey: '橙色' }
+};
 
 /** 原生组编辑弹窗：改名 + 换色（复用 DialogShell 的焦点/键盘行为）。 */
 export function GroupEditDialog({
@@ -35,31 +58,23 @@ export function GroupEditDialog({
 
   return (
     <DialogShell
-      title={t('groups.edit')}
+      title={t('编辑标签组')}
       onClose={onClose}
       footer={
+        /* 走 Button 而非手写 <button>：手写的没有 min-h（实高约 28px）、
+           没有 transition-base / 禁用态，与同族弹窗底栏不同构。 */
         <>
-          <button
-            type="button"
-            className="rounded px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
-            onClick={onClose}
-          >
-            {t('dialog.cancel')}
-          </button>
-          <button
-            type="button"
-            className="rounded bg-accent-600 px-3 py-1 text-sm text-on-accent hover:bg-accent-700"
-            onClick={commit}
-          >
-            {t('dialog.confirm')}
-          </button>
+          <Button variant="secondary" onClick={onClose}>
+            {t('取消')}
+          </Button>
+          <Button onClick={commit}>{t('保存')}</Button>
         </>
       }
     >
       <TextField
-        className="mb-2"
-        ariaLabel={t('groups.namePlaceholder')}
-        placeholder={t('groups.namePlaceholder')}
+        className="mb-3"
+        ariaLabel={t('组名称')}
+        placeholder={t('组名称')}
         value={draft}
         onChange={setDraft}
         onKeyDown={(e) => {
@@ -71,7 +86,9 @@ export function GroupEditDialog({
           用原生 radio（与设置页主题色板同一套写法）：色块无子内容，
           radio 完全够用，且自带 radiogroup 的键盘漫游与选中语义。
           视觉 16px / 命中 24px（::after 扩区，见 .swatch 样式）。 */}
-      <div className="mb-2 flex flex-wrap gap-1" role="radiogroup" aria-label={t('groups.edit')}>
+      {/* gap-2（节距 24px）：gap-1 时相邻色块的 24px 命中区（.swatch::after inset:-4px）
+          会互相重叠 4px。末元素不再带 mb —— 内容区上下留白应保持 12/12 对称。 */}
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('编辑标签组')}>
         {GROUP_COLOR_NAMES.map((c) => (
           <input
             key={c}
@@ -80,8 +97,8 @@ export function GroupEditDialog({
             checked={draftColor === c}
             className="swatch appearance-none"
             style={{ backgroundColor: groupAccentVar(c) }}
-            title={t(`groups.color.${c}`)}
-            aria-label={t(`groups.color.${c}`)}
+            title={t(GROUP_COLOR_LABELS[c]?.labelKey ?? c)}
+            aria-label={t(GROUP_COLOR_LABELS[c]?.labelKey ?? c)}
             onChange={() => setDraftColor(c)}
           />
         ))}

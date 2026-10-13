@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { FixedFolder } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
@@ -157,27 +157,27 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
         !tabs.some((tab) => itemUrlMatchesTab(item.url, tab) && !tab.incognito)
     );
     if (missing.length === 0) {
-      notify(t('fixed.allOpen'));
+      notify(t('文件夹条目均已打开'));
       return;
     }
     void createTabsWithUrls(missing.map((item) => item.url).filter((u): u is string => Boolean(u)))
-      .then((created) => notify(t('fixed.openedAll', { count: created })))
-      .catch(() => notifyError(t('errors.operationFailed')));
+      .then((created) => notify(t('已打开 {{count}} 个条目', { count: created })))
+      .catch(() => notifyError(t('操作失败，请稍后重试')));
   };
   const handleExportBookmarks = () => {
     void saveFolderToBookmarks(folder)
       .then((count) =>
-        notify(count > 0 ? t('fixed.bookmarked', { count }) : t('fixed.bookmarkEmpty'))
+        notify(count > 0 ? t('已导出 {{count}} 条到书签', { count }) : t('文件夹为空，未导出书签'))
       )
-      .catch(() => notifyError(t('errors.operationFailed')));
+      .catch(() => notifyError(t('操作失败，请稍后重试')));
   };
   const headerAction = (
     <>
       <button
         type="button"
         className="row-action"
-        title={t('fixed.openAll')}
-        aria-label={t('fixed.openAll')}
+        title={t('打开文件夹全部条目')}
+        aria-label={t('打开文件夹全部条目')}
         onClick={(event) => {
           event.stopPropagation();
           handleOpenAll();
@@ -188,8 +188,8 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       <button
         type="button"
         className="row-action"
-        title={t('fixed.toBookmarks')}
-        aria-label={t('fixed.toBookmarks')}
+        title={t('导出到浏览器书签')}
+        aria-label={t('导出到浏览器书签')}
         onClick={(event) => {
           event.stopPropagation();
           handleExportBookmarks();
@@ -203,8 +203,8 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       <button
         type="button"
         className="row-action"
-        title={t('fixed.toNativeGroup')}
-        aria-label={t('fixed.toNativeGroup')}
+        title={t('恢复为原生标签组')}
+        aria-label={t('恢复为原生标签组')}
         disabled={importing || converting}
         onClick={(event) => {
           event.stopPropagation();
@@ -216,8 +216,8 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       <button
         type="button"
         className="row-action"
-        title={t('fixed.edit')}
-        aria-label={t('fixed.edit')}
+        title={t('编辑文件夹')}
+        aria-label={t('编辑文件夹')}
         disabled={importing}
         onClick={(event) => {
           event.stopPropagation();
@@ -229,8 +229,8 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       <button
         type="button"
         className="row-action is-danger"
-        title={t('fixed.deleteFolder')}
-        aria-label={t('fixed.deleteFolder')}
+        title={t('删除文件夹（标签保留）')}
+        aria-label={t('删除文件夹（标签保留）')}
         disabled={importing}
         onClick={(event) => {
           event.stopPropagation();
@@ -288,16 +288,16 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
           initialName={folder.name}
           onRename={(name) => {
             void renameFolder(folder.id, name).then(
-              () => notify(t('toast.folderRenamed')),
-              () => notifyError(t('errors.operationFailed'))
+              () => notify(t('已重命名文件夹')),
+              () => notifyError(t('操作失败，请稍后重试'))
             );
           }}
           onDelete={() => {
             // 删除不可撤销，绝不能先报成功：写盘失败时必须明确告知，
             // 否则用户以为已删除，实际数据还在（或反之）。
             void deleteFolder(folder.id).then(
-              () => notify(t('toast.folderRemoved')),
-              () => notifyError(t('errors.operationFailed'))
+              () => notify(t('已删除文件夹')),
+              () => notifyError(t('操作失败，请稍后重试'))
             );
           }}
           onClose={() => setDialog(null)}
@@ -305,17 +305,19 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       )}
       {dialog?.type === 'convert' && (
         <ConfirmDialog
-          title={t('fixed.convertTitle')}
-          message={t('fixed.convertConfirm', { name: folder.name })}
+          title={t('恢复为原生标签组')}
+          message={t('将打开「{{name}}」中的标签，并删除这个文件夹。是否继续？', {
+            name: folder.name
+          })}
           danger
           onConfirm={() => {
             setDialog(null);
             setConverting(true);
             void onRestoreFolderAsGroup(folder.id)
               .then((converted) =>
-                notify(t(converted ? 'toast.folderConverted' : 'toast.folderConvertSkipped'))
+                notify(t(converted ? '已恢复为原生标签组' : '文件夹中没有可转换的标签'))
               )
-              .catch(() => notify(t('toast.folderConvertFailed')))
+              .catch(() => notify(t('恢复原生标签组失败')))
               .finally(() => setConverting(false));
           }}
           onCancel={() => setDialog(null)}
@@ -323,15 +325,15 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       )}
       {dialog?.type === 'delete' && (
         <ConfirmDialog
-          title={t('fixed.delete')}
-          message={t('fixed.deleteConfirm', { name: folder.name })}
+          title={t('删除文件夹')}
+          message={t('删除文件夹“{{name}}”？正在打开的标签不会关闭。', { name: folder.name })}
           danger
-          confirmLabel={t('fixed.confirmDelete')}
+          confirmLabel={t('确认删除')}
           onConfirm={() => {
             setDialog(null);
             void deleteFolder(folder.id).then(
-              () => notify(t('toast.folderRemoved')),
-              () => notifyError(t('errors.operationFailed'))
+              () => notify(t('已删除文件夹')),
+              () => notifyError(t('操作失败，请稍后重试'))
             );
           }}
           onCancel={() => setDialog(null)}

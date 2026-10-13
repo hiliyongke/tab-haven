@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import {
   buildHistoryTargets,
@@ -94,9 +94,19 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // 全窗口搜索数据源（设置开启且输入非空时，异步补充其他窗口标签；默认仅当前窗口）
-  const otherTabs = useAllWindowTabs(searchAllWindows, query);
+  /**
+   * 输入回显必须即时，但**搜索计算**可以滞后一帧。
+   *
+   * 每敲一个字符都要对上千标签跑一遍 fuzzysort（开启拼音时还要过一遍拼音索引），
+   * 长列表下会与输入争抢主线程 —— 表现为打字卡顿，而不是「结果稍晚」。
+   * `useDeferredValue` 让 React 先把输入与列表骨架渲染出来，命中在下一轮空闲
+   * 渲染时再更新：用户感知是结果晚一帧，不是界面卡住。
+   */
+  const deferredQuery = useDeferredValue(query);
 
-  const isFiltering = query.trim().length > 0;
+  const otherTabs = useAllWindowTabs(searchAllWindows, deferredQuery);
+
+  const isFiltering = deferredQuery.trim().length > 0;
   // 搜索用标签集：开启全窗口搜索且输入中时并入其他窗口标签（其余场景恒等于当前窗口）
   const effectiveTabs = useMemo(
     () => (isFiltering && searchAllWindows ? [...tabs, ...otherTabs] : (tabs as TabRecord[])),
@@ -117,19 +127,29 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     // EMPTY_NO_CACHE_SET 是模块级常量，非响应式值，不进依赖数组。
   }, [noCacheEnabled, noCachePatterns, effectiveTabs]);
 
-  // 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）
+  /**
+   * 常驻搜索：输入即过滤下方列表（fuzzysort 内核：标题 / URL / 拼音可选）。
+   *
+   * **惰性构造**：只在正在输入（`isFiltering`）时才建引擎。构造期要对每个标签跑
+   * `prepare()`，开启拼音时还要同步跑一遍 pinyin-pro；而它依赖的 `effectiveTabs`
+   * 会随任何标签快照变化（标题 / 静音 / 激活状态），不惰性的话 1000 标签场景里
+   * 每次快照都要重建一次，用户**根本没在搜索**时也持续烧 CPU。
+   * 与下方 `historyEngine` 同款惰性口径（历史引擎只在开关打开时构造）。
+   */
   const engine = useMemo(
     () =>
-      new SearchEngine(
-        effectiveTabs.map((tab) => ({
-          id: tab.id,
-          title: tab.title || t('tabs.untitled'),
-          url: tab.url || '',
-          active: tab.active
-        })),
-        { pinyin: pinyinSearch }
-      ),
-    [effectiveTabs, t, pinyinSearch]
+      isFiltering
+        ? new SearchEngine(
+            effectiveTabs.map((tab) => ({
+              id: tab.id,
+              title: tab.title || t('无标题标签'),
+              url: tab.url || '',
+              active: tab.active
+            })),
+            { pinyin: pinyinSearch }
+          )
+        : null,
+    [isFiltering, effectiveTabs, t, pinyinSearch]
   );
 
   // 时间线搜索引擎（P-01）：快照条目映射为负数合成 id 目标，与主引擎同内核。
@@ -167,7 +187,8 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
    */
   const [pinyinTick, setPinyinTick] = useState(0);
   useEffect(() => {
-    if (engine.pinyinReady) return;
+    // 未输入时引擎不存在（惰性构造）：此时没有可补齐拼音的对象。
+    if (engine === null || engine.pinyinReady) return;
     let cancelled = false;
     void engine
       .ensurePinyin()
@@ -188,8 +209,9 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变。
     // 回调内显式引用它，让依赖数组语义自足（不写豁免注释）。
     void pinyinTick;
-    return engine.search(query, Math.max(effectiveTabs.length, 50));
-  }, [engine, query, effectiveTabs.length, pinyinTick]);
+    // 引擎为空 = 没在输入：此时没有命中，也不必付搜索的代价。
+    return engine === null ? [] : engine.search(deferredQuery, Math.max(effectiveTabs.length, 50));
+  }, [engine, deferredQuery, effectiveTabs.length, pinyinTick]);
 
   /**
    * 历史命中（P-01）：合成 id 命中后立即解码为结构化信息（快照名/来源/时间/条目）。

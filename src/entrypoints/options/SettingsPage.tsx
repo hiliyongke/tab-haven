@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
@@ -32,6 +32,29 @@ import { ClearDataDialog } from '@/entrypoints/options/ClearDataDialog';
 
 /** 导入文件体积上限（5MB）：备份为纯 JSON，此上限已远超正常使用规模。 */
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+/**
+ * 导入事务的分区名 → 界面称呼（写盘失败提示要指出卡在哪一步）。
+ *
+ * 整块豁免 zh-linter：这里存的是**待翻译的原文**，由 `partitionLabel` 在实际
+ * 提示那一刻经 `t()` 翻译。若在此处直接写 `t(...)`，映射会在模块加载期求值，
+ * 那时语言尚未确定，切语言后文案不会跟着变。
+ */
+// @i18n-ignore-start
+const PARTITION_LABELS: Record<string, string> = {
+  folders: '固定空间',
+  pins: '常驻磁贴',
+  settings: '设置',
+  snapshots: '快照',
+  siteCollapse: '折叠状态'
+};
+// @i18n-ignore-end
+
+/** 取分区的界面称呼；未知分区原样返回（不丢信息）。 */
+function partitionLabel(name: string, t: (key: string) => string): string {
+  const label = PARTITION_LABELS[name];
+  return label === undefined ? name : t(label);
+}
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -80,7 +103,7 @@ export function SettingsPage() {
    */
   const update = (key: keyof Settings, value: unknown) => {
     void tryUpdateSettings({ [key]: value } as Partial<Settings>).then((ok) => {
-      if (!ok) setTransferStatus(t('settings.saveFailed'));
+      if (!ok) setTransferStatus(t('设置未保存：存储不可用，请重试'));
     });
   };
 
@@ -89,10 +112,10 @@ export function SettingsPage() {
       const payload = JSON.stringify(await exportData(), null, 2);
       // 下载实现统一走 platform（与首启引导共用一份），入口层不自己拼 <a download>。
       downloadJsonFile(datedJsonFilename('tabs-backup'), payload);
-      setTransferStatus(t('settings.exportSuccess'));
+      setTransferStatus(t('备份已导出'));
     } catch {
       // 快照读取或序列化失败：宁可明确报错，也不能给出一份内容不全的备份。
-      setTransferStatus(t('settings.exportFailed'));
+      setTransferStatus(t('导出失败：本地数据读取未完成'));
     }
   };
 
@@ -103,27 +126,38 @@ export function SettingsPage() {
     // 体积上限：备份是纯 JSON，5MB 已远超正常使用规模；不设限会让超大文件
     // 在 file.text() 阶段直接卡死设置页。
     if (file.size > MAX_IMPORT_BYTES) {
-      setTransferStatus(t('settings.importFailed'));
+      setTransferStatus(t('导入失败：备份文件超过 5MB，请拆分后再导入'));
       return;
     }
     try {
       // 先解析，确认弹窗由自制 ConfirmDialog 承接（与全站弹窗体系一致）。
       setPendingImport(JSON.parse(await file.text()) as unknown);
     } catch {
-      setTransferStatus(t('settings.importFailed'));
+      setTransferStatus(t('导入失败：备份文件无效或无法读取'));
     }
   };
 
   const runImport = () => {
     if (pendingImport === null) return;
     void importData(pendingImport)
-      .then(() => setTransferStatus(t('settings.importSuccess')))
+      .then(() => setTransferStatus(t('备份已导入')))
       .catch((error: unknown) => {
         // 版本不兼容要说得清下一步：笼统「导入失败」会让用户以为备份坏了。
+        const raw = error instanceof Error ? error.message : '';
         const message =
-          error instanceof Error && error.message === 'export-version-mismatch'
-            ? t('settings.importVersionMismatch')
-            : t('settings.importFailed');
+          raw === 'export-version-mismatch'
+            ? t(
+                '备份文件版本与当前 Tabs 不兼容：它由另一个版本导出。请用导出该备份的 Tabs 版本导入，或在新版本里重新导出一份。'
+              )
+            : // 写盘失败带分区名（transferSlice 抛 `import-write-failed:<分区>`）。
+              // 此前一律落到「文件无效」，而真实原因是存储不可用 —— 用户会反复
+              // 重试导入、甚至以为备份损坏。分区名让人知道卡在哪一步。
+              raw.startsWith('import-write-failed:')
+              ? t(
+                  '导入失败：写入「{{name}}」时存储不可用，已回滚（本地数据保持导入前的状态）。请确认浏览器存储空间后重试。',
+                  { name: partitionLabel(raw.slice('import-write-failed:'.length), t) }
+                )
+              : t('导入失败：备份文件无效或无法读取');
         setTransferStatus(message);
       });
     setPendingImport(null);
@@ -133,13 +167,13 @@ export function SettingsPage() {
     void importBookmarksFromBar()
       .then((result) =>
         setTransferStatus(
-          t('settings.importBookmarksDone', {
+          t('已导入 {{folders}} 个文件夹 / {{items}} 条', {
             folders: result.foldersCreated,
             items: result.itemsImported
           })
         )
       )
-      .catch(() => setTransferStatus(t('settings.importFailed')));
+      .catch(() => setTransferStatus(t('导入失败：未能读取书签栏，请稍后重试')));
   };
 
   /** 打开浏览器「扩展快捷键」设置页。 */
@@ -160,7 +194,7 @@ export function SettingsPage() {
       // background SW / sidepanel 的降级记录都在其中（纯内存缓冲会漏掉主故障现场）。
       const entries = await readAllDiagnostics();
       if (entries.length === 0) {
-        setTransferStatus(t('settings.diagnosticsEmpty'));
+        setTransferStatus(t('暂无异常记录'));
         return;
       }
       const url = URL.createObjectURL(
@@ -172,17 +206,17 @@ export function SettingsPage() {
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       await clearDiagnostics();
-      setTransferStatus(t('settings.exportSuccess'));
+      setTransferStatus(t('诊断信息已导出'));
     } catch {
-      setTransferStatus(t('settings.exportFailed'));
+      setTransferStatus(t('导出失败：本地数据读取未完成'));
     }
   };
 
   /** 恢复全部设置为默认值（带确认弹窗）。 */
   const handleResetSettings = () => {
     void resetSettings()
-      .then(() => setTransferStatus(t('settings.resetDone')))
-      .catch(() => setTransferStatus(t('settings.resetFailed')));
+      .then(() => setTransferStatus(t('已恢复默认设置')))
+      .catch(() => setTransferStatus(t('恢复默认失败，请重试')));
     setConfirmingReset(false);
   };
 
@@ -197,9 +231,9 @@ export function SettingsPage() {
       .then(() => {
         void useUndoStore.getState().clearBatches();
         useSnapshotStore.getState().reset();
-        setTransferStatus(t('settings.clearDataDone'));
+        setTransferStatus(t('已清除全部数据'));
       })
-      .catch(() => setTransferStatus(t('settings.clearDataFailed')));
+      .catch(() => setTransferStatus(t('清除失败，请重试')));
     setConfirmingClear(false);
     setClearAck(false);
   };
@@ -232,33 +266,38 @@ export function SettingsPage() {
   const outlineItems = useMemo<OutlineItem[]>(() => {
     const dynamic: OutlineItem[] = visibleSections
       .filter((entry) => entry.specs.length > 0)
-      .map(({ section }) => ({ id: section.titleKey, label: t(section.titleKey) }));
+      // 锚点用 section.id（稳定标识），文案用 titleKey——两者不可混用
+      .map(({ section }) => ({ id: section.id, label: t(section.titleKey) }));
     // 静态区块（预置 / 概念图 / 快捷键 / 数据 / 关于）此前永不参与搜索过滤：
     // 搜「导出」时目录里仍挂着「数据」以外的块，点了不会有任何反应。
     // 与设置分区同口径：按标题过滤。
     const q = settingsSearch.trim().toLowerCase();
     const statics: OutlineItem[] = [
-      { id: 'presets.title', label: t('presets.title') },
-      { id: 'settings.capabilitiesGuide', label: t('settings.capabilitiesGuide') },
-      { id: 'fixedMap.title', label: t('fixedMap.title') },
-      { id: 'settings.shortcuts', label: t('settings.shortcuts') },
-      { id: 'settings.data', label: t('settings.data') },
-      { id: 'about.title', label: t('about.title') }
+      { id: 'presets.title', label: t('快速预设') },
+      { id: 'settings.capabilitiesGuide', label: t('你能做什么') },
+      { id: 'fixedMap.title', label: t('固定概念一览') },
+      { id: 'settings.shortcuts', label: t('快捷键') },
+      { id: 'settings.data', label: t('数据备份') },
+      { id: 'about.title', label: t('关于 Tabs') }
     ].filter((item) => !q || item.label.toLowerCase().includes(q));
     return [...statics.slice(0, 3), ...dynamic, ...statics.slice(3)];
   }, [t, visibleSections, settingsSearch]);
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-gray-500">
-        {t('settings.loading')}
+      /* 与正式态共用同一外壳：此前加载态是 max-w-2xl + py-10 的另一个盒子，
+         ready 翻转时容器宽度与上下留白同时变化，「设置加载中…」会横纵双向跳动。 */
+      <div className="mx-auto flex max-w-5xl justify-center gap-8 px-4 py-6 sm:px-6 sm:py-10">
+        <div className="min-w-0 max-w-2xl flex-1 text-sm text-gray-500">{t('设置加载中…')}</div>
       </div>
     );
   }
 
   return (
-    /* 左目录 + 右正文：目录在 lg 以下隐藏（窄屏放不下侧栏，此时正文占满宽度） */
-    <div className="mx-auto flex max-w-5xl gap-8 px-4 py-6 sm:px-6 sm:py-10">
+    /* 左目录 + 右正文：目录在 lg 以下隐藏（窄屏放不下侧栏，此时正文占满宽度）。
+       justify-center：正文列被 max-w-2xl 卡住后，剩余空间原本全部堆在右侧，
+       lg 以上空 112px、lg 以下空 180px，整页视觉左偏。 */
+    <div className="mx-auto flex max-w-5xl justify-center gap-8 px-4 py-6 sm:px-6 sm:py-10">
       <SettingsOutline items={outlineItems} />
       <div className="min-w-0 max-w-2xl flex-1">
         <header className="mb-4 flex items-start justify-between gap-3 sm:mb-6">
@@ -267,24 +306,26 @@ export function SettingsPage() {
               <Icon d={Icons.settings} className="h-4.5 w-4.5 text-accent-600" />
             </span>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900">{t('settings.title')}</h1>
-              <p className="mt-0.5 text-2xs text-gray-600">{t('settings.subtitle')}</p>
+              <h1 className="text-lg font-semibold text-gray-900">{t('设置')}</h1>
+              <p className="mt-0.5 text-2xs text-gray-600">{t('个性化你的标签工作台')}</p>
             </div>
           </div>
           <Button variant="danger-ghost" onClick={() => setConfirmingReset(true)}>
-            {t('settings.resetAll')}
+            {t('恢复默认')}
           </Button>
         </header>
 
-        <div className="mb-6">
+        {/* mb-6 sm:mb-8：与分区间距同档。此前恒为 24px，在 sm 以上反而小于
+            区块之间的 32px，层级关系倒置（"搜索框离首块更近"读起来像属于首块）。 */}
+        <div className="mb-6 sm:mb-8">
           <TextField
             type="search"
             size="lg"
             className="elev-1 rounded-lg"
             value={settingsSearch}
             onChange={setSettingsSearch}
-            placeholder={t('settings.searchPlaceholder')}
-            ariaLabel={t('settings.searchPlaceholder')}
+            placeholder={t('搜索设置…')}
+            ariaLabel={t('搜索设置…')}
           />
         </div>
 
@@ -296,7 +337,7 @@ export function SettingsPage() {
           <CapabilitiesGuide />
         </div>
 
-        <Section id="fixedMap.title" title={t('fixedMap.title')}>
+        <Section id="fixedMap.title" title={t('固定概念一览')}>
           <div className="p-4">
             <FixedConceptsMap />
           </div>
@@ -306,15 +347,15 @@ export function SettingsPage() {
           /* 搜索无命中的空态反馈：此前所有分区静默消失，用户分不清
              「没有这个设置」还是「搜索没生效」。 */
           <p className="mb-4 rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-xs text-gray-500">
-            {t('settings.searchEmpty')}
+            {t('没有找到匹配的设置')}
           </p>
         )}
         {visibleSections.map(({ section, specs }) => {
           if (specs.length === 0) return null;
           return (
             <Section
-              key={section.titleKey}
-              id={section.titleKey}
+              key={section.id}
+              id={section.id}
               title={t(section.titleKey)}
               count={specs.length}
             >
@@ -329,13 +370,23 @@ export function SettingsPage() {
           <ShortcutsSection onOpenShortcutSettings={openShortcutSettings} />
         </div>
 
-        <Section id="settings.data" title={t('settings.data')}>
-          <Row label={t('settings.exportData')} hint={t('settings.exportDataHint')}>
+        <Section id="settings.data" title={t('数据备份')}>
+          <Row
+            label={t('导出本地数据')}
+            hint={t(
+              '导出文件夹、常驻磁贴、折叠状态、设置，以及全部快照与归档；不包含当前打开的标签与撤销记录'
+            )}
+          >
             <Button variant="secondary" onClick={() => void handleExport()}>
-              {t('settings.export')}
+              {t('导出备份')}
             </Button>
           </Row>
-          <Row label={t('settings.importData')} hint={t('settings.importDataHint')}>
+          <Row
+            label={t('导入本地数据')}
+            hint={t(
+              '先在本地校验 JSON，再覆盖导出范围内的数据，不会修改当前打开的标签；任一分区写入失败会整体回滚'
+            )}
+          >
             <>
               <input
                 ref={importInputRef}
@@ -352,27 +403,44 @@ export function SettingsPage() {
                 disabled={importing}
                 onClick={() => importInputRef.current?.click()}
               >
-                {t('settings.import')}
+                {t('导入 JSON')}
               </Button>
             </>
           </Row>
-          <Row label={t('settings.importBookmarks')} hint={t('settings.importBookmarksHint')}>
+          <Row
+            label={t('从书签导入文件夹')}
+            hint={t('将书签栏顶层文件夹导入为固定空间的文件夹（同名合并、网址全局去重）')}
+          >
             <Button variant="secondary" onClick={handleImportBookmarks}>
-              {t('settings.importBookmarksAction')}
+              {t('导入')}
             </Button>
           </Row>
           {/* 导出引导（R4 / S-1）：**不依赖 onboarded** —— 引导只在首次运行时出现，
               而「卸载即丢数据」的风险对每个用户、每次打开设置页都存在。 */}
           <div className="mx-4 mb-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-            <p className="font-medium text-gray-700">{t('settings.exportReminderTitle')}</p>
-            <p className="mt-0.5">{t('settings.exportReminder')}</p>
+            <p className="font-medium text-gray-700">{t('建议定期导出备份')}</p>
+            <p className="mt-0.5">
+              {t(
+                'Tabs 没有服务器：数据只存在这台设备的浏览器里。卸载扩展、清除浏览数据或重置浏览器配置都会一并删除它们，且无法找回。建议定期导出一份备份文件。'
+              )}
+            </p>
           </div>
-          <Row label={t('settings.exportDiagnostics')} hint={t('settings.exportDiagnosticsHint')}>
+          <Row
+            label={t('导出诊断信息')}
+            hint={t(
+              '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带'
+            )}
+          >
             <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
-              {t('settings.export')}
+              {t('导出报告')}
             </Button>
           </Row>
-          <Row label={t('settings.clearData')} hint={t('settings.clearDataHint')}>
+          <Row
+            label={t('清除所有数据')}
+            hint={t(
+              '删除固定空间、常驻磁贴、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复'
+            )}
+          >
             <Button
               variant="danger-ghost"
               onClick={() => {
@@ -380,7 +448,7 @@ export function SettingsPage() {
                 setConfirmingClear(true);
               }}
             >
-              {t('settings.clearDataAction')}
+              {t('永久清除')}
             </Button>
           </Row>
           {transferStatus && (
@@ -392,18 +460,22 @@ export function SettingsPage() {
         </Section>
 
         {/* 关于：能力总览在独立页面（宽版式的能力网格），设置页只放入口 */}
-        <Section id="about.title" title={t('about.title')}>
-          <Row label={t('about.tagline')} hint={t('about.entryHint')}>
+        <Section id="about.title" title={t('关于 Tabs')}>
+          <Row
+            label={t('本地优先、无账号、无云端的标签工作台')}
+            hint={t('打开独立页面，完整浏览产品的全部能力与快捷键')}
+          >
             <Button variant="secondary" onClick={openAboutPage}>
-              {t('about.open')}
+              {t('查看能力总览')}
             </Button>
           </Row>
         </Section>
 
         {pendingImport !== null && (
           <ConfirmDialog
-            title={t('dialog.confirmTitle')}
-            message={t('settings.importConfirm')}
+            title={t('导入备份')}
+            message={t('导入会覆盖你的常驻磁贴、文件夹、设置与快照，是否继续？')}
+            confirmLabel={t('导入')}
             danger
             onCancel={() => setPendingImport(null)}
             onConfirm={runImport}
@@ -412,8 +484,9 @@ export function SettingsPage() {
 
         {confirmingReset && (
           <ConfirmDialog
-            title={t('dialog.confirmTitle')}
-            message={t('settings.resetConfirm')}
+            title={t('恢复默认设置')}
+            message={t('将把全部设置恢复为默认值，是否继续？')}
+            confirmLabel={t('恢复默认')}
             danger
             onCancel={() => setConfirmingReset(false)}
             onConfirm={handleResetSettings}

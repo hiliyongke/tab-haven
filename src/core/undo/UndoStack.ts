@@ -111,32 +111,65 @@ export function createUndoBatch(
  * 一对一配对而非「按 URL 全量命中」：窗口里可能另有用户本来就开着、从未被本次
  * 撤销恢复出来的同 URL 副本，全量匹配会把它们一并关掉 —— redo 的语义只是
  * 「关掉刚恢复的那批」。
+ *
+ * `includePinned`：撤销「快照恢复」批次时必须为 true。快照恢复会按快照里的
+ * pinned 状态**新建固定标签**，这批标签正是本次撤销要关掉的对象；沿用 redo 的
+ * 固定豁免会让它们永远匹配不上（若整批都是固定标签，匹配结果为空，撤销入口
+ * 随之消失，还会给出「这些标签已不在窗口中」这种与事实相反的提示）。
  */
 export function selectRedoTargets(
   tabs: readonly TabRecord[],
-  records: readonly UndoTabRecord[]
+  records: readonly UndoTabRecord[],
+  options: { includePinned?: boolean } = {}
 ): TabRecord[] {
+  const includePinned = options.includePinned ?? false;
   const taken = new Set<number>();
   const targets: TabRecord[] = [];
+  /**
+   * 预先按「比较键」建索引，而不是每条记录都 `findIndex` 全表。
+   *
+   * 原写法是 O(n·m)：1000 个标签 × 1000 条记录 = 1e6 次比较，撤销/重做一次
+   * 就要跑满。建索引后是 O(n + m)，且一对一配对语义不变（仍按位置去重）。
+   */
+  const byWebKey = new Map<string, number[]>();
+  const byRawUrl = new Map<string, number[]>();
+  const index = (map: Map<string, number[]>, key: string, position: number): void => {
+    const bucket = map.get(key);
+    if (bucket === undefined) map.set(key, [position]);
+    else bucket.push(position);
+  };
+  tabs.forEach((tab, position) => {
+    if (!includePinned && tab.pinned) return;
+    const webKey = webComparisonKey(tab.url, tab.pendingUrl);
+    if (webKey !== null) index(byWebKey, webKey, position);
+    const rawUrl = tab.url ?? '';
+    if (rawUrl !== '') index(byRawUrl, rawUrl, position);
+  });
+
   for (const record of records) {
-    const index = tabs.findIndex(
-      (tab, position) => !taken.has(position) && !tab.pinned && matchesRecord(tab, record)
-    );
-    if (index === -1) continue;
-    taken.add(index);
-    targets.push(tabs[index]!);
+    // 与 matchesRecord 同口径：web 键可用时按 web 键，内部页回落到原始 URL。
+    const recordWebKey = webComparisonKey(record.url, undefined);
+    const candidates =
+      recordWebKey !== null
+        ? byWebKey.get(recordWebKey)
+        : record.url !== ''
+          ? byRawUrl.get(record.url)
+          : undefined;
+    if (candidates === undefined) continue;
+    const position = candidates.find((candidate) => !taken.has(candidate));
+    if (position === undefined) continue;
+    taken.add(position);
+    const tab = tabs[position];
+    if (tab === undefined) continue;
+    targets.push(tab);
   }
   return targets;
 }
 
-/** 单条标签是否对应单条撤销记录。 */
-function matchesRecord(tab: TabRecord, record: UndoTabRecord): boolean {
-  const key = webComparisonKey(record.url, undefined);
-  if (key !== null) {
-    return webComparisonKey(tab.url, tab.pendingUrl) === key;
-  }
-  // 内部页（chrome://、about:blank、扩展页）没有 web 比较键：按原始 URL 兜底
-  // 比较，否则整批内部页会被判成「重做无对象」——而标签其实还开着。
-  // 空 URL 不参与兜底（记录里 URL 缺失不等价于「关掉没有 URL 的标签」）。
-  return record.url !== '' && (tab.url ?? '') === record.url;
-}
+/**
+ * 匹配口径（已内联到 `selectRedoTargets` 的索引里，此处存档说明）：
+ *  1. web 比较键可用时按 web 键比对（忽略 hash / 尾斜杠等差异）；
+ *  2. 内部页（chrome://、about:blank、扩展页）没有 web 键，按**原始 URL** 兜底，
+ *     否则整批内部页会被判成「重做无对象」——而标签其实还开着；
+ *  3. 空 URL 不参与兜底（记录里 URL 缺失不等价于「关掉没有 URL 的标签」）。
+ */

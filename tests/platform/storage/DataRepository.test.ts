@@ -43,6 +43,19 @@ describe('DataRepository', () => {
     expect(await repo().read()).toEqual([]);
   });
 
+  it('默认值按深拷贝给出（调用方原地修改不污染仓库默认值）', async () => {
+    // 默认值多是字面量 `[]`：把同一引用交出去后，任一消费方 push/sort 即永久
+    // 改写默认值，此后每次读盘都带脏数据（watch() 已为此做了同样的防护）。
+    const r = repo();
+
+    const first = await r.read();
+    const second = await r.read();
+    first.push({ id: 'leak', n: 1 });
+
+    expect(first).not.toBe(second);
+    expect(await r.read()).toEqual([]);
+  });
+
   it('写入非法值返回 false 且不落盘', async () => {
     const r = repo();
     const ok = await r.write([{ id: 'a', n: 'not-a-number' }] as never);

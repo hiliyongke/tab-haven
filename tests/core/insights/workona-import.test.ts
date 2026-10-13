@@ -168,6 +168,9 @@ describe('parseWorkona（P-09 迁移器）', () => {
 
     expect(result.snapshots).toHaveLength(SNAPSHOTS_LIMIT);
     expect(result.truncatedSnapshots).toBe(3);
+    // totalTabs 必须等于**落盘份**的标签总数：在解析阶段累加会把被截断的 3 份
+    // 也算进来（203），UI 报的导入条数就会大于实际落盘数。
+    expect(result.totalTabs).toBe(SNAPSHOTS_LIMIT);
   });
 
   it('archived_workspaces 字段名变体（小写）同样识别', () => {

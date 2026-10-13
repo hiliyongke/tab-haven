@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { Children, isValidElement, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { Settings } from '@/core/schema/models';
 import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/core/nocache/noCachePattern';
 import { normalizeWhitelistHost } from '@/core/url/hostname';
 import { hasPermissions, requestPermissions, type PermissionQuery } from '@/platform/permissions';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { ControlIdContext } from '@/ui/common/controlId';
+import { Select } from '@/ui/common/Select';
 import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
 
@@ -22,11 +24,19 @@ import { Toggle } from '@/ui/common/Toggle';
 const SITE_ACCESS: PermissionQuery = { origins: ['<all_urls>'] };
 
 export function SectionCount({ count }: { count?: number }) {
+  const { t } = useTranslation();
   if (count === undefined) return null;
   return (
-    <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs leading-none text-gray-500">
-      {count}
-    </span>
+    // 裸数字对读屏是孤立量词；可见数字 aria-hidden，改播完整语义
+    <>
+      <span
+        aria-hidden="true"
+        className="chip rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-gray-600"
+      >
+        {count}
+      </span>
+      <span className="sr-only">{t('共 {{count}} 项', { count })}</span>
+    </>
   );
 }
 
@@ -52,7 +62,9 @@ export function Section({
 }) {
   return (
     <section id={id} className="mb-6 scroll-mt-6 sm:mb-8">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-600">
+      {/* px-4：与卡片内 Row 的 px-4 同线（16px），也让本标题与「快速预设」卡内
+          标题（其 section 自带 p-4）处在同一条竖线上 —— 此前两者差 16px。 */}
+      <h2 className="mb-3 flex items-center gap-2 px-4 text-sm font-semibold tracking-wide text-gray-600">
         <span>{title}</span>
         <SectionCount count={count} />
       </h2>
@@ -63,23 +75,62 @@ export function Section({
   );
 }
 
+/**
+ * 可与视觉标签做 `htmlFor` 关联的控件类型。
+ *
+ * 只在这几种「单一控件」时才渲染 `<label>`：其余 Row 的 children 是按钮组、
+ * chip 编辑器或多控件组合，给它们挂 htmlFor 会指向不存在的 id（axe 报
+ * 「label 必须关联到控件」），因此降级为普通 <div>。
+ */
+const ASSOCIABLE_CONTROLS: unknown[] = [Toggle, Select, TextField];
+
+/** children 是否是「唯一的、可关联的表单控件」。 */
+function isAssociableControl(children: ReactNode): boolean {
+  // 先剔掉非元素子节点：`createPortal` 产出的不是 React 元素（isValidElement 为 false），
+  // 但 Children.toArray 仍把它算作一项。带 confirmOffKey 的开关在确认框打开时
+  // children 就是 [Toggle, Portal] —— 不剔就会被判成「多控件组合」，
+  // <label> 退化成 <div>、htmlFor 也不再下发，点标签聚焦/切换的能力
+  // **恰好在弹窗打开那一刻**丢失（交互中途失效，最难自查）。
+  const items = Children.toArray(children).filter(isValidElement);
+  const only = items[0];
+  if (items.length !== 1 || only === undefined) return false;
+  return ASSOCIABLE_CONTROLS.includes(only.type);
+}
+
 export function Row({
   label,
   hint,
   children
 }: {
-  label: string;
+  /** 允许 ReactNode：快捷键行需要传 <Kbd>，仅字符串无法表达键帽视觉。 */
+  label: ReactNode;
   hint?: string;
   children: ReactNode;
 }) {
+  const controlId = useId();
+  const associable = isAssociableControl(children);
+  // 可关联时才渲染 <label>：点击标签文本即可聚焦/切换控件，
+  // 且视觉文案与程序化标签收敛为一份（不必再在控件上另写 aria-label）。
+  const LabelTag = associable ? 'label' : 'div';
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
-        <div className="text-sm text-gray-800">{label}</div>
-        {hint && <div className="mt-0.5 text-2xs text-gray-600">{hint}</div>}
+        <LabelTag
+          className="block text-sm text-gray-800"
+          {...(associable ? { htmlFor: controlId } : {})}
+        >
+          {label}
+        </LabelTag>
+        {/* text-3xs(11px)：hint 是需要阅读的正文说明，遵守 main.css 顶部自订的
+            「正文说明一律 ≥ 11px」（10px 仅用于图标内文与徽角）。 */}
+        {hint && <div className="mt-0.5 text-3xs text-gray-600">{hint}</div>}
       </div>
       {/* 窄屏下控件撑满整行（右对齐改为起始对齐，避免长文本域溢出） */}
-      <div className="w-full shrink-0 sm:w-auto sm:pl-4">{children}</div>
+      <div className="w-full shrink-0 sm:w-auto sm:pl-4">
+        <ControlIdContext.Provider value={associable ? controlId : undefined}>
+          {children}
+        </ControlIdContext.Provider>
+      </div>
     </div>
   );
 }
@@ -94,18 +145,34 @@ export function WhitelistEditor({
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
+  /** 添加未生效的原因（无效 / 重复）：静默 return 会让用户以为已经加上了。 */
+  const [notice, setNotice] = useState<string | null>(null);
   const add = () => {
     // 归一化走 core 的唯一来源（schema 落盘与 SW 匹配端用同一函数）：
     // 此前此处内联一份，改口径时另外两处（schema / buildWhitelistMatcher）会漏改。
     const host = normalizeWhitelistHost(input);
-    if (!host) return;
-    if (!value.includes(host)) onChange([...value, host]);
+    // 归一化判空 = 这条永不命中（凭据串 / 越界端口 / 非法主机）。
+    if (!host) {
+      setNotice(t('不是有效的域名或「域名:端口」，未添加'));
+      return;
+    }
+    // 归一化后与既有条目撞车（`WWW.A.com` 与 `a.com`）：不重复添加，但要说清楚。
+    if (value.includes(host)) {
+      setNotice(t('该域名已在白名单中'));
+      setInput('');
+      return;
+    }
+    setNotice(null);
+    onChange([...value, host]);
     setInput('');
   };
   return (
-    <div className="flex w-full flex-col items-end gap-1.5 sm:w-auto">
+    /* 窄屏（sm 以下）下本块变成 w-full 且起始对齐，硬写 items-end / justify-end
+       会让 chip 靠右、输入框靠左，同块内出现两套水平基准。跟随断点切换对齐方向。 */
+    <div className="flex w-full flex-col items-start gap-1.5 sm:w-auto sm:items-end">
       {value.length > 0 && (
-        <ul className="flex max-w-full flex-wrap justify-end gap-1 sm:max-w-[240px]">
+        /* sm:max-w-60（15rem = 240px）：去掉全仓唯一的任意值宽度 class */
+        <ul className="flex max-w-full flex-wrap justify-start gap-1 sm:max-w-60 sm:justify-end">
           {value.map((entry) => (
             <li
               key={entry}
@@ -114,8 +181,8 @@ export function WhitelistEditor({
               {entry}
               <button
                 type="button"
-                aria-label={t('settings.whitelistRemove')}
-                title={t('settings.whitelistRemove')}
+                aria-label={t('移出白名单')}
+                title={t('移出白名单')}
                 onClick={() => onChange(value.filter((v) => v !== entry))}
                 /* whitelist-remove 透明扩区：12px 图标命中区远低于 WCAG 2.5.8 的 24px */
                 className="whitelist-remove text-gray-500 hover:text-gray-600"
@@ -130,18 +197,28 @@ export function WhitelistEditor({
         <TextField
           size="sm"
           className="w-32"
-          placeholder={t('settings.whitelistPlaceholder')}
-          ariaLabel={t('settings.whitelistPlaceholder')}
+          placeholder={t('输入域名')}
+          ariaLabel={t('输入域名')}
           value={input}
-          onChange={setInput}
+          onChange={(next) => {
+            setInput(next);
+            // 重新输入即视为已知晓上一次的结果，避免提示粘在屏幕上。
+            if (notice !== null) setNotice(null);
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') add();
           }}
         />
         <Button variant="secondary" size="sm" onClick={add}>
-          {t('settings.whitelistAdd')}
+          {t('添加')}
         </Button>
       </div>
+      {notice !== null && (
+        /* text-3xs(11px)：正文说明的最小字号（10px 仅用于图标内文与徽角）。 */
+        <p role="status" className="text-3xs text-red-600">
+          {notice}
+        </p>
+      )}
     </div>
   );
 }
@@ -207,8 +284,8 @@ export function NoCachePatternEditor({
         rows={5}
         resize
         className="font-mono leading-5"
-        placeholder={t('settings.noCachePatternPlaceholder')}
-        ariaLabel={t('settings.noCachePatterns')}
+        placeholder={t('每行一条，例：\nexample.com\nexample.com/app\nhttps://example.com/app')}
+        ariaLabel={t('禁缓存站点列表')}
         inputProps={{ spellCheck: false }}
         value={text}
         onChange={(next) => {
@@ -227,14 +304,14 @@ export function NoCachePatternEditor({
       <div className="flex w-full items-center justify-between gap-2">
         <span className="min-w-0 truncate text-2xs text-gray-500">
           {invalidCount > 0
-            ? t('settings.noCachePatternInvalidLines', { count: invalidCount })
-            : t('settings.noCachePatternHelp')}
+            ? t('已忽略 {{count}} 行格式无效的条目', { count: invalidCount })
+            : t('每行一条，回车换行；失焦或点保存生效（⌘/Ctrl+Enter）')}
         </span>
         <Button variant="secondary" size="sm" onClick={commit}>
-          {t('settings.noCachePatternSave')}
+          {t('保存')}
         </Button>
       </div>
-      {full && <span className="text-2xs text-gray-500">{t('settings.noCachePatternFull')}</span>}
+      {full && <span className="text-2xs text-gray-500">{t('已达上限（50 条）')}</span>}
     </div>
   );
 }
@@ -297,16 +374,16 @@ export function NoCacheToggle({
       <Toggle
         checked={settings.noCacheEnabled}
         onChange={(enabled) => void handleToggle(enabled)}
-        ariaLabel={t('settings.noCache')}
+        ariaLabel={t('开发者：指定站点禁用缓存')}
       />
       {denied && !settings.noCacheEnabled && (
-        <span className="text-2xs text-red-600">{t('settings.noCachePermissionDenied')}</span>
+        <span className="text-2xs text-red-600">{t('未授予网站权限，功能未开启')}</span>
       )}
       {permissionLost && settings.noCacheEnabled && (
         <span className="flex items-center gap-1.5 text-2xs text-warn-600">
-          {t('settings.noCachePermissionLost')}
+          {t('网站权限已失效，规则未生效')}
           <Button variant="secondary" size="sm" onClick={() => void regrant()}>
-            {t('settings.noCachePermissionRegrant')}
+            {t('重新授权')}
           </Button>
         </span>
       )}

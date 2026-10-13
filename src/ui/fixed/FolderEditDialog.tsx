@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { TextField } from '@/ui/common/TextField';
 import { DialogShell } from '@/ui/dialog/Dialog';
@@ -25,38 +25,70 @@ export function FolderEditDialog({
 
   if (confirmDelete) {
     return (
-      <DialogShell title={t('fixed.delete')} onClose={() => setConfirmDelete(false)}>
-        <p className="mb-3 text-sm text-gray-600">
-          {t('fixed.deleteConfirm', { name: initialName })}
+      <DialogShell
+        title={t('删除文件夹')}
+        onClose={() => setConfirmDelete(false)}
+        /* 按钮走 footer（淡底 + 上分隔线 + 8px 纵向留白）：
+           此前写在 children 里，与确认类弹窗的底栏不同构。 */
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
+              {t('取消')}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                // 无论删除成功与否都关闭弹窗：成功时 FolderRow 卸载弹窗随之消失；
+                // 失败时结果由 toast 如实告知（删除失败提示），停留在确认视图会让
+                // 用户重复点击发起重复删除，且「弹窗还开着但文件夹已删」同样困惑。
+                onDelete();
+                onClose();
+              }}
+            >
+              {t('删除')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          {t('删除文件夹「{{name}}」？已打开的标签不会关闭', { name: initialName })}
         </p>
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
-            {t('dialog.cancel')}
-          </Button>
-          <Button
-            variant="danger"
-            onClick={() => {
-              // 无论删除成功与否都关闭弹窗：成功时 FolderRow 卸载弹窗随之消失；
-              // 失败时结果由 toast 如实告知（删除失败提示），停留在确认视图会让
-              // 用户重复点击发起重复删除，且「弹窗还开着但文件夹已删」同样困惑。
-              onDelete();
-              onClose();
-            }}
-          >
-            {t('dialog.confirm')}
-          </Button>
-        </div>
       </DialogShell>
     );
   }
 
   return (
-    <DialogShell title={t('fixed.edit')} onClose={onClose}>
+    <DialogShell
+      title={t('编辑文件夹')}
+      onClose={onClose}
+      /* footer 容器是 flex justify-end gap-2，单个 w-full 子项即可铺满，
+         从而实现「删除在左 / 取消+保存 在右」的底栏分区。 */
+      footer={
+        <div className="flex w-full items-center justify-between">
+          <Button variant="danger-ghost" onClick={() => setConfirmDelete(true)}>
+            {t('删除文件夹')}
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              {t('取消')}
+            </Button>
+            <Button
+              onClick={() => {
+                onRename(draft.trim() || initialName);
+                onClose();
+              }}
+            >
+              {t('保存')}
+            </Button>
+          </div>
+        </div>
+      }
+    >
       <TextField
-        className="mb-3 w-full"
+        className="w-full"
         value={draft}
-        placeholder={t('fixed.folderNamePlaceholder')}
-        ariaLabel={t('fixed.folderNamePlaceholder')}
+        placeholder={t('文件夹名称')}
+        ariaLabel={t('文件夹名称')}
         onChange={(value) => setDraft(value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -65,24 +97,6 @@ export function FolderEditDialog({
           }
         }}
       />
-      <div className="flex items-center justify-between">
-        <Button variant="danger-ghost" onClick={() => setConfirmDelete(true)}>
-          {t('fixed.delete')}
-        </Button>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {t('dialog.cancel')}
-          </Button>
-          <Button
-            onClick={() => {
-              onRename(draft.trim() || initialName);
-              onClose();
-            }}
-          >
-            {t('dialog.save')}
-          </Button>
-        </div>
-      </div>
     </DialogShell>
   );
 }

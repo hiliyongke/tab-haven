@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useUndoStore } from '@/stores/undoStore';
 import { DialogShell } from '@/ui/dialog/Dialog';
 import {
@@ -15,7 +15,7 @@ import { EmptyState } from '@/ui/common/EmptyState';
 
 /**
  * 撤销历史面板：
- *  - 本产品撤销栈：列出全部批次，点击任意批次一键恢复（回溯任意一步）；
+ *  - Tabs撤销栈：列出全部批次，点击任意批次一键恢复（回溯任意一步）；
  *  - 浏览器最近关闭：chrome.sessions 记录的原生关闭标签/窗口，一键恢复。
  */
 
@@ -28,12 +28,12 @@ import { EmptyState } from '@/ui/common/EmptyState';
  * 未知来源一律不显示标签，避免显示成错误的标签。
  */
 function kindLabel(kind: string, t: (key: string) => string): string | null {
-  if (kind === 'archive') return t('undo.kindArchive');
+  if (kind === 'archive') return t('窗口归档');
   // 'restore'（R8）：快照恢复新建的标签。撤销它 = 关闭这批标签，可再撤销回来。
-  if (kind === 'restore') return t('undo.kindRestore');
+  if (kind === 'restore') return t('快照恢复');
   // 'restore-undo'：撤销一次快照恢复时关闭的那批标签（可再撤销把它们开回来）。
-  if (kind === 'restore-undo') return t('undo.kindRestoreUndo');
-  if (kind === 'close') return t('undo.kindClose');
+  if (kind === 'restore-undo') return t('撤销快照恢复');
+  if (kind === 'close') return t('手动关闭');
   return null;
 }
 
@@ -95,13 +95,13 @@ export function UndoHistoryPanel({
     void restoreRecentClosed(entry.sessionId)
       .then((ok) => {
         // 失败走 notifyError（role="alert"）：与抛错分支同一语义强度。
-        if (ok) notify(t('undo.recentRestored'));
-        else notifyError(t('errors.operationFailed'));
+        if (ok) notify(t('已从浏览器最近关闭中恢复'));
+        else notifyError(t('操作失败，请稍后重试'));
       })
       .catch(() => {
         // sessions.restore 抛错（sessionId 失效等）：必须经 finally 复位，
         // 否则该按钮永久 disabled 卡死。
-        notifyError(t('errors.operationFailed'));
+        notifyError(t('操作失败，请稍后重试'));
       })
       .finally(() => {
         restoringRef.current = false;
@@ -113,34 +113,36 @@ export function UndoHistoryPanel({
     batches.length > 0 || redoBatches.length > 0 || (recent !== null && recent.length > 0);
 
   return (
-    <DialogShell title={t('undo.historyTitle')} onClose={onClose} widthClassName="dialog-md">
+    <DialogShell title={t('撤销历史')} onClose={onClose} widthClassName="dialog-md">
       {/* 滚动交给 DialogShell 的内容区（标题栏与底栏常驻可见），这里不再自套
           一层 max-h + overflow —— 两层滚动容器会让滚动条出现两次、高度打架。 */}
-      <div className="pr-1">
+      {/* 不再加 pr-1：内容区 px-4 之外再多 4px，列表右边缘与标题栏 × 差 4px。
+          滚动条留白由内容区自身的 padding 承担。 */}
+      <div>
         {/* 空态复用通用 EmptyState：与弹窗 / 侧栏的空态同构，文案仍取 undo.historyEmpty。 */}
-        {!hasAny && <EmptyState title={t('undo.historyEmpty')} />}
+        {!hasAny && <EmptyState title={t('暂无撤销记录')} />}
 
-        {/* D5.3 崩溃引导：撤销与浏览器最近关闭都为空，但存在会话快照时，提示用户从快照找回。 */}
+        {/* D5.3 崩溃引导：撤销与浏览器最近关闭都为空，但存在快照时，提示用户从快照找回。 */}
         {!hasAny && hasSnapshots && (
           <div className="mx-1 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-xs text-accent-700">
-            <p>{t('snapshots.crashGuidance')}</p>
-            <button
-              type="button"
-              /* accent 梯度只定义到 700：accent-800 是越界令牌，类名不生成任何 CSS，
-                 悬停效果静默失效（历史坑）。改回 700，悬停加深改用亮度更低的表层色。 */
-              className="mt-1 rounded font-medium underline underline-offset-2 transition-base hover:bg-accent-100 hover:text-accent-700"
-              onClick={onOpenSnapshots}
-            >
-              {t('snapshots.openSnapshots')}
-            </button>
+            <p>{t('本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。')}</p>
+            {/* 复用统一按钮（与 ListStates 空态同款）：此前这里手写一份 accent
+                原子类，改主题/圆角要改两处，且越界令牌的悬停会静默失效。 */}
+            <Button variant="soft-outline" size="xs" className="mt-1" onClick={onOpenSnapshots}>
+              {t('查看我的快照')}
+            </Button>
           </div>
         )}
 
         {batches.length > 0 && (
           <section className="mb-3">
             <div className="mb-1 flex items-center justify-between gap-2">
-              <h3 className="text-2xs font-semibold tracking-wide text-gray-500">
-                {t('undo.historyOwn')} · {batches.length}
+              {/* 分组小标题统一口径（与 SnapshotsPanel / CommandPalette / AboutPage 一致）：
+                  11px + font-medium + tracking-wide + gray-500 */}
+              <h3 className="text-3xs font-medium tracking-wide text-gray-500">
+                {/* 纯中文：品牌名嵌进中文短语（「Tabs撤销」）会在中文界面留下
+                    中英混排且缺空格的读法，英文模式下又会被整句译掉品牌词。 */}
+                {t('撤销')} · {batches.length}
               </h3>
               {/* 重做常驻出口：仅在有可重做项时出现（与「清理重复」同款条件出现模式）。
                   文案带数量，让「这次会再关掉几个」在按下前可见。 */}
@@ -150,9 +152,11 @@ export function UndoHistoryPanel({
                   size="sm"
                   disabled={redoing}
                   onClick={() => void redo()}
-                  title={t('undo.redoHint', { count: redoBatches[0]?.entries.length ?? 0 })}
+                  title={t('再次关闭刚恢复的 {{count}} 个标签（可再次撤销）', {
+                    count: redoBatches[0]?.entries.length ?? 0
+                  })}
                 >
-                  {t('undo.redo')}
+                  {t('重做')}
                 </Button>
               )}
             </div>
@@ -161,9 +165,9 @@ export function UndoHistoryPanel({
                 <li key={batch.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-gray-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50"
                     onClick={() => void undoBatch(batch.id)}
-                    title={t('undo.restoreBatch')}
+                    title={t('恢复该批次关闭的标签')}
                   >
                     <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
                       {batch.entries[0]
@@ -172,7 +176,7 @@ export function UndoHistoryPanel({
                       {batch.entries.length > 1 ? ` +${batch.entries.length - 1}` : ''}
                     </span>
                     {kindLabel(batch.kind, t) && (
-                      <span className="shrink-0 rounded bg-gray-100 px-1 py-px text-2xs leading-none text-gray-500">
+                      <span className="chip chip--cjk shrink-0 rounded bg-gray-100 px-1 py-px text-gray-600">
                         {kindLabel(batch.kind, t)}
                       </span>
                     )}
@@ -188,22 +192,22 @@ export function UndoHistoryPanel({
 
         {recent !== null && recent.length > 0 && (
           <section>
-            <h3 className="mb-1 text-2xs font-semibold tracking-wide text-gray-500">
-              {t('undo.historyBrowser')} · {recent.length}
+            <h3 className="mb-1 text-3xs font-medium tracking-wide text-gray-500">
+              {t('浏览器最近关闭')} · {recent.length}
             </h3>
             <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {recent.map((entry) => (
                 <li key={entry.sessionId}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-gray-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50"
                     onClick={() => handleRestoreRecent(entry)}
                     disabled={restoringId !== null}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-gray-700">
                         {entry.isWindow
-                          ? t('undo.recentWindow', { count: entry.tabCount ?? 0 })
+                          ? t('窗口（{{count}} 个标签）', { count: entry.tabCount ?? 0 })
                           : entry.title || entry.url || '·'}
                       </span>
                       {!entry.isWindow && (

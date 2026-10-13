@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { act } from 'react';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useSearchController } from '@/ui/search/useSearchController';
@@ -59,7 +59,7 @@ function renderController(overrides: {
     (props: { tabs: TabRecord[]; snapshots: Snapshot[] }) =>
       useSearchController({
         tabs: props.tabs,
-        t: (key, options) => i18n.t(key, options),
+        t: translate,
         searchAllWindows: false,
         pinyinSearch: false,
         searchHistory,

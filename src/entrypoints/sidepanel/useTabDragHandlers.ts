@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { reorderBlockedReason } from '@/core/site/reorderCapability';
 import {
@@ -110,7 +110,9 @@ export function useTabDragHandlers() {
         sortMode: dataStore.settings.sortMode
       });
       if (blocked === 'recency') {
-        useUndoStore.getState().notify(t('tabs.orderLockedBySortMode'));
+        useUndoStore
+          .getState()
+          .notify(t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序'));
         return;
       }
       if (blocked === 'sync-off') return;
@@ -144,10 +146,14 @@ export function useTabDragHandlers() {
     (result: AddTabsToFolderResult) => {
       const { notify } = useUndoStore.getState();
       if (result.skipped === 0 && result.added === 0 && result.moved > 0) {
-        notify(t('toast.movedToFolder'));
+        notify(t('已移入文件夹'));
         return;
       }
-      notify(t('fixed.dropResult', { ...result }));
+      notify(
+        t('新增 {{added}} 个，移动 {{moved}} 个，跳过 {{skipped}} 个重复或不可用标签', {
+          ...result
+        })
+      );
     },
     [t]
   );
@@ -227,7 +233,7 @@ export function useTabDragHandlers() {
       // 串行写交错。此时投进固定空间只会「看起来没反应」，必须明确拒绝并说明原因，
       // 而不是让用户以为扩展卡住或数据丢了。临时区排序不受影响，故只拦固定空间目标。
       if (dataStore.importing && isFixedSpaceTarget(over.id, overData)) {
-        notify(t('fixed.importingBusy'));
+        notify(t('正在导入备份，请稍后再改'));
         return;
       }
       // 列表内排序是否被阻断：统一判定，UI 与拖拽分发共用同一口径
@@ -243,14 +249,16 @@ export function useTabDragHandlers() {
           if (dataStore.settings.tabOrderSync) {
             // recency 下显示顺序与 index 已解耦，拖了不会反映到界面，必须告知。
             if (blocked === 'recency') {
-              notify(t('tabs.orderLockedBySortMode'));
+              notify(t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序'));
               return;
             }
             // 任一侧行处于「超阈值强制虚拟化」分区（canReorder=false，UI 已提示
             // 排序暂停）时拦截真实排序：行拖拽仍可跨容器拖到固定空间，但 Tab→Tab
             // 落点必须忽略——否则出现「提示已暂停、松手却真的重排」的行为矛盾。
             if (activeData.canReorder === false || overData.canReorder === false) {
-              notify(t('tabs.largeListNotice'));
+              // 与行内提示同文案：虚拟化后拖拽与 Alt+↑↓ 是一并停的，
+              // 只说「不能拖拽」会让用户以为还有键盘这条路可走。
+              notify(t('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）'));
               return;
             }
             handleReorder(
@@ -272,7 +280,7 @@ export function useTabDragHandlers() {
               // 目标组可能刚被解散：groupTabs 内部降级记录并保持未分组。
               // 分组写入失败同样无 tabs 事件可自愈，必须给用户可见反馈（与相邻分支同口径）。
               void groupTabs([sourceTab.id], overTab.groupId).catch(() =>
-                notifyError(t('errors.operationFailed'))
+                notifyError(t('操作失败，请稍后重试'))
               );
             }
           }
@@ -286,7 +294,7 @@ export function useTabDragHandlers() {
             void dataStore
               .addTabsToFolder([target], overData.folderId)
               .then(notifyDropResult)
-              .catch(() => notifyError(t('errors.operationFailed')));
+              .catch(() => notifyError(t('操作失败，请稍后重试')));
           }
           return;
         }
@@ -294,7 +302,7 @@ export function useTabDragHandlers() {
           const tab = useTabStore
             .getState()
             .tabs.find((candidate) => candidate.id === activeData.tabId);
-          if (tab) requestCreateFolder(tab.title || t('tabs.untitled'), [tab.id]);
+          if (tab) requestCreateFolder(tab.title || t('无标题标签'), [tab.id]);
           return;
         }
         if (overData?.type === DragType.Pin || over.id === PINNED_STRIP_DROPPABLE) {
@@ -304,8 +312,8 @@ export function useTabDragHandlers() {
           if (tab) {
             void dataStore
               .addPin(tab)
-              .then(() => notify(t('toast.pinned')))
-              .catch(() => notifyError(t('errors.operationFailed')));
+              .then(() => notify(t('已固定标签')))
+              .catch(() => notifyError(t('操作失败，请稍后重试')));
           }
         }
         return;
@@ -318,7 +326,7 @@ export function useTabDragHandlers() {
           if (dataStore.settings.tabOrderSync) {
             // 同上：recency 下分区顺序同样与 index 解耦，必须显式告知。
             if (blocked === 'recency') {
-              notify(t('tabs.orderLockedBySortMode'));
+              notify(t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序'));
               return;
             }
             handleSectionReorder(activeData, overData, isPlaceAfter(event, activeData, overData));
@@ -333,7 +341,7 @@ export function useTabDragHandlers() {
             void dataStore
               .addTabsToFolder(targetTabs, overData.folderId)
               .then(notifyDropResult)
-              .catch(() => notifyError(t('errors.operationFailed')));
+              .catch(() => notifyError(t('操作失败，请稍后重试')));
           }
           return;
         }
@@ -353,7 +361,7 @@ export function useTabDragHandlers() {
               targetId: overData.itemId,
               placeAfter: isPlaceAfter(event, activeData, overData)
             })
-            .catch(() => notifyError(t('errors.operationFailed')));
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
           return;
         }
         // 跨文件夹：拖到目标文件夹（或其条目）上时，把条目移入目标文件夹。
@@ -366,16 +374,16 @@ export function useTabDragHandlers() {
         if (targetFolderId !== undefined) {
           void dataStore
             .moveFolderItem(activeData.folderId, activeData.itemId, targetFolderId)
-            .then(() => notify(t('toast.folderItemMoved')))
-            .catch(() => notifyError(t('errors.operationFailed')));
+            .then(() => notify(t('已移动到目标文件夹')))
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
           return;
         }
         // 移出固定空间：拖到临时区（标签行 / 分组卡）时移除条目，标签随之回到临时区。
         if (overData?.type === DragType.Tab || overData?.type === DragType.Section) {
           void dataStore
             .removeFolderItem(activeData.folderId, activeData.itemId)
-            .then(() => notify(t('toast.removedFromFolder')))
-            .catch(() => notifyError(t('errors.operationFailed')));
+            .then(() => notify(t('已从文件夹移除')))
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
         }
         return;
       }
@@ -388,7 +396,7 @@ export function useTabDragHandlers() {
             overData.folderId,
             isPlaceAfter(event, activeData, overData)
           )
-          .catch(() => notifyError(t('errors.operationFailed')));
+          .catch(() => notifyError(t('操作失败，请稍后重试')));
         return;
       }
 
@@ -403,7 +411,7 @@ export function useTabDragHandlers() {
               overData.pinId,
               isPlaceAfter(event, activeData, overData)
             )
-            .catch(() => notifyError(t('errors.operationFailed')));
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
         } else if (activeData.tabId !== undefined && overData.tabId !== undefined) {
           handleReorder(
             activeData.tabId,
@@ -414,7 +422,7 @@ export function useTabDragHandlers() {
           // 持久 pin（PinnedStrip）与浏览器置顶磁贴互拖：两种磁贴语义不同
           // （一个落盘、一个在浏览器标签条），互换顺序无意义。此前静默无操作，
           // 用户以为拖拽坏了——必须明确告知不支持。
-          useUndoStore.getState().notify(t('fixed.pinCrossSortUnsupported'));
+          useUndoStore.getState().notify(t('常驻磁贴与浏览器固定标签之间不支持排序。'));
         }
       }
     },

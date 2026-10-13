@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import i18n from '@/i18n';
+import { translate } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { logFailure } from '@/platform/diagnostics';
 
@@ -13,7 +13,7 @@ import { logFailure } from '@/platform/diagnostics';
  */
 
 interface ErrorBoundaryProps {
-  /** 发生错误的形态名（sidepanel / popup / options），用于诊断日志定位。 */
+  /** 发生错误的形态名（sidepanel / options / about），用于诊断日志定位。 */
   scope: string;
   children: ReactNode;
 }
@@ -47,19 +47,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-xs font-medium text-gray-600">{i18n.t('errors.boundaryTitle')}</p>
+        <p className="text-xs font-medium text-gray-600">{translate('出了点意外')}</p>
         <p className="max-w-52 text-3xs leading-relaxed text-gray-600">
-          {i18n.t('errors.boundaryBody')}
+          {translate('界面遇到了无法自行恢复的错误。你的数据仍保存在本地，可以重试或重载页面。')}
         </p>
         <pre className="max-h-24 w-full overflow-auto rounded bg-gray-100 p-2 text-left text-3xs leading-snug text-gray-500">
           {error.message}
         </pre>
         <div className="flex items-center gap-1.5">
           <Button variant="primary" size="sm" onClick={this.handleRetry}>
-            {i18n.t('errors.boundaryRetry')}
+            {translate('重试')}
           </Button>
           <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
-            {i18n.t('errors.boundaryReload')}
+            {translate('重载')}
           </Button>
         </div>
       </div>

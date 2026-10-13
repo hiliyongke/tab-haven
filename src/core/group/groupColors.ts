@@ -34,13 +34,6 @@ export function toGroupColor(raw: string | undefined): GroupColorName | undefine
  * grey 是 Chrome 新建组的默认色，留给「用户手动建组」，自动分组避开它 ——
  * 否则用户无法区分「这个组是我建的」还是「扩展自动建的」。
  */
-export const AUTO_GROUP_COLOR_NAMES = [
-  'blue',
-  'red',
-  'yellow',
-  'green',
-  'pink',
-  'purple',
-  'cyan',
-  'orange'
-] as const;
+export const AUTO_GROUP_COLOR_NAMES = GROUP_COLOR_NAMES.filter(
+  (name): name is Exclude<GroupColorName, 'grey'> => name !== 'grey'
+);

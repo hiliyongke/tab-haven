@@ -7,6 +7,7 @@ import type {
 } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import type { MutateSessionResult } from '@/platform/storage/session';
+import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 import type { Repositories } from '@/platform/registry';
 
 /** 拖标签/分组进入文件夹的落位结果计数。对外导出供 UI 层组织反馈文案。 */
@@ -53,6 +54,8 @@ export interface DataContext {
   clearDegraded: (scope: string) => void;
   /** 清空全部降级记账（整体清除数据后调用，历史失败不再有对应数据）。 */
   resetDegraded: () => void;
+  /** 复位镜像失败态（关闭同步 / 清空数据后调用：此后不再有镜像写入，回调不会再来）。 */
+  resetMirrorFailure: () => void;
   applyBindings: (result: MutateSessionResult) => void;
   syncSettingsFromStorage: () => Promise<void>;
   broadcastSettingsSynced: () => void;
@@ -78,6 +81,27 @@ interface DataState {
    * 为 true 时 UI 应提示用户数据可能未保存，而不是静默继续。
    */
   storageDegraded: boolean;
+  /**
+   * 最近一次镜像拉取的结果分类（BR-09）。
+   *
+   * 与 storageDegraded 区分开：后者是「本地写入失败」，这里是「云端镜像没生效」——
+   * 本地数据完好，但换机后恢复不到。此前只在诊断里留痕，设置页没有任何呈现，
+   * 表现为「开启了同步，换机后什么都没有」且无从排查。
+   *
+   * 存分类而非布尔值：布尔只能表达「坏 / 不坏」，于是「分块超限」「镜像损坏」
+   * 「从未同步过」三种成因被压成同一句提示——损坏会被说成超限，而从未同步过
+   * 反而显示「已生效」。null = 本次会话尚未拉取过（已 seeded 的设备不会拉取）。
+   */
+  mirrorIssue: MirrorSyncIssue | null;
+  /**
+   * 最近一次镜像**写入**是否失败（BR-09）。
+   *
+   * 与 `mirrorIssue` 必须分开：后者是「镜像能不能读到」（可恢复性），这里是
+   * 「本机改动有没有上传」（新鲜度）。二者可以是任意组合——写失败时云端留着
+   * 上一次的旧镜像，pull 照样成功，于是只看 pull 分类会得到「已生效」，
+   * 而其他设备根本收不到本次改动（容量超限等故障正是这个形态）。
+   */
+  mirrorWriteFailed: boolean;
   /**
    * 导入事务是否进行中。
    *

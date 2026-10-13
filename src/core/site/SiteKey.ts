@@ -2,7 +2,7 @@
  * 归组键：站点的身份标识（同一键的标签归入同一虚拟站点组）。
  *
  * 键的三种形态（由 SiteResolver 依据主机类型产出）：
- *  - 注册域（eTLD+1，如 tencent.com）
+ *  - 注册域（eTLD+1，如 example.com）
  *  - 托管域三级（如 user.github.io）
  *  - 本地/IP 带端口主机（如 localhost:3000）
  */
