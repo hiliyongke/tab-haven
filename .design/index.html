@@ -1,0 +1,2369 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-hue="forest">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tabs · 侧边栏交互原型</title>
+    <style>
+      /* ---------- 设计令牌（与 apps/extension/src/styles/main.css 对齐） ---------- */
+      :root {
+        --c-gray-50: #f5f6f4;
+        --c-gray-100: #eceeec;
+        --c-gray-200: #dde0dd;
+        --c-gray-300: #c4c9c4;
+        --c-gray-400: #98a099;
+        --c-gray-500: #687168;
+        --c-gray-600: #566056;
+        --c-gray-700: #414a42;
+        --c-gray-800: #2f362f;
+        --c-gray-900: #232923;
+        --c-brand-50: #eaf3ec;
+        --c-brand-100: #d8ebdd;
+        --c-brand-200: #b6d8c0;
+        --c-brand-300: #79b88f;
+        --c-brand-400: #4d9a6b;
+        --c-brand-500: #347554;
+        --c-brand-600: #2a6247;
+        --c-brand-700: #214d39;
+        --c-warn-50: #fbf3da;
+        --c-warn-100: #f6e8bf;
+        --c-warn-200: #f0d98f;
+        --c-warn-700: #7f641c;
+        --c-red-500: #c0584a;
+        --surface: #ffffff;
+        --canvas: #f5f4f0;
+        --row-hover: var(--c-gray-100);
+        --border-subtle: #dde0dd;
+        --border-control: #868887;
+        --ring: var(--c-brand-500);
+        --on-accent: #ffffff;
+        --scroll-fade: rgb(0 0 0 / 6%);
+        --overlay-scrim: rgb(0 0 0 / 30%);
+        --elev-1: 0 1px 2px rgb(38 55 47 / 8%);
+        --elev-2: 0 4px 14px rgb(38 55 47 / 14%);
+        --elev-3: 0 12px 32px rgb(38 55 47 / 20%), 0 2px 6px rgb(38 55 47 / 10%);
+        --dur-fast: 120ms;
+        --dur-normal: 160ms;
+        --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      :root[data-theme='dark'] {
+        --c-gray-50: #1d2220;
+        --c-gray-100: #282e2b;
+        --c-gray-200: #36413b;
+        --c-gray-300: #475249;
+        --c-gray-400: #788278;
+        --c-gray-500: #98a29b;
+        --c-gray-600: #b1bcb6;
+        --c-gray-700: #c7d0cb;
+        --c-gray-800: #dce5df;
+        --c-gray-900: #e4eae6;
+        --c-brand-50: #1f3328;
+        --c-brand-100: #294237;
+        --c-brand-200: #33593f;
+        --c-brand-300: #5c9a75;
+        --c-brand-400: #6fb088;
+        --c-brand-500: #79c498;
+        --c-brand-600: #8ed0a8;
+        --c-brand-700: #a7d5b8;
+        --c-warn-50: #3a3220;
+        --c-warn-200: #5c4a26;
+        --c-red-500: #e0907f;
+        --surface: #282e2b;
+        --canvas: #1d2220;
+        --border-subtle: #36413b;
+        --border-control: #747b77;
+        --on-accent: #1d2220;
+        --overlay-scrim: rgb(0 0 0 / 55%);
+        --scroll-fade: rgb(0 0 0 / 24%);
+        --elev-1: 0 1px 2px rgb(0 0 0 / 20%);
+        --elev-2: 0 4px 14px rgb(0 0 0 / 30%);
+        --elev-3: 0 12px 32px rgb(0 0 0 / 40%), 0 2px 6px rgb(0 0 0 / 20%);
+      }
+      :root[data-hue='ocean'] {
+        --c-brand-50: #eaf1f7;
+        --c-brand-100: #d7e5f2;
+        --c-brand-200: #b3cde6;
+        --c-brand-300: #7ba6d4;
+        --c-brand-400: #5285c2;
+        --c-brand-500: #3a6ea8;
+        --c-brand-600: #2f5b8c;
+        --c-brand-700: #274a73;
+        --c-gray-50: #eef3f8;
+        --c-gray-100: #e2eaf1;
+        --canvas: #f1f5f9;
+        --border-subtle: #dbe3ec;
+      }
+      :root[data-hue='violet'] {
+        --c-brand-50: #f1edf8;
+        --c-brand-100: #e4dcf2;
+        --c-brand-200: #cbb9e6;
+        --c-brand-300: #a685d2;
+        --c-brand-400: #8a63c2;
+        --c-brand-500: #6f4ba6;
+        --c-brand-600: #5d3d8c;
+        --c-brand-700: #4c3273;
+        --canvas: #f4f2f8;
+        --border-subtle: #e0dce8;
+      }
+      :root[data-hue='sunset'] {
+        --c-brand-50: #faf0e6;
+        --c-brand-100: #f6e2cf;
+        --c-brand-200: #eec49e;
+        --c-brand-300: #e09a5e;
+        --c-brand-400: #d27936;
+        --c-brand-500: #b85f22;
+        --c-brand-600: #9c4f1b;
+        --c-brand-700: #7f4117;
+        --canvas: #f8f3ec;
+        --border-subtle: #e8e0d2;
+      }
+      :root[data-hue='mono'] {
+        --c-brand-50: #f0f1f0;
+        --c-brand-100: #e2e4e2;
+        --c-brand-200: #c6c9c6;
+        --c-brand-300: #9aa09a;
+        --c-brand-400: #6f766f;
+        --c-brand-500: #4a524a;
+        --c-brand-600: #3c433c;
+        --c-brand-700: #303630;
+        --canvas: #f4f4f4;
+        --border-subtle: #e0e0e0;
+      }
+      :root[data-hue='plain'] {
+        --c-brand-50: #f1f3f4;
+        --c-brand-100: #e3e6e8;
+        --c-brand-200: #c8ccce;
+        --c-brand-300: #9aa0a6;
+        --c-brand-400: #80868b;
+        --c-brand-500: #5f6368;
+        --c-brand-600: #4a4d51;
+        --c-brand-700: #3c4043;
+        --canvas: #f8f9fa;
+        --border-subtle: #dadce0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--canvas);
+        color: var(--c-gray-800);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'PingFang SC',
+          'Microsoft YaHei', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        font-variant-numeric: tabular-nums;
+      }
+      .lucide {
+        stroke-width: 1.75;
+        flex: none;
+      }
+      button:not([disabled]) {
+        cursor: pointer;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        padding: 0;
+      }
+
+      /* ---------- 原型外壳 ---------- */
+      .shell {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: none;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface);
+      }
+      .topbar .views {
+        display: flex;
+        gap: 4px;
+      }
+      .topbar .views button {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--c-gray-600);
+      }
+      .topbar .views button[aria-current='true'] {
+        background: var(--c-brand-50);
+        color: var(--c-brand-700);
+      }
+      .topbar .spacer {
+        flex: 1;
+      }
+      .topbar label {
+        font-size: 11px;
+        color: var(--c-gray-500);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .topbar select {
+        font: inherit;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid var(--border-control);
+        background: var(--surface);
+        color: inherit;
+      }
+      .stage {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        justify-content: center;
+        padding: 24px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* ---------- 侧边栏 ---------- */
+      .app {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: 360px;
+        height: min(760px, calc(100vh - 140px));
+        min-height: 520px;
+        background: var(--canvas);
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: var(--elev-2);
+        container-type: inline-size;
+      }
+
+      /* 搜索栏 */
+      .search-bar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: none;
+        padding: 4px 8px;
+        background: var(--canvas);
+        border-bottom: 1px solid var(--border-subtle);
+        transition: box-shadow var(--dur-fast) var(--ease-out),
+          border-color var(--dur-fast) var(--ease-out);
+      }
+      .search-bar:focus-within {
+        border-bottom-color: var(--c-brand-500);
+        box-shadow: inset 0 -2px 0 0 var(--c-brand-500);
+      }
+      .search-bar input {
+        flex: 1;
+        min-width: 0;
+        height: 24px;
+        padding: 0 2px;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--c-gray-800);
+        font-size: 12px;
+        font-family: inherit;
+      }
+      .search-bar input::placeholder {
+        color: var(--c-gray-500);
+      }
+      .icon-btn {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        flex: none;
+        border-radius: 999px;
+        color: var(--c-gray-500);
+        transition: background-color var(--dur-fast) var(--ease-out),
+          color var(--dur-fast) var(--ease-out);
+      }
+      .icon-btn:hover {
+        background: var(--c-gray-100);
+        color: var(--c-gray-700);
+      }
+      .icon-btn.is-active {
+        color: var(--c-brand-600);
+      }
+      .icon-btn.is-active:hover {
+        background: var(--c-brand-50);
+        color: var(--c-brand-700);
+      }
+      .kbd-hint {
+        margin: 0;
+        padding: 2px 8px 0;
+        font-size: 10px;
+        line-height: 1.4;
+        color: var(--c-gray-400);
+        background: var(--canvas);
+      }
+
+      /* Tip 卡 */
+      .tip {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 0 0 4px;
+        padding: 8px;
+        border: 1px solid var(--c-brand-200);
+        border-radius: 8px;
+        background: var(--c-brand-50);
+      }
+      .tip p {
+        margin: 0;
+        font-size: 11px;
+        color: var(--c-brand-700);
+      }
+      .tip p.title {
+        font-weight: 600;
+      }
+      .tip p + p {
+        margin-top: 2px;
+        line-height: 1.45;
+      }
+      .tip .know {
+        flex: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--c-brand-700);
+      }
+      .tip .know:hover {
+        background: var(--c-brand-100);
+      }
+
+      /* 磁贴条 */
+      .pinned-strip {
+        flex: none;
+        padding: 6px 0 8px;
+      }
+      .pinned-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 4px;
+        padding: 4px 8px;
+        max-height: 86px;
+        overflow-y: auto;
+      }
+      .tile {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--tile-accent, #98a099) 22%, transparent);
+        background: color-mix(in srgb, var(--tile-accent, #eceeec) 16%, transparent);
+        transition: transform var(--dur-fast) var(--ease-out),
+          background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+      }
+      .tile:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--elev-1);
+      }
+      .tile.is-active {
+        background: color-mix(in srgb, var(--tile-accent, #eceeec) 22%, var(--surface));
+        box-shadow: inset 0 -2px 0 var(--tile-accent, var(--c-brand-500)), var(--elev-1);
+      }
+      .tile span {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--c-gray-600);
+      }
+
+      /* 分区 */
+      .fixed-area {
+        flex: none;
+        padding: 6px 0 8px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .section-card {
+        border-top: 1px solid var(--border-subtle);
+        padding-top: 1px;
+      }
+      .section-card + .section-card {
+        margin-top: 2px;
+      }
+      .section-head {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        transition: background var(--dur-fast) var(--ease-out);
+      }
+      .section-head:hover {
+        background: var(--row-hover);
+      }
+      .section-head .toggle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 1;
+        min-width: 0;
+        text-align: left;
+      }
+      .section-head .title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--c-gray-600);
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .accent-bar {
+        width: 2px;
+        height: 14px;
+        flex: none;
+        border-radius: 999px;
+      }
+      .count-pill {
+        display: inline-grid;
+        place-items: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: var(--c-gray-100);
+        color: var(--c-gray-600);
+        font-size: 10px;
+        font-weight: 600;
+      }
+      .row-action {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        flex: none;
+        border-radius: 4px;
+        color: var(--c-gray-500);
+      }
+      .row-action:hover {
+        background: var(--c-brand-100);
+        color: var(--c-brand-700);
+      }
+      .row-action.is-danger:hover {
+        background: color-mix(in srgb, var(--c-red-500) 14%, transparent);
+        color: var(--c-red-500);
+      }
+      .section-body {
+        padding: 0 2px 2px;
+      }
+
+      /* 行 */
+      .row-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px;
+        border-radius: 6px;
+        background: var(--canvas);
+        transition: background-color var(--dur-fast) var(--ease-out);
+      }
+      .row-item:hover {
+        background: var(--row-hover);
+      }
+      .row-item .main {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+        text-align: left;
+      }
+      .favicon {
+        display: grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        flex: none;
+        border-radius: 4px;
+        background: var(--c-gray-100);
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--c-gray-700);
+      }
+      .row-item .title-text {
+        font-size: 12px;
+        color: var(--c-gray-800);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row-item.is-active {
+        background: color-mix(in srgb, var(--c-brand-500) 15%, var(--surface));
+      }
+      .row-item.is-active .title-text {
+        color: var(--c-gray-900);
+        font-weight: 600;
+      }
+      .row-item.is-discarded .favicon {
+        opacity: 0.56;
+        filter: grayscale(0.9);
+      }
+      .row-item.is-discarded .title-text {
+        color: var(--c-gray-500);
+      }
+      .row-item.is-highlighted:not(.is-active) {
+        background: color-mix(in srgb, var(--c-warn-200) 16%, var(--surface));
+      }
+      .row-item.is-search-active {
+        background: color-mix(in srgb, var(--c-brand-500) 8%, var(--surface));
+        box-shadow: inset 2px 0 var(--c-brand-500);
+      }
+      .row-item.is-search-active .title-text {
+        color: var(--c-brand-700);
+        font-weight: 600;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        flex: none;
+        padding: 1px 4px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 14px;
+        white-space: nowrap;
+      }
+      .chip-warn {
+        background: var(--c-warn-50);
+        color: var(--c-warn-700);
+      }
+      .chip-idle {
+        background: var(--c-gray-100);
+        color: var(--c-gray-600);
+      }
+      .chip-brand {
+        background: var(--c-brand-50);
+        color: var(--c-brand-700);
+      }
+      .row-actions {
+        display: flex;
+        gap: 2px;
+        flex: none;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--dur-fast) var(--ease-out);
+      }
+      .row-item:hover .row-actions,
+      .row-item:focus-within .row-actions {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .media-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex: none;
+        min-height: 22px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--c-brand-500) 48%, var(--border-subtle));
+        background: color-mix(in srgb, var(--c-brand-500) 11%, var(--surface));
+        color: var(--c-brand-700);
+        font-size: 10px;
+        font-weight: 600;
+      }
+      .media-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--c-brand-500);
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.75);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* 新建栏 + 底栏 */
+      .add-tab-bar {
+        flex: none;
+        padding: 4px 8px;
+        background: var(--canvas);
+      }
+      .add-tab-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 100%;
+        padding: 4px 8px;
+        border-radius: 8px;
+        border: 1px dashed var(--border-subtle);
+        color: var(--c-gray-600);
+        font-size: 12px;
+        font-weight: 500;
+        background: transparent;
+        transition: background-color var(--dur-fast) var(--ease-out),
+          border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+      }
+      .add-tab-btn:hover {
+        border-color: var(--c-brand-300);
+        background: var(--c-brand-50);
+        color: var(--c-brand-600);
+      }
+      .footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 2px 8px;
+        flex: none;
+        padding: 4px 8px;
+        border-top: 1px solid var(--border-subtle);
+        font-size: 10px;
+        color: var(--c-gray-500);
+      }
+      .footer nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .footer .icon-btn.is-accent {
+        color: var(--c-brand-600);
+      }
+      .icon-btn .badge {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        border-radius: 999px;
+        background: var(--c-brand-500);
+        color: var(--on-accent);
+        font-size: 9px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+      }
+      .icon-btn.has-badge {
+        position: relative;
+      }
+
+      /* Toast */
+      .toast {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 8px 2px;
+        padding: 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--surface) 94%, var(--c-brand-50));
+        box-shadow: var(--elev-2);
+        animation: toast-in 140ms var(--ease-out);
+      }
+      .toast::before {
+        content: '';
+        align-self: stretch;
+        width: 3px;
+        flex: none;
+        border-radius: 2px;
+        background: var(--c-brand-400);
+      }
+      .toast.is-error::before {
+        background: var(--c-red-500);
+      }
+      .toast .msg {
+        flex: 1;
+        min-width: 0;
+        font-size: 11px;
+        color: var(--c-gray-800);
+      }
+      .toast .msg small {
+        display: block;
+        margin-top: 2px;
+        color: var(--c-gray-500);
+      }
+      .toast .undo {
+        flex: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--c-brand-600);
+      }
+      .toast .undo:hover {
+        background: var(--c-brand-50);
+      }
+      @keyframes toast-in {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+      }
+
+      /* 浮层 */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 40px 8px 8px;
+        background: var(--overlay-scrim);
+        animation: overlay-in 120ms var(--ease-out);
+      }
+      @keyframes overlay-in {
+        from {
+          opacity: 0;
+        }
+      }
+      .panel {
+        width: min(440px, 92vw);
+        max-height: 100%;
+        overflow: auto;
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--elev-3);
+        animation: panel-in 160ms var(--ease-out);
+      }
+      @keyframes panel-in {
+        from {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+      }
+      .panel.sm {
+        width: min(400px, 90vw);
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .panel-head h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--c-gray-900);
+        flex: 1;
+      }
+      .panel-body {
+        padding: 12px 16px;
+      }
+      .panel-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 16px;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        border: 1px solid var(--border-control);
+        color: var(--c-gray-800);
+        background: var(--surface);
+      }
+      .btn-primary {
+        background: var(--c-brand-500);
+        border-color: var(--c-brand-500);
+        color: var(--on-accent);
+        font-weight: 600;
+      }
+      .palette-input {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .palette-input input {
+        flex: 1;
+        border: 0;
+        outline: none;
+        background: transparent;
+        font: inherit;
+        font-size: 12px;
+        color: var(--c-gray-800);
+      }
+      .palette-list {
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .palette-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--c-gray-800);
+        text-align: left;
+        width: 100%;
+      }
+      .palette-item.is-active,
+      .palette-item:hover {
+        background: var(--c-gray-50);
+      }
+      .palette-foot {
+        padding: 6px 12px;
+        border-top: 1px solid var(--border-subtle);
+        font-size: 10px;
+        color: var(--c-gray-400);
+      }
+      .list-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--c-gray-50);
+      }
+      .list-row .grow {
+        flex: 1;
+        min-width: 0;
+      }
+      .list-row strong {
+        display: block;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--c-gray-800);
+      }
+      .list-row small {
+        font-size: 11px;
+        color: var(--c-gray-500);
+      }
+      .dot-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 16px;
+      }
+      .dot-item {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .dot-item i {
+        width: 4px;
+        height: 4px;
+        margin-top: 6px;
+        border-radius: 999px;
+        background: var(--c-brand-300);
+        flex: none;
+      }
+      .dot-item p {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--c-gray-700);
+      }
+      .dot-item span {
+        font-size: 11px;
+        color: var(--c-gray-500);
+        line-height: 1.5;
+      }
+      .guide {
+        margin: 8px 16px 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--c-brand-200);
+        background: var(--c-brand-50);
+        font-size: 11px;
+        color: var(--c-brand-700);
+        line-height: 1.6;
+      }
+      .guide button {
+        margin-top: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--c-brand-700);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      /* ---------- 设置页 / 关于页 ---------- */
+      .page {
+        width: min(1024px, 100%);
+        background: var(--canvas);
+      }
+      .page-inner {
+        display: flex;
+        gap: 32px;
+        padding: 24px 16px 40px;
+        margin: 0 auto;
+        max-width: 1024px;
+      }
+      .outline {
+        flex: none;
+        width: 200px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px;
+        align-self: flex-start;
+        position: sticky;
+        top: 24px;
+      }
+      .outline b {
+        font-size: 12px;
+        color: var(--c-gray-600);
+        padding: 4px 8px;
+      }
+      .outline button {
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--c-gray-600);
+        text-align: left;
+      }
+      .outline button[aria-current='true'] {
+        background: var(--c-brand-50);
+        color: var(--c-brand-700);
+        font-weight: 600;
+      }
+      .col {
+        flex: 1;
+        min-width: 0;
+        max-width: 672px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .page-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .page-head .logo {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        border: 1px solid var(--border-subtle);
+        background: var(--surface);
+        box-shadow: var(--elev-1);
+        color: var(--c-brand-600);
+      }
+      .page-head h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--c-gray-900);
+      }
+      .page-head p {
+        margin: 2px 0 0;
+        font-size: 10px;
+        color: var(--c-gray-600);
+      }
+      .search-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border-control);
+        background: var(--surface);
+        box-shadow: var(--elev-1);
+      }
+      .search-field input {
+        flex: 1;
+        border: 0;
+        outline: none;
+        background: transparent;
+        font: inherit;
+        font-size: 12px;
+        color: var(--c-gray-800);
+      }
+      .card {
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      .card > h2 {
+        margin: 0;
+        padding: 16px 16px 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--c-gray-900);
+      }
+      .srow {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--c-gray-50);
+      }
+      .srow:first-of-type {
+        border-top: 0;
+      }
+      .srow .grow {
+        flex: 1;
+        min-width: 0;
+      }
+      .srow .label {
+        font-size: 12px;
+        color: var(--c-gray-800);
+      }
+      .srow .hint {
+        margin-top: 2px;
+        font-size: 11px;
+        color: var(--c-gray-500);
+        line-height: 1.5;
+      }
+      .select {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 32px;
+        padding: 0 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border-control);
+        background: var(--surface);
+        font-size: 12px;
+        color: var(--c-gray-800);
+        flex: none;
+      }
+      .switch {
+        --sw-w: 36px;
+        --sw-h: 20px;
+        position: relative;
+        flex: none;
+        width: var(--sw-w);
+        height: var(--sw-h);
+        border-radius: 999px;
+        border: 1px solid var(--border-control);
+        background: var(--c-gray-100);
+        transition: background-color var(--dur-fast) var(--ease-out);
+      }
+      .switch::after {
+        content: '';
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        width: calc(var(--sw-h) - 4px);
+        height: calc(var(--sw-h) - 4px);
+        border-radius: 999px;
+        background: var(--surface);
+        transition: translate var(--dur-fast) var(--ease-out);
+      }
+      .switch[aria-checked='true'] {
+        background: var(--c-brand-500);
+        border-color: var(--c-brand-500);
+      }
+      .switch[aria-checked='true']::after {
+        translate: calc(var(--sw-w) - var(--sw-h)) 0;
+      }
+      .swatches {
+        display: flex;
+        gap: 6px;
+        flex: none;
+      }
+      .swatch {
+        width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        border: 0;
+        padding: 0;
+      }
+      .swatch[aria-checked='true'] {
+        outline: 2px solid var(--c-brand-500);
+        outline-offset: 2px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip-input {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 22px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: var(--c-gray-100);
+        font-size: 11px;
+        color: var(--c-gray-800);
+      }
+
+      /* 关于页 */
+      .about {
+        width: min(900px, 100%);
+        margin: 0 auto;
+        padding: 40px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      }
+      .hero {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .hero .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .hero .brand .logo {
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: var(--c-brand-500);
+        color: var(--on-accent);
+        font-size: 24px;
+        font-weight: 700;
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--c-gray-900);
+      }
+      .hero p {
+        margin: 2px 0 0;
+        font-size: 14px;
+        color: var(--c-gray-600);
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .badge-soft {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--c-brand-50);
+        color: var(--c-brand-700);
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .version {
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--c-gray-100);
+        color: var(--c-gray-500);
+        font-size: 11px;
+      }
+      .about h2 {
+        margin: 0 0 12px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--c-gray-600);
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .grid3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .acard {
+        padding: 16px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--surface);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .acard .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .acard .head .ico {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--c-brand-50);
+        color: var(--c-brand-600);
+      }
+      .acard .head h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--c-gray-800);
+      }
+      .acard ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .acard li {
+        display: flex;
+        gap: 8px;
+      }
+      .acard li i {
+        width: 4px;
+        height: 4px;
+        margin-top: 6px;
+        border-radius: 999px;
+        background: var(--c-brand-300);
+        flex: none;
+      }
+      .acard li p {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--c-gray-700);
+      }
+      .acard li span,
+      .acard p.body {
+        font-size: 11px;
+        color: var(--c-gray-500);
+        line-height: 1.6;
+        margin: 0;
+      }
+      .entry {
+        display: flex;
+        gap: 12px;
+      }
+      .entry .ico {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--c-gray-100);
+        color: var(--c-gray-600);
+        flex: none;
+      }
+      .entry h3 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--c-gray-800);
+      }
+      .keys {
+        display: flex;
+        gap: 4px;
+        flex: none;
+      }
+      .kbd {
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: var(--c-gray-100);
+        font-size: 10px;
+        color: var(--c-gray-700);
+      }
+      .perm li {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--c-gray-50);
+      }
+      .perm li:last-child {
+        border-bottom: 0;
+      }
+      .perm strong {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--c-gray-700);
+      }
+      .perm span {
+        font-size: 11px;
+        color: var(--c-gray-500);
+        line-height: 1.6;
+      }
+      .about footer {
+        border-top: 1px solid var(--border-subtle);
+        padding-top: 16px;
+        font-size: 11px;
+        color: var(--c-gray-500);
+        line-height: 1.6;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      @media (max-width: 720px) {
+        .page-inner {
+          flex-direction: column;
+        }
+        .outline {
+          position: static;
+          width: auto;
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+        .grid2,
+        .grid3 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="views">
+          <button data-view="sidepanel" aria-current="true">侧边栏</button>
+          <button data-view="settings">设置页</button>
+          <button data-view="about">关于页</button>
+        </div>
+        <div class="spacer"></div>
+        <label>主题
+          <select id="themeSel">
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
+        </label>
+        <label>配色
+          <select id="hueSel">
+            <option value="forest">石墨绿</option>
+            <option value="ocean">雾霾蓝</option>
+            <option value="violet">暮山紫</option>
+            <option value="sunset">暖阳橙</option>
+            <option value="mono">中性灰</option>
+            <option value="plain">纯净</option>
+          </select>
+        </label>
+      </header>
+
+      <div class="stage">
+        <!-- ============ 侧边栏 ============ -->
+        <section id="view-sidepanel" class="app" data-density="cozy">
+          <h1 class="sr-only">当前窗口的标签</h1>
+
+          <div class="search-bar">
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="q" type="search" placeholder="搜索标签（标题 / 网址 / 拼音）" aria-label="搜索标签" />
+            <button class="icon-btn is-active" id="histToggle" title="包含历史（快照/归档）" aria-label="包含历史（快照/归档）">
+              <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+            </button>
+            <button class="icon-btn" id="clearBtn" title="清除搜索" aria-label="清除搜索" hidden>
+              <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+          <p class="kbd-hint" id="kbdHint" hidden>↑↓ 选择 · Enter 切换 · Esc 清除</p>
+          <output class="sr-only" id="hitCount" aria-live="polite"></output>
+
+          <div class="tip" id="tip">
+            <svg class="lucide" style="margin-top:2px;color:var(--c-brand-600)" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+            <div style="flex:1;min-width:0">
+              <p class="title">三处入口用满 Tabs 的能力</p>
+              <p>① 页面 / 链接 / 标签栏右键可休眠、固定、按域名搜索；② 地址栏输入 t 后输关键词直达；③ ⌘P（Ctrl+P）打开命令面板，一步执行休眠 / 存快照 / 开设置。</p>
+            </div>
+            <button class="know" id="tipClose">知道了</button>
+          </div>
+
+          <div class="pinned-strip">
+            <div class="pinned-grid" id="tiles"></div>
+          </div>
+
+          <div class="fixed-area">
+            <div class="section-head">
+              <button class="toggle" data-collapse="folders" aria-expanded="true">
+                <span style="display:inline-flex;align-items:center;gap:4px">
+                  <i class="accent-bar" style="background:var(--c-brand-500)"></i>
+                  <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-gray-600)"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                </span>
+                <span class="title">收藏夹</span>
+              </button>
+              <span class="count-pill">2</span>
+              <button class="row-action" title="新建文件夹" aria-label="新建文件夹" data-toast="已新建文件夹">
+                <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="M9 13h6"/></svg>
+              </button>
+            </div>
+            <div class="section-body" id="folders">
+              <div class="row-item" data-text="阅读清单">
+                <button class="main">
+                  <span class="favicon">阅</span>
+                  <span class="title-text">阅读清单</span>
+                </button>
+                <span class="chip chip-idle">12</span>
+                <span class="row-actions">
+                  <button class="row-action" title="打开文件夹全部条目" data-toast="已打开 12 个条目">
+                    <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                  <button class="row-action is-danger" title="删除文件夹（标签保留）" data-toast="已删除文件夹">
+                    <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                  </button>
+                </span>
+              </div>
+              <div class="row-item" data-text="调研">
+                <button class="main">
+                  <span class="favicon">调</span>
+                  <span class="title-text">调研</span>
+                </button>
+                <span class="chip chip-idle">8</span>
+                <span class="row-actions">
+                  <button class="row-action" title="打开文件夹全部条目" data-toast="已打开 8 个条目">
+                    <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                  <button class="row-action is-danger" title="删除文件夹（标签保留）" data-toast="已删除文件夹">
+                    <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                  </button>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div id="list" style="flex:1;min-height:0;overflow:auto;padding:2px 0"></div>
+
+          <div class="add-tab-bar">
+            <button class="add-tab-btn" id="newTab">
+              <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span>新建标签</span>
+            </button>
+          </div>
+
+          <div id="toasts"></div>
+
+          <footer class="footer">
+            <span class="count-pill" title="共 24 个标签">24</span>
+            <nav id="footerNav"></nav>
+          </footer>
+
+          <!-- 浮层：命令面板 -->
+          <div class="overlay" id="palette" hidden>
+            <div class="panel">
+              <div class="palette-input">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-gray-500)"><path d="M15 6a3 3 0 1 1 3 3H6a3 3 0 1 1 3-3v12a3 3 0 1 1-3-3h12a3 3 0 1 1-3 3"/></svg>
+                <input id="pq" placeholder="输入命令…" aria-label="输入命令" />
+                <span class="kbd">Esc</span>
+              </div>
+              <div class="palette-list" id="paletteList"></div>
+              <div class="palette-foot">↑↓ 选择 · Enter 执行 · Esc 关闭</div>
+            </div>
+          </div>
+
+          <!-- 浮层：快照面板 -->
+          <div class="overlay" id="snapshots" hidden>
+            <div class="panel">
+              <div class="panel-head">
+                <h2>快照</h2>
+                <span class="chip chip-brand">列表</span>
+                <span class="chip chip-idle">周报</span>
+                <button class="row-action" data-close="snapshots" aria-label="关闭">
+                  <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div class="dot-list">
+                <div class="dot-item"><i></i><div><p>命名快照</p><span>手动保存的窗口，长期留存，恢复时重新打开标签</span></div></div>
+                <div class="dot-item"><i></i><div><p>归档（关闭并保存）</p><span>关闭窗口时自动留存，原标签已关闭，可随时完整恢复</span></div></div>
+                <div class="dot-item"><i></i><div><p>关窗自动保存</p><span>窗口意外关闭的兜底快照，系统自动留存</span></div></div>
+              </div>
+              <div id="snapRows"></div>
+              <div class="panel-foot">
+                <button class="btn" data-toast="这不是合法的 JSON：文件可能被截断或损坏">粘贴导入</button>
+                <button class="btn btn-primary" data-toast="已保存快照">
+                  <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                  保存当前窗口
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 浮层：撤销历史 -->
+          <div class="overlay" id="history" hidden>
+            <div class="panel">
+              <div class="panel-head">
+                <h2>撤销历史</h2>
+                <button class="row-action" data-close="history" aria-label="关闭">
+                  <svg class="lucide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div id="undoRows"></div>
+              <div class="guide">
+                这个窗口现在是空的。如果你刚遇到崩溃或误关，可以从快照把整个窗口找回来。
+                <button data-open="snapshots" data-close="history">查看我的快照</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 浮层：恢复确认弹窗 -->
+          <div class="overlay" id="confirm" hidden>
+            <div class="panel sm">
+              <div class="panel-head"><h2>恢复</h2></div>
+              <div class="panel-body" style="font-size:12px;color:var(--c-gray-600);line-height:1.5">
+                恢复「10月15日 18:02」将打开 8 个标签（含 2 个标签组）。当前已打开的标签不受影响。
+              </div>
+              <div class="panel-foot">
+                <button class="btn" data-close="confirm">取消</button>
+                <button class="btn btn-primary" id="confirmOk">恢复</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ 设置页 ============ -->
+        <section id="view-settings" class="page" hidden>
+          <div class="page-inner">
+            <nav class="outline" id="outline"></nav>
+            <div class="col">
+              <div class="page-head">
+                <span class="logo">
+                  <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </span>
+                <div>
+                  <h1>设置</h1>
+                  <p>个性化你的标签工作台</p>
+                </div>
+              </div>
+              <div class="search-field">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-gray-500)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input id="sq" placeholder="搜索设置…" aria-label="搜索设置" />
+              </div>
+              <div id="settingsSections"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ 关于页 ============ -->
+        <section id="view-about" class="page" hidden>
+          <div class="about">
+            <header class="hero">
+              <div class="brand">
+                <span class="logo">T</span>
+                <div>
+                  <h1>Tabs</h1>
+                  <p>本地优先、无账号、无云端的标签工作台</p>
+                </div>
+              </div>
+              <span class="version">版本 1.0.0</span>
+              <div class="badges">
+                <span class="badge-soft"><svg class="lucide" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>数据只在本机</span>
+                <span class="badge-soft"><svg class="lucide" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>无账号</span>
+                <span class="badge-soft"><svg class="lucide" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>无遥测</span>
+                <span class="badge-soft"><svg class="lucide" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>零网络请求</span>
+              </div>
+            </header>
+
+            <section>
+              <h2>全部能力</h2>
+              <div class="grid2" id="capGrid"></div>
+            </section>
+
+            <section>
+              <h2>快捷入口</h2>
+              <div class="grid2" id="entryGrid"></div>
+            </section>
+
+            <section>
+              <h2>键盘快捷键</h2>
+              <div class="grid2">
+                <div class="card" style="padding:12px 16px">
+                  <p style="margin:0 0 4px;font-size:11px;font-weight:500;color:var(--c-gray-500)">侧边栏内</p>
+                  <div id="kbPanel"></div>
+                </div>
+                <div class="card" style="padding:12px 16px">
+                  <p style="margin:0 0 4px;font-size:11px;font-weight:500;color:var(--c-gray-500)">浏览器级（全局）</p>
+                  <div id="kbGlobal"></div>
+                  <p style="margin:8px 0 0;font-size:11px;color:var(--c-gray-500);line-height:1.6">这组快捷键可在浏览器的扩展快捷键设置页自行修改。</p>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h2>隐私与数据</h2>
+              <div class="grid2" id="privacyGrid"></div>
+            </section>
+
+            <section>
+              <h2>权限与用途</h2>
+              <p style="margin:0 0 12px;max-width:65ch;font-size:11px;color:var(--c-gray-500);line-height:1.6">以下是本扩展声明的全部权限与各自的一句话用途。权限清单冻结在构建配置中，新增任何权限都会使构建失败。</p>
+              <ul class="card perm" style="list-style:none;margin:0;padding:0" id="permList"></ul>
+            </section>
+
+            <section>
+              <h2>技术与验证</h2>
+              <div class="grid3" id="techGrid"></div>
+            </section>
+
+            <footer>无自有服务器 · 无账号 · 无遥测 · 零出站网络请求；数据默认只存在于你的浏览器里。</footer>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      /* ================= 图标 ================= */
+      const svg = (d, size = 14, cls = '') =>
+        `<svg class="lucide ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+      const I = {
+        command: '<path d="M15 6a3 3 0 1 1 3 3H6a3 3 0 1 1 3-3v12a3 3 0 1 1-3-3h12a3 3 0 1 1-3 3"/>',
+        locate: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="m2 12 2.28 0"/><path d="M12 2v2"/><path d="m22 12-2.28 0"/><path d="M12 22v-2"/><path d="M12 12h.01"/>',
+        collapse: '<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>',
+        expand: '<path d="m7 4 5 5 5-5"/><path d="m7 20 5-5 5 5"/>',
+        snow: '<path d="M2 12h20"/><path d="m4.9 4.9 14.2 14.2"/><path d="m4.9 19.1 14.2-14.2"/><path d="m10 4-1.25 2.5"/><path d="m10 20-1.25-2.5"/><path d="m14 4 1.25 2.5"/><path d="m14 20 1.25-2.5"/><path d="m6.5 10 5 5"/><path d="m17.5 10-5 5"/>',
+        sunrise: '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/>',
+        camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
+        history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+        copyX: '<path d="m12 12 6 6"/><path d="m12 18 6-6"/><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+        sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+        close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+        wand: '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+        shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+        settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+        folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+        search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+        layers: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 9.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/><path d="m6.08 14.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/>',
+        tags: '<path d="M10.5 4H19a2 2 0 0 1 2 2v8.5a2 2 0 0 1-.6 1.4L12 24l-8-8a2 2 0 0 1-.6-1.4V6a2 2 0 0 1 2-2h5.1"/><circle cx="17" cy="9" r="1.2"/>',
+        menu: '<path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h16"/>',
+        pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+        volume: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/>',
+        grip: '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
+        bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+        alert: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+        chevron: '<path d="m9 18 6-6-6-6"/>',
+        chevronDown: '<path d="m6 9 6 6 6-6"/>'
+      };
+
+      /* ================= 数据 ================= */
+      const TILES = [
+        { t: 'G', c: '#347554', active: true },
+        { t: 'D', c: '#3a6ea8' },
+        { t: 'Y', c: '#c0584a' },
+        { t: 'M', c: '#b85f22' },
+        { t: 'N', c: '#6f4ba6' },
+        { t: 'C', c: '#4a524a' }
+      ];
+
+      const SECTIONS = [
+        {
+          key: 'github',
+          title: 'github.com',
+          accent: '#3a6ea8',
+          collapsible: true,
+          kind: 'site',
+          tabs: [
+            { title: 'Tabs · 侧边栏标签工作台', f: 'G', active: true },
+            { title: 'Issues · Pull requests', f: 'G', dup: 2 },
+            { title: 'Actions · CI 构建记录', f: 'G', discarded: true }
+          ]
+        },
+        {
+          key: 'work',
+          title: '工作',
+          accent: '#1a73e8',
+          collapsible: true,
+          kind: 'native',
+          playing: true,
+          tabs: [
+            { title: '设计稿评审 · Figma', f: 'F', highlighted: true },
+            { title: '周会记录 · Docs', f: 'D' }
+          ]
+        },
+        {
+          key: 'ungrouped',
+          title: '其他标签',
+          collapsible: false,
+          tabs: [
+            { title: 'ChatGPT · 对话', f: 'C' },
+            { title: 'MDN · Web Docs', f: 'M' }
+          ]
+        }
+      ];
+
+      const FOOTER = [
+        { id: 'palette', icon: I.command, label: '打开命令面板', accent: false },
+        { id: 'locate', icon: I.locate, label: '定位当前标签' },
+        { id: 'collapseAll', icon: I.collapse, label: '收起所有分组' },
+        { id: 'discard', icon: I.snow, label: '休眠 12 个后台标签（释放内存）' },
+        { id: 'wake', icon: I.sunrise, label: '唤醒当前窗口的 3 个休眠标签' },
+        { id: 'snapshot', icon: I.camera, label: '快照', badge: 3 },
+        { id: 'history', icon: I.history, label: '本会话已可撤销 5 次', badge: 5 },
+        { id: 'clean', icon: I.copyX, label: '关闭重复标签', badge: 4 },
+        { id: 'insights', icon: I.sparkles, label: '查看 2 条习惯洞察', badge: 2 },
+        { id: 'closeSel', icon: I.close, label: '关闭选中的 3 个标签', badge: 3 },
+        { id: 'regroup', icon: I.wand, label: '重排分组（自动存快照可回退）' },
+        { id: 'about', icon: I.shield, label: '查看能力总览' },
+        { id: 'settings', icon: I.settings, label: '设置', accent: true }
+      ];
+
+      const COMMANDS = [
+        { icon: I.snow, label: '休眠后台标签（释放内存）', toast: '已休眠 12 个后台标签' },
+        { icon: I.camera, label: '保存当前窗口快照', toast: '已保存快照' },
+        { icon: I.wand, label: '重排分组（自动存快照可回退）', toast: '已重排分组，原快照可回退' },
+        { icon: I.copyX, label: '关闭重复标签', toast: '已关闭 4 个重复标签' },
+        { icon: I.sunrise, label: '唤醒当前窗口的休眠标签', toast: '已唤醒 3 个休眠标签' },
+        { icon: I.settings, label: '打开设置', view: 'settings' },
+        { icon: I.shield, label: '查看能力总览', view: 'about' }
+      ];
+
+      const SNAPS = [
+        { name: '调研 · 标签工作台', meta: '10月15日 18:02 · 12 个标签' },
+        { name: '窗口归档', meta: '10月14日 22:41 · 8 个标签' },
+        { name: '自动保存 · 10月14日 09:00', meta: '关窗自动保存 · 6 个标签' }
+      ];
+
+      const UNDO = [
+        { title: '关闭 3 个标签', meta: '手动关闭 · 2 分钟前' },
+        { title: '归档整个窗口（8 个标签）', meta: '窗口归档 · 1 小时前' },
+        { title: '浏览器最近关闭（2 个标签）', meta: '浏览器会话 · 3 小时前' }
+      ];
+
+      const SETTINGS = [
+        {
+          id: 'settings.appearance',
+          title: '外观与布局',
+          rows: [
+            { kind: 'select', label: '主题', value: '跟随系统', opts: ['跟随系统', '浅色', '深色'] },
+            { kind: 'swatch', label: '主题色', hint: '强调色与深色底色随所选色号变化' },
+            { kind: 'toggle', label: '显示常驻磁贴', hint: '显示侧边栏顶部的常驻磁贴条与浏览器固定标签区', on: true },
+            { kind: 'chip', label: '侧边栏位置', hint: '位置由 Chrome 控制；请在 Chrome 的侧边栏设置中选择左侧或右侧，Tabs 会自动跟随', value: '由浏览器控制' },
+            { kind: 'select', label: '列表密度', value: '宽松', opts: ['紧凑', '宽松', '大字号'] },
+            { kind: 'toggle', label: '显示网址', hint: '在标签标题下方显示完整网址', on: false },
+            { kind: 'toggle', label: '底栏显示文字标签', hint: '开启后图标旁显示功能名称，便于快速识别（面板过窄时自动退回纯图标，避免底栏换行）', on: false },
+            { kind: 'toggle', label: '显示分屏标记', hint: '为处于浏览器分屏的标签显示「拆 / 伴」标记', on: true },
+            { kind: 'select', label: '分组配色', value: '自动配色', opts: ['自动配色', '统一中性'], hint: '站点组强调色：按站点自动配色，或统一中性色' }
+          ]
+        },
+        {
+          id: 'settings.behavior',
+          title: '交互行为',
+          rows: [
+            { kind: 'select', label: '语言', value: '简体中文', opts: ['简体中文', 'English'] },
+            { kind: 'select', label: '新建标签位置', value: '窗口末尾', opts: ['窗口末尾', '激活标签之后'], hint: '无论用哪种方式新建标签，都出现在窗口末尾，或当前激活标签之后' },
+            { kind: 'toggle', label: '激活标签自动滚入视野', hint: '切换标签时把当前标签滚动到可见区域', on: true },
+            { kind: 'toggle', label: '中键点击关闭标签', hint: '在标签行上按鼠标中键关闭该标签', on: true },
+            { kind: 'toggle', label: '显示其他窗口', hint: '侧边栏底部按窗口分段展示其他窗口的标签（只读浏览，可聚焦或关闭）', on: true },
+            { kind: 'select', label: '排序方式', value: '浏览器顺序', opts: ['浏览器顺序', '最近访问'], hint: '「最近访问」在新页面打开时一次性就位，切换标签不再重排列表' },
+            { kind: 'toggle', label: '标签顺序双向同步', hint: '开启后可在侧边栏拖拽标签重排，并实时同步到浏览器原生标签顺序', on: true },
+            { kind: 'select', label: '站点聚合阈值（同一站点几个标签自动成组）', value: '2', opts: ['1（只要有标签就分组）', '2', '3', '4', '5'], hint: '同一站点（含子域）的标签达到该数量自动成组' }
+          ]
+        },
+        {
+          id: 'settings.memory',
+          title: '休眠与内存',
+          rows: [
+            { kind: 'toggle', label: '自动休眠后台标签', hint: '超过设定时间未访问的标签自动休眠，释放内存；自动休眠可撤销', on: true },
+            { kind: 'input', label: '休眠等待时长（5–240 分钟）', value: '30', w: 80 },
+            { kind: 'chips', label: '休眠白名单', hint: '这些域名永不参与自动休眠；收藏夹条目与被固定标签默认豁免', chips: ['mail.example.com'] }
+          ]
+        },
+        {
+          id: 'settings.groupSearch',
+          title: '分组与搜索',
+          rows: [
+            { kind: 'toggle', label: '搜索扩展到所有窗口', hint: '开启后，搜索会覆盖其他窗口的标签并可一键切换过去（默认仅当前窗口）', on: false },
+            { kind: 'toggle', label: '搜索包含历史（快照与归档）', hint: '开启后，搜索同时命中快照与归档里的条目（索引最近 20 份）', on: true },
+            { kind: 'select', label: '未固定标签的聚合方式', value: '按域名', opts: ['按域名', '按来源树', '按语言'] },
+            { kind: 'toggle', label: '自动创建原生标签组', hint: '开启后，按域名或语言聚合的标签会自动组成浏览器原生标签组；关闭开关时会解散由本功能创建的组', on: false },
+            { kind: 'select', label: '点击工具栏图标', value: '打开侧边栏', opts: ['打开侧边栏', '后台整理标签（不打开侧边栏）'], hint: '「后台整理标签」点击时直接按域名整理临时区、不弹出面板' },
+            { kind: 'toggle', label: '同一网址只保留一个标签', hint: '打开一个已存在的网址时，自动切到已有标签并关掉重复副本', on: true },
+            { kind: 'toggle', label: '搜索支持拼音', hint: '用拼音首字母或全拼匹配中文标签标题', on: true },
+            { kind: 'toggle', label: '行操作按钮常显', hint: '关闭后，行内操作仅在悬停或聚焦时显示', on: false }
+          ]
+        },
+        {
+          id: 'settings.advanced',
+          title: '高级与恢复',
+          rows: [
+            { kind: 'toggle', label: '自动休眠系统通知', hint: '自动休眠完成时弹出系统通知（侧边栏内始终可撤销）', on: true },
+            { kind: 'select', label: '工具栏角标', value: '自动（重复优先）', opts: ['自动（重复优先）', '标签数', '重复组数', '关闭'], hint: '角标显示内容：有重复时警示重复数，否则显示标签数' },
+            { kind: 'toggle', label: '重复标签合并提示', hint: '同网址标签被自动合并时显示提示', on: true },
+            { kind: 'toggle', label: '右键菜单', hint: '页面 / 链接 / 标签栏 / 工具栏图标右键快捷操作', on: true },
+            { kind: 'toggle', label: '地址栏命令', hint: '输入 t 加关键词，直达标签与收藏夹条目', on: true },
+            { kind: 'toggle', label: '跨设备同步', hint: '默认关闭。开启后，文件夹、常驻磁贴与设置会镜像到你浏览器账号的同步通道（Tabs 没有自己的服务器）', on: false },
+            { kind: 'select', label: '可撤销的关闭次数', value: '20', opts: ['5', '10', '20', '50'], hint: '最多可连续撤销的关闭操作次数（超出后最早的记录被淘汰）' },
+            { kind: 'select', label: '提示条时长', value: '5s', opts: ['3s', '5s', '7s', '10s'], hint: '状态提示自动消失前的显示时长' },
+            { kind: 'toggle', label: '撤销记录跨重启保留', hint: '关闭后，撤销记录仅存在于当前会话', on: true },
+            { kind: 'toggle', label: '自动保存快照', hint: '开启后：①按间隔定时保存快照；②窗口关闭时自动保存快照。重要现场请手动保存', on: true },
+            { kind: 'select', label: '定时快照间隔', value: '30 分钟', opts: ['5 分钟', '15 分钟', '30 分钟', '60 分钟', '180 分钟', '12 小时'], hint: '每隔这么久自动保存一次当前窗口快照' },
+            { kind: 'select', label: '自动快照保留数', value: '20', opts: ['5', '10', '20', '30', '50'], hint: '仅保留最新的 N 条自动快照，超出自动淘汰最旧记录' },
+            { kind: 'select', label: '手动快照保留上限', value: '20', opts: ['10', '20', '30', '50', '100'], hint: '命名快照、归档与工作区的保留上限' }
+          ]
+        }
+      ];
+
+      const CAPS = [
+        { icon: I.layers, title: '标签视图', items: [
+          ['原生标签组同步', '面板里的分组就是浏览器的原生标签组：折叠、改名、换色都会落到浏览器，两边始终一致。'],
+          ['同域名自动聚合', '同一域名的标签自动归到一起；可选把聚合结果同步为浏览器原生组（默认关闭）。'],
+          ['状态角标', '重复计数、静音 / 播放、分屏、休眠雪花直接标在行尾，不用逐个点开看。']] },
+        { icon: I.folder, title: '收藏夹', items: [
+          ['文件夹', '长期资产的归口：增删改、拖拽排序、一键打开全部、导出到浏览器书签。'],
+          ['常驻磁贴', '最常用的页面钉在顶部，一点直达；中键只关页面，不删磁贴。'],
+          ['挂起转正', '标签关闭后条目仍留在文件夹里，再次打开即重新绑定，收藏不会丢。']] },
+        { icon: I.search, title: '搜索与键盘流', items: [
+          ['三目标模糊搜索', '标题、网址、拼音首字母一起匹配（输入 zhw 也能命中「知乎网」）。'],
+          ['键盘导航', '↑↓ 漫游、Enter 激活、Esc 清除；命中片段高亮，结果一眼可辨。'],
+          ['命令面板', '⌘P / Ctrl+P 一个入口搜命令与标签，直接执行「休眠全部」「存快照」「开设置」。']] },
+        { icon: I.tags, title: '上下文与暂存', items: [
+          ['工作区切换', '把当前窗口现场存为一个工作区，顶部 chip 一键切换；误切可 ⌘Z 找回。'],
+          ['其他窗口分段', '面板底部按窗口列出其他窗口的标签：点击一行直接跳过去，也可就地关闭。']] },
+        { icon: I.grip, title: '拖拽整理', items: [
+          ['四处可拖', '标签、常驻磁贴、分组头、文件夹条目都支持拖拽排序。'],
+          ['拖入即归类', '拖进收藏夹或文件夹即完成归档；重复网址自动去重。'],
+          ['键盘拖拽', '空格键起拖、方向键移动、再按空格放下。']] },
+        { icon: I.copyX, title: '重复治理', items: [
+          ['一键清理', '每个网址保留激活 / 固定 / 位置靠前的一个；固定标签与收藏夹条目豁免，清理可撤销。'],
+          ['重复角标', '行尾「n×」直接标出重复，底栏出现「清理重复」入口并显示待清理数量。']] },
+        { icon: I.shield, title: '撤销安全网', items: [
+          ['多层撤销', '经 Tabs 执行的关闭都可撤销（次数可在设置中调整）。'],
+          ['撤销历史', '任意批次随时恢复；自动行为标注来源（手动关闭 / 窗口归档）。'],
+          ['接住浏览器最近关闭', '连浏览器自己关掉的标签也能找回。']] },
+        { icon: I.camera, title: '快照', items: [
+          ['四种保存方式', '命名保存当前窗口、归档（保存并关闭）、保存收藏夹、粘贴 OneTab 文本导入。'],
+          ['关窗自动快照', '默认开启、滚动保留最近若干份；崩溃或强制退出也能保住现场。'],
+          ['精确恢复', '只新建缺失的标签，并还原固定、静音与分组状态。']] },
+        { icon: I.snow, title: '休眠与资源', items: [
+          ['三种休眠方式', '手动单个、批量休眠后台标签、定时自动休眠；支持域名白名单。'],
+          ['一键唤醒', '底栏一键唤醒全部休眠标签，回来时状态原样。']] },
+        { icon: I.bookmark, title: '数据与同步', items: [
+          ['完整备份', '收藏夹 + 设置 + 全部快照与归档导出为单个 JSON；导入是事务，失败整体回滚。'],
+          ['浏览器账号通道镜像', '文件夹、常驻磁贴与设置可经浏览器账号跨设备同步，不经 Tabs 的服务器。'],
+          ['坏数据隔离', '所有持久化数据都过 schema 校验，损坏条目被隔离。']] },
+        { icon: I.alert, title: '开发者工具', items: [
+          ['指定站点禁用缓存', '命中规则的站点响应头强制 no-store（含子资源）。'],
+          ['三种规则格式', '域名 / 域名+路径 / 完整 URL 前缀，最多 50 条。'],
+          ['按需授权', '网站访问权限走可选申请；不开这个功能，安装时不会出现全站权限警告。']] },
+        { icon: I.settings, title: '外观与平台', items: [
+          ['中英双语', '界面文案完整双语，跟随浏览器语言自动切换。'],
+          ['主题三态 + 多套配色', '跟随系统 / 亮 / 暗三态，另有 5 套配色可选。'],
+          ['三档密度', '紧凑 / 宽松 / 大字号，长列表与低视力场景都照顾到。']] }
+      ];
+
+      const ENTRIES = [
+        { icon: I.menu, title: '右键菜单', body: '页面、链接、标签栏、工具栏图标四个上下文：休眠、固定、按域名搜索、加入文件夹、打开面板与设置。' },
+        { icon: I.search, title: '地址栏命令', body: '地址栏输入 t 再按 Tab，然后输关键词，直达标签、固定条目与文件夹。' },
+        { icon: I.sparkles, title: '工具栏角标', body: '角标可显示标签数、重复组数或休眠数，四档可调。' },
+        { icon: I.command, title: '命令面板', body: '⌘P（Ctrl+P）一个入口：搜命令、搜标签，直接执行动作。' },
+        { icon: I.pin, title: '常驻磁贴与收藏夹', body: '把常用页面拖到顶部磁贴，或拖进收藏夹的文件夹，随时一键直达。' }
+      ];
+
+      const PRIVACY = [
+        ['本地优先存储', '主存储是浏览器本地存储（chrome.storage.local）；无自有服务器、无账号、无云端。'],
+        ['零出站网络请求', '扩展本身不发起任何网络请求，这一点由构建期的隐私回归检查把关。'],
+        ['同步走浏览器通道', '跨设备镜像经你自己的浏览器账号通道完成，Tabs 不参与、也看不到内容。'],
+        ['权限最小化', '权限清单冻结在构建配置与隐私说明中，新增任何权限都必须先改这两处。'],
+        ['不收集浏览内容', '诊断日志只记录技术上下文（时间、模块、错误），不含标签标题与网址。']
+      ];
+
+      const PERMS = [
+        ['tabs — 读取标签列表', '读取标签的标题、网址与状态，用于列表展示、分组、搜索与快照。不读取页面内容。'],
+        ['tabGroups — 管理原生标签组', '把侧边栏中的分组同步为浏览器原生标签组（可选功能），或恢复快照时重建分组。'],
+        ['storage — 本地存储', '把设置、快照与收藏夹存进浏览器本地存储（chrome.storage.local）。数据不出本机。'],
+        ['alarms — 定时器', '驱动定时自动快照与自动休眠的周期任务，不联网。'],
+        ['contextMenus — 右键菜单', '在页面 / 链接 / 标签栏右键中提供休眠、固定、按域名搜索等入口。'],
+        ['omnibox — 地址栏命令', '支持在地址栏输入 t 前缀直达标签搜索，不发起网络请求。'],
+        ['sessions — 浏览器会话', '读取浏览器自己的「最近关闭」记录，用于接住误关的标签与窗口。'],
+        ['bookmarks — 书签读写', '把收藏夹文件夹导出到浏览器书签，或从书签栏整批导入。'],
+        ['notifications — 系统通知', '自动休眠完成时发出可选的系统通知。可关闭。'],
+        ['favicon — 站点图标', '站点图标取自浏览器自己的本地图标库，不会向你访问的站点发起任何请求。'],
+        ['declarativeNetRequest — 响应头改写', '仅开发者功能「指定站点禁用缓存」使用：为命中站点改写响应头。'],
+        ['sidePanel — 侧边栏', 'Tabs 的主界面形态：浏览器侧边栏。已在扩展配置中声明。'],
+        ['可选的网站访问权限', '仅「指定站点禁用缓存」按需申请（可选权限）：不开该功能，安装时不会出现全站访问警告。']
+      ];
+
+      const TECH = [
+        ['技术栈', 'WXT + React 19 + TypeScript + Tailwind CSS + zustand + zod。'],
+        ['测试与门禁', 'Vitest 行为规格 + UI 渲染基线 + 设计令牌守卫 + 隐私回归，共 800 余条用例。'],
+        ['可自行验证', '零出站网络请求不必听我们说：打开 DevTools 的 Network 面板观察扩展上下文，请求数为零。']
+      ];
+
+      const KB = {
+        panel: [
+          ['聚焦搜索', ['⌘/Ctrl', 'K']],
+          ['打开命令面板', ['⌘/Ctrl', 'P']],
+          ['定位当前标签', ['⌘/Ctrl', 'J']],
+          ['撤销最近关闭', ['⌘/Ctrl', 'Z']],
+          ['在列表中漫游 / 激活', ['↑', '↓', 'Enter']],
+          ['重排当前标签', ['Alt', '↑/↓']],
+          ['键盘拖拽', ['Space']]
+        ],
+        global: [
+          ['聚焦搜索', ['Ctrl', 'Shift', 'F']],
+          ['打开 / 聚焦侧边栏', ['Ctrl', 'Shift', 'O']],
+          ['定位当前标签', ['Ctrl', 'Shift', 'L']],
+          ['休眠后台标签', ['Ctrl', 'Shift', 'U']]
+        ]
+      };
+
+      /* ================= 渲染 ================= */
+      const $ = (s) => document.querySelector(s);
+      const el = (h) => {
+        const t = document.createElement('template');
+        t.innerHTML = h.trim();
+        return t.content.firstElementChild;
+      };
+
+      // 磁贴
+      $('#tiles').append(
+        ...TILES.map((t) =>
+          el(`<button class="tile${t.active ? ' is-active' : ''}" style="--tile-accent:${t.c}" title="${t.t}"><span>${t.t}</span></button>`)
+        )
+      );
+      $('#tiles').addEventListener('click', (e) => {
+        const tile = e.target.closest('.tile');
+        if (!tile) return;
+        document.querySelectorAll('.tile').forEach((x) => x.classList.remove('is-active'));
+        tile.classList.add('is-active');
+      });
+
+      // 标签列表
+      function rowHtml(tab) {
+        const cls = [
+          'row-item',
+          tab.active ? 'is-active' : '',
+          tab.discarded ? 'is-discarded' : '',
+          tab.highlighted ? 'is-highlighted' : ''
+        ].join(' ');
+        const badges = [
+          tab.dup ? `<span class="chip chip-warn">重复 ${tab.dup}×</span>` : '',
+          tab.discarded ? '<span class="chip chip-idle">已休眠</span>' : ''
+        ].join('');
+        return `<div class="${cls}" data-text="${tab.title}">
+          <button class="main">
+            <span class="favicon">${tab.f}</span>
+            <span class="title-text">${tab.title}</span>
+          </button>
+          ${badges ? `<span style="display:inline-flex;gap:4px">${badges}</span>` : ''}
+          <span class="row-actions">
+            <button class="row-action" title="${tab.discarded ? '唤醒标签' : '休眠标签'}">${svg(tab.discarded ? I.sunrise : I.snow)}</button>
+            <button class="row-action" title="固定到常驻磁贴">${svg(I.pin)}</button>
+            <button class="row-action is-danger" title="关闭标签">${svg(I.close)}</button>
+          </span>
+        </div>`;
+      }
+
+      function sectionHtml(s) {
+        const headActions =
+          s.kind === 'native'
+            ? `<button class="row-action" title="存为文件夹" data-toast="已存为文件夹">${svg(I.folder)}</button>
+               <button class="row-action" title="编辑标签组" data-toast="可改名 / 换色">${svg(I.wand)}</button>`
+            : '';
+        const media = s.playing
+          ? `<span class="media-indicator">${svg(I.volume, 12)}播放中<i class="media-dot"></i></span>`
+          : '';
+        return `<div class="section-card" data-key="${s.key}">
+          <div class="section-head">
+            ${
+              s.collapsible
+                ? `<button class="toggle" data-section="${s.key}" aria-expanded="true">
+                     <span style="display:inline-flex;align-items:center;gap:4px">
+                       ${svg(I.chevronDown, 14)}
+                       <i class="accent-bar" style="background:${s.accent}"></i>
+                     </span>
+                     <span class="title">${s.title}</span>
+                   </button>`
+                : `<div class="toggle"><span class="title">${s.title}</span></div>`
+            }
+            <span class="count-pill">${s.tabs.length}</span>
+            ${media}
+            ${headActions}
+            <button class="row-action is-danger" title="关闭该分组的全部 ${s.tabs.length} 个标签（可撤销）" data-toast="已关闭 ${s.tabs.length} 个标签">${svg(I.close)}</button>
+          </div>
+          <div class="section-body" id="body-${s.key}">${s.tabs.map(rowHtml).join('')}</div>
+        </div>`;
+      }
+
+      $('#list').innerHTML = SECTIONS.map(sectionHtml).join('');
+
+      // 底栏
+      $('#footerNav').innerHTML = FOOTER.map(
+        (b) => `<button class="icon-btn${b.accent ? ' is-accent' : ''}${b.badge ? ' has-badge' : ''}" data-footer="${b.id}" title="${b.label}" aria-label="${b.label}">
+          ${svg(b.icon, 14)}${b.badge ? `<span class="badge">${b.badge}</span>` : ''}
+        </button>`
+      ).join('');
+
+      // 快照 / 撤销历史 / 命令 / 关于页
+      $('#snapRows').innerHTML = SNAPS.map(
+        (s) => `<div class="list-row">
+          <div class="grow"><strong>${s.name}</strong><small>${s.meta}</small></div>
+          <button class="chip chip-brand" data-open="confirm">恢复</button>
+        </div>`
+      ).join('');
+
+      $('#undoRows').innerHTML = UNDO.map(
+        (u) => `<div class="list-row">
+          <div class="grow"><strong>${u.title}</strong><small>${u.meta}</small></div>
+          <button class="chip chip-brand" data-toast="已恢复 ${u.title.replace(/^[^0-9]*/, '')}" >撤销</button>
+        </div>`
+      ).join('');
+
+      $('#paletteList').innerHTML = COMMANDS.map(
+        (c, i) => `<button class="palette-item${i === 0 ? ' is-active' : ''}" data-cmd="${i}">${svg(c.icon, 16)}<span>${c.label}</span></button>`
+      ).join('');
+
+      $('#outline').innerHTML =
+        '<b>设置</b>' +
+        SETTINGS.map(
+          (s, i) => `<button data-jump="${s.id}"${i === 0 ? ' aria-current="true"' : ''}>${s.title}</button>`
+        ).join('');
+
+      function settingsHtml(sections) {
+        return sections
+          .map((s) => {
+            const rows = s.rows
+              .map((r) => {
+                let ctrl = '';
+                if (r.kind === 'toggle')
+                  ctrl = `<button class="switch" role="switch" aria-checked="${!!r.on}" aria-label="${r.label}"></button>`;
+                else if (r.kind === 'select')
+                  ctrl = `<span class="select">${r.value}${svg(I.chevronDown, 14)}</span>`;
+                else if (r.kind === 'chip')
+                  ctrl = `<span class="select" style="background:var(--surface)">${r.value}</span>`;
+                else if (r.kind === 'input')
+                  ctrl = `<input class="select" style="width:${r.w}px" value="${r.value}" aria-label="${r.label}" />`;
+                else if (r.kind === 'swatch')
+                  ctrl = `<span class="swatches">${[
+                    ['forest', '#347554'],
+                    ['ocean', '#3a6ea8'],
+                    ['violet', '#6f4ba6'],
+                    ['sunset', '#b85f22'],
+                    ['mono', '#4a524a'],
+                    ['plain', '#5f6368']
+                  ]
+                    .map(
+                      ([id, hex]) =>
+                        `<button class="swatch" data-hue="${id}" style="background:${hex}" aria-checked="${id === document.documentElement.dataset.hue}" aria-label="主题色 ${id}"></button>`
+                    )
+                    .join('')}</span>`;
+                else if (r.kind === 'chips')
+                  ctrl = `<span class="chips">${r.chips
+                    .map((c) => `<span class="chip-input">${c}</span>`)
+                    .join('')}<button class="chip chip-brand" data-toast="已添加白名单域名">添加</button></span>`;
+                return `<div class="srow" data-text="${r.label} ${r.hint || ''}">
+                  <div class="grow"><div class="label">${r.label}</div>${r.hint ? `<div class="hint">${r.hint}</div>` : ''}</div>
+                  ${ctrl}
+                </div>`;
+              })
+              .join('');
+            return `<div class="card" id="${s.id}"><h2>${s.title}</h2>${rows}</div>`;
+          })
+          .join('');
+      }
+      $('#settingsSections').innerHTML = settingsHtml(SETTINGS);
+
+      $('#capGrid').innerHTML = CAPS.map(
+        (c) => `<article class="acard">
+          <div class="head"><span class="ico">${svg(c.icon, 14)}</span><h3>${c.title}</h3></div>
+          <ul>${c.items.map(([t, b]) => `<li><i></i><div><p>${t}</p><span>${b}</span></div></li>`).join('')}</ul>
+        </article>`
+      ).join('');
+
+      $('#entryGrid').innerHTML = ENTRIES.map(
+        (e) => `<article class="acard entry">
+          <span class="ico">${svg(e.icon, 14)}</span>
+          <div><h3>${e.title}</h3><p class="body" style="margin-top:4px">${e.body}</p></div>
+        </article>`
+      ).join('');
+
+      $('#privacyGrid').innerHTML = PRIVACY.map(
+        ([t, b]) => `<div class="acard"><p style="margin:0;font-size:12px;font-weight:500;color:var(--c-gray-700)">${t}</p><p class="body">${b}</p></div>`
+      ).join('');
+
+      $('#techGrid').innerHTML = TECH.map(
+        ([t, b]) => `<div class="acard"><p style="margin:0;font-size:12px;font-weight:500;color:var(--c-gray-700)">${t}</p><p class="body">${b}</p></div>`
+      ).join('');
+
+      $('#permList').innerHTML = PERMS.map(
+        ([t, b]) => `<li><strong>${t}</strong><span>${b}</span></li>`
+      ).join('');
+
+      const kbHtml = (arr) =>
+        arr
+          .map(
+            ([l, keys]) => `<div class="list-row" style="padding:8px 0;border-bottom:1px solid var(--c-gray-50)">
+              <span style="flex:1;font-size:12px;color:var(--c-gray-700)">${l}</span>
+              <span class="keys">${keys.map((k) => `<span class="kbd">${k}</span>`).join('')}</span>
+            </div>`
+          )
+          .join('');
+      $('#kbPanel').innerHTML = kbHtml(KB.panel);
+      $('#kbGlobal').innerHTML = kbHtml(KB.global);
+
+      /* ================= 交互 ================= */
+      // 视图切换
+      function setView(v) {
+        ['sidepanel', 'settings', 'about'].forEach((k) => {
+          $('#view-' + k).hidden = k !== v;
+          const btn = document.querySelector(`.views button[data-view="${k}"]`);
+          btn.setAttribute('aria-current', String(k === v));
+        });
+      }
+      document.querySelector('.views').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-view]');
+        if (b) setView(b.dataset.view);
+      });
+
+      // 主题 / 配色
+      $('#themeSel').addEventListener('change', (e) => (document.documentElement.dataset.theme = e.target.value));
+      $('#hueSel').addEventListener('change', (e) => (document.documentElement.dataset.hue = e.target.value));
+      document.addEventListener('click', (e) => {
+        const sw = e.target.closest('.swatch[data-hue]');
+        if (!sw) return;
+        document.documentElement.dataset.hue = sw.dataset.hue;
+        $('#hueSel').value = sw.dataset.hue;
+        document.querySelectorAll('.swatch[data-hue]').forEach((x) => x.setAttribute('aria-checked', String(x === sw)));
+      });
+
+      // Toast
+      let toastTimer;
+      function toast(msg, note) {
+        const box = $('#toasts');
+        box.innerHTML = `<div class="toast">${svg(I.alert, 16, '')}
+          <span class="msg">${msg}${note ? `<small>${note}</small>` : ''}</span>
+          <button class="undo">撤销</button></div>`;
+        const node = box.firstElementChild;
+        node.querySelector('.undo').addEventListener('click', () => {
+          node.remove();
+          toast('已撤销上一次操作');
+        });
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => node.remove(), 5000);
+      }
+      document.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-toast]');
+        if (t) toast(t.dataset.toast, '可从撤销历史中一键找回');
+      });
+
+      // 搜索过滤
+      const q = $('#q');
+      q.addEventListener('input', () => {
+        const v = q.value.trim().toLowerCase();
+        $('#clearBtn').hidden = !v;
+        $('#kbdHint').hidden = !v;
+        let hits = 0;
+        document.querySelectorAll('#list .row-item').forEach((row) => {
+          const txt = (row.dataset.text || '').toLowerCase();
+          const ok = !v || txt.includes(v);
+          row.hidden = !ok;
+          row.classList.toggle('is-search-active', !!v && ok);
+          if (ok && v) hits++;
+        });
+        document.querySelectorAll('.section-card').forEach((card) => {
+          const any = [...card.querySelectorAll('.row-item')].some((r) => !r.hidden);
+          card.hidden = !!v && !any;
+        });
+        $('#hitCount').textContent = v ? `命中 ${hits} 个标签` : '';
+      });
+      $('#clearBtn').addEventListener('click', () => {
+        q.value = '';
+        q.dispatchEvent(new Event('input'));
+        q.focus();
+      });
+      $('#histToggle').addEventListener('click', (e) => {
+        e.currentTarget.classList.toggle('is-active');
+        toast('已切换历史搜索范围', e.currentTarget.classList.contains('is-active') ? '包含快照与归档' : '仅搜索当前标签');
+      });
+      $('#tipClose').addEventListener('click', () => $('#tip').remove());
+
+      // 分区折叠
+      $('#list').addEventListener('click', (e) => {
+        const t = e.target.closest('.toggle[data-section]');
+        if (!t) return;
+        const body = $('#body-' + t.dataset.section);
+        const open = t.getAttribute('aria-expanded') === 'true';
+        t.setAttribute('aria-expanded', String(!open));
+        body.hidden = open;
+        t.querySelector('svg').outerHTML = svg(open ? I.chevron : I.chevronDown, 14);
+      });
+      document.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-collapse="folders"]');
+        if (!t) return;
+        const open = t.getAttribute('aria-expanded') === 'true';
+        t.setAttribute('aria-expanded', String(!open));
+        $('#folders').hidden = open;
+      });
+
+      // 行：激活 / 休眠 / 关闭
+      $('#list').addEventListener('click', (e) => {
+        const row = e.target.closest('.row-item');
+        if (!row) return;
+        const act = e.target.closest('.row-action');
+        if (act) {
+          const title = row.querySelector('.title-text').textContent;
+          if (act.classList.contains('is-danger')) {
+            row.remove();
+            toast(`已关闭「${title}」`, '可撤销');
+          } else {
+            const sleeping = row.classList.contains('is-discarded');
+            row.classList.toggle('is-discarded', !sleeping);
+            toast(sleeping ? `已唤醒「${title}」` : `已休眠「${title}」`);
+          }
+          return;
+        }
+        document.querySelectorAll('#list .row-item').forEach((r) => r.classList.remove('is-active'));
+        row.classList.add('is-active');
+      });
+
+      // 新建标签
+      $('#newTab').addEventListener('click', () => toast('已新建标签'));
+
+      // 底栏
+      $('#footerNav').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-footer]');
+        if (!b) return;
+        const id = b.dataset.footer;
+        if (id === 'palette') openPalette();
+        else if (id === 'history') $('#history').hidden = false;
+        else if (id === 'snapshot') $('#snapshots').hidden = false;
+        else if (id === 'settings') setView('settings');
+        else if (id === 'about') setView('about');
+        else if (id === 'discard') toast('已休眠 12 个后台标签', '可撤销');
+        else if (id === 'wake') toast('已唤醒 3 个休眠标签');
+        else if (id === 'clean') toast('已关闭 4 个重复标签', '可撤销');
+        else if (id === 'insights') $('#snapshots').hidden = false;
+        else if (id === 'closeSel') toast('已关闭选中的 3 个标签', '可撤销');
+        else if (id === 'regroup') toast('已重排分组，原快照可回退');
+        else if (id === 'locate') {
+          const active = document.querySelector('#list .row-item.is-active');
+          if (active) {
+            active.style.outline = '2px solid var(--ring)';
+            setTimeout(() => (active.style.outline = ''), 1100);
+          }
+          toast('已定位到当前标签');
+        } else if (id === 'collapseAll') {
+          const anyOpen = [...document.querySelectorAll('#list .toggle[data-section]')].some(
+            (t) => t.getAttribute('aria-expanded') === 'true'
+          );
+          document.querySelectorAll('#list .toggle[data-section]').forEach((t) => {
+            t.setAttribute('aria-expanded', String(!anyOpen));
+            $('#body-' + t.dataset.section).hidden = anyOpen;
+            t.querySelector('svg').outerHTML = svg(anyOpen ? I.chevron : I.chevronDown, 14);
+          });
+          b.innerHTML = svg(anyOpen ? I.expand : I.collapse, 14);
+        }
+      });
+
+      // 浮层开关
+      function openPalette() {
+        $('#palette').hidden = false;
+        $('#pq').value = '';
+        renderPalette('');
+        $('#pq').focus();
+      }
+      document.addEventListener('click', (e) => {
+        const c = e.target.closest('[data-close]');
+        if (c) $('#' + c.dataset.close).hidden = true;
+        const o = e.target.closest('[data-open]');
+        if (o) $('#' + o.dataset.open).hidden = false;
+      });
+      document.querySelectorAll('.overlay').forEach((ov) =>
+        ov.addEventListener('click', (e) => {
+          if (e.target === ov) ov.hidden = true;
+        })
+      );
+      $('#confirmOk').addEventListener('click', () => {
+        $('#confirm').hidden = true;
+        toast('已恢复 8 个标签', '可从撤销历史中一键找回');
+      });
+
+      // 命令面板
+      function renderPalette(v) {
+        const items = COMMANDS.filter((c) => !v || c.label.toLowerCase().includes(v.toLowerCase()));
+        $('#paletteList').innerHTML = items.length
+          ? items
+              .map((c, i) => {
+                const idx = COMMANDS.indexOf(c);
+                return `<button class="palette-item${i === 0 ? ' is-active' : ''}" data-cmd="${idx}">${svg(c.icon, 16)}<span>${c.label}</span></button>`;
+              })
+              .join('')
+          : '<div style="padding:12px 8px;font-size:12px;color:var(--c-gray-500)">没有匹配的命令</div>';
+      }
+      $('#pq').addEventListener('input', (e) => renderPalette(e.target.value));
+      $('#paletteList').addEventListener('click', (e) => {
+        const item = e.target.closest('[data-cmd]');
+        if (!item) return;
+        const c = COMMANDS[Number(item.dataset.cmd)];
+        $('#palette').hidden = true;
+        if (c.view) setView(c.view);
+        else toast(c.toast, '可撤销');
+      });
+
+      // 快捷键
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
+          e.preventDefault();
+          openPalette();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          q.focus();
+          return;
+        }
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.overlay').forEach((ov) => (ov.hidden = true));
+          q.value = '';
+          q.dispatchEvent(new Event('input'));
+        }
+      });
+
+      // 设置页：开关 / 搜索 / 目录跳转
+      document.addEventListener('click', (e) => {
+        const sw = e.target.closest('.switch');
+        if (sw) sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
+      });
+      $('#sq').addEventListener('input', (e) => {
+        const v = e.target.value.trim().toLowerCase();
+        document.querySelectorAll('#settingsSections .srow').forEach((r) => {
+          r.hidden = !!v && !r.dataset.text.toLowerCase().includes(v);
+        });
+        document.querySelectorAll('#settingsSections .card').forEach((c) => {
+          c.hidden = [...c.querySelectorAll('.srow')].every((r) => r.hidden);
+        });
+      });
+      $('#outline').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-jump]');
+        if (!b) return;
+        document.querySelectorAll('#outline button').forEach((x) => x.removeAttribute('aria-current'));
+        b.setAttribute('aria-current', 'true');
+        document.getElementById(b.dataset.jump).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+
+      // 收藏夹行
+      document.querySelectorAll('#folders .row-item').forEach((row) => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.row-action')) return;
+          toast(`已打开「${row.dataset.text}」的条目`);
+        });
+      });
+    </script>
+  </body>
+</html>
