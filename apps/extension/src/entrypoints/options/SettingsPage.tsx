@@ -9,7 +9,12 @@ import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { TextField } from '@/ui/common/TextField';
-import { clearDiagnostics, exportDiagnostics, readAllDiagnostics } from '@/platform/diagnostics';
+import {
+  clearDiagnostics,
+  exportDiagnostics,
+  logDegraded,
+  readAllDiagnostics
+} from '@/platform/diagnostics';
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
 import { downloadJsonFile, openAboutPage, openUrlInTab } from '@/platform/navigation';
 import { datedJsonFilename } from '@/core/util/filename';
@@ -87,7 +92,9 @@ export function SettingsPage() {
       .then((side) => {
         if (!cancelled) setSidePanelSide(side);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        // 探测失败会让本页无法提示「侧边栏在左/右」，用户按说明找不到位置。
+        logDegraded('options', '侧边栏位置探测失败', error);
         if (!cancelled) setSidePanelSide('unknown');
       });
     return () => {
@@ -173,7 +180,10 @@ export function SettingsPage() {
           })
         )
       )
-      .catch(() => setTransferStatus(t('导入失败：未能读取书签栏，请稍后重试')));
+      .catch((error: unknown) => {
+        logDegraded('options', '书签栏导入失败', error);
+        setTransferStatus(t('导入失败：未能读取书签栏，请稍后重试'));
+      });
   };
 
   /** 打开浏览器「扩展快捷键」设置页。 */
@@ -200,7 +210,8 @@ export function SettingsPage() {
       downloadJsonFile(datedJsonFilename('tabs-diagnostics'), exportDiagnostics(entries));
       await clearDiagnostics();
       setTransferStatus(t('诊断信息已导出'));
-    } catch {
+    } catch (error) {
+      logDegraded('options', '诊断信息导出失败', error);
       setTransferStatus(t('导出失败：本地数据读取未完成'));
     }
   };
@@ -209,7 +220,10 @@ export function SettingsPage() {
   const handleResetSettings = () => {
     void resetSettings()
       .then(() => setTransferStatus(t('已恢复默认设置')))
-      .catch(() => setTransferStatus(t('恢复默认失败，请重试')));
+      .catch((error: unknown) => {
+        logDegraded('options', '恢复默认设置失败', error);
+        setTransferStatus(t('恢复默认失败，请重试'));
+      });
     setConfirmingReset(false);
   };
 
@@ -226,7 +240,10 @@ export function SettingsPage() {
         useSnapshotStore.getState().reset();
         setTransferStatus(t('已清除全部数据'));
       })
-      .catch(() => setTransferStatus(t('清除失败，请重试')));
+      .catch((error: unknown) => {
+        logDegraded('options', '清除全部数据失败', error);
+        setTransferStatus(t('清除失败，请重试'));
+      });
     setConfirmingClear(false);
     setClearAck(false);
   };

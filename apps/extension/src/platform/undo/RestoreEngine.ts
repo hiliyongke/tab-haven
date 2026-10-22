@@ -4,6 +4,8 @@ import { NO_GROUP } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
+import { logDegraded } from '@/platform/diagnostics';
+import { tabGroups } from '@/platform/tabGroups';
 
 /**
  * 标签恢复引擎：把撤销记录（或未来的快照记录）重建为真实标签。
@@ -59,7 +61,11 @@ async function openKeysInWindow(
       const key = webComparisonKey(tab.url ?? '', tab.pendingUrl ?? undefined);
       if (key) keys.add(key);
     }
-  } catch {
+  } catch (error) {
+    // 与 snapshots.restoreSnapshot 同口径：去重查询失败会走「不去重」分支，
+    // 本轮可能多建副本。degraded 已传导给调用方，但错误对象本身也必须留痕，
+    // 否则「撤销了一下多出一堆重复标签」在诊断导出里查不到成因。
+    logDegraded('undo', `查询窗口 ${windowId} 已打开页面失败，按无重复恢复（可能多建副本）`, error);
     return { keys, degraded: true };
   }
   return { keys, degraded: false };
@@ -129,16 +135,22 @@ export async function restoreTabRecordsDetailed(
           let reuseGroupId = true;
           if (record.groupName) {
             try {
-              const existing = await browser.tabGroups.get(record.groupId);
+              const existing = await tabGroups.get(record.groupId);
               reuseGroupId = existing.title === record.groupName;
-            } catch {
+            } catch (error) {
+              // 「组不存在」是预期内（重启后旧组已消失），但其它失败必须是可观测的：
+              // 一律静默会让「标签恢复后分组丢了」在诊断里查不到原因。
+              logDegraded('undo', `校验原组 ${record.groupId} 失败，改按组名重建分组`, error, {
+                quiet: true
+              });
               reuseGroupId = false;
             }
           }
           if (reuseGroupId) {
             try {
               await browser.tabs.group({ tabIds: [createdId], groupId: record.groupId });
-            } catch {
+            } catch (error) {
+              logDegraded('undo', `标签 ${createdId} 未能回到原组 ${record.groupId}`, error);
               reuseGroupId = false;
             }
           }
@@ -146,9 +158,11 @@ export async function restoreTabRecordsDetailed(
             // 原组已删除或 id 被复用：按名重建
             try {
               const newGroupId = await browser.tabs.group({ tabIds: [createdId] });
-              await browser.tabGroups.update(newGroupId, { title: record.groupName });
-            } catch {
-              // 组重建失败：保持未分组
+              await tabGroups.update(newGroupId, { title: record.groupName });
+            } catch (error) {
+              // 组重建失败：保持未分组（不阻断恢复），但必须留痕 —— 否则用户看到
+              // 「已恢复 N 个」而分组其实丢了，诊断导出里却一条线索都没有。
+              logDegraded('undo', `按名重建分组「${record.groupName}」失败，标签保持未分组`, error);
             }
           }
         }
@@ -156,8 +170,10 @@ export async function restoreTabRecordsDetailed(
         // 同一批次里出现两条同 URL 是合法的（用户确实关了两个同 URL 标签）。
         // 若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
         return 'created';
-      } catch {
+      } catch (error) {
         // 单个标签恢复失败不影响同一批次中的其余标签；记录明细供调用方保留重试。
+        // 明细只解决「哪些没恢复」，不解决「为什么」——错误对象必须进诊断。
+        logDegraded('undo', `恢复标签失败：${record.url ?? '(无 URL)'}`, error);
         return 'failed';
       }
     }

@@ -19,10 +19,37 @@ import {
 import { mutateSession } from '@/platform/storage/session';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { isExportableUrl, readBookmarkBar } from '@/platform/bookmarks';
-import type { DataContext, DataState } from './types';
+import type { DataContext, DataSlice } from './types';
+import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
+
+/**
+ * 按名把条目并入固定空间：同名文件夹已存在则追加，否则新建。
+ *
+ * 唯一实现：两处导入路径（书签栏的具名文件夹、散落条目的「书签导入」兜底文件夹）
+ * 曾各写一遍 find/map/append —— 任何一侧漏改（如去重口径、新建时的模型字段）
+ * 都会让两条路径的落库形态分叉，而这种分叉只在导入结果里可见。
+ */
+function mergeFolderByName(
+  current: readonly FixedFolder[],
+  name: string,
+  items: readonly FixedFolderItem[]
+): { next: FixedFolder[]; created: boolean } {
+  const existing = current.find((folder) => folder.name === name);
+  if (existing) {
+    return {
+      next: current.map((folder) =>
+        folder.id === existing.id ? { ...folder, items: [...folder.items, ...items] } : folder
+      ),
+      created: false
+    };
+  }
+  return { next: [...current, { ...createFolderModel(name), items: [...items] }], created: true };
+}
 
 /** 备份切片：完整导出 / 事务化导入 / 书签栏导入。 */
-export function createTransferSlice(ctx: DataContext): Partial<DataState> {
+export function createTransferSlice(
+  ctx: DataContext
+): DataSlice<'exportData' | 'importData' | 'importBookmarksFromBar'> {
   return {
     /**
      * 导出为完整备份：固定空间 + 设置 + 全部快照族。
@@ -257,15 +284,9 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
           const items = leaves.map((leaf) =>
             createFolderItem({ url: leaf.url, title: leaf.title })
           );
-          const existing = next.find((folder) => folder.name === spec.name);
-          if (existing) {
-            next = next.map((folder) =>
-              folder.id === existing.id ? { ...folder, items: [...folder.items, ...items] } : folder
-            );
-          } else {
-            next = [...next, { ...createFolderModel(spec.name), items }];
-            foldersCreated += 1;
-          }
+          const merged = mergeFolderByName(next, spec.name, items);
+          next = merged.next;
+          if (merged.created) foldersCreated += 1;
           itemsImported += items.length;
         }
         if (bar.looseLeaves.length > 0) {
@@ -275,17 +296,9 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
             const items = leaves.map((leaf) =>
               createFolderItem({ url: leaf.url, title: leaf.title })
             );
-            const existing = next.find((folder) => folder.name === name);
-            if (existing) {
-              next = next.map((folder) =>
-                folder.id === existing.id
-                  ? { ...folder, items: [...folder.items, ...items] }
-                  : folder
-              );
-            } else {
-              next = [...next, { ...createFolderModel(name), items }];
-              foldersCreated += 1;
-            }
+            const merged = mergeFolderByName(next, name, items);
+            next = merged.next;
+            if (merged.created) foldersCreated += 1;
             itemsImported += items.length;
           }
         }

@@ -16,6 +16,7 @@ type FieldElement = HTMLInputElement | HTMLTextAreaElement;
 export function TextField({
   type = 'text',
   size = 'md',
+  variant = 'outline',
   multiline = false,
   rows = 3,
   resize = false,
@@ -36,6 +37,14 @@ export function TextField({
   type?: 'text' | 'number' | 'search' | 'password';
   /** lg = 搜索主输入；md = 弹窗/表单默认；sm = 密集行内编辑。 */
   size?: 'lg' | 'md' | 'sm';
+  /**
+   * `outline` = 常规带边框输入；`bare` = 内嵌于已有容器的无边框输入。
+   *
+   * 为什么要这个变体：内嵌输入（如「保存快照」行内的命名框）此前绕过本控件直接写
+   * 裸 `<input>` —— 只因为本控件固定带边框与底色。绕过一次，边框令牌、
+   * 命中下限、aria-label 这套收口就在那里失效一次。
+   */
+  variant?: 'outline' | 'bare';
   /** 渲染为 textarea（多行文本，如规则列表 / 批量导入）。 */
   multiline?: boolean;
   /** 多行模式下的可见行数。 */
@@ -78,7 +87,10 @@ export function TextField({
      三档都要有 min-h：sm 不加时实测 22px，低于 WCAG 2.5.8 的 24px 下限，
      且 px-1.5(6px) / py-0.5(2px) 脱 4px 网格。 */
   const base =
-    'w-full rounded border border-control bg-surface text-gray-800 transition-base focus:border-accent-500' +
+    'w-full rounded text-gray-800 transition-base ' +
+    (variant === 'bare'
+      ? 'bg-transparent focus:outline-none'
+      : 'border border-control bg-surface focus:border-accent-500') +
     (size === 'lg' ? ' px-3 py-1.5 text-sm min-h-9' : '') +
     (size === 'md' ? ' px-2 py-1 text-sm min-h-8' : '') +
     (size === 'sm' ? ' px-2 py-0.5 text-xs min-h-6' : '') +

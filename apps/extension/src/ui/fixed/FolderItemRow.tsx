@@ -133,8 +133,8 @@ export const FolderItemRow = memo(function FolderItemRow({
           }
         });
       })
-      .catch(() => {
-        useUndoStore.getState().notifyError(t('操作失败，请稍后重试'));
+      .catch((error: unknown) => {
+        useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error);
       });
   }, [folder.id, item.id, item.pendingTabId, item.url, removeFolderItem, t]);
 

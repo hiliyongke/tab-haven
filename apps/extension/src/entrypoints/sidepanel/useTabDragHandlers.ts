@@ -132,7 +132,9 @@ export function useTabDragHandlers() {
             }
           });
         })
-        .catch(() => useUndoStore.getState().notifyError(t('操作失败，请稍后重试')));
+        .catch((error: unknown) =>
+          useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+        );
     },
     [t]
   );
@@ -308,7 +310,7 @@ export function useTabDragHandlers() {
       const activeData = active.data.current as DragData | undefined;
       if (!activeData) return;
       const overData = over.data.current as DropTargetData | undefined;
-      const { notify, notifyError } = useUndoStore.getState();
+      const { notify, notifyError, notifyFailure } = useUndoStore.getState();
       const dataStore = useDataStore.getState();
 
       const resolution = resolveDrop(
@@ -347,8 +349,8 @@ export function useTabDragHandlers() {
           ) {
             // 目标组可能刚被解散：groupTabs 内部降级记录并保持未分组。
             // 分组写入失败同样无 tabs 事件可自愈，必须给用户可见反馈（与相邻分支同口径）。
-            void groupTabs([sourceTab.id], overTab.groupId).catch(() =>
-              notifyError(t('操作失败，请稍后重试'))
+            void groupTabs([sourceTab.id], overTab.groupId).catch((error: unknown) =>
+              notifyFailure('drag', t('操作失败，请稍后重试'), error)
             );
           }
           return;
@@ -373,7 +375,9 @@ export function useTabDragHandlers() {
           if (activeData.type !== DragType.Tab) return;
           void groupTabs([activeData.tabId], action.groupId)
             .then(() => notify(t('已加入标签组')))
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 
@@ -391,7 +395,9 @@ export function useTabDragHandlers() {
           void dataStore
             .addTabsToFolder(targets, action.folderId)
             .then(notifyDropResult)
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 
@@ -426,7 +432,9 @@ export function useTabDragHandlers() {
               if (ok) notify(t('已固定标签'));
               else notifyError(t('这个标签无法固定为常驻磁贴'));
             })
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 
@@ -440,7 +448,9 @@ export function useTabDragHandlers() {
           void dataStore
             .removePin(pin)
             .then(() => notify(t('已取消固定')))
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 
@@ -453,7 +463,9 @@ export function useTabDragHandlers() {
               if (ok) notify(t('已取消固定'));
               else notifyError(t('操作失败，请稍后重试'));
             })
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 
@@ -492,7 +504,9 @@ export function useTabDragHandlers() {
           void dataStore
             .removeFolderItem(activeData.folderId, activeData.itemId)
             .then(() => notify(t('已从文件夹移除')))
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 
@@ -515,7 +529,9 @@ export function useTabDragHandlers() {
           }
           void dataStore
             .reorderPins(activeData.pinId, overData.pinId, placeAfter)
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
+            .catch((error: unknown) =>
+              useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error)
+            );
           return;
         }
 

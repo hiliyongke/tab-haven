@@ -8,10 +8,19 @@ import {
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { DEFAULT_SETTINGS, SITE_COLLAPSE_LIMIT, SettingsSchema } from '@/core/schema/models';
 import { restoreFromMirrorOnEnable } from './mirrorRestore';
-import type { DataContext, DataState } from './types';
+import type { DataContext, DataSlice } from './types';
 
 /** 设置切片：站点折叠、设置读写与重置、清空全部本地数据、跨页设置刷新。 */
-export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
+export function createSettingsSlice(
+  ctx: DataContext
+): DataSlice<
+  | 'toggleSiteCollapsed'
+  | 'updateSettings'
+  | 'tryUpdateSettings'
+  | 'resetSettings'
+  | 'clearAllData'
+  | 'refreshSettings'
+> {
   /**
    * 设置/折叠写操作串行链。
    *
@@ -70,7 +79,13 @@ export function createSettingsSlice(ctx: DataContext): Partial<DataState> {
         await withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
           const disk = await ctx.repos.settings.read();
           const parsed = SettingsSchema.safeParse({ ...disk, ...partial });
-          if (!parsed.success) throw new Error('invalid-settings');
+          if (!parsed.success) {
+            // 校验失败必须与落盘失败同口径留痕：只 throw 会让这条路径在诊断里
+            // 完全消失（UI 侧又是 `void tryUpdateSettings(...)`，连 false 都丢掉），
+            // 界面靠乐观渲染看起来像生效、重启即丢失，且无从排查。
+            ctx.reportPersistenceFailure('dataStore', '设置校验失败，本次修改未保存');
+            throw new Error('invalid-settings');
+          }
           const ok = await ctx.repos.settings.write(parsed.data);
           // 设置是跨会话行为契约：落盘失败时必须报错，不能让界面停留在未保存的新值上。
           if (!ok) {

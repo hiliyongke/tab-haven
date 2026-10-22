@@ -13,9 +13,14 @@ import zhResources from './i18n/locales/zh-CN/translation.json';
  * （`/` 中文、`/en/` 英文），产物里没有运行时切换，因此不需要 react-i18next 的
  * Provider 与订阅机制 —— 一个 i18next 实例 + 一个 t 就够。
  */
-const resources = {
-  'zh-CN': { translation: zhResources as unknown as Record<string, string> },
-  en: { translation: enResources as unknown as Record<string, string> }
+/**
+ * 类型标注收口，不用 `as unknown as`：双重断言的作用是「让类型检查闭嘴」，
+ * 它不会验证任何东西 —— JSON 的词条形状变了（值不再是字符串）这里照样通过。
+ * 标注成目标类型后，形状不符是编译错误，而不是被断言擦掉。
+ */
+const resources: Record<string, { translation: Record<string, string> }> = {
+  'zh-CN': { translation: zhResources },
+  en: { translation: enResources }
 };
 
 export interface SiteI18n {

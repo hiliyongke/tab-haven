@@ -1,12 +1,11 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { SnapshotTabSchema, type SnapshotTab } from '@/core/schema/models';
-import { toGroupColor } from '@/core/group/groupColors';
-import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
+import type { TabGroupRecord } from '@/core/tab-types';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
 import { tabGroups } from '@/platform/tabGroups';
 import { settingsRepository } from '@/platform/storage/repositories';
-import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
+import { buildSnapshot, collectSnapshotTabs, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { logDegraded } from '@/platform/diagnostics';
 
@@ -101,8 +100,15 @@ async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
       // 无论是否命中都回写一次：顺带清掉过期项与被消费的标记。
       await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list.filter((m) => m.id !== windowId) });
       inSession = hit;
-    } catch {
-      // 忽略：按未命中处理（与历史行为一致）
+    } catch (error) {
+      // 按未命中处理（不阻断关窗快照），但必须留痕：session 镜像存在的理由正是
+      // 内存标记会随 SW 重启丢失，读失败 + 内存已丢 ⇒ 归档已保存的窗口会被
+      // 再写一条重复快照，而归因时完全无从下手。
+      logDegraded(
+        'window-cache',
+        `窗口 ${windowId} 跳过自动保存标记读取失败，按未命中处理（可能产生重复关窗快照）`,
+        error
+      );
     }
   }
   return inMem || inSession;
@@ -169,31 +175,21 @@ function flushWindowTabs(): void {
 }
 
 /**
- * 窗口标签 + 原生组 → 轻量快照条目（仅 http(s) 页面可恢复，其余跳过）。
- * 记录静音状态与所在组标题/颜色，恢复时可完整还原现场。
+ * 窗口标签 + 原生组 → 轻量快照条目。
+ *
+ * 采集口径（仅 http(s)、静音状态、组标题/颜色）的唯一实现是
+ * `platform/snapshot/snapshots` 的 `collectSnapshotTabs`：关窗自动保存、定时自动
+ * 快照、面板手动保存三处此前各写一份，新增字段（或改掉「内部页不入库」这类
+ * 规则）必然只改一处，表现为「定时保存的快照没有分组」这类无从解释的差异。
  */
 function collectTabs(
   rawTabs: readonly Parameters<typeof mapTab>[0][],
   groups: readonly TabGroupRecord[]
 ): SnapshotTab[] {
-  const groupById = new Map(groups.map((group) => [group.id, group]));
-  const out: SnapshotTab[] = [];
-  for (const raw of rawTabs) {
-    const tab: TabRecord = mapTab(raw);
-    // chrome:// / about: 等内部页无法以 URL 重新创建，收入快照只会成为死条目。
-    if (!tab.url || !/^https?:\/\//i.test(tab.url)) continue;
-    const group = tab.groupId !== NO_GROUP ? groupById.get(tab.groupId) : undefined;
-    out.push({
-      url: tab.url,
-      title: tab.title || '',
-      favIconUrl: tab.favIconUrl,
-      pinned: tab.pinned,
-      muted: tab.muted ?? false,
-      groupTitle: group?.title || undefined,
-      groupColor: toGroupColor(group?.color)
-    });
-  }
-  return out;
+  return collectSnapshotTabs(
+    rawTabs.map((raw) => mapTab(raw)),
+    groups
+  );
 }
 
 /**

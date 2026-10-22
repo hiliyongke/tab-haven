@@ -1,3 +1,5 @@
+import { logDegraded } from '@/platform/diagnostics';
+
 /**
  * 剪贴板写入：唯一出口。
  *
@@ -9,6 +11,10 @@
  *
  * 返回布尔而不是抛出：调用方只需决定「成功提示 / 失败提示」两种反馈，
  * 不必各自判断错误类型。
+ *
+ * 失败必须留痕：布尔返回值把异常压成了 false，调用方（UI 层）手上没有 error，
+ * 只能走 `notifyError` 提示。若此处不 logDegraded，「复制失败」在导出诊断里
+ * 完全查不到 —— 用户抱怨"复制没反应"时无从归因（是权限被拒还是非安全上下文）。
  */
 export async function writeClipboardText(text: string): Promise<boolean> {
   try {
@@ -17,7 +23,8 @@ export async function writeClipboardText(text: string): Promise<boolean> {
     if (clipboard === undefined) return false;
     await clipboard.writeText(text);
     return true;
-  } catch {
+  } catch (error) {
+    logDegraded('clipboard', '写入剪贴板失败', error);
     return false;
   }
 }

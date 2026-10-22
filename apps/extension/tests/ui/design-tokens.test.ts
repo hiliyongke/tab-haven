@@ -191,6 +191,30 @@ const css = readFileSync(CSS_PATH, 'utf8');
 const blocks = parseBlocks(css);
 const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
 const tsxFiles = walk(SRC_DIR, '.tsx');
+/** CSS 变量也可能由 `.ts` 注入（如主题应用器），扫描需覆盖两种扩展名。 */
+const sourceFiles = [...tsxFiles, ...walk(SRC_DIR, '.ts')].sort();
+
+/**
+ * 运行时注入的 CSS 变量：由 JS 写内联样式（`setProperty` / style 对象）写入，
+ * 因此不在 CSS 里声明。
+ *
+ * 集合**由源码推导**而不是硬编码白名单：写死的名单不会随代码变动，某个变量
+ * 停止注入后守卫依旧放行，而 CSS 里的 `var()` 会静默取到 fallback —— 这类
+ * 「守卫一直在、但放行的东西已经不存在」正是白名单的典型腐化方式。
+ */
+/** 字号豁免的适用文件（URL 副标题只此一处，见用例内的说明）。 */
+function isTabRowFile(file: string): boolean {
+  return relative(ROOT, file) === join('src', 'ui', 'tabs', 'TabRow.tsx');
+}
+
+function runtimeInjectedVars(): Set<string> {
+  const found = new Set<string>();
+  for (const file of sourceFiles) {
+    const src = readFileSync(file, 'utf8');
+    for (const match of src.matchAll(/['"`](--[\w-]+)['"`]/g)) found.add(match[1]!);
+  }
+  return found;
+}
 
 describe('对比度矩阵（2 主题 × 6 色相，WCAG 2.1 AA）', () => {
   for (const spec of ALL_PAIRS) {
@@ -221,11 +245,18 @@ describe('对比度矩阵（2 主题 × 6 色相，WCAG 2.1 AA）', () => {
 describe('CSS 变量定义完整性', () => {
   it('var() 引用的变量必须已声明（否则整条声明静默失效）', () => {
     const declared = new Set([...cssNoComments.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]!));
-    // 由 JS 在运行时通过内联样式注入的变量，属预期
-    const runtimeInjected = new Set(['--accent', '--tile-accent', '--group-accent']);
+    // 由 JS 在运行时通过内联样式注入的变量，属预期（集合取自源码，见 runtimeInjectedVars）
+    const runtimeInjected = runtimeInjectedVars();
     const used = new Set([...cssNoComments.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]!));
     const missing = [...used].filter((v) => !declared.has(v) && !runtimeInjected.has(v)).sort();
     expect(missing).toEqual([]);
+  });
+
+  it('抽取本身必须命中（空集合会让上一条用例恒绿）', () => {
+    // 与上一条同因：若正则写错或源码目录变了，runtimeInjectedVars() 返回空集，
+    // 上一条用例会退化成「所有变量都必须声明」，看起来更严而非报错——
+    // 而真正想放行的那几个变量会悄悄变成误报，最后被人改成硬编码白名单。
+    expect(runtimeInjectedVars().size).toBeGreaterThan(0);
   });
 });
 
@@ -316,7 +347,10 @@ describe('字号令牌', () => {
         if (line.trim().startsWith('*') || line.trim().startsWith('//')) return;
         // 豁免：TabRow 的 URL 副标题（tab-url）——单行截断的扫视型元数据，
         // 经产品决策保持 10px；其行高与虚拟列表 itemSize 公式隐式耦合（B6）。
-        if (line.includes('tab-url')) return;
+        // 限定「指定文件 + 类名 token 精确匹配」：`includes('tab-url')` 会把任何
+        // 提到该串的行（注释、tab-url-host 这类邻近类名）一并放行，守卫的边界
+        // 随注释与邻近命名漂移，最终变成一块无人解释的免检区。
+        if (isTabRowFile(file) && /\btab-url\b/.test(line)) return;
         if (/text-2xs/.test(line) && /leading-(relaxed|snug|tight|loose|normal)/.test(line)) {
           failures.push(
             `${relative(ROOT, file)}:${i + 1} text-2xs 搭配多行行高 leading-*，正文说明应改用 text-3xs`

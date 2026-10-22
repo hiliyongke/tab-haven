@@ -69,10 +69,14 @@ function primeUndoStore(overrides: Partial<ReturnType<typeof useUndoStore.getSta
   undoBatch: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
   notifyError: ReturnType<typeof vi.fn>;
+  notifyFailure: ReturnType<typeof vi.fn>;
 } {
   const undoBatch = vi.fn(async () => undefined);
   const notify = vi.fn();
   const notifyError = vi.fn();
+  // 失败路径走 notifyFailure（用户可见 + 诊断留痕），测试桩必须一并替换，
+  // 否则断言打到的是真实实现、永远不命中。
+  const notifyFailure = vi.fn();
   useUndoStore.setState({
     batches: [],
     toast: null,
@@ -81,9 +85,10 @@ function primeUndoStore(overrides: Partial<ReturnType<typeof useUndoStore.getSta
     undoBatch,
     notify,
     notifyError,
+    notifyFailure,
     ...overrides
   } as never);
-  return { undoBatch, notify, notifyError };
+  return { undoBatch, notify, notifyError, notifyFailure };
 }
 
 function renderPanel(props: Partial<Parameters<typeof UndoHistoryPanel>[0]> = {}) {
@@ -328,7 +333,7 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
   });
 
   it('恢复失败（返回 false）提示失败，不谎报成功', async () => {
-    const { notify, notifyError } = primeUndoStore();
+    const { notify, notifyFailure } = primeUndoStore();
     mocks.restoreRecentClosed.mockResolvedValueOnce(false);
     mocks.getRecentlyClosed.mockResolvedValueOnce([closedEntry({ sessionId: 's1' })]);
     renderPanel();
@@ -336,13 +341,17 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
     fireEvent.click(await screen.findByText('标题-s1'));
 
     await waitFor(() =>
-      expect(notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+      expect(notifyFailure).toHaveBeenCalledWith(
+        'sessions',
+        translate('操作失败，请稍后重试'),
+        undefined
+      )
     );
     expect(notify).not.toHaveBeenCalledWith(translate('已从浏览器最近关闭中恢复'));
   });
 
   it('恢复抛错（sessionId 失效）也会复位按钮，不永久 disabled 卡死', async () => {
-    const { notifyError } = primeUndoStore();
+    const { notifyFailure } = primeUndoStore();
     mocks.restoreRecentClosed.mockRejectedValueOnce(new Error('stale sessionId'));
     mocks.getRecentlyClosed.mockResolvedValueOnce([closedEntry({ sessionId: 's1' })]);
     renderPanel();
@@ -351,7 +360,11 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
     fireEvent.click(row);
 
     await waitFor(() =>
-      expect(notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+      expect(notifyFailure).toHaveBeenCalledWith(
+        'sessions',
+        translate('操作失败，请稍后重试'),
+        expect.any(Error)
+      )
     );
 
     // 关键：按钮必须恢复可用（finally 复位 restoringId）

@@ -51,7 +51,10 @@ export function UndoHistoryPanel({
   const batches = useUndoStore((state) => state.batches);
   const undoBatch = useUndoStore((state) => state.undoBatch);
   const notify = useUndoStore((state) => state.notify);
-  const notifyError = useUndoStore((state) => state.notifyError);
+  const notifyFailure = useUndoStore((state) => state.notifyFailure);
+  // 经订阅而非 `useDataStore.getState()`：后者不建立订阅，用户在设置页调大上限后
+  // 这行仍显示旧值 —— 而文案恰恰在引导用户去改这个设置。
+  const undoStackLimit = useDataStore((state) => state.settings.undoStackLimit);
   /**
    * 重做栈与执行入口。
    *
@@ -97,12 +100,13 @@ export function UndoHistoryPanel({
       .then((ok) => {
         // 失败走 notifyError（role="alert"）：与抛错分支同一语义强度。
         if (ok) notify(t('已从浏览器最近关闭中恢复'));
-        else notifyError(t('操作失败，请稍后重试'));
+        // ok === false 同样要留痕：否则「点了恢复没反应」在诊断里没有对应条目。
+        else notifyFailure('sessions', t('操作失败，请稍后重试'), undefined);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // sessions.restore 抛错（sessionId 失效等）：必须经 finally 复位，
         // 否则该按钮永久 disabled 卡死。
-        notifyError(t('操作失败，请稍后重试'));
+        notifyFailure('sessions', t('操作失败，请稍后重试'), error);
       })
       .finally(() => {
         restoringRef.current = false;
@@ -141,7 +145,7 @@ export function UndoHistoryPanel({
         {batches.length > 0 && (
           <p className="mb-1.5 text-3xs text-gray-500">
             {t('保留最近 {{count}} 条关闭记录，可在设置中调大上限', {
-              count: useDataStore.getState().settings.undoStackLimit
+              count: undoStackLimit
             })}
           </p>
         )}

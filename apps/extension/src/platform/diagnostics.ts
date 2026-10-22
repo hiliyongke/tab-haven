@@ -7,7 +7,6 @@ import {
   logDegraded,
   logFailure,
   readDiagnostics,
-  redactUrlsForTest,
   setDiagnosticSink,
   type DiagnosticEntry
 } from '@/platform/log';
@@ -30,7 +29,11 @@ import {
  */
 
 export type { DiagnosticEntry };
-export { logDegraded, logFailure, readDiagnostics, redactUrlsForTest };
+// 不含 redactUrlsForTest：它是**脱敏规则的测试夹具**，只服务于
+// tests/platform/diagnostics-redact*.test.ts，从 `@/platform/log` 直接取。
+// 挂在诊断层（生产出口）会让「测试专用能力」看起来是公开契约，
+// 随时可能被产品代码误当成正式 API 去用。
+export { logDegraded, logFailure, readDiagnostics };
 
 /** 共享环形缓冲的存储键与 RMW 锁名。 */
 const STORAGE_KEY = 'tabs.diagnostics.v1';

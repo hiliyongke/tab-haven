@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { redactUrlsForTest } from '@/platform/diagnostics';
+// 脱敏是 `@/platform/log` 的叶子能力（diagnostics 只是转出口），测试直接取源，
+// 免得「测试夹具」被误认成生产 API。
+import { redactUrlsForTest } from '@/platform/log';
 
 /**
  * 诊断日志脱敏。

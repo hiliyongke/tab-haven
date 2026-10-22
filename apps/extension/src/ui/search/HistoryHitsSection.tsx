@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useTranslation } from '@/i18n';
-import type { Snapshot } from '@/core/schema/models';
+import { snapshotOriginBadge } from '@/ui/common/snapshotOrigin';
 import type { HistorySearchHit } from '@/ui/search/useSearchController';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { formatTime } from '@/ui/common/format';
@@ -15,49 +15,13 @@ import { useScrollFade } from '@/ui/common/useScrollFade';
  * 刻意放在标签列表**之后**：当前标签永远是第一优先级结果，历史是回溯补充。
  */
 
-/** 来源徽标样式（与 SnapshotsPanel originBadge 同套色板）。 */
-function originBadgeClass(origin: HistorySearchHit['snapshotOrigin']): string {
-  switch (origin) {
-    case 'auto':
-      return 'bg-gray-100 text-gray-500';
-    case 'archive':
-      return 'bg-warn-100 text-warn-700';
-    case 'space':
-      return 'bg-accent-100 text-accent-700';
-    default:
-      return 'bg-accent-50 text-accent-600';
-  }
-}
-
 /**
- * 来源徽标的**中文原文**（取值会原样传进 `t()`）。
+ * 来源徽标（文案键 + 配色）改由 `@/ui/common/snapshotOrigin` 提供。
  *
- * 属性名以 `Key` 结尾是扫描器的抽取约定：写成 `switch` 里直接 `return '空间'` 时，
- * 扫描器只认调用点 / `*Key` 属性 / `<Trans>`，return 的字面量抽不到 ——
- * 「空间」因此始终不在词典里（英文模式露中文），而 check 因为用的是同一份抽取
- * 结果同样给出绿灯。用 `@i18n-ignore` 豁免 zh-linter 也只压住告警、词条照样进不来。
- *
- * 口径与 `SnapshotRow.originBadge` 对齐：space 是「工作区」而不是「空间」。
+ * 本文件此前自持一份映射表：复制时「自动快照」档漂到了 `text-gray-500`
+ * （在 gray-100 底上仅 3.92:1，不达 WCAG AA），而 `SnapshotRow` 的同一档早已修正为
+ * gray-600。唯一口径收口后，这类对比度回退不可能再只发生在一处。
  */
-const ORIGIN_BADGE_LABELS: Record<Snapshot['origin'], { badgeKey: string }> = {
-  auto: { badgeKey: '自动快照' },
-  archive: { badgeKey: '归档' },
-  space: { badgeKey: '工作区' },
-  manual: { badgeKey: '命名快照' }
-};
-
-function originBadgeKey(origin: HistorySearchHit['snapshotOrigin']): string {
-  switch (origin) {
-    case 'auto':
-      return ORIGIN_BADGE_LABELS.auto.badgeKey;
-    case 'archive':
-      return ORIGIN_BADGE_LABELS.archive.badgeKey;
-    case 'space':
-      return ORIGIN_BADGE_LABELS.space.badgeKey;
-    default:
-      return ORIGIN_BADGE_LABELS.manual.badgeKey;
-  }
-}
 
 interface HistoryHitsSectionProps {
   hits: readonly HistorySearchHit[];
@@ -104,7 +68,8 @@ export function HistoryHitsSection({
         {hits.map((hit) => {
           // 徽标文案与快照名同文时不重复渲染：自动快照的 name 就是「自动快照」原文
           // （与徽标同文），再显示一遍只占宽度、把 URL 挤没。
-          const badgeLabel = t(originBadgeKey(hit.snapshotOrigin));
+          const badge = snapshotOriginBadge(hit.snapshotOrigin);
+          const badgeLabel = t(badge.labelKey);
           return (
             <li
               key={`${hit.snapshotId}-${hit.tabIndex}`}
@@ -131,7 +96,7 @@ export function HistoryHitsSection({
                   <span
                     className={
                       'chip chip--cjk shrink-0 whitespace-nowrap rounded px-1 py-px ' +
-                      originBadgeClass(hit.snapshotOrigin)
+                      badge.className
                     }
                   >
                     {badgeLabel}

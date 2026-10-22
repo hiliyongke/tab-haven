@@ -16,7 +16,11 @@ import {
   settingsRepository,
   undoRepository
 } from '@/platform/storage/repositories';
-import { UNDO_PERSIST_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import {
+  UNDO_EXEC_LOCK,
+  UNDO_PERSIST_LOCK,
+  withCrossPageLock
+} from '@/platform/storage/crossPageLock';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
 import { queryWindowGroups, queryWindowTabs, resolveRestoreWindowId } from '@/platform/tabs';
 import { logDegraded, logFailure } from '@/platform/diagnostics';
@@ -102,8 +106,26 @@ interface UndoState {
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
-  /** 失败提示：读屏即刻播报（role="alert"），不与其他提示排队。 */
+  /**
+   * 失败提示：读屏即刻播报（role="alert"），不与其他提示排队。
+   *
+   * **只用于「没有错误对象」的业务失败**：返回布尔/空结果的写路径（如删除返回
+   * false）、以及校验不通过（快照名为空）。这类失败没有可留痕的异常，
+   * 走 `notifyFailure` 只会往诊断里塞无错误的噪声。
+   */
   notifyError: (message: string) => void;
+  /**
+   * 失败提示的统一出口：用户可见 + 诊断留痕。
+   *
+   * UI 层的失败此前写成 `.catch(() => notifyError(t('操作失败，请稍后重试')))`：
+   * 用户拿到一句通用文案，而错误对象被整块丢弃 —— 保存快照、导入、恢复、删除、
+   * 重命名这些写路径的失败在「导出诊断」里完全查不到。本出口保证两件事同时成立，
+   * 调用方不必在「告诉用户」与「留下线索」之间二选一。
+   *
+   * 判据只有一条：**手上有没有 error**。catch 到异常 / 被拒的 Promise 一律走
+   * 本出口；布尔结果或校验失败走 `notifyError`。
+   */
+  notifyFailure: (scope: string, message: string, error: unknown) => void;
   /**
    * 淘汰提示：同一 key 在本会话内只提示一次。
    *
@@ -127,14 +149,17 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
  */
 const notifiedEvictions = new Set<string>();
 /**
- * 已展示、等待被回执接走的淘汰告知（消息文本）。
+ * 已展示、等待被回执接走的淘汰告知（消息文本，按发生顺序入队）。
  *
  * 淘汰告知先于回执展示，回执随即覆盖它 —— 若不把它接进回执的 note，用户一条
  * 都看不到（且 key 已标记已提示，不会再提示第二次）。这里记文本而非布尔值：
  * 只有当「当前提示条仍是那条淘汰告知」时才并入，避免把过期很久的告知挂到
  * 之后某次不相关的回执上。
+ *
+ * 用队列而非单个槽位：同一操作内可能先后发生多类淘汰（快照上限与撤销栈上限），
+ * 单槽会让后一条覆盖前一条，被覆盖的那条因 key 已标记而永久漏发。
  */
-let pendingEvictionToast: string | undefined;
+const pendingEvictionToasts: string[] = [];
 /**
  * 最近一次撤销/重做栈**写盘失败**。
  *
@@ -155,13 +180,12 @@ let undoPersistFailed = false;
 let undoInFlight = false;
 
 /**
- * 撤销执行跨页互斥锁名。
+ * 撤销执行跨页互斥锁名（锁名声明在同层的 crossPageLock：存储键不散落到 store）。
  *
  * undoInFlight 只拦本页面：两个侧边栏窗口（各自独立上下文）可同时撤销同一批次，
  * 同一批标签被恢复两次。执行体经 withCrossPageLock(UNDO_EXEC_LOCK) 串行化，
  * 且锁内先按磁盘栈复核批次仍存在（他页可能已撤销），双重恢复由此根治。
  */
-const UNDO_EXEC_LOCK = 'tabs.undo-exec';
 
 /**
  * 在途 load 的共享 promise：并发/重入（StrictMode 双挂载、ready 前入栈等待）
@@ -284,14 +308,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       ? translate('撤销记录未能写入磁盘，重启后可能无法撤销')
       : undefined;
     undoPersistFailed = false;
-    const note =
-      toast.note ??
-      persistNote ??
-      (pendingEvictionToast !== undefined && current?.message === pendingEvictionToast
-        ? pendingEvictionToast
-        : undefined);
+    // 只并入「当前提示条仍是那条淘汰告知」的项，且多条按发生顺序一并带出。
+    const carried = pendingEvictionToasts.filter((message) => current?.message === message);
+    const note = toast.note ?? persistNote ?? (carried.length > 0 ? carried.join('；') : undefined);
     // 无论是否并入都清空：过期的告知不得挂到之后不相关的提示上。
-    pendingEvictionToast = undefined;
+    pendingEvictionToasts.length = 0;
     set({ toast: note === undefined ? toast : { ...toast, note } });
     scheduleToastClear();
   };
@@ -512,6 +533,49 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     scheduleToastClear();
   };
 
+  /**
+   * 撤销入口的公共护栏（undo / undoBatch 共用）：跨页锁 → 跨页复核 → 执行。
+   *
+   * 两个入口的执行体此前是逐字复制品：复核口径、提示文案、锁语义任一处要调整，
+   * 都必然只改一处而让两条撤销入口行为分叉。收敛到本函数后只此一份。
+   */
+  const runGuardedUndo = async (
+    batch: UndoBatch,
+    onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void
+  ): Promise<void> => {
+    undoInFlight = true;
+    set({ undoing: true });
+    try {
+      await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
+        // 跨页复核：另一窗口可能已撤销同一批次（内存栈经 watch 收敛存在延迟窗口）。
+        // persistUndo 开启时磁盘是跨页权威；关闭时各页内存互不可见，退化为页内语义。
+        const settings = await settingsRepository.read();
+        if (settings.persistUndo) {
+          const disk = await undoRepository.read();
+          if (!disk.some((entry) => entry.id === batch.id)) {
+            // 磁盘查不到该批次（如批次在 persistUndo 关闭期间入栈、之后用户重新开启，
+            // 或已被另一页面撤销）：不得静默 return——「点了撤销没反应」会让用户
+            // 以为扩展卡住。批次留在内存栈中不弹出，用户至少明确知道本次未执行。
+            set({
+              toast: {
+                message: translate('操作失败，请稍后重试'),
+                canUndo: false,
+                batchId: undefined,
+                tone: 'error'
+              }
+            });
+            scheduleToastClear();
+            return;
+          }
+        }
+        await runUndo(batch, onCommitted);
+      });
+    } finally {
+      undoInFlight = false;
+      set({ undoing: false });
+    }
+  };
+
   /** 入栈并持久化（closeWithUndo 与 recordClosedBatch 共用）。 */
   const appendBatch = async (batch: UndoBatch): Promise<void> => {
     // load 在途期间不得基于内存栈入栈：load 完成时会以旧磁盘值覆盖内存，
@@ -700,42 +764,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         scheduleToastClear();
         return;
       }
-      undoInFlight = true;
-      set({ undoing: true });
-      try {
-        await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
-          // 跨页复核：另一窗口可能已撤销同一批次（内存栈经 watch 收敛存在延迟窗口）。
-          // persistUndo 开启时磁盘是跨页权威；关闭时各页内存互不可见，退化为页内语义。
-          const settings = await settingsRepository.read();
-          if (settings.persistUndo) {
-            const disk = await undoRepository.read();
-            if (!disk.some((entry) => entry.id === latest.id)) {
-              // 磁盘查不到该批次（如批次在 persistUndo 关闭期间入栈、之后用户重新开启，
-              // 或已被另一页面撤销）：不得静默 return——「点了撤销没反应」会让用户
-              // 以为扩展卡住。批次留在内存栈中不弹出，用户至少明确知道本次未执行。
-              set({
-                toast: {
-                  message: translate('操作失败，请稍后重试'),
-                  canUndo: false,
-                  batchId: undefined,
-                  tone: 'error'
-                }
-              });
-              scheduleToastClear();
-              return;
-            }
-          }
-          await runUndo(latest, (current, retryBatch) => {
-            // 恢复已发生：此时才出栈（按 id 精确移除，不用 popBatch——恢复期间
-            // 可能有新批次入栈，栈尾未必还是本批）。失败项放回栈顶保留重试入口。
-            const remaining = current.filter((entry) => entry.id !== latest.id);
-            set({ batches: retryBatch ? [retryBatch, ...remaining] : remaining });
-          });
-        });
-      } finally {
-        undoInFlight = false;
-        set({ undoing: false });
-      }
+      await runGuardedUndo(latest, (current, retryBatch) => {
+        // 恢复已发生：此时才出栈（按 id 精确移除，不用 popBatch——恢复期间
+        // 可能有新批次入栈，栈尾未必还是本批）。失败项放回栈顶保留重试入口。
+        const remaining = current.filter((entry) => entry.id !== latest.id);
+        set({ batches: retryBatch ? [retryBatch, ...remaining] : remaining });
+      });
     },
 
     undoBatch: async (batchId) => {
@@ -755,38 +789,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         scheduleToastClear();
         return;
       }
-      undoInFlight = true;
-      set({ undoing: true });
-      try {
-        await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
-          const settings = await settingsRepository.read();
-          if (settings.persistUndo) {
-            const disk = await undoRepository.read();
-            if (!disk.some((entry) => entry.id === batchId)) {
-              // 同 undo：磁盘缺失时给出明确反馈而非静默返回。
-              set({
-                toast: {
-                  message: translate('操作失败，请稍后重试'),
-                  canUndo: false,
-                  batchId: undefined,
-                  tone: 'error'
-                }
-              });
-              scheduleToastClear();
-              return;
-            }
-          }
-          await runUndo(batch, (current, retryBatch) => {
-            const remaining = current.filter((entry) => entry.id !== batchId);
-            set({
-              batches: retryBatch ? [retryBatch, ...remaining] : remaining
-            });
-          });
+      await runGuardedUndo(batch, (current, retryBatch) => {
+        const remaining = current.filter((entry) => entry.id !== batchId);
+        set({
+          batches: retryBatch ? [retryBatch, ...remaining] : remaining
         });
-      } finally {
-        undoInFlight = false;
-        set({ undoing: false });
-      }
+      });
     },
 
     /**
@@ -819,13 +827,14 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
           // 目标窗口必须与「撤销时恢复到哪个窗口」同口径：撤销回的是原窗口（可能是
           // 另一个窗口），按 tabStore 的当前窗口反查会关掉本窗口里同 URL 的无关标签。
-          // 与 closeRestoredBatch 的取窗口径保持一致（失败时退回当前窗口快照）。
           const redoWindowId = await resolveRestoreWindowId(latest.windowId);
           // 与 closeRestoredBatch 同口径：目标窗口读不到就中止，绝不退回当前窗口匹配
           // （会把当前窗口里同 URL 的无关标签当成恢复产物关掉）。
+          // 注意这里**不能**用 `useTabStore.getState().tabs` 兜底：那是当前窗口的标签集，
+          // 重做窗口是另一窗口时等于拿别人的标签按 URL 反查并关闭 —— 真误伤。
           const tabs =
             redoWindowId === undefined
-              ? useTabStore.getState().tabs
+              ? undefined
               : await queryWindowTabs(redoWindowId).catch(() => undefined);
           if (tabs === undefined) {
             // 不清栈：这次只是读不到窗口，重做项本身仍然有效。
@@ -859,15 +868,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
           // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
           // 与 closeRestoredBatch 同口径：按重做目标窗口取组表，不能用当前窗口的。
-          // 指定窗口时的查询失败同样**不能**退回 tabStore 的组（那是当前窗口的表，
+          // 查询失败同样**不能**退回 tabStore 的组（那是当前窗口的表，
           // 套到别的窗口的标签上就是张冠李戴）；宁可缺组名，且必须留痕。
-          const groups =
-            redoWindowId === undefined
-              ? useTabStore.getState().groups
-              : await queryWindowGroups(redoWindowId).catch((error) => {
-                  logDegraded('undo', `窗口 ${redoWindowId} 原生组查询失败，撤销记录缺组名`, error);
-                  return [];
-                });
+          const groups = await queryWindowGroups(redoWindowId).catch((error) => {
+            logDegraded('undo', `窗口 ${redoWindowId} 原生组查询失败，撤销记录缺组名`, error);
+            return [];
+          });
           const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
           const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
           const closed = targets.filter((tab) => closedIds.includes(tab.id));
@@ -935,6 +941,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       showToast({ message, canUndo: false, batchId: undefined, tone: 'error' });
     },
 
+    notifyFailure: (scope, message, error) => {
+      logDegraded(scope, message, error);
+      showToast({ message, canUndo: false, batchId: undefined, tone: 'error' });
+    },
+
     notifyEviction: (key, message) => {
       // 合并：同一类淘汰本会话内只提示一次。容量语义没变，重复提示只会刷屏。
       if (notifiedEvictions.has(key)) return;
@@ -943,10 +954,10 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       // 淘汰 → 调用方随后设「已关闭 N 个」），回执经 showToast 会把它并入 note；
       // 若本次操作没有回执（如后台归档登记），它就以独立提示条的形式留在界面上。
       //
-      // 已知取舍：极少数场景（同一操作内两类淘汰先后发生）下，后一条会覆盖尚未
-      // 被接走的前一条。两类淘汰分别发生在「保存快照 / 关闭标签」，
-      // 路径不重叠，且覆盖只影响「少提示一条」，故不为此拼接文案。
-      pendingEvictionToast = message;
+      // 入队而非覆盖：同一操作内两类淘汰（快照上限 / 撤销栈上限）先后发生时，
+      // 单槽会让后一条顶掉前一条，而前一条的 key 已标记为已提示 —— 那条告知
+      // 就此永久漏发。
+      pendingEvictionToasts.push(message);
       // 刻意不经 showToast：否则本次展示会把自己登记的那条又消费掉。
       set({ toast: { message, canUndo: false, batchId: undefined, tone: 'info' } });
       scheduleToastClear();

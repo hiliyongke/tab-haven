@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { SearchEngine } from '@/core/search/SearchEngine';
+import {
+  isPinyinDictionaryReady,
+  preloadPinyinDictionary,
+  SearchEngine
+} from '@/core/search/SearchEngine';
 
 /**
  * 行为规格：模糊匹配、首字母 / 拼音命中、激活优先排序、高亮。
@@ -32,16 +36,17 @@ describe('SearchEngine', () => {
   });
 
   it('拼音首字母命中中文标题（jrrb 命中"今日热榜"）', async () => {
+    // 引擎构造后不可变：词典必须在构造前就绪（preload 失败也应只降级拼音，不抛）。
+    expect(await preloadPinyinDictionary()).toBe(true);
     const engine = new SearchEngine(tabs);
-    // 拼音词典改为动态加载：构造后需先 await 就绪，再搜索才有拼音匹配。
-    await engine.ensurePinyin();
+    expect(engine.pinyinReady).toBe(true);
     const hits = engine.search('jrrb');
     expect(hits.some((hit) => hit.tabId === 3)).toBe(true);
   }, 20000); // 首次动态 import('pinyin-pro')（约 1MB）在沙箱内偶发 2–6s，放宽以防偶发超时（非逻辑回归）。
 
   it('拼音全拼命中中文标题（jinribang 命中"今日热榜"）', async () => {
+    await preloadPinyinDictionary();
     const engine = new SearchEngine(tabs);
-    await engine.ensurePinyin();
     const hits = engine.search('jinribang');
     expect(hits.some((hit) => hit.tabId === 3)).toBe(true);
     // 全拼与首字母互不冲突：首字母仍应命中
@@ -49,18 +54,18 @@ describe('SearchEngine', () => {
   }, 20000);
 
   it('拼音全拼命中含英文的混合标题（github 命中"云平台...GitHub"无关；验证"我的GitHub"式拼接）', async () => {
+    await preloadPinyinDictionary();
     const engine = new SearchEngine([
       { id: 5, title: '我的GitHub主页', url: 'https://github.com/me', active: false }
     ]);
-    await engine.ensurePinyin();
     expect(engine.search('wodegithub').some((hit) => hit.tabId === 5)).toBe(true);
     expect(engine.search('github').some((hit) => hit.tabId === 5)).toBe(true);
   }, 20000);
 
   it('词典就绪后新建的引擎同步具备拼音能力（无异步空窗，防结果闪回）', async () => {
     // 先让模块级词典加载完成
-    const warmup = new SearchEngine(tabs);
-    await warmup.ensurePinyin();
+    await preloadPinyinDictionary();
+    expect(isPinyinDictionaryReady()).toBe(true);
     // 侧边栏每次标签快照都会重建引擎：若词典就绪后仍要等一拍，拼音命中会在
     // 重建瞬间全部消失，直到用户再次按键才回来。
     const rebuilt = new SearchEngine(tabs);

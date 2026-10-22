@@ -63,3 +63,19 @@ export function classifyHost(hostname: string): HostClassification {
   }
   return { kind: 'domain', hostedSuffix: null };
 }
+
+/**
+ * 托管后缀下的站点键（如 `alice.github.io`）。
+ *
+ * 段数由 `hostedSuffix` 自身推导（后缀段数 + 1），不写死 3：清单里一旦出现
+ * 单段托管后缀（未来可能的 `pages.dev` 变体或自建短域），`slice(-3)` 会把父域
+ * 一并吞进来，把不同用户的站点聚成同一个 —— 这类错误只在聚合结果上可见，
+ * 极难归因到这段取段逻辑。
+ */
+export function hostedSiteValue(hostname: string, hostedSuffix: string): string {
+  const suffixLabels = hostedSuffix.split('.').length;
+  return hostname
+    .split('.')
+    .slice(-(suffixLabels + 1))
+    .join('.');
+}

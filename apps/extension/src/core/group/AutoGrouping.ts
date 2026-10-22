@@ -1,9 +1,8 @@
+import { MIN_LANGUAGE_GROUP_SIZE, parseLangSiteKey } from '@/core/site/Sections';
 import type { TemporarySection } from '@/core/site/Sections';
 import { deriveSections } from '@/core/site/Sections';
-import type { SiteKey } from '@/core/site/SiteKey';
-import { subLabel } from '@/core/site/SiteGrouping';
+import { siteLabelOf } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
-import { domainToUnicode } from '@/core/url/punycode';
 import { AUTO_GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 import { NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
@@ -51,14 +50,11 @@ export function groupColorForLabel(label: string): string {
 /**
  * 语言分组 section（siteKey 形如 lang-en / lang-zh-CN / lang-unknown）。
  *
- * 语言 code 来自 tabs.detectLanguage（BCP-47，不含点），而真实站点的 siteKey
- * 是注册域字符串（必含点）——注册域以 lang- 开头的站点（如 lang-8.com）会被
- * 误判为语言分区。用「无点」排除域名形态，两个集合不再相交。
+ * 判定走 Sections 导出的 `parseLangSiteKey`：siteKey 的构造与反解是同一处口径，
+ * 不在此处重写「前缀 + 不含点」——那正是「靠字符串形态承载类型信息」的写法。
  */
 function isLanguageSection(section: TemporarySection): boolean {
-  return (
-    section.kind === 'site' && section.siteKey.startsWith('lang-') && !section.siteKey.includes('.')
-  );
+  return section.kind === 'site' && parseLangSiteKey(section.siteKey) !== undefined;
 }
 
 /**
@@ -71,9 +67,9 @@ function isLanguageSection(section: TemporarySection): boolean {
 function siteLabelOfTab(tab: TabRecord): string | null {
   const rawUrl = tab.url || tab.pendingUrl;
   const site = rawUrl ? siteResolver.resolve(rawUrl) : null;
-  // 走 siteLabelOfSite 而不是自算 subLabel：后者对 local/ip 站点丢端口，
+  // 走 siteLabelOf 而不是自算 subLabel：后者对 local/ip 站点丢端口，
   // 与建组标题（含端口）对不上，会让「同站点」判定与聚合口径分叉。
-  return site ? siteLabelOfSite(site) : null;
+  return site ? siteLabelOf(site) : null;
 }
 
 /**
@@ -91,7 +87,7 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
     if (section.kind !== 'site') continue;
     // site section 已满足聚合阈值（阈值 1 时单标签站点也成组），此处不再设下限；
     // 语言分组是兜底聚合（每种语言无条件成 section），单标签语言组没有组织意义，设下限 2。
-    if (isLanguageSection(section) && section.tabs.length < 2) continue;
+    if (isLanguageSection(section) && section.tabs.length < MIN_LANGUAGE_GROUP_SIZE) continue;
 
     const groupedTabs = section.tabs.filter((tab) => tab.groupId !== NO_GROUP);
     if (groupedTabs.length > 0) {
@@ -127,24 +123,6 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
     });
   }
   return plans;
-}
-
-/**
- * 站点键 → 站点展示标签（建组标题 / 同站点判定的**唯一口径**）。
- *
- * 子域非空用「子域.注册域」，子域为空（裸域 / 本地 / IP）沿用解析器原始 value
- * （**保留端口**）—— 与 `aggregateBySite` 的 groupKey 同口径。
- *
- * 保留端口不是可选项：`SiteResolver` 对 local/ip 站点给出的 `registrableDomain`
- * 不含端口，若一律走 `subLabel(subdomain, registrableDomain)`，
- * `localhost:3000` 与 `localhost:8080` 会被算成同一个标签 "localhost"，
- * 于是两个不同站点在「同站点吸收 / 漂移校正」里被判为同一站点而错误合并。
- * 本函数此前与 siteLabelOfTab 各算一套（后者丢端口），现合并为唯一口径。
- */
-function siteLabelOfSite(site: SiteKey): string {
-  const value =
-    site.subdomain === '' ? site.value : subLabel(site.subdomain, site.registrableDomain);
-  return domainToUnicode(value);
 }
 
 /** 自动组内「域名漂移」成员校正：需要移出组的标签。 */
@@ -190,7 +168,7 @@ export function planAutoGroupDomainCorrections(
       const rawUrl = tab.url || tab.pendingUrl;
       const site = rawUrl ? siteResolver.resolve(rawUrl) : null;
       if (!site) continue;
-      if (siteLabelOfSite(site) === section.title) {
+      if (siteLabelOf(site) === section.title) {
         hasAnchor = true;
         continue;
       }
@@ -250,7 +228,7 @@ export function planRegroup({
     if (section.kind !== 'site') continue;
     // 同上：site section 已满足聚合阈值，单标签站点（阈值 1）同样建组；
     // 语言分组同样设 ≥2 下限（单标签语言组不打散重建，保持未分组状态）。
-    if (isLanguageSection(section) && section.tabs.length < 2) continue;
+    if (isLanguageSection(section) && section.tabs.length < MIN_LANGUAGE_GROUP_SIZE) continue;
     plans.push({
       title: section.title,
       color: groupColorForLabel(section.title),

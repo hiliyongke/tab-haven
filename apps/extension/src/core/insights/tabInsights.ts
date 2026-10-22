@@ -1,6 +1,7 @@
 import type { TabRecord } from '@/core/tab-types';
 import { canSafelyDiscardTab } from '@/core/tab-types';
 import { normalizeHostname } from '@/core/url/hostname';
+import { DAY_MS } from '@/core/util/time';
 
 /**
  * 标签习惯洞察：从本地标签数据推导三类行动建议。
@@ -20,7 +21,7 @@ const DUPLICATE_THRESHOLD = 2;
 
 /** 滞留预警阈值：7 天未激活（ms）。 */
 export const STALE_TAB_DAYS = 7;
-export const STALE_TAB_MS = STALE_TAB_DAYS * 24 * 3600 * 1000;
+export const STALE_TAB_MS = STALE_TAB_DAYS * DAY_MS;
 
 /** 每类洞察的 Top N 上限（防面板溢出，计算保持 O(n log n)）。 */
 export const INSIGHT_TOP_N = 5;
@@ -139,7 +140,7 @@ export function computeInsights(
     staleTabs.push({
       id: tab.id,
       label: tab.title || tab.url || '',
-      days: Math.floor(idleMs / (24 * 3600 * 1000))
+      days: Math.floor(idleMs / DAY_MS)
     });
   }
   staleTabs.sort((a, b) => b.days - a.days || a.id - b.id);

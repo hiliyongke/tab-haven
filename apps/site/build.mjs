@@ -32,6 +32,21 @@ const extensionDir = join(repoRoot, 'apps', 'extension');
 const distDir = join(siteDir, 'dist');
 const configFile = join(siteDir, 'vite.config.ts');
 
+/**
+ * 构建期失败出口。
+ *
+ * 「缺了某个东西就 warn 跳过」在本文件里曾经是常态，代价是产物带着一个点不动的
+ * 下载按钮也能构建成功 —— 失败被推迟到用户点击时才发生。缺件一律 fail，
+ * 需要刻意跳过时由调用方显式声明（见各处 `SITE_SKIP_*`）。
+ */
+function fail(message) {
+  if (process.env.SITE_SKIP_ZIP === '1') {
+    console.warn(`[site] 已按 SITE_SKIP_ZIP=1 跳过：${message}`);
+    return;
+  }
+  throw new Error(`[site] ${message}`);
+}
+
 /** 版本号以扩展包的 package.json 为单一事实来源，官网不另行维护一份。 */
 function readVersion() {
   const pkg = JSON.parse(readFileSync(join(extensionDir, 'package.json'), 'utf8'));
@@ -45,7 +60,12 @@ function stageDownloadZip(version) {
   const target = join(targetDir, `tabs-${version}.zip`);
 
   if (!existsSync(outputDir)) {
-    console.warn('[site] 未找到 .output/，跳过下载包拷贝：请先跑 `pnpm build && pnpm zip`');
+    // 缺失即失败：warn 会让「下载按钮指向 404」的官网照样构建通过并发布出去，
+    // 而这类问题只有用户在官网点了下载才会暴露。确需在没有扩展产物的环境下
+    // 只构建页面（如只改文案），用 SITE_SKIP_ZIP=1 **显式**声明。
+    fail(
+      `未找到 .output/，下载按钮将指向不存在的地址：请先跑 \`pnpm build && pnpm zip\`；仅构建页面时设 SITE_SKIP_ZIP=1`
+    );
     return null;
   }
   // 按版本号精确匹配，而不是「取最新」：.output/ 里可能同时有 chrome 与 edge 两份包，
@@ -56,8 +76,8 @@ function stageDownloadZip(version) {
   const chosen = zips[0];
 
   if (!chosen) {
-    console.warn(
-      `[site] .output/ 下没有 tabs-${version}-*.zip，跳过拷贝 —— 下载按钮将指向不存在的地址。请先跑 \`pnpm zip\``
+    fail(
+      `.output/ 下没有 tabs-${version}-*.zip：下载按钮将指向不存在的地址。请先跑 \`pnpm zip\`（版本改了必须重新打包）；仅构建页面时设 SITE_SKIP_ZIP=1`
     );
     return null;
   }

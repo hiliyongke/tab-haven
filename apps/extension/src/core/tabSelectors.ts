@@ -31,7 +31,7 @@ export function planDuplicateCleanup(
     const candidates = groupRemovable.filter((tab) => !bound.has(tab.id));
     // 仅在该组真的清掉了标签时才记 keeper：整组副本都被绑定（或 keeper 之外
     // 没有副本）时本次什么都没关，高亮「保留者」会让用户以为刚发生了一次清理。
-    if (candidates.length === 0) continue;
+    if (candidates.length === 0 || keeper === undefined) continue;
     keepIds.push(keeper.id);
     removable.push(...candidates);
   }

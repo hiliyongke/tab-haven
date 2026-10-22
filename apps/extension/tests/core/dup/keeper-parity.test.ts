@@ -30,7 +30,7 @@ describe('keeper 口径一致性（KeeperPolicy ↔ rankForKeep）', () => {
   /** 同一组标签的两种取法：清理面板侧与复用引擎侧。 */
   function keepersOf(group: TabRecord[]): { cleanup: number; reuse: number } {
     const { keeper } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    return { cleanup: keeper.id, reuse: rankForKeep(group)?.id ?? -1 };
+    return { cleanup: keeper?.id ?? -1, reuse: rankForKeep(group)?.id ?? -1 };
   }
 
   /** 覆盖每条比较位与常见组合的样本组。 */
@@ -109,7 +109,7 @@ describe('keeper 口径一致性（KeeperPolicy ↔ rankForKeep）', () => {
     expect(groups).toHaveLength(2);
 
     for (const group of groups) {
-      expect(KeeperPolicy.default.select(group).keeper.id).toBe(rankForKeep(group.tabs)?.id);
+      expect(KeeperPolicy.default.select(group).keeper?.id).toBe(rankForKeep(group.tabs)?.id);
     }
 
     // 可清理集合 = 全部非 keeper（本例无固定标签，豁免不介入）。
@@ -125,8 +125,8 @@ describe('keeper 口径一致性（KeeperPolicy ↔ rankForKeep）', () => {
       makeTab({ id: 3, index: 2, url: URL, lastAccessed: 100, active: true })
     ];
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(rankForKeep(group)?.id);
-    expect(keeper.id).toBe(3);
+    expect(keeper?.id).toBe(rankForKeep(group)?.id);
+    expect(keeper?.id).toBe(3);
     // id=2 固定：非 keeper 且 pinned → 豁免，只清理 id=1。
     expect(removable.map((tab) => tab.id)).toEqual([1]);
   });
@@ -138,8 +138,8 @@ describe('keeper 口径一致性（KeeperPolicy ↔ rankForKeep）', () => {
     ];
     const policy = new KeeperPolicy({ pinnedExempt: false });
     const { keeper, removable } = policy.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(rankForKeep(group)?.id);
-    expect(keeper.id).toBe(2); // 全平 → 固定优先
+    expect(keeper?.id).toBe(rankForKeep(group)?.id);
+    expect(keeper?.id).toBe(2); // 全平 → 固定优先
     expect(removable.map((tab) => tab.id)).toEqual([1]);
   });
 });

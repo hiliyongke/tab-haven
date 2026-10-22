@@ -10,12 +10,12 @@ import { hostnameOf } from '@/core/url/UrlInspector';
 import { useDataStore } from '@/stores/dataStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
-import { logDegraded } from '@/platform/diagnostics';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { IconButton } from '@/ui/common/IconButton';
 import { Favicon } from '@/ui/common/Favicon';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 import { useModalA11y } from '@/ui/dialog/Dialog';
+import { usePinyinDictionary } from '@/ui/search/usePinyinDictionary';
 
 /** 命令面板的动作回调集合（由 sidepanel App 注入，复用既有 handler）。 */
 export interface PaletteActions {
@@ -222,6 +222,9 @@ export function CommandPalette({
   // 用裸 includes 时中文标题输拼音首字母命中不了，会与 SearchBar 形成两套搜索口径。
   // 命令（i18n 固定文案）与文件夹保持子串过滤。
   const pinyinSearch = useDataStore((state) => state.settings.pinyinSearch);
+  // 拼音是引擎的构造入参（引擎构造后不可变）：词典就绪后本信号翻转，
+  // 两个引擎随之重建，命中自然纳入拼音——不需要「失效计数器」这类外部触发器。
+  const pinyinUsable = usePinyinDictionary(pinyinSearch);
   const engine = useMemo(
     () =>
       new SearchEngine(
@@ -231,9 +234,9 @@ export function CommandPalette({
           url: tab.url ?? '',
           active: tab.active
         })),
-        { pinyin: pinyinSearch }
+        { pinyin: pinyinUsable }
       ),
-    [tabs, pinyinSearch]
+    [tabs, pinyinUsable]
   );
   // 文件夹名同样走拼音内核（用户命名内容与标签同口径）；id 用数组下标合成。
   const folderEngine = useMemo(
@@ -245,26 +248,10 @@ export function CommandPalette({
           url: '',
           active: false
         })),
-        { pinyin: pinyinSearch }
+        { pinyin: pinyinUsable }
       ),
-    [folders, pinyinSearch]
+    [folders, pinyinUsable]
   );
-  // 拼音词典异步就绪后触发重算（与 useSearchController 同口径）。
-  const [pinyinTick, setPinyinTick] = useState(0);
-  useEffect(() => {
-    if (engine.pinyinReady && folderEngine.pinyinReady) return;
-    let cancelled = false;
-    void Promise.all([engine.ensurePinyin(), folderEngine.ensurePinyin()])
-      .then(() => {
-        if (!cancelled) setPinyinTick((tick) => tick + 1);
-      })
-      .catch((error: unknown) => {
-        logDegraded('search', '拼音词典加载失败，命令面板拼音匹配暂不可用', error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [engine, folderEngine]);
 
   // 空查询 dashboard 数据源（栈尾为最新批次；快照按时间降序取前 3）。
   const undoBatches = useUndoStore((state) => state.batches);
@@ -416,8 +403,6 @@ export function CommandPalette({
         run: () => actions.onSwitchTab(tab.id)
       }));
     const q = query.trim().toLowerCase();
-    // pinyinTick 是词典异步就绪后的重算触发器，引用它让依赖数组语义自足（不写豁免注释）。
-    void pinyinTick;
     if (!q) {
       // 空查询 = dashboard：最近关闭批次 + 最近快照（各前 3 条）+ 截断的标签直达。
       const recentItems: CommandItem[] = undoBatches
@@ -489,7 +474,7 @@ export function CommandPalette({
       tabItems: matchedTabs,
       tabTruncated: false
     };
-  }, [query, tabs, folders, t, actions, engine, folderEngine, pinyinTick, undoBatches, snapshots]);
+  }, [query, tabs, folders, t, actions, engine, folderEngine, undoBatches, snapshots]);
 
   /** 扁平顺序 = 键盘漫游顺序（文件夹 → 命令 → 最近 → 标签，与分组渲染顺序一致）。 */
   const commands = useMemo(
@@ -753,7 +738,11 @@ export function CommandPalette({
                         : t('已恢复 {{count}} 个标签', { count })
                     );
                 })
-                .catch(() => useUndoStore.getState().notifyError(t('操作失败，请稍后重试')));
+                .catch((error: unknown) =>
+                  useUndoStore
+                    .getState()
+                    .notifyFailure('command-palette', t('操作失败，请稍后重试'), error)
+                );
               onClose();
             }}
             onCancel={() => setPendingRestore(null)}

@@ -29,12 +29,15 @@ export const AUTO_DISCARD_ALARM = 'tabs-auto-discard';
  *
  * 并发映射里必须吞掉单次失败：一个标签因「正在播放音频 / 已激活 / 已被关闭」
  * 被浏览器拒绝就整批中止，其余可休眠标签会全部漏掉。
+ * 但「吞掉失败」不等于「吞掉原因」——闹钟路径每分钟跑一次，失败原因不留痕时
+ * 「为什么这几个标签一直没被休眠」无从查起。
  */
 async function discardSafely(tabId: number): Promise<boolean> {
   try {
     await browser.tabs.discard(tabId);
     return true;
-  } catch {
+  } catch (error) {
+    logDegraded('auto-discard', `休眠标签 ${tabId} 被浏览器拒绝，已跳过`, error, { quiet: true });
     return false;
   }
 }

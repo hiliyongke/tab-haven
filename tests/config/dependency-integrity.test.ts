@@ -25,20 +25,36 @@ const sitePackage = `${projectRoot}apps/site`;
 /** 会被 React 渲染链路共享、因此绝不能出现第二份的包。 */
 const SHARED_PACKAGES = ['react', 'react-dom', 'react-i18next', 'i18next'] as const;
 
+/** 会渲染（或会注册 i18n 实例）的三个 importer：副本分叉只会在这三者之间出事。 */
+const IMPORTERS = [extensionPackage, sitePackage, workspacePackage] as const;
+
 /**
- * 每个包要在**哪两个 importer 之间**比对。
+ * 各 importer 声明的依赖（含 dev/peer：库包把宿主包声明在 peer 上，
+ * 解析副本时同样算数）。
+ *
+ * 从 package.json 读取而不是手写「谁依赖什么」的表：手写表会漏 —— 官网后来也
+ * 装了 react-i18next / i18next，而比对表里没有它，于是「extension 与 site 各一份
+ * react-i18next」这种分叉从未被这条守卫看到。
+ */
+function declaredDeps(dir: string): Record<string, string> {
+  const pkg = JSON.parse(readFileSync(`${dir}/package.json`, 'utf8')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  };
+  return { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
+}
+
+/**
+ * 每个共享包要在**哪些 importer 之间**比对：只取真正声明了它的一方。
  *
  * 两边都得真正依赖它，比对才有意义：react-dom 从来不是 i18n-kit 的依赖（i18n-kit 只用
  * react 的类型）。若工作区根的 node_modules 里躺着 react-dom，它会被 i18n-kit 沿目录
  * 向上捡到，比对的就成了一个跟它无关的包 —— 宿主不该替库包提供依赖。
  */
-const COMPARISON_PAIRS: Record<string, readonly [string, string]> = {
-  react: [extensionPackage, workspacePackage],
-  'react-i18next': [extensionPackage, workspacePackage],
-  i18next: [extensionPackage, workspacePackage],
-  // react-dom 只在这两个**真正渲染**的应用之间比对
-  'react-dom': [extensionPackage, sitePackage]
-};
+function importersOf(id: string): string[] {
+  return IMPORTERS.filter((dir) => declaredDeps(dir)[id] !== undefined);
+}
 
 /** 解析入口并还原软链，得到可直接比较的物理路径。 */
 function resolveEntry(from: string, id: string): string {
@@ -73,11 +89,22 @@ describe('依赖单副本（跨 workspace 包）', () => {
     }
   });
 
-  it.each(Object.entries(COMPARISON_PAIRS))('%s 在两个 importer 里解析出同一份', (id, pair) => {
+  it.each(SHARED_PACKAGES)('%s 在所有依赖它的 importer 里解析出同一份', (id) => {
+    const importers = importersOf(id);
+    // 少于两个 importer 就构不成比对，而空集合会让下面的循环恒绿（0 个配对）——
+    // 那正是这条守卫在「依赖表没跟上」时的失效形态，必须显式挡住。
     expect(
-      resolveEntry(pair[0], id),
-      `${id} 出现两份副本，侧边栏会因空 i18n 实例崩溃：检查 pnpm-workspace.yaml 的 autoInstallPeers`
-    ).toBe(resolveEntry(pair[1], id));
+      importers.length,
+      `${id} 的依赖方不足两个（${importers.join(', ') || '无'}），无法比对副本`
+    ).toBeGreaterThanOrEqual(2);
+
+    const first = resolveEntry(importers[0]!, id);
+    for (const dir of importers.slice(1)) {
+      expect(
+        resolveEntry(dir, id),
+        `${id} 出现两份副本（${importers[0]} 与 ${dir}），侧边栏会因空 i18n 实例崩溃：检查 pnpm-workspace.yaml 的 autoInstallPeers`
+      ).toBe(first);
+    }
   });
 
   it('react 与 react-dom 版本一致（不一致 = 两份 React，挂载必报 Invalid hook call）', () => {

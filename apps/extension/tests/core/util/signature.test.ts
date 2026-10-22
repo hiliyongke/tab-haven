@@ -2,9 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { structuralSignature } from '@/core/util/signature';
 
 describe('structuralSignature', () => {
-  it('忽略 favIconUrl，其余字段保持相等语义', () => {
+  it('favicon 变化必须可感知（不能「忽略」到永不刷新）', () => {
     const a = { id: '1', title: 'x', favIconUrl: 'data:image1' };
     const b = { id: '1', title: 'x', favIconUrl: 'data:image2' };
+    expect(structuralSignature(a)).not.toBe(structuralSignature(b));
+  });
+
+  it('favicon 相同则签名相同（只比内容，不比引用）', () => {
+    const a = { id: '1', title: 'x', favIconUrl: 'data:image1' };
+    const b = { id: '1', title: 'x', favIconUrl: 'data:image1' };
     expect(structuralSignature(a)).toBe(structuralSignature(b));
   });
 
@@ -19,9 +25,11 @@ describe('structuralSignature', () => {
     expect(structuralSignature(v)).toBe(JSON.stringify(v));
   });
 
-  it('大体积 favicon 不参与序列化，显著降低开销', () => {
+  it('大体积 favicon 折叠成定长摘要，显著降低序列化开销', () => {
     const heavy = { id: '1', favIconUrl: 'x'.repeat(10_000) };
     const sig = structuralSignature(heavy);
     expect(sig).not.toContain('xxxx');
+    // 摘要定长：长度不随 favicon 体积增长（否则大标签量下的每次比较仍在拷大字符串）
+    expect(sig.length).toBeLessThan(60);
   });
 });

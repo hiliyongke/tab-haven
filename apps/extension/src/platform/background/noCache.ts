@@ -62,8 +62,10 @@ export function setupNoCache(): void {
   void settingsRepository
     .read()
     .then((settings) => syncNoCacheRules(settings))
-    .catch(() => {
-      // 读取失败（坏数据隔离场景）保持现状，下一次 watch 会纠正
+    .catch((error) => {
+      // 读不到设置 ⇒ 本轮规则根本没对齐，而 watch 只在**设置变更**时触发，
+      // 于是禁缓存可能整个会话静默失效。必须留痕（不阻断流程）。
+      logDegraded('no-cache', '禁缓存规则同步：读取设置失败，本轮未对齐', error);
     });
   settingsRepository.watch((settings) => {
     void syncNoCacheRules(settings);
@@ -74,7 +76,11 @@ export function setupNoCache(): void {
     void settingsRepository
       .read()
       .then((settings) => syncNoCacheRules(settings))
-      .catch(() => {});
+      .catch((error) => {
+        // 用户在浏览器设置里增删权限后规则没跟着变，是最难复现的一类报障，
+        // 静默吞掉等于放弃唯一的现场线索。
+        logDegraded('no-cache', '权限变化后重对齐禁缓存规则失败', error);
+      });
   };
   browser.permissions.onAdded?.addListener(onPermissionChanged);
   browser.permissions.onRemoved?.addListener(onPermissionChanged);

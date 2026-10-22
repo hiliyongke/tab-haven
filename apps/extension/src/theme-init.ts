@@ -12,6 +12,8 @@
 import type { ColorTheme } from '@/core/theme/colorThemes';
 
 (() => {
+  // 刻意内联（不能运行时 import），故必须与 ThemeApplier 的写入键名保持一致：
+  // 由 tests/config/theme-mirror-keys.test.ts 守护，不一致即测试失败。
   const MIRROR_KEY = 'tabs:theme';
   const HUE_MIRROR_KEY = 'tabs:theme-hue';
 

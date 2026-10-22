@@ -19,15 +19,22 @@ import type { OtherWindow, OtherWindowsStatus } from '@/ui/tabs/useOtherWindows'
  */
 export function OtherWindowsSection({
   otherWindows,
-  status = 'ready',
+  status,
   onRetry,
   onFocusTab,
   onCloseTab,
   onPullToWindow
 }: {
   otherWindows: readonly OtherWindow[];
-  /** 查询态；默认 ready 以兼容无状态来源的调用方。 */
-  status?: OtherWindowsStatus;
+  /**
+   * 查询态：**必填**。
+   *
+   * 此前给了 `= 'ready'` 默认值（注释说「以兼容无状态来源的调用方」），而全仓
+   * 唯一调用点早已显式传值 —— 这个默认值没有任何真实消费方，却把「三态必须显式」
+   * 降级成可选：将来任何新增调用方忘了传，组件会静默以 ready 渲染旧快照或空列表，
+   * 把「查询一直失败」伪装成「没有其他窗口」。改为必填后由编译器兜住。
+   */
+  status: OtherWindowsStatus;
   onRetry?: () => void;
   onFocusTab: (tab: TabRecord) => void;
   onCloseTab: (tab: TabRecord) => void;

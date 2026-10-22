@@ -83,7 +83,9 @@ async function runSyncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<numbe
         // 目标组可能在决策后被解散（用户手动解散 / 并发整理）：跳过本次，
         // 下一轮快照会把这批标签重新决策为「新建组」，不会永久漏掉。
         // 组非本功能新建，不计入 createdIds——关闭开关时的解散范围保持不变。
-        if (!(await groupExists(plan.absorbIntoGroupId))) continue;
+        // 查询失败（state !== 'exists'）同样跳过：拿不到确认就写入会把标签塞进
+        // 一个可能已不存在的组，且失败原因无处可查。
+        if ((await groupExists(plan.absorbIntoGroupId)) !== 'exists') continue;
         await browser.tabs.group({ tabIds, groupId: plan.absorbIntoGroupId });
         continue;
       }

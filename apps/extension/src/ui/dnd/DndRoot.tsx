@@ -15,7 +15,6 @@ import {
   type Announcements,
   type Collision,
   type CollisionDetection,
-  type DragCancelEvent,
   type DragEndEvent,
   type DragStartEvent,
   type Over,
@@ -341,10 +340,9 @@ export function DndRoot({
       autoScroll={AUTO_SCROLL_CONFIG}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      onDragCancel={(event: DragCancelEvent) => {
-        void event;
-        handleDragCancel();
-      }}
+      // 不声明用不到的事件参数：此前 `void event;` 只是为了让未使用参数的告警
+      // 消失，是一行没有任何效果的语句。
+      onDragCancel={() => handleDragCancel()}
     >
       {children}
       {/* DragOverlay 用 position: fixed 跟随指针，而 .app 带 container-type

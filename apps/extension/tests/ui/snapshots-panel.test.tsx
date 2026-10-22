@@ -58,7 +58,10 @@ describe('SnapshotsPanel 分组', () => {
     renderPanel();
 
     // 断言用英文文案：i18n 默认语言在测试环境下为 en（不依赖浏览器语言）。
-    const groupNamed = screen.getByText(translate('命名快照')).closest('div');
+    // 「命名快照」既是分组标题也是行内来源徽标（同源文案），故取首个（组标题在前）。
+    const namedHeading = screen.getAllByText(translate('命名快照'))[0];
+    if (!namedHeading) throw new Error('未渲染命名快照分组标题');
+    const groupNamed = namedHeading.closest('div');
     const groupArchive = screen.getByText('Archive (closed and saved)').closest('div');
     const groupAuto = screen.getByText('Auto-saved on window close').closest('div');
 

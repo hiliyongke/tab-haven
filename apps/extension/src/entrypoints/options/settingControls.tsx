@@ -5,6 +5,7 @@ import type { Settings } from '@/core/schema/models';
 import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/core/nocache/noCachePattern';
 import { normalizeWhitelistHost } from '@/core/url/hostname';
 import { hasPermissions, requestPermissions, type PermissionQuery } from '@/platform/permissions';
+import { logDegraded } from '@/platform/diagnostics';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { ControlIdContext } from '@/ui/common/controlId';
@@ -338,7 +339,10 @@ export function NoCacheToggle({
       .then((has) => {
         if (!cancelled) setPermissionLost(!has);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        // 权限查询失败与「权限真的丢了」在 UI 上同形，但处置完全不同：
+        // 后者点一下就能补授权，前者补了也没用。不留痕就无法区分。
+        logDegraded('options', '站点访问权限查询失败，按「未授权」提示', error);
         if (!cancelled) setPermissionLost(true);
       });
     return () => {

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
+import { useLatestRef } from '@/ui/hooks/useLatestRef';
 
 /**
  * 列表键盘漫游：↑↓ 在给定序列中移动选中项，Enter 激活。
@@ -51,10 +52,7 @@ export function useListNavigation(params: {
     );
   }, [tabIds.length]);
 
-  const onActivateRef = useRef(onActivate);
-  useEffect(() => {
-    onActivateRef.current = onActivate;
-  }, [onActivate]);
+  const onActivateRef = useLatestRef(onActivate);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>): boolean => {
@@ -75,7 +73,8 @@ export function useListNavigation(params: {
       }
       return false;
     },
-    [tabIds, index]
+    // onActivateRef 引用恒定（useLatestRef 内部是 useRef），列入依赖不会重建回调。
+    [tabIds, index, onActivateRef]
   );
 
   return { selectedTabId: index === null ? undefined : tabIds[index], handleKeyDown };

@@ -340,6 +340,8 @@ describe('dataStore 固定空间事务', () => {
     // 回归：importData 期间 writeFolders 会丢弃写入，但 mutateSession 照常执行 ——
     // 会给「根本没进文件夹」的条目建立绑定，且 UI 提示「新增 N 个」而列表毫无变化。
     const folder = await useDataStore.getState().createFolder('F');
+    // createFolder 超限返回 null：前置条件不成立时直接失败，而不是继续跑出假阴性。
+    if (!folder) throw new Error('createFolder 应成功创建文件夹');
 
     // 让 importData 挂在第一次落盘上，制造「事务进行中」窗口。
     let release: (() => void) | undefined;

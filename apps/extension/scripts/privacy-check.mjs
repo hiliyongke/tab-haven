@@ -90,14 +90,29 @@ const FAVICON_FILE = join(SRC, 'ui', 'common', 'Favicon.tsx');
 /** 图标地址构造层（platform）：`browser.runtime.id` 只应出现在这里。 */
 const FAVICON_SRC_FILE = join(SRC, 'platform', 'favicon.ts');
 
-/** 存储键字面量：项目内所有存储键统一以 `tabs.` 前缀命名。 */
-const STORAGE_KEY_LITERAL = /['"](tabs\.[a-zA-Z0-9._-]+)['"]/g;
+/**
+ * 存储键字面量：项目内所有存储键统一以 `tabs.` 或 `tabs:` 前缀命名。
+ *
+ * **两个前缀都得认**：只认 `tabs.` 时，`tabs:` 族（主题镜像 `tabs:theme` /
+ * `tabs:theme-hue`，见 PRIVACY.md §3）在源码侧与文档侧同时被漏掉——双向比对
+ * 两边都看不见它，于是「新增存储键须同步文档」对整族失效，门禁恒绿。
+ */
+const STORAGE_KEY_LITERAL = /['"](tabs[.:][a-zA-Z0-9._-]+)['"]/g;
 /** i18n 键同样以 `tabs.` 开头（`t('tabs.xxx')`），不是存储键，整行跳过。 */
 const I18N_CALL = /\bt\(\s*['"]tabs\./;
 /** 注释行（含 JSDoc）里提到的键名不是声明，跳过。 */
 const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
 /** 非存储用途的 `tabs.` 字面量：导出文件格式标识。 */
 const NON_STORAGE_KEYS = new Set(['tabs.export']);
+/**
+ * 存储键的声明范围：**只允许 platform 层**（唯一触碰 `chrome.*` 的层）。
+ *
+ * 这样限定不只是洁癖：`tabs:` 族里还混着 ui 层的 DOM 自定义事件名
+ * （`tabs:locate-tab` 等，见 `src/ui/**`），它们从不落盘。若全量扫 `src/`，
+ * 事件名会被当成存储键去和 PRIVACY.md §3 比对，门禁要么恒红、要么得靠一份
+ * 越加越长的白名单打补丁。按层限定后，两类字面量天然分离，无需例外清单。
+ */
+const STORAGE_KEY_SCOPE = join(SRC, 'platform');
 
 /**
  * 源码里的注释行（`//` / `/*` / `* `）：示例与说明中的 URL 不是真实调用，放行。
@@ -146,14 +161,14 @@ function readDocumentedStorageKeys() {
   }
   const section = lines.slice(start, end).join('\n');
   const found = new Set();
-  for (const match of section.matchAll(/`(tabs\.[a-zA-Z0-9._-]+)`/g)) found.add(match[1]);
+  for (const match of section.matchAll(/`(tabs[.:][a-zA-Z0-9._-]+)`/g)) found.add(match[1]);
   return found;
 }
 
 /** 扫描源码里的存储键常量（键 → 首次出现位置）。 */
 function readSourceStorageKeys() {
   const found = new Map();
-  for (const file of walk(SRC)) {
+  for (const file of walk(STORAGE_KEY_SCOPE)) {
     if (!/\.(ts|tsx)$/.test(file)) continue;
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, i) => {

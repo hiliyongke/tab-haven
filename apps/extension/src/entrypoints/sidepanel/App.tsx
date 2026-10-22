@@ -25,7 +25,7 @@ import {
   readAutoDiscardBatches,
   removeAutoDiscardBatch
 } from '@/platform/storage/autoDiscardLedger';
-import { logFailure } from '@/platform/diagnostics';
+import { logDegraded, logFailure } from '@/platform/diagnostics';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { translate, useTranslation } from '@/i18n';
@@ -44,6 +44,7 @@ import { SpaceStrip } from '@/ui/common/SpaceStrip';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { DndRoot } from '@/ui/dnd/DndRoot';
 import { useScrollFade } from '@/ui/common/useScrollFade';
+import { useLatestRef } from '@/ui/hooks/useLatestRef';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
@@ -346,12 +347,7 @@ export default function App() {
    * 键盘监听与消息监听会在每次切换标签时解绑/重绑一遍；用 ref 取最新值可让
    * 监听只挂载一次，行为不变。
    */
-  const locateActiveRef = useRef(handleLocateActive);
-  // 提交后更新而非渲染期赋值：并发渲染下渲染可能不提交，渲染期写 ref 会把
-  // 未提交的中间值泄漏给事件监听（与 SectionList/VirtualRowList/FolderRow 的约定一致）。
-  useEffect(() => {
-    locateActiveRef.current = handleLocateActive;
-  }, [handleLocateActive]);
+  const locateActiveRef = useLatestRef(handleLocateActive);
 
   /**
    * 自动休眠撤销提示：toast + 「全部唤醒」动作（唤醒后清台账）。
@@ -394,10 +390,12 @@ export default function App() {
    * 定位激活标签（快捷键、挂起动作、命令面板共用）。
    * 定位是用户显式「把激活标签带到眼前」，故同时交还滚动跟随权。
    */
+  // locateActiveRef 由 useRef 持有、引用恒定，列入依赖不会触发重跑；
+  // 不列则 lint 报缺依赖（自定义 hook 的返回值不被识别为 ref）。
   const locateActiveViaRef = useCallback(() => {
     releaseScrollControl();
     locateActiveRef.current();
-  }, [releaseScrollControl]);
+  }, [locateActiveRef, releaseScrollControl]);
   const notifyDuplicateReused = useCallback(
     () => notify(translate('已切到已打开的标签，并关掉重复的那个')),
     [notify]
@@ -447,8 +445,11 @@ export default function App() {
     // 决定焊死在控制流里，想改成两次只能再加一层嵌套，且每次嵌套都要重写一遍
     // 取消判断与失败处理。
     const attemptInit = (attempt: number): void => {
-      void initializeData().catch(() => {
+      void initializeData().catch((error: unknown) => {
         if (cancelled) return;
+        // 面板起不来是「用户只看到骨架屏」的故障，必须留痕：重试用尽后
+        // 错误态只说「重试」，没有诊断记录就无从判断是存储读失败还是初始化抛错。
+        logDegraded('sidepanel', `数据初始化失败（第 ${attempt} 次）`, error);
         if (attempt === 1) notify(translate('数据加载失败，请检查扩展权限'));
         if (attempt < INIT_MAX_ATTEMPTS) {
           retryTimerRef.current = window.setTimeout(
@@ -692,10 +693,13 @@ export default function App() {
           .getState()
           .setLanguages(eligible.map((tab, index) => [tab.id, langs[index] ?? 'und']));
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // detectLanguage 内部有 'und' 兜底，此处兜住意外 rejection（polyfill
         // 边界/API 异常路径）：必须清理 in-flight 登记，否则这些标签永远
         // 失去再探测机会，且产生 unhandled rejection。
+        // 语言探测失败本身不提示（按语言分区只是增强），但必须留痕 ——
+        // 否则「语言分区一直不出现」无法归因。
+        logDegraded('sidepanel', '标签语言探测失败', error);
         for (const tab of eligible) langInFlightRef.current.delete(tab.id);
       });
     return () => {
@@ -706,7 +710,10 @@ export default function App() {
   /** 手动重试数据初始化（自动重试失败后错误态的出口）。 */
   const handleRetryLoad = useCallback(() => {
     setLoadFailed(false);
-    void initializeData().catch(() => setLoadFailed(true));
+    void initializeData().catch((error: unknown) => {
+      logDegraded('sidepanel', '手动重试数据初始化仍失败', error);
+      setLoadFailed(true);
+    });
   }, [initializeData]);
 
   /**
@@ -882,8 +889,10 @@ export default function App() {
       .getState()
       .archiveCurrentWindow()
       .then((count) => notify(t('已归档 {{count}} 个标签', { count })))
-      .catch(() => notifyError(t('操作失败，请稍后重试')));
-  }, [notify, notifyError, t]);
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+      );
+  }, [notify, t]);
 
   /**
    * 导出备份并下载（首启引导终步与「数据只在本机、卸载即清除」的提醒配套）。
@@ -898,8 +907,10 @@ export default function App() {
         downloadJsonFile(datedJsonFilename('tabs-backup'), JSON.stringify(payload, null, 2));
         notify(t('备份已导出'));
       })
-      .catch(() => notifyError(t('导出失败：本地数据读取未完成')));
-  }, [notify, notifyError, t]);
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('sidepanel', t('导出失败：本地数据读取未完成'), error)
+      );
+  }, [notify, t]);
 
   const discardedCount = tabs.filter((tab) => tab.discarded).length;
   // 休眠入口的影响面提示（与执行口径同源 selectSleepableTabs）：
@@ -978,7 +989,9 @@ export default function App() {
       tabSyncService.requestRefresh();
       notify(t('已重新分组 {{count}} 个组 · 重排前现场已存入快照，可回退', { count }));
     })()
-      .catch(() => notifyError(t('操作失败，请稍后重试')))
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+      )
       .finally(() => setQuickRegrouping(false));
   }, [
     quickRegrouping,
@@ -1082,9 +1095,11 @@ export default function App() {
         missing.map((item) => item.url).filter((u): u is string => Boolean(u))
       )
         .then((created) => notify(t('已打开 {{count}} 个条目', { count: created })))
-        .catch(() => notifyError(t('操作失败，请稍后重试')));
+        .catch((error: unknown) =>
+          useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+        );
     },
-    [notify, notifyError, t]
+    [notify, t]
   );
 
   // 其他窗口分段（A4）：独立数据源，不进 tabStore（契约见 hook 注释）。
@@ -1118,7 +1133,9 @@ export default function App() {
           .getState()
           .saveCurrentWindow()
           .then(() => notify(t('已保存快照')))
-          .catch(() => notifyError(t('操作失败，请稍后重试'))),
+          .catch((error: unknown) =>
+            useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+          ),
       onSaveSpace: () =>
         // 与 useSpaces / SnapshotsPanel 同口径：不传名字，命名交给 store 的
         // fallbackName，避免把界面语言写进落盘快照名。
@@ -1127,7 +1144,9 @@ export default function App() {
           .saveSpace()
           // 与 useSpaces 同口径：动作是「保存为工作区」，反馈不能说「已保存快照」。
           .then(() => notify(t('已保存工作区')))
-          .catch(() => notifyError(t('操作失败，请稍后重试'))),
+          .catch((error: unknown) =>
+            useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+          ),
       onArchiveWindow: requestArchive,
       onOpenFolder: handleOpenFolder,
       // 「把当前标签存到文件夹」：面板内唯一的非拖拽归档入口。
@@ -1148,7 +1167,9 @@ export default function App() {
               notify(t('该标签已在这个文件夹里'));
             }
           })
-          .catch(() => notifyError(t('操作失败，请稍后重试')));
+          .catch((error: unknown) =>
+            useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+          );
       },
       onSwitchSpace: (spaceId) => {
         const space = useSnapshotStore
@@ -1181,9 +1202,11 @@ export default function App() {
     (url: string) => {
       void createTabsWithUrls([url])
         .then(() => notify(t('已打开该页面')))
-        .catch(() => notifyError(t('操作失败，请稍后重试')));
+        .catch((error: unknown) =>
+          useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+        );
     },
-    [notify, notifyError, t]
+    [notify, t]
   );
 
   /** 历史命中「恢复该快照」：恢复不在撤销栈覆盖范围，同样先弹影响面确认。 */
@@ -1210,12 +1233,14 @@ export default function App() {
                 : t('已恢复 {{count}} 个标签', { count })
             )
           )
-          .catch(() => notifyError(t('操作失败，请稍后重试')));
+          .catch((error: unknown) =>
+            useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+          );
         return;
       }
       setPendingHistoryRestore(snapshot);
     },
-    [notify, notifyError, t]
+    [notify, t]
   );
 
   return (
@@ -1516,7 +1541,11 @@ export default function App() {
                       : t('已恢复 {{count}} 个标签', { count })
                   )
                 )
-                .catch(() => notifyError(t('操作失败，请稍后重试')));
+                .catch((error: unknown) =>
+                  useUndoStore
+                    .getState()
+                    .notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+                );
             }}
             onCancel={() => setPendingHistoryRestore(null)}
           />

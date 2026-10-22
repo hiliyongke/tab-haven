@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { logDegraded } from '@/platform/diagnostics';
 
 /** 原生标签组：直接用 Chrome 组色 CSS 变量（与组圆点同源）。 */
 export function groupAccentVar(color?: string): string {
@@ -53,7 +54,11 @@ function extractFaviconColor(dataUrl: string): Promise<string | null> {
         }
         if (!count) return resolve(null);
         resolve(`rgb(${Math.round(r / count)} ${Math.round(g / count)} ${Math.round(b / count)})`);
-      } catch {
+      } catch (error) {
+        // 取色异常通常意味着 canvas 被污染或上下文丢失 —— 这正是「为什么这个站点
+        // 的强调色没用上 favicon 主色」的关键线索。回退域名哈希色在视觉上完全正常，
+        // 不留痕就等于故障不可观测。
+        logDegraded('accent', 'favicon 主色提取失败，回退域名哈希色', error);
         resolve(null);
       }
     };

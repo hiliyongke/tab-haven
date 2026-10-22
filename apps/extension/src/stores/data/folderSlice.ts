@@ -29,26 +29,47 @@ import {
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { BINDINGS_SCOPE } from './context';
-import type { AddTabsToFolderResult, DataContext, DataState } from './types';
+import type { AddTabsToFolderResult, DataContext, DataSlice } from './types';
 
 /**
  * 文件夹切片：文件夹的增删改/拖入/排序、固定条目打开与跨组移动、原生组 ↔ 文件夹转换、
  * 以及每次标签事件后的挂起转正 + 绑定维护。
  */
-export function createFolderSlice(ctx: DataContext): Partial<DataState> {
+export function createFolderSlice(
+  ctx: DataContext
+): DataSlice<
+  | 'createFolder'
+  | 'renameFolder'
+  | 'deleteFolder'
+  | 'toggleFolderCollapsed'
+  | 'addTabsToFolder'
+  | 'removeFolderItem'
+  | 'restoreFolders'
+  | 'reorderFolderItems'
+  | 'moveFolder'
+  | 'moveFolderItem'
+  | 'openSavedItem'
+  | 'createFolderFromNativeGroup'
+  | 'syncFolderToNativeGroup'
+  | 'reconcileWithTabs'
+> {
   return {
     createFolder: async (name) => {
-      const folder = createFolderModel(name);
       // 上限预检：FOLDERS_LIMIT 只在**落盘 schema** 生效时，超限会被 zod 整批拒绝，
       // 而内存已经 set 过 —— 表现为「界面显示已创建、重启后凭空消失」，且只有一条
       // 泛化的存储降级横幅。写之前就拦住，并给出**可操作**的说明。
+      //
+      // 返回 null 而非一个有 id 的文件夹：失败分支与成功分支返回同形态时，调用方
+      // 无从判断创建是否生效，拿到的 folder.id 会指向一个从未落盘的文件夹
+      // （继续往里加条目 / 跳转都指向空）。与同文件 addPin 等「返回是否生效」同口径。
       if (ctx.get().folders.length >= FOLDERS_LIMIT) {
         ctx.reportPersistenceFailure(
           'dataStore',
           `固定文件夹数量已达上限 ${FOLDERS_LIMIT} 个，本次未创建（请先删除不再需要的文件夹）`
         );
-        return folder;
+        return null;
       }
+      const folder = createFolderModel(name);
       await ctx.writeFolders((current) => [...current, folder]);
       return folder;
     },

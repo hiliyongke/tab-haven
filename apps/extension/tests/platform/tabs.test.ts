@@ -232,11 +232,26 @@ describe('removeGroup', () => {
     const tabGroups = fakeBrowser.tabGroups as unknown as {
       get: (id: number) => Promise<unknown>;
     };
+    // 文案与 Chrome 实际抛出的 `No group with id: N` 一致 —— 判定是文案匹配，
+    // 测试必须用真实文案，否则会掩盖「判定失效」这类回归。
     tabGroups.get = (async () => {
-      throw new Error('group gone');
+      throw new Error('No group with id: 99');
     }) as unknown as typeof tabGroups.get;
 
     expect(await removeGroup(99)).toBe('missing');
+  });
+
+  it('组查询本身失败时返回 failed，不得塌缩成 missing', async () => {
+    // 回归：此前 groupExists 用布尔吞掉「查询失败」，removeGroup 判为 missing，
+    // 调用方据此清掉记账而真组仍在 → 永久孤儿组（关闭开关时永不再解散）。
+    const tabGroups = fakeBrowser.tabGroups as unknown as {
+      get: (id: number) => Promise<unknown>;
+    };
+    tabGroups.get = (async () => {
+      throw new Error('IPC timeout');
+    }) as unknown as typeof tabGroups.get;
+
+    expect(await removeGroup(99)).toBe('failed');
   });
 });
 

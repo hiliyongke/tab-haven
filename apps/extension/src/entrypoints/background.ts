@@ -154,8 +154,16 @@ export default defineBackground(() => {
     try {
       const settings = await settingsRepository.read();
       coordinator.setEnabled(settings.uniqueUrlTabs);
-    } catch {
-      // 读取失败保持当前状态
+    } catch (error) {
+      // 读取失败保持当前状态 —— 但必须留痕：ReuseCoordinator 是 fail-closed 的，
+      // 启动读失败会让「同网址唯一化」静默失效整整一个会话（watch 只在设置变更时
+      // 触发），而设置页不会自己变。与同文件其它启动路径同口径：静默吞错会让
+      // 「设置了却没生效」完全无从排查。
+      logDegraded(
+        'background',
+        '启动时读取同网址唯一化开关失败，本轮维持关闭（fail-closed）',
+        error
+      );
     }
   };
   void syncCoordinatorEnabled();
@@ -414,11 +422,15 @@ export default defineBackground(() => {
       // 页面，不指向任何外部站点，也不带查询参数。
       void browser.runtime
         .setUninstallURL(browser.runtime.getURL('/uninstall-backup.html'))
-        .catch(() => {
-          // 该 API 在个别环境下不可用（非 Chrome/Edge 内核）：挽留是尽力而为，失败不影响主流程。
+        .catch((error) => {
+          // 该 API 在个别环境下不可用（非 Chrome/Edge 内核）：挽留是尽力而为，
+          // 失败不影响主流程 —— 但原因必须留痕，否则「卸载时没看到备份提醒」
+          // 在诊断导出里查不到任何线索。
+          logDegraded('background', '卸载挽留页注册失败，用户卸载时将不会看到数据备份提醒', error);
         });
-    } catch {
-      // 同步兜底（API 不存在等非标准环境）：失败不影响主流程。
+    } catch (error) {
+      // 同步兜底（API 不存在等非标准环境）：失败不影响主流程，同样要留痕。
+      logDegraded('background', '卸载挽留页注册失败（同步异常）', error);
     }
   };
 
@@ -565,26 +577,27 @@ export default defineBackground(() => {
   });
 
   // omnibox：t <关键词>（omniboxEnabled 开关）
-  // 实时建议加 120ms 防抖，避免每个字符都触发读存储 + 全量扫描。
-  let omniboxSuggestTimer: ReturnType<typeof setTimeout> | undefined;
+  //
+  // 刻意**不加防抖**：`suggest` 是 omnibox 协议里必须被调用的一次性回调，不调用则
+  // 地址栏永久停在「等待建议」。此前把它塞进 120ms 的裸 setTimeout —— SW 在防抖
+  // 窗口内被回收时，定时器连同 suggest 引用一起消失，这一次建议再也补不回来
+  // （用户已经敲完这个字符）。与 badge 同口径：关键状态不能寄托在裸定时器上。
+  // 查询是本地全量扫描（无网络），少一次防抖的代价远小于一次永久挂起。
   browser.omnibox?.onInputChanged.addListener((text, suggest) => {
     if (!cachedSettings.omniboxEnabled) {
       suggest([]);
       return;
     }
-    if (omniboxSuggestTimer) clearTimeout(omniboxSuggestTimer);
-    omniboxSuggestTimer = setTimeout(() => {
-      // 必须兜底：queryOmnibox reject 时若不调用 suggest，地址栏会永久停在
-      // 「等待建议」的状态，同时留下一条无处可见的未捕获 rejection。
-      void (async () => {
-        try {
-          suggest(await queryOmnibox(text));
-        } catch (error) {
-          logDegraded('background', '地址栏建议生成失败', error);
-          suggest([]);
-        }
-      })();
-    }, 120);
+    // 必须兜底：queryOmnibox reject 时若不调用 suggest，地址栏会永久停在
+    // 「等待建议」的状态，同时留下一条无处可见的未捕获 rejection。
+    void (async () => {
+      try {
+        suggest(await queryOmnibox(text));
+      } catch (error) {
+        logDegraded('background', '地址栏建议生成失败', error);
+        suggest([]);
+      }
+    })();
   });
   browser.omnibox?.onInputEntered.addListener((content, disposition) => {
     if (!cachedSettings.omniboxEnabled) return;

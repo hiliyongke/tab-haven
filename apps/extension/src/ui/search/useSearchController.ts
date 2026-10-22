@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
 import { SearchEngine } from '@/core/search/SearchEngine';
 import {
   buildHistoryTargets,
@@ -7,7 +7,7 @@ import {
   type HistoryHitInfo
 } from '@/core/search/historyIndex';
 import { matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
-import { logDegraded } from '@/platform/diagnostics';
+import { usePinyinDictionary } from '@/ui/search/usePinyinDictionary';
 import type { Snapshot } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
@@ -18,8 +18,9 @@ import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
  * 从 `App.tsx` 抽出（原为单文件内约 110 行、跨 8 个 hook 的一团状态）。这块逻辑有
  * 三个**不显眼但已知踩过坑**的点，集中后才有可能被回归测试守住：
  *
- * 1. **拼音就绪信号用递增 tick 而非布尔**：引擎重建后 state 可能已是 true（旧引擎恒 true），
- *    新引擎异步补齐完成时 `set(true)` 会被 React 丢弃（值未变），拼音命中照样不出现。
+ * 1. **拼音能否启用是引擎的构造入参，不是事后补丁**：词典 1MB+ 必须动态加载，
+ *    而引擎构造后不可变；故由 `usePinyinDictionary` 在词典就绪后翻转信号，
+ *    引擎 memo 随之重建（引用变化即重算），不存在「补了拼音但没人知道」。
  * 2. **选中索引必须钳制回界内**：搜索期间标签被关闭会让 searchHits 收缩，越界的
  *    `selectedSearchTabId` 为 undefined，表现为高亮消失且 Enter 无动作。
  * 3. **空 `Set` 必须是模块级常量**：它挂在 `noCacheTabIds` 的依赖链上，
@@ -136,6 +137,10 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
    * 每次快照都要重建一次，用户**根本没在搜索**时也持续烧 CPU。
    * 与下方 `historyEngine` 同款惰性口径（历史引擎只在开关打开时构造）。
    */
+  // 拼音是构造入参：词典就绪前后各建一次引擎（构造只是轻量 prepare），
+  // 不给「引擎内部异步补齐」留位置——那会让引擎成为可变对象，命中结果
+  // 在 React 看来毫无变化（拼音命中静默失效的根因）。
+  const pinyinUsable = usePinyinDictionary(pinyinSearch);
   const engine = useMemo(
     () =>
       isFiltering
@@ -146,10 +151,10 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
               url: tab.url || '',
               active: tab.active
             })),
-            { pinyin: pinyinSearch }
+            { pinyin: pinyinUsable }
           )
         : null,
-    [isFiltering, effectiveTabs, t, pinyinSearch]
+    [isFiltering, effectiveTabs, t, pinyinUsable]
   );
 
   // 时间线搜索引擎：快照条目映射为负数合成 id 目标，与主引擎同内核。
@@ -157,70 +162,21 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
   const historyEngine = useMemo(
     () =>
       searchHistory
-        ? new SearchEngine(buildHistoryTargets(snapshots), { pinyin: pinyinSearch })
+        ? new SearchEngine(buildHistoryTargets(snapshots), { pinyin: pinyinUsable })
         : null,
-    [searchHistory, snapshots, pinyinSearch]
+    [searchHistory, snapshots, pinyinUsable]
   );
 
-  /** 历史引擎拼音就绪信号（与主引擎同款 tick 机制）。 */
-  const [historyPinyinTick, setHistoryPinyinTick] = useState(0);
-  useEffect(() => {
-    if (!historyEngine || historyEngine.pinyinReady) return;
-    let cancelled = false;
-    void historyEngine
-      .ensurePinyin()
-      .then(() => {
-        if (!cancelled) setHistoryPinyinTick((tick) => tick + 1);
-      })
-      .catch((error: unknown) => {
-        logDegraded('search', '历史搜索拼音词典加载失败，本轮拼音匹配不可用', error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [historyEngine]);
-
-  /**
-   * 拼音目标是异步补齐的（词典按需动态加载），补齐本身不改变任何 React 状态。
-   * 没有这个信号，拼音命中会一直不出现：既不会在首次输入时自愈，也会在
-   * 「标签事件 → 重建引擎」后把已有的拼音结果瞬间清空。
-   */
-  const [pinyinTick, setPinyinTick] = useState(0);
-  useEffect(() => {
-    // 未输入时引擎不存在（惰性构造）：此时没有可补齐拼音的对象。
-    if (engine === null || engine.pinyinReady) return;
-    let cancelled = false;
-    void engine
-      .ensurePinyin()
-      .then(() => {
-        if (!cancelled) setPinyinTick((tick) => tick + 1);
-      })
-      // 词典加载失败（动态 import 网络/解析错误）：保持非拼音搜索可用，
-      // 不产生 unhandled rejection。
-      .catch((error: unknown) => {
-        logDegraded('search', '拼音词典加载失败，本轮拼音搜索不可用', error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [engine]);
-
   const searchHits = useMemo(() => {
-    // pinyinTick 是重算触发器：词典就绪后 engine 内部状态变了但引用未变。
-    // 回调内显式引用它，让依赖数组语义自足（不写豁免注释）。
-    void pinyinTick;
     // 引擎为空 = 没在输入：此时没有命中，也不必付搜索的代价。
     return engine === null ? [] : engine.search(deferredQuery, Math.max(effectiveTabs.length, 50));
-  }, [engine, deferredQuery, effectiveTabs.length, pinyinTick]);
+  }, [engine, deferredQuery, effectiveTabs.length]);
 
   /**
    * 历史命中：合成 id 命中后立即解码为结构化信息（快照名 / 来源 / 时间 / 条目）。
    * 解码需要与构造时同序的快照列表，故依赖 snapshots 原引用而非排序副本。
    */
   const historyHits = useMemo(() => {
-    // historyPinyinTick 同 pinyinTick：异步补齐后引用未变，靠 tick 触发重算，
-    // 回调内显式引用它（不写豁免注释）。
-    void historyPinyinTick;
     if (!historyEngine || !isFiltering) return [];
     const raw = historyEngine.search(query, 20);
     const decoded: HistorySearchHit[] = [];
@@ -230,7 +186,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
       decoded.push({ ...info, titleSegments: hit.titleSegments });
     }
     return decoded;
-  }, [historyEngine, query, isFiltering, snapshots, historyPinyinTick]);
+  }, [historyEngine, query, isFiltering, snapshots]);
 
   const filteredTabs = useMemo(() => {
     if (!query.trim()) return effectiveTabs;

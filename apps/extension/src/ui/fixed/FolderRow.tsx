@@ -66,13 +66,13 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
   /** 导入事务进行中：期间写固定空间会被丢弃，相关入口禁用（见 DataState.importing）。 */
   const importing = useDataStore((state) => state.importing);
   const notify = useUndoStore((state) => state.notify);
-  const notifyError = useUndoStore((state) => state.notifyError);
 
   /**
    * 删除文件夹 + 一次性撤销。
    * 删除必须有回退点：确认弹窗只降低误触概率，误确认后整份长期资产就没了。
    * 这里在写盘前留一份 folders 快照，成功后 toast 上给「撤销」。
-   * 仍然绝不能先报成功：写盘失败走 notifyError。
+   * 仍然绝不能先报成功：写盘失败走 notifyFailure（Promise 被拒即有 error，
+   * 提示与留痕必须同时成立）。
    */
   const deleteWithUndo = useCallback(() => {
     const before = useDataStore.getState().folders;
@@ -84,9 +84,10 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
             void useDataStore.getState().restoreFolders(before);
           }
         }),
-      () => notifyError(t('操作失败，请稍后重试'))
+      (error: unknown) =>
+        useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
     );
-  }, [deleteFolder, folder.id, notify, notifyError, t]);
+  }, [deleteFolder, folder.id, notify, t]);
   const tabs = useTabStore((state) => state.tabs);
 
   /**
@@ -185,15 +186,19 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
     }
     void createTabsWithUrls(missing.map((item) => item.url).filter((u): u is string => Boolean(u)))
       .then((created) => notify(t('已打开 {{count}} 个条目', { count: created })))
-      .catch(() => notifyError(t('操作失败，请稍后重试')));
-  }, [folder.items, notify, notifyError, t, tabs]);
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
+      );
+  }, [folder.items, notify, t, tabs]);
   const handleExportBookmarks = useCallback(() => {
     void saveFolderToBookmarks(folder)
       .then((count) =>
         notify(count > 0 ? t('已导出 {{count}} 条到书签', { count }) : t('文件夹为空，未导出书签'))
       )
-      .catch(() => notifyError(t('操作失败，请稍后重试')));
-  }, [folder, notify, notifyError, t]);
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
+      );
+  }, [folder, notify, t]);
   const headerAction = (
     <>
       <button
@@ -352,7 +357,8 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
           onRename={(name) => {
             void renameFolder(folder.id, name).then(
               () => notify(t('已重命名文件夹')),
-              () => notifyError(t('操作失败，请稍后重试'))
+              (error: unknown) =>
+                useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
             );
           }}
           onDelete={() => deleteWithUndo()}
@@ -373,7 +379,11 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
               .then((converted) =>
                 notify(t(converted ? '已恢复为原生标签组' : '文件夹中没有可转换的标签'))
               )
-              .catch(() => notify(t('恢复原生标签组失败')))
+              // 失败必须走 error 强度（role="alert"）：用 notify（role="status"）会
+              // 把它降级成普通状态排队播报，与同文件其它失败路径的语义强度不一致。
+              .catch((error: unknown) =>
+                useUndoStore.getState().notifyFailure('fixed', t('恢复原生标签组失败'), error)
+              )
               .finally(() => setConverting(false));
           }}
           onCancel={() => setDialog(null)}

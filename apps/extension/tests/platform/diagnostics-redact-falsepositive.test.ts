@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactUrlsForTest as r } from '@/platform/diagnostics';
+import { redactUrlsForTest as r } from '@/platform/log';
 
 /** 脱敏不得误伤非 URL 文本（脱敏规则的反向约束）。 */
 describe('redactUrls 误伤防护', () => {

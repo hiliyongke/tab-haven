@@ -2,8 +2,10 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
+import { logDegraded } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
+import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
@@ -120,15 +122,15 @@ export function useSpaces(): {
                   count
                 })
           );
-        } catch {
-          notifyError(t('操作失败，请稍后重试'));
+        } catch (error) {
+          useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error);
         } finally {
           switchingRef.current = false;
           setSwitching(false);
         }
       })();
     },
-    [flushCurrentSpace, notify, notifyError, setSwitching, t]
+    [flushCurrentSpace, notify, setSwitching, t]
   );
 
   const switchSpace = useCallback(
@@ -137,8 +139,10 @@ export function useSpaces(): {
       // 点已激活的 chip 无意义：会白跑一次「全关 + 全开」并留下一条撤销批次。
       if (target.id === useDataStore.getState().settings.activeSpaceId) return;
       // 目标空间可能已被删除：先校验，避免「关了标签却恢复 0 条」+ 激活悬空 id。
+      // 文案必须说清是「目标不存在」：这里失败的是用户选中的目标，不是本次操作，
+      // 报「请稍后重试」会让人反复点同一个已失效的 chip。
       if (!useSnapshotStore.getState().snapshots.some((snap) => snap.id === target.id)) {
-        notifyError(t('操作失败，请稍后重试'));
+        notifyError(t('该工作区已不存在，请刷新后重试'));
         return;
       }
       void (async () => {
@@ -150,9 +154,16 @@ export function useSpaces(): {
         try {
           const tabs = await queryCurrentWindowTabs();
           closableCount = tabs.filter(isSwitchClosable).length;
-        } catch {
-          // 查不到就按「有影响面」处理，由确认弹窗兜住。
-          closableCount = SPACE_SWITCH_CONFIRM_THRESHOLD;
+        } catch (error) {
+          // 拿不到就退回 tabStore 的窗口快照（真实计数，可能略滞后），
+          // 而**不是**用阈值去冒充一次查询结果 —— 后者会让确认弹窗显示一个
+          // 编造的「将关闭 N 个标签」，用户据此判断影响面，实为展示不确定态。
+          // 这里的用途只是「要不要拦一道 + 显示影响面」，不涉及关闭哪些标签，
+          // 因此快照口径是可接受的（关闭目标由 performSwitch 另行实时查询）。
+          // 只留痕不弹 toast：影响面查询失败并不阻断切换（闸门仍会拦），
+          // 弹一条「操作失败」会让用户以为切换已经失败。
+          logDegraded('spaces', '切换工作区：查询影响面失败，已退回窗口快照计数', error);
+          closableCount = useTabStore.getState().tabs.filter(isSwitchClosable).length;
         }
         if (closableCount >= SPACE_SWITCH_CONFIRM_THRESHOLD) {
           applyPending({ target, closableCount });
@@ -185,14 +196,14 @@ export function useSpaces(): {
         }
         await useDataStore.getState().tryUpdateSettings({ activeSpaceId: undefined });
         notify(t('已退出工作区，回到全部标签（原工作区已保存）'));
-      } catch {
-        notifyError(t('操作失败，请稍后重试'));
+      } catch (error) {
+        useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error);
       } finally {
         switchingRef.current = false;
         setSwitching(false);
       }
     })();
-  }, [flushCurrentSpace, notify, notifyError, setSwitching, t]);
+  }, [flushCurrentSpace, notify, setSwitching, t]);
 
   const saveAsSpace = useCallback(() => {
     // 不传名字：命名统一由 store 的 fallbackName 决定（此处传 t('工作区') 会把
@@ -213,8 +224,10 @@ export function useSpaces(): {
         // 或工作区没存上（它其实出现在顶部切换条）。反馈必须与动作同名。
         notify(t('已保存工作区'));
       })
-      .catch(() => notifyError(t('操作失败，请稍后重试')));
-  }, [notify, notifyError, t]);
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error)
+      );
+  }, [notify, t]);
 
   return {
     spaces,

@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 import { queryWindowGroups, queryCurrentWindowTabs } from '@/platform/tabs';
-import { logDegraded } from '@/platform/diagnostics';
+import { logDegraded, logFailure } from '@/platform/diagnostics';
 
 /**
  * 标签同步服务：把浏览器标签事件统一为"快照刷新"信号。
@@ -50,6 +50,16 @@ const RELEVANT_UPDATE_KEYS = [
 ] as const;
 /** 连续失败时的退避倍数上限（40ms → 最长约 1.3s），避免失败场景下持续空转。 */
 const MAX_BACKOFF_FACTOR = 32;
+/**
+ * 连续失败的重试次数上限。
+ *
+ * 退避间隔封了顶但次数不封顶时，`tabs.query` 的**确定性**失败（权限被策略禁用、
+ * windowId 异常、polyfill 缺失）会以 ~1.3s 的间隔永久轮询：每次都往诊断环形缓冲
+ * 写一条（上限 100 条），很快把其它真实故障全挤出导出文件。与 SyncMirror 同口径
+ * —— 确定性失败不该靠重试解决。用尽后停止自动重试，但**不**永久禁用：
+ * 任何新的标签事件 / 显式 requestRefresh 仍会触发一次尝试（成功后 failures 归零）。
+ */
+const MAX_RETRY_ATTEMPTS = 8;
 
 export class TabSyncService {
   private generation = 0;
@@ -114,13 +124,22 @@ export class TabSyncService {
         failures += 1;
         // 必须进诊断导出：查询持续失败时面板会静默停在旧数据上，无从排查。
         logDegraded('tab-sync', '标签快照刷新失败', error);
+        if (failures === MAX_RETRY_ATTEMPTS) {
+          // 熔断必须显式告知：否则「面板一直停在旧数据」会被当成偶发卡顿，
+          // 而实际是重试已停止、且诊断缓冲里全是同一条重复日志。
+          logFailure(
+            'tab-sync',
+            `标签快照刷新连续失败 ${MAX_RETRY_ATTEMPTS} 次，已停止自动重试（标签事件/手动刷新仍会重试）`
+          );
+        }
       } finally {
         querying = false;
         // stopped 时不得再排新的 timer：清理已跑完却仍挂上定时器，
         // 会在 stop 之后发起一次无人接收的孤儿查询。
         // 失败时即使无 pending 也排兜底重试（指数退避，上限 ~1.3s）：否则
         // 浏览器启动早期打开面板撞上瞬时失败，会停在空态直到下一次标签事件。
-        if (!stopped && (pending || failures > 0)) {
+        // 重试次数封顶：确定性失败（权限被禁用等）不该无限空转。
+        if (!stopped && (pending || (failures > 0 && failures < MAX_RETRY_ATTEMPTS))) {
           pending = false;
           const factor = failures > 0 ? Math.min(2 ** failures, MAX_BACKOFF_FACTOR) : 1;
           timer = setTimeout(() => {

@@ -100,20 +100,21 @@ const TAB_FIELDS = [
   'language'
 ] as const satisfies readonly (keyof TabRecord)[];
 
-// 完备性断言：satisfies 只保证「列出的都是合法字段」，不能保证「全部字段都已列出」。
-// TabRecord 新增字段而未登记时这里编译失败——否则 sameTabFields 漏比该字段，
-// 引用保持逻辑会把变更后的对象误判为不变，UI 静默不刷新。
-type TabFieldsMustCoverAll =
-  Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> extends never ? true : never;
-const tabFieldsCoverAll: TabFieldsMustCoverAll = true;
-void tabFieldsCoverAll;
-
-function sameTabFields(a: TabRecord, b: TabRecord): boolean {
+/**
+ * 完备性断言：satisfies 只保证「列出的都是合法字段」，不能保证「全部字段都已列出」。
+ *
+ * 断言直接挂在函数类型上：漏登记字段时标注退化为 `never`，箭头函数赋值即编译失败。
+ * （曾写成 `const x: … = true; void x;`——那条 void 语句不产生任何效果，删掉它
+ * 编译、lint、测试全绿，而完备性约束静默失效。）
+ */
+const sameTabFields: Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> extends never
+  ? (a: TabRecord, b: TabRecord) => boolean
+  : never = (a: TabRecord, b: TabRecord): boolean => {
   for (const field of TAB_FIELDS) {
     if (a[field] !== b[field]) return false;
   }
   return true;
-}
+};
 
 /**
  * 快照合并：把浏览器新快照并入面板侧镜像（tabStore 订阅 TabSyncService 时调用）。

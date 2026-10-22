@@ -63,7 +63,7 @@ describe('KeeperPolicy', () => {
     const group = tabs('https://a.com/');
     group[1]!.active = true;
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(2);
+    expect(keeper?.id).toBe(2);
     expect(removable.map((tab) => tab.id)).toEqual([1, 3]);
   });
 
@@ -75,7 +75,7 @@ describe('KeeperPolicy', () => {
       makeTab({ id: 3, index: 2, url: 'https://a.com/', lastAccessed: 500, active: true })
     ];
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(2);
+    expect(keeper?.id).toBe(2);
     expect(removable.map((tab) => tab.id).sort()).toEqual([1, 3]);
   });
 
@@ -83,7 +83,7 @@ describe('KeeperPolicy', () => {
     const group = tabs('https://a.com/');
     group[1]!.pinned = true;
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(2);
+    expect(keeper?.id).toBe(2);
     expect(removable.map((tab) => tab.id)).toEqual([1, 3]);
   });
 
@@ -92,7 +92,7 @@ describe('KeeperPolicy', () => {
       key: 'x',
       tabs: tabs('https://a.com/')
     });
-    expect(keeper.id).toBe(1);
+    expect(keeper?.id).toBe(1);
     expect(removable.map((tab) => tab.id)).toEqual([2, 3]);
   });
 
@@ -101,8 +101,16 @@ describe('KeeperPolicy', () => {
     group[1]!.pinned = true;
     group[2]!.active = true;
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(3);
+    expect(keeper?.id).toBe(3);
     expect(removable.map((tab) => tab.id)).toEqual([1]);
+  });
+
+  it('空组不产出 keeper（不用断言伪造保留者）', () => {
+    // 回归：此前 `?? group.tabs[0]!` 让空组返回「类型是 TabRecord、运行时 undefined」
+    // 的假 keeper，下游 keeper.id 当场崩。空组必须给出空结果。
+    const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: [] });
+    expect(keeper).toBeUndefined();
+    expect(removable).toEqual([]);
   });
 
   it('removable 汇总应用策略', () => {
@@ -120,7 +128,7 @@ describe('KeeperPolicy', () => {
       makeTab({ id: 2, index: 5, url: 'https://a.com/' })
     ];
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: group });
-    expect(keeper.id).toBe(1);
+    expect(keeper?.id).toBe(1);
     expect(removable.map((tab) => tab.id).sort()).toEqual([2, 3]);
   });
 });

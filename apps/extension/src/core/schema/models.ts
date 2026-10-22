@@ -107,6 +107,15 @@ export const SiteCollapseSchema = z
 export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
 
 /**
+ * 网站聚合阈值的默认值（未显式传参时的成组下限）。
+ *
+ * schema 是这一语义的唯一权威来源，但纯函数侧（aggregateBySite / buildSitePlan）
+ * 此前各手抄一份字面量 `2`：改默认值时改一处漏两处，就会得到「设置里显示 3、
+ * 纯函数按 2 聚合」的分叉，且只在调用方没传 threshold 时才生效，最难复现。
+ */
+export const DEFAULT_AGGREGATION_THRESHOLD = 2;
+
+/**
  * 设置项分类（仅用于 UI 分组，不参与校验）：
  *   appearance   外观与布局
  *   behavior     交互行为
@@ -120,7 +129,7 @@ export const SettingsSchema = z.object({
   /** 语言覆盖（BCP-47）。仅约束长度与格式。 */
   language: z.string().min(2).max(32).optional(),
   /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
-  aggregationThreshold: z.number().int().min(1).max(5).default(2),
+  aggregationThreshold: z.number().int().min(1).max(5).default(DEFAULT_AGGREGATION_THRESHOLD),
   /** 标签顺序双向同步：侧边栏拖拽重排写回原生顺序，原生改动反向同步。 */
   tabOrderSync: z.boolean().default(true),
 

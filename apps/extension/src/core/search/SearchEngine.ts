@@ -7,9 +7,14 @@ import { prepare, single, type Prepared, type Result } from 'fuzzysort';
  *  - 索引构建时预计算 prepare（标题/URL），查询零准备；
  *  - 拼音支持：中文标题同时建「首字母串」与「全拼串」两套目标（如 "tb" 与 "taobao"
  *    都能命中 "淘宝"）。
- *    拼音词典（pinyin-pro，体积约 1MB+）**按需动态加载**——只在开启拼音搜索且
- *    首次构造引擎时异步拉取，绝不进侧边栏的初始解析。关闭拼音搜索
+ *    拼音词典（pinyin-pro，体积约 1MB+）**按需动态加载**——只在开启拼音搜索时由
+ *    调用方预先 `preloadPinyinDictionary()`，绝不进侧边栏的初始解析。关闭拼音搜索
  *    （settings.pinyinSearch=false）时完全不加载该词典。
+ *  - **引擎构造后不可变**：拼音目标只在构造期同步补齐（词典已就绪时）。
+ *    曾用的「构造后异步原地补拼音」让引擎成为可变对象，React 侧无从感知变化，
+ *    只能靠 `void tick;` 这类无效果语句把依赖数组凑自足（删掉它编译/lint/测试
+ *    全绿，而拼音命中静默失效）。词典就绪与否改为构造前的显式输入，
+ *    就绪后重建引擎即可，无需任何失效信号。
  *  - 结果排序：命中分数降序，激活标签优先；
  *  - 命中高亮：toSegments 输出纯文本命中分段（无 HTML），由渲染层负责加粗，
  *    React 自动转义，XSS 面为零。
@@ -40,6 +45,29 @@ function loadPinyin() {
       });
   }
   return pinyinModulePromise;
+}
+
+/**
+ * 词典是否已就绪（模块级缓存命中）。
+ * 返回 true 时新建引擎可在构造期**同步**补齐拼音目标，不存在异步空窗。
+ */
+export function isPinyinDictionaryReady(): boolean {
+  return cachedPinyin !== null;
+}
+
+/**
+ * 预加载拼音词典：成功返回 true，失败返回 false（**不抛出**）。
+ *
+ * 失败以返回值而非异常表达：core 层没有日志通道，留痕与降级由调用方决定；
+ * 而 `loadPinyin()` 已在失败时重置缓存 promise，故后续仍可重试。
+ */
+export async function preloadPinyinDictionary(): Promise<boolean> {
+  try {
+    await loadPinyin();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface SearchableTab {
@@ -123,22 +151,17 @@ function toSegments(target: string, result: Result | undefined): HighlightSegmen
 /**
  * 三目标模糊搜索：标题 / 网址 / 拼音，命中返回按相关度降序的原目标引用。
  *
- * 拼音词典是懒加载的：引擎构造时不等待词典，命中结果会在词典就绪后变化，
- * 调用方需靠引用变化或外部 tick 触发重算（见 useSearchController 的 pinyinTick）。
+ * 引擎**构造后不可变**：拼音目标只在构造期按 `isPinyinDictionaryReady()` 的结果
+ * 一次性补齐。词典尚未就绪时本引擎就是纯字面匹配引擎——调用方应在词典就绪后
+ * 重建引擎（构造是轻量的 fuzzysort prepare），而不是原地打补丁。
  */
 export class SearchEngine {
   private readonly targets: PreparedTarget[];
-  /** 懒加载占位：null 未触发、Promise 进行中或已完成。保证词典只下载一次。 */
-  private pinyinLoading: Promise<void> | null = null;
   private readonly pinyinEnabled: boolean;
 
   constructor(tabs: readonly SearchableTab[], options: SearchEngineOptions = {}) {
     const pinyinEnabled = options.pinyin ?? true;
     this.pinyinEnabled = pinyinEnabled;
-    // 构造期只做轻量 fuzzysort 准备。拼音目标的处理分两种口径：
-    //  - 词典已就绪（cachedPinyin 非空）：同步补齐，本引擎从第一帧起就能拼音匹配；
-    //    「每次标签事件重建引擎 → 拼音结果瞬间消失」正是由此消除。
-    //  - 尚未就绪：留 null 并异步补，避免首屏为等 1MB+ 词典而阻塞。
     this.targets = tabs.map((tab) => {
       const target: PreparedTarget = {
         tab,
@@ -147,52 +170,24 @@ export class SearchEngine {
         pinyinFirst: null,
         pinyinFull: null
       };
+      // 词典已就绪则同步补齐：本引擎从第一帧起就能拼音匹配，
+      // 「每次标签事件重建引擎 → 拼音结果瞬间消失」正是由此消除。
       if (pinyinEnabled && cachedPinyin) fillPinyin(target, cachedPinyin);
       return target;
     });
-    // 失败在此收敛为「拼音搜索暂不可用」：拼音只是增强匹配，标题/URL 匹配不受影响，
-    // 且 loadPinyin 已重置可重试，下一次重建引擎会自动再试。core 层没有日志通道，
-    // 故不留痕——但绝不能让这个 promise 变成 unhandled rejection。
-    if (pinyinEnabled && !cachedPinyin) void this.ensurePinyin().catch(() => undefined);
   }
 
   /**
    * 拼音目标是否已全部就绪（关闭拼音搜索时恒为 true —— 不存在待补的目标）。
    *
-   * 消费方需要它：拼音目标是异步补齐的，而补齐本身不改变任何 React 状态，
-   * 没有这个信号，UI 的搜索结果 memo 不会重算，拼音命中会一直不出现。
+   * 词典未就绪却开了拼音时返回 false：此时本引擎只做标题 / URL 匹配，
+   * 调用方可据此决定是否等词典就绪后重建。
    */
   get pinyinReady(): boolean {
     if (!this.pinyinEnabled) return true;
     return this.targets.every(
       (target) => target.pinyinFirst !== null && target.pinyinFull !== null
     );
-  }
-
-  /**
-   * 懒加载拼音词典并为全部目标补 prepare（首次搜索前最好已就绪）。
-   * 模块级 loadPinyin() 缓存了 import() 结果，因此：
-   *  - 多个引擎实例并发构造只触发一次词典下载；
-   *  - 词典就绪后仅为未填的目标做轻量 prepare（fuzzysort），已填则跳过。
-   * 关闭拼音搜索（pinyin=false）时构造期不会调用本方法，词典全程不下载。
-   */
-  async ensurePinyin(): Promise<void> {
-    if (!this.pinyinEnabled) return;
-    if (this.pinyinLoading) return this.pinyinLoading;
-    this.pinyinLoading = (async () => {
-      const { pinyin } = await loadPinyin();
-      for (const target of this.targets) {
-        if (target.pinyinFirst === null || target.pinyinFull === null) {
-          fillPinyin(target, pinyin);
-        }
-      }
-    })().catch((error: unknown) => {
-      // 与 loadPinyin 同理：失败后清空占位，否则本实例永远停在「加载中」，
-      // 拼音目标再也不会被补齐。
-      this.pinyinLoading = null;
-      throw error;
-    });
-    return this.pinyinLoading;
   }
 
   /** 空查询返回空结果。 */

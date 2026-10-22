@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { isModalOpen } from '@/ui/dialog/Dialog';
+import { useLatestRef } from '@/ui/hooks/useLatestRef';
 
 /**
  * 面板全局快捷键：`⌘/Ctrl + P` 命令面板、`⌘/Ctrl + J` 定位激活标签、`⌘/Ctrl + K` 搜索、
@@ -26,12 +27,7 @@ export interface GlobalHotkeyHandlers {
 }
 
 export function useGlobalHotkeys(handlers: GlobalHotkeyHandlers): void {
-  // 提交后更新而非渲染期赋值：并发渲染下渲染可能不提交，
-  // 渲染期写 ref 会把未提交的中间值泄漏给事件监听。
-  const handlersRef = useRef(handlers);
-  useEffect(() => {
-    handlersRef.current = handlers;
-  }, [handlers]);
+  const handlersRef = useLatestRef(handlers);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -79,5 +75,6 @@ export function useGlobalHotkeys(handlers: GlobalHotkeyHandlers): void {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+    // handlersRef 引用恒定（useLatestRef 内部是 useRef），列入依赖不会重挂监听。
+  }, [handlersRef]);
 }

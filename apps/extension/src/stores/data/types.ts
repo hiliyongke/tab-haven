@@ -17,6 +17,16 @@ export interface AddTabsToFolderResult {
   skipped: number;
 }
 
+/**
+ * 切片契约：每个切片显式声明自己提供 `DataState` 的哪些键。
+ *
+ * 组合根此前用 `as DataState` 收尾，而切片返回 `Partial<DataState>` —— 展开后的对象
+ * 缺任何方法都不违反类型，断言又允许「缺属性」通过（目标类型可赋值给源类型即合法）。
+ * 于是「忘了 spread 某个切片」「重构时漏改切片导出」这类错误编译期零告警，
+ * 运行时才抛 `xxx is not a function`。改为精确 `Pick` 后完备性由编译器兜住。
+ */
+export type DataSlice<K extends keyof DataState> = Pick<DataState, K>;
+
 /** 写入通知镜像所需的精简状态切片。 */
 export interface MirrorState {
   folders: FixedFolder[];
@@ -114,7 +124,8 @@ interface DataState {
   /** 加载全部数据并订阅变更。 */
   initialize: () => Promise<void>;
 
-  createFolder: (name: string) => Promise<FixedFolder>;
+  /** 新建文件夹；达到上限时返回 null（返回同形态的对象会让调用方误以为已创建）。 */
+  createFolder: (name: string) => Promise<FixedFolder | null>;
   renameFolder: (folderId: string, name: string) => Promise<void>;
   deleteFolder: (folderId: string) => Promise<void>;
   toggleFolderCollapsed: (folderId: string) => Promise<void>;

@@ -1,9 +1,9 @@
 import { browser } from 'wxt/browser';
-import { toGroupColor } from '@/core/group/groupColors';
 import type { Settings, SnapshotTab } from '@/core/schema/models';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
+import { tabGroups } from '@/platform/tabGroups';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
-import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
+import { buildSnapshot, collectSnapshotTabs, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { logDegraded } from '@/platform/diagnostics';
 
@@ -34,35 +34,21 @@ async function latestAutoSignature(): Promise<string | null> {
   return latest ? signatureOf(latest.tabs) : null;
 }
 
-/** 采集某窗口可恢复的标签（仅 http(s)，chrome:// 等内部页无法重建，收入只会成为死条目）。 */
+/** 采集某窗口可恢复的标签（口径见 `collectSnapshotTabs`，全仓唯一实现）。 */
 async function collectWindowTabs(windowId: number): Promise<SnapshotTab[]> {
   const [rawTabs, rawGroups] = await Promise.all([
     browser.tabs.query({ windowId }),
     // 与 windowCache 同口径：查询失败不得伪装成「该窗口没有组」——那样这份自动
     // 快照会静默丢掉全部分组信息，用户只会以为快照本来就没分组。
-    browser.tabGroups.query({ windowId }).catch((error) => {
+    tabGroups.query({ windowId }).catch((error) => {
       logDegraded('auto-snapshot', `窗口 ${windowId} 原生组查询失败，本次快照不含分组信息`, error);
       return [];
     })
   ]);
-  const groups = rawGroups.map(mapTabGroup);
-  const groupById = new Map(groups.map((group) => [group.id, group]));
-  const out: SnapshotTab[] = [];
-  for (const raw of rawTabs) {
-    const tab = mapTab(raw);
-    if (!tab.url || !/^https?:\/\//i.test(tab.url)) continue;
-    const group = groupById.get(tab.groupId);
-    out.push({
-      url: tab.url,
-      title: tab.title || '',
-      favIconUrl: tab.favIconUrl,
-      pinned: tab.pinned,
-      muted: tab.muted ?? false,
-      groupTitle: group?.title || undefined,
-      groupColor: toGroupColor(group?.color)
-    });
-  }
-  return out;
+  return collectSnapshotTabs(
+    rawTabs.map((raw) => mapTab(raw)),
+    rawGroups.map(mapTabGroup)
+  );
 }
 
 /**

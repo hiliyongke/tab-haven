@@ -54,6 +54,16 @@ export const SESSION_RMW_LOCK = 'tabs.session-rmw';
  *  整表写本页内存栈会互相覆盖（已撤销批次复活 / 新批次从磁盘消失）。 */
 export const UNDO_PERSIST_LOCK = 'tabs.undo-persist';
 /**
+ * 撤销执行互斥锁：两个侧边栏窗口（各自独立上下文）可同时撤销同一批次，
+ * 同一批标签被恢复两次。执行体经本锁串行化，配合锁内按磁盘栈复核批次仍存在
+ * （他页可能已撤销），双重恢复由此根治。
+ *
+ * 锁名与其它锁同处一层：**存储键只在 platform 层声明**（唯一触碰 chrome.* 的层），
+ * `check:privacy` 的「存储键 ↔ PRIVACY.md 第 3 节」比对也只扫 platform，
+ * 声明散落到 stores 会让该键游离在文档约束之外。
+ */
+export const UNDO_EXEC_LOCK = 'tabs.undo-exec';
+/**
  * 自动休眠台账：三个写入方（SW 闹钟写入新批次、SW 扫描淘汰失效批次、
  * 面板「全部唤醒」摘除该轮）都是整表 read-modify-write，锁外并发会 last-writer-wins：
  * 刚清除的批次被写回（「全部唤醒」点了没反应）/ 刚写入的批次被覆盖丢失

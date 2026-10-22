@@ -3,7 +3,7 @@ import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types'
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
-import { tabGroups } from '@/platform/tabGroups';
+import { isMissingGroupErrorMessage, tabGroups } from '@/platform/tabGroups';
 
 /**
  * tabs 平台适配层：chrome API 映射与查询。
@@ -211,7 +211,7 @@ export async function setPinned(tabId: number, pinned: boolean): Promise<boolean
 /** 折叠 / 展开原生标签组。组在点击与写入之间被解散属预期内竞态，静默留痕即可。 */
 export async function setGroupCollapsed(groupId: number, collapsed: boolean): Promise<void> {
   try {
-    await browser.tabGroups.update(groupId, { collapsed });
+    await tabGroups.update(groupId, { collapsed });
   } catch (error) {
     logDegraded('tabs', '切换分组折叠失败', error, { quiet: isMissingGroupError(error) });
   }
@@ -440,10 +440,13 @@ export async function waitForTabGroupAssignment(
  * 组在查询与写入之间被解散属于**预期内竞态**（用户手动解散、成员被移走、
  * 并发建组导致空组被浏览器回收），不是故障。这类失败按 quiet 记录，
  * 不写进扩展错误页（Chrome 会收集扩展上下文的 warning/error 级 console 输出）。
+ *
+ * 已知边界：判据是**英文报错文案**，非英语运行环境下可能不命中。因此它只用于
+ * 决定「要不要 quiet 记录」这一层降噪，绝不用于判断组是否真的消失——后者的
+ * 权威判定是 `groupExists` 的三态（查询失败一律报 `failed`，不会塌缩成
+ * 「组不存在」）。判定的唯一实现放在 `platform/tabGroups`，避免多处各写一份正则。
  */
-function isMissingGroupError(error: unknown): boolean {
-  return error instanceof Error && /no group with id/i.test(error.message);
-}
+const isMissingGroupError = isMissingGroupErrorMessage;
 
 /** 设置原生组的标题与颜色。组可能已解散，失败不影响主流程。 */
 export async function updateGroupMeta(
@@ -464,7 +467,7 @@ export async function updateGroupMeta(
 /** 重命名原生组。 */
 export async function renameGroup(groupId: number, title: string): Promise<void> {
   try {
-    await browser.tabGroups.update(groupId, { title });
+    await tabGroups.update(groupId, { title });
   } catch (error) {
     logDegraded('tabs', '重命名分组失败', error, { quiet: isMissingGroupError(error) });
     // 标签组可能已解散
@@ -481,13 +484,23 @@ export async function recolorGroup(groupId: number, color: string): Promise<void
   }
 }
 
-/** 原生组是否仍存在（用于区分「已解散」与「解散失败」，以及写入前的目标校验）。 */
-export async function groupExists(groupId: number): Promise<boolean> {
+/**
+ * 原生组是否仍存在（用于区分「已解散」与「解散失败」，以及写入前的目标校验）。
+ *
+ * 返回三态而非布尔：查询本身可能因瞬时故障（SW 唤醒中 / IPC 超时 / API 不可用）
+ * 抛错，把它塌缩成 `false` 会让调用方判成「组已不存在」并据此清理记账 ——
+ * 而组其实还在、成员也没被移出，于是成为永久孤儿组（关闭自动分组开关时
+ * 永不再解散）。与 `removeGroup` 的三态返回同口径。
+ */
+export async function groupExists(groupId: number): Promise<'exists' | 'missing' | 'failed'> {
   try {
-    await browser.tabGroups.get(groupId);
-    return true;
-  } catch {
-    return false;
+    await tabGroups.get(groupId);
+    return 'exists';
+  } catch (error) {
+    // 只有确认是「组不存在」才报 missing；其余一律 failed 并留痕。
+    if (isMissingGroupErrorMessage(error)) return 'missing';
+    logDegraded('tabs', `查询分组 ${groupId} 是否存在失败`, error);
+    return 'failed';
   }
 }
 
@@ -510,25 +523,26 @@ export async function removeGroup(groupId: number): Promise<'removed' | 'missing
     return 'failed';
   }
 
+  const state = await groupExists(groupId);
+  // 查询失败绝不能当「已不存在」处理：那会让调用方清掉记账而留下真组（孤儿组）。
+  if (state === 'failed') return 'failed';
+  // 组已不存在：视为目标已达成，调用方应清理记录而非重试。
+  if (state === 'missing') return 'missing';
+
   try {
-    if (await groupExists(groupId)) {
-      const tabIds = members.map((tab) => tab.id).filter((id): id is number => id !== undefined);
-      if (tabIds.length > 0) await browser.tabs.ungroup(tabIds as [number, ...number[]]);
-      return 'removed';
-    }
+    const tabIds = members.map((tab) => tab.id).filter((id): id is number => id !== undefined);
+    if (tabIds.length > 0) await browser.tabs.ungroup(tabIds as [number, ...number[]]);
+    return 'removed';
   } catch (error) {
     logDegraded('tabs', `解散分组 ${groupId} 失败`, error);
     return 'failed';
   }
-
-  // 组已不存在：视为目标已达成，调用方应清理记录而非重试。
-  return 'missing';
 }
 
 /** 移动原生组到指定索引（组排序，P1⑤）。返回是否成功（组可能已解散）。 */
 export async function moveGroup(groupId: number, index: number): Promise<boolean> {
   try {
-    await browser.tabGroups.move(groupId, { index });
+    await tabGroups.move(groupId, { index });
     return true;
   } catch (error) {
     logDegraded('tabs', '移动分组失败', error);

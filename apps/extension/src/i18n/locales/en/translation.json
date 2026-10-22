@@ -385,10 +385,8 @@
   "i18n_03eaqiz": "Next",
   "i18n_064wuea": "Go to step {{step}}",
   "i18n_003s34a": "Restore",
-  "i18n_003pufb": "Auto",
   "i18n_003p590": "Archive",
   "i18n_03fk8rq": "Workspace",
-  "i18n_003qdpi": "Manual",
   "i18n_03emxfc": "Rename",
   "i18n_08igvbv": "View tabs in this snapshot",
   "i18n_002rflt": "Delete",
@@ -799,5 +797,6 @@
   "i18n_1u3mp03": "Nothing to undo",
   "i18n_17qq1ml": "This action no longer exists. It may have already been undone",
   "i18n_0gwmb9c": "Nothing to redo",
-  "i18n_0md0xsk": "Snapshot name can't be empty"
+  "i18n_0md0xsk": "Snapshot name can't be empty",
+  "i18n_02eflt2": "This workspace no longer exists — refresh and try again"
 }

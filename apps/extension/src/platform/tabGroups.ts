@@ -21,11 +21,31 @@ export interface TabGroupMutableProps {
   collapsed?: boolean;
 }
 
+/**
+ * 「组已不存在」的报错文案判定（全仓唯一实现）。
+ *
+ * Chrome 抛出的是 `No group with id: N`；同时兼容 `group not found` /
+ * `no such group` 两种同质文案，避免某处漏判。
+ *
+ * 注意：这是**文案匹配**，用于决定日志是否 quiet（降噪），不承担
+ * 「组是否真的消失」的判定 —— 后者必须走 `groupExists` 的三态返回。
+ * 收口在本模块：此前同类正则散落在各调用点，改文案时必然漏改。
+ */
+export function isMissingGroupErrorMessage(error: unknown): boolean {
+  return (
+    error instanceof Error && /no group with id|group not found|no such group/i.test(error.message)
+  );
+}
+
 export const tabGroups = browser.tabGroups as unknown as {
   create: (options: object) => Promise<{ id: number }>;
   update: (groupId: number, updateProperties: TabGroupMutableProps) => Promise<unknown>;
-  /** 用于判定组是否仍存在（区分「已解散」与「解散失败」），见 removeGroup。 */
-  get: (groupId: number) => Promise<unknown>;
+  /**
+   * 用于判定组是否仍存在（区分「已解散」与「解散失败」），见 removeGroup。
+   * 原生返回类型已足够（含 title），不降级为 unknown —— 否则调用方要再断言一次
+   * 才能读 title，等于把桥接省下的断言又还了回去。
+   */
+  get: (groupId: number) => Promise<Browser.tabGroups.TabGroup>;
   move: (groupId: number, options: { index: number }) => Promise<unknown>;
   /** query 的原生类型已足够（含 title/color/collapsed），无需另立形状。 */
   query: (queryInfo: { windowId?: number }) => Promise<Browser.tabGroups.TabGroup[]>;

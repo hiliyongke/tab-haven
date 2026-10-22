@@ -47,9 +47,34 @@ async function recordRestoreForUndo(
     const created = after.filter((tab) => !beforeIds.has(tab.id));
     if (created.length === 0) return;
     await useUndoStore.getState().recordClosedBatch(created, 'restore');
-  } catch {
-    // 记录失败不得影响恢复结果本身（恢复已成功，用户只是少了一个反悔入口）。
+  } catch (error) {
+    // 记录失败不得影响恢复结果本身（恢复已成功，用户只是少了一个反悔入口）——
+    // 但**不留痕**是不行的：同文件 200 行外的归档路径对完全同类的失败做了
+    // logFailure，本处若静默，用户点「撤销」看到「没有可撤销的操作」时，
+    // 诊断导出里查不到任何原因。
+    logFailure('snapshotStore', '快照恢复的撤销登记失败，本次恢复无法一键撤销', error);
   }
+}
+
+/**
+ * 捕获恢复前的窗口标签 id 集合（差分基线）。
+ *
+ * 抽出来的理由：restore / restoreSelected 此前把这段（含「拿不到就不记账」的
+ * 取舍注释）逐字复制两份。该逻辑失效的后果是「撤销会关掉用户原有标签」——
+ * 高危语义有两份拷贝，意味着将来只修其中一份时，另一份保留危险版本。
+ */
+async function captureWindowTabIds(
+  windowId: number | undefined
+): Promise<ReadonlySet<number> | undefined> {
+  // 拿不到恢复前现场就**不记账**：那等价于「窗口里所有标签都是新建的」，
+  // 之后的撤销会把用户原有标签一并关掉 —— 比「这次恢复不可撤销」糟得多。
+  if (windowId === undefined) return undefined;
+  return queryWindowTabs(windowId)
+    .then((tabs) => new Set(tabs.map((tab) => tab.id)))
+    .catch((error: unknown) => {
+      logDegraded('snapshotStore', `窗口 ${windowId} 恢复前现场读取失败，本次不登记撤销`, error);
+      return undefined;
+    });
 }
 
 /**
@@ -107,14 +132,20 @@ interface SnapshotState {
   }>;
   deleteSnapshot: (id: string) => Promise<void>;
   renameSnapshot: (id: string, name: string) => Promise<void>;
-  /** 恢复指定快照，返回新建标签数与降级标志；可指定目标窗口（缺省取聚焦窗口）。 */
+  /**
+   * 恢复指定快照，返回新建标签数与降级标志；可指定目标窗口（缺省取聚焦窗口）。
+   *
+   * **快照不存在时抛错**，不返回 `{ count: 0 }`：返回成功形状会让调用方提示
+   * 「已恢复 0 个标签」，把「没执行」说成「执行了但结果为空」。所有调用点都在
+   * try/catch 或 `.catch` 里，抛出即走既有的失败出口（提示 + 诊断留痕）。
+   */
   restore: (id: string, windowId?: number) => Promise<RestoreSnapshotResult>;
   /** 把当前窗口最新现场写回既有空间快照（原地更新，空间切换用）。返回是否写入成功。 */
   updateSpace: (id: string) => Promise<boolean>;
   /**
    * 选择性恢复：只恢复勾选的条目，返回新建标签数与降级标志。
-   * 勾选集为空返回 0；其余语义与 restore 一致（缺失才新建、分组还原、
-   * 结束后按差分登记可撤销批次）。
+   * 勾选集为空返回 0（调用方前置条件，非失败）；快照不存在与 restore 同口径抛错。
+   * 其余语义与 restore 一致（缺失才新建、分组还原、结束后按差分登记可撤销批次）。
    */
   restoreSelected: (
     id: string,
@@ -351,20 +382,20 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
    */
   restore: async (id, windowId) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
-    if (!snap) return { count: 0, degraded: false };
+    if (!snap) {
+      // 找不到快照只有两种成因（已被另一页面删除 / 列表未加载），无论哪种都不能
+      // 表达成「恢复成功、新建 0 个」：调用方会据此提示「已恢复 0 个标签」，
+      // 用户无从判断是快照本身为空还是压根没执行 —— 成功形状承载失败是最难查的
+      // 一种谎报。抛出后由调用方既有的失败出口接管（用户提示 + 诊断留痕）。
+      logDegraded('snapshotStore', `快照 ${id} 不存在，恢复未执行`);
+      throw new Error(`snapshot-not-found:${id}`);
+    }
     // 差分必须落在恢复的**目标窗口**上：restoreSnapshot 在 windowId 缺省时恢复到
     // 最近聚焦窗口，而侧边栏所在窗口未必是它 —— 按当前窗口取「恢复前现场」，
     // 跨窗恢复时会一个新建项都匹配不到。resolveRestoreWindowId 与 restoreSnapshot
     // 的窗口解析口径一致（指定优先，缺省回退最近聚焦）。
     const targetWindowId = await resolveRestoreWindowId(windowId);
-    // 拿不到恢复前现场就**不记账**：那等价于「窗口里所有标签都是新建的」，
-    // 之后的撤销会把用户原有标签一并关掉 —— 比「这次恢复不可撤销」糟得多。
-    const beforeIds =
-      targetWindowId === undefined
-        ? undefined
-        : await queryWindowTabs(targetWindowId)
-            .then((tabs) => new Set(tabs.map((tab) => tab.id)))
-            .catch(() => undefined);
+    const beforeIds = await captureWindowTabIds(targetWindowId);
     const result = await restoreSnapshot(snap, windowId);
     if (result.count > 0 && beforeIds && targetWindowId !== undefined) {
       await recordRestoreForUndo(beforeIds, targetWindowId);
@@ -384,16 +415,17 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   restoreSelected: async (id, selectedTabs) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
-    if (!snap || selectedTabs.length === 0) return { count: 0, degraded: false };
+    if (!snap) {
+      logDegraded('snapshotStore', `快照 ${id} 不存在，选择性恢复未执行`);
+      throw new Error(`snapshot-not-found:${id}`);
+    }
+    // 空勾选不是失败：调用方（勾选面板）本就不会在空集时发起，此处不抛错、
+    // 也不谎报执行过 —— 返回 0 即「本次没有新建任何标签」的真实结果。
+    if (selectedTabs.length === 0) return { count: 0, degraded: false };
     // 撤销账本与整份恢复完全同口径：勾选恢复同样是一次可新建上百标签的破坏性
     // 动作，既不走影响面确认也不登记撤销会与 restore 不对称，是安全网缺口。
     const targetWindowId = await resolveRestoreWindowId(undefined);
-    const beforeIds =
-      targetWindowId === undefined
-        ? undefined
-        : await queryWindowTabs(targetWindowId)
-            .then((tabs) => new Set(tabs.map((tab) => tab.id)))
-            .catch(() => undefined);
+    const beforeIds = await captureWindowTabIds(targetWindowId);
     // 部分快照：勾选条目 + 同步重算 tabCount（满足 schema refine 约束），
     // 之后完全复用整份恢复管线（豁免/并发创建/分组还原语义不变）。
     const result = await restoreSnapshot(buildPartialSnapshot(snap, selectedTabs));

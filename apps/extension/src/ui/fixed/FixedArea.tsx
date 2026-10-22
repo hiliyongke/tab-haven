@@ -37,7 +37,6 @@ export function FixedArea() {
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   const settings = useDataStore((state) => state.settings);
   const notify = useUndoStore((state) => state.notify);
-  const notifyError = useUndoStore((state) => state.notifyError);
   const [creating, setCreating] = useState(false);
   const [dropRequest, setDropRequest] = useState<CreateFolderRequest | null>(null);
   /** 概念说明的手动开关（与首启自动展示的 conceptsSeen 相互独立）。 */
@@ -94,11 +93,16 @@ export function FixedArea() {
     const targetTabs = useTabStore.getState().tabs.filter((tab) => request.tabIds.includes(tab.id));
     void (async () => {
       const folder = await createFolder(name);
+      // 超限时 createFolder 返回 null：不能拿一个从未落盘的 id 继续加条目，
+      // 否则条目写进了一个不存在的文件夹（界面上表现为「拖过去没反应」且无提示）。
+      if (!folder) return;
       await addTabsToFolder(targetTabs, folder.id);
       // 新建的文件夹可能落在固定空间的滚动区之外（固定区上限 34vh），
       // 不给反馈的话用户会以为「拖过去没反应」。
       notify(t('已新建文件夹'));
-    })().catch(() => notifyError(t('操作失败，请稍后重试')));
+    })().catch((error: unknown) =>
+      useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
+    );
   };
 
   return (
@@ -186,8 +190,12 @@ export function FixedArea() {
           onConfirm={(name) => {
             setCreating(false);
             void createFolder(name).then(
-              () => notify(t('已新建文件夹')),
-              () => notifyError(t('操作失败，请稍后重试'))
+              (folder) =>
+                // null = 已达上限且已给出可操作的提示（删掉不再需要的文件夹），
+                // 不能再补一句「已新建文件夹」谎报成功。
+                folder ? notify(t('已新建文件夹')) : undefined,
+              (error: unknown) =>
+                useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
             );
           }}
           onCancel={() => setCreating(false)}

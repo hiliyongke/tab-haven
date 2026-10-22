@@ -41,5 +41,8 @@ export const useDataStore = create<DataState>()((set, get) => {
     ...createPinsSlice(ctx),
     ...createSettingsSlice(ctx),
     ...createTransferSlice(ctx)
-  } as DataState;
+  };
+  // 刻意不加 `as DataState`：各切片以精确 `DataSlice<...>` 声明自己提供哪些键，
+  // 展开后的完备性由编译器兜住；加断言会让「漏挂某个切片」退化为运行时
+  // `xxx is not a function`。
 });

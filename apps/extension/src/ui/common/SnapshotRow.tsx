@@ -6,25 +6,8 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 import { formatTime } from '@/ui/common/format';
+import { snapshotOriginBadge } from '@/ui/common/snapshotOrigin';
 import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
-
-function originBadge(
-  origin: string,
-  t: (key: string) => string
-): { label: string; className: string } {
-  switch (origin) {
-    case 'auto':
-      // gray-600 而非 gray-500：仓库自测 gray-500 在 gray-100 底上仅 3.92:1（不达 AA），
-      // gray-600 达 6.8:1（见 main.css .count-pill 注释）。
-      return { label: t('自动'), className: 'bg-gray-100 text-gray-600' };
-    case 'archive':
-      return { label: t('归档'), className: 'bg-warn-100 text-warn-700' };
-    case 'space':
-      return { label: t('工作区'), className: 'bg-accent-100 text-accent-700' };
-    default:
-      return { label: t('手动'), className: 'bg-accent-50 text-accent-600' };
-  }
-}
 
 interface SnapshotRowProps {
   snap: Snapshot;
@@ -127,14 +110,15 @@ export function SnapshotRow({
               本行 span 的 min-content 仍会把内容撑到右侧 shrink-0 的操作组下方。 */}
           {/* 含汉字的正文说明走 11px（text-3xs）：10px 下汉字笔画糊 */}
           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-3xs text-gray-500">
-            <span
-              className={
-                'chip chip--cjk shrink-0 rounded px-1 py-px ' +
-                originBadge(snap.origin, t).className
-              }
-            >
-              {originBadge(snap.origin, t).label}
-            </span>
+            {/* 同一渲染内只取一次：originBadge 每次调用都会新建对象并跑一次查表。 */}
+            {(() => {
+              const badge = snapshotOriginBadge(snap.origin);
+              return (
+                <span className={'chip chip--cjk shrink-0 rounded px-1 py-px ' + badge.className}>
+                  {t(badge.labelKey)}
+                </span>
+              );
+            })()}
             <span className="min-w-0 truncate">
               {snap.tabCount} {t('个标签')} · {formatTime(snap.createdAt)}
             </span>

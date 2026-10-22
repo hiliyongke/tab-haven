@@ -10,12 +10,14 @@ import {
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { logDegraded } from '@/platform/diagnostics';
-import type { DataContext, DataState } from './types';
+import type { DataContext, DataSlice } from './types';
 
 /** 磁贴切片：常驻磁贴的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
 import { PINS_LIMIT } from '@/core/schema/models';
 
-export function createPinsSlice(ctx: DataContext): Partial<DataState> {
+export function createPinsSlice(
+  ctx: DataContext
+): DataSlice<'addPin' | 'removePin' | 'reorderPins' | 'openPin'> {
   return {
     addPin: async (tab) => {
       // 三条「无法满足」的分支都必须**返回 false 并留痕**：调用方据此决定提示，

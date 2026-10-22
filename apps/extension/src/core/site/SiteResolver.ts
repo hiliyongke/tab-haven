@@ -1,5 +1,5 @@
 import { getDomain } from 'tldts';
-import { classifyHost } from '@/core/site/HostRules';
+import { classifyHost, hostedSiteValue } from '@/core/site/HostRules';
 import { domainToUnicode } from '@/core/url/punycode';
 import { normalizeHostname } from '@/core/url/hostname';
 import type { SiteKey } from '@/core/site/SiteKey';
@@ -68,8 +68,7 @@ export class SiteResolver {
     }
 
     if (classification.kind === 'public' && classification.hostedSuffix) {
-      const labels = hostname.split('.');
-      const value = labels.slice(-3).join('.');
+      const value = hostedSiteValue(hostname, classification.hostedSuffix);
       return {
         value,
         label: domainToUnicode(value),

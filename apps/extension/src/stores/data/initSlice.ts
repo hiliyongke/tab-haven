@@ -16,7 +16,7 @@ import {
   PersistentPinSchema,
   SettingsSchema
 } from '@/core/schema/models';
-import type { DataContext, DataState } from './types';
+import type { DataContext, DataSlice } from './types';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 
 /** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
@@ -36,18 +36,20 @@ function pickExplicitKeys<T extends object>(raw: unknown, parsed: T): Partial<T>
   // 「T 的字段」之间的关联一并抹掉，此后字段名写错也检查不出来。
   // 外部键名无法被类型证明属于 T，故只把**键名**这一处放宽。
   const given = new Set(Object.keys(raw));
-  const out: Partial<Record<keyof T, unknown>> = {};
+  // 直接以 `Partial<T>` 为目标类型：收尾再 `as Partial<T>` 会把上面辛苦保住的
+  // 「键与 T 字段的关联」一次性抹掉，此后值类型写错也检查不出来。
+  const out: Partial<T> = {};
   for (const key of Object.keys(parsed) as Array<keyof T>) {
     if (given.has(String(key))) out[key] = parsed[key];
   }
-  return out as Partial<T>;
+  return out;
 }
 
 /**
  * 初始化切片：加载全部分区、按 seeded 标志从同步通道镜像恢复（仅首次启动），
  * 订阅设置与分区 watcher。失败时回滚守卫以允许重试。
  */
-export function createInitSlice(ctx: DataContext): Partial<DataState> {
+export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
   return {
     initialize: async () => {
       if (initialized) return;

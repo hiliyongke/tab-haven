@@ -77,6 +77,7 @@ function stubStores(options: {
   tryUpdateSettings: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
   notifyError: ReturnType<typeof vi.fn>;
+  notifyFailure: ReturnType<typeof vi.fn>;
 } {
   const created = { ...createFolder('新建文件夹'), id: 'created-folder' };
   const spies = {
@@ -95,7 +96,8 @@ function stubStores(options: {
     undoBatch: vi.fn(async () => undefined),
     tryUpdateSettings: vi.fn(async () => true),
     notify: vi.fn(),
-    notifyError: vi.fn()
+    notifyError: vi.fn(),
+    notifyFailure: vi.fn()
   };
 
   useDataStore.setState({
@@ -121,6 +123,7 @@ function stubStores(options: {
   useUndoStore.setState({
     notify: spies.notify,
     notifyError: spies.notifyError,
+    notifyFailure: spies.notifyFailure,
     closeWithUndo: spies.closeWithUndo,
     undoBatch: spies.undoBatch,
     batches: [],
@@ -204,8 +207,13 @@ describe('FixedArea 区域骨架', () => {
     fireEvent.change(input, { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: translate('确定') }));
 
+    // 异常失败走 notifyFailure：错误对象必须进诊断，不能只弹一句通用文案。
     await waitFor(() =>
-      expect(spies.notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+      expect(spies.notifyFailure).toHaveBeenCalledWith(
+        'fixed',
+        translate('操作失败，请稍后重试'),
+        expect.any(Error)
+      )
     );
     expect(spies.notify).not.toHaveBeenCalledWith(translate('已新建文件夹'));
   });
@@ -400,8 +408,13 @@ describe('FolderRow 弹窗与结果反馈', () => {
     fireEvent.click(screen.getByRole('button', { name: translate('删除文件夹（标签保留）') }));
     fireEvent.click(await screen.findByRole('button', { name: translate('确认删除') }));
 
+    // Promise 被拒 → 走 notifyFailure（提示 + 诊断留痕），不是只提示的 notifyError。
     await waitFor(() =>
-      expect(spies.notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+      expect(spies.notifyFailure).toHaveBeenCalledWith(
+        'fixed',
+        translate('操作失败，请稍后重试'),
+        expect.any(Error)
+      )
     );
     expect(spies.notify).not.toHaveBeenCalledWith(translate('已删除文件夹'));
   });

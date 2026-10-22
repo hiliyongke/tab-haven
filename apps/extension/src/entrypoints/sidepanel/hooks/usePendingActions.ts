@@ -6,6 +6,7 @@ import {
   type PendingAction
 } from '@/platform/messages';
 import { useDataStore } from '@/stores/dataStore';
+import { useLatestRef } from '@/ui/hooks/useLatestRef';
 
 /**
  * 挂起动作与 runtime 消息的消费侧。
@@ -41,35 +42,33 @@ export function usePendingActions(handlers: PendingActionHandlers): void {
    */
   const handledAtsRef = useRef<Set<number>>(new Set());
 
-  /**
-   * 回调的最新值。提交后更新而非渲染期赋值：并发渲染下渲染可能不提交，
-   * 渲染期写 ref 会把未提交的中间值泄漏给事件监听。
-   */
-  const handlersRef = useRef(handlers);
-  useEffect(() => {
-    handlersRef.current = handlers;
-  }, [handlers]);
+  /** 回调的最新值（提交后更新，见 useLatestRef）。 */
+  const handlersRef = useLatestRef(handlers);
 
-  const handlePendingAction = useCallback((action: PendingAction) => {
-    if (action.at !== undefined) {
-      const seen = handledAtsRef.current;
-      if (seen.has(action.at)) return;
-      seen.add(action.at);
-      // 防膨胀：仅保留最近一小批。
-      if (seen.size > 32) {
-        const oldest = seen.values().next().value;
-        if (oldest !== undefined) seen.delete(oldest);
+  const handlePendingAction = useCallback(
+    (action: PendingAction) => {
+      if (action.at !== undefined) {
+        const seen = handledAtsRef.current;
+        if (seen.has(action.at)) return;
+        seen.add(action.at);
+        // 防膨胀：仅保留最近一小批。
+        if (seen.size > 32) {
+          const oldest = seen.values().next().value;
+          if (oldest !== undefined) seen.delete(oldest);
+        }
       }
-    }
-    const current = handlersRef.current;
-    if (action.type === 'search-domain' && typeof action.query === 'string') {
-      current.searchDomain(action.query);
-    } else if (action.type === 'locate-active') {
-      current.locateActive();
-    } else if (action.type === 'focus-search') {
-      current.focusSearch();
-    }
-  }, []);
+      const current = handlersRef.current;
+      if (action.type === 'search-domain' && typeof action.query === 'string') {
+        current.searchDomain(action.query);
+      } else if (action.type === 'locate-active') {
+        current.locateActive();
+      } else if (action.type === 'focus-search') {
+        current.focusSearch();
+      }
+      // handlersRef 引用恒定（useLatestRef 内部是 useRef），列入依赖不会重建回调。
+    },
+    [handlersRef]
+  );
 
   // 面板未开时挂起的动作：打开面板后消费。
   useEffect(() => watchPendingActions(handlePendingAction), [handlePendingAction]);
@@ -105,5 +104,5 @@ export function usePendingActions(handlers: PendingActionHandlers): void {
       }
     };
     return onRuntimeMessage(onMessage);
-  }, [handlePendingAction]);
+  }, [handlePendingAction, handlersRef]);
 }

@@ -1,8 +1,8 @@
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
-import { aggregateBySite, subLabel } from '@/core/site/SiteGrouping';
-import type { SiteKey } from '@/core/site/SiteKey';
+import { aggregateBySite } from '@/core/site/SiteGrouping';
+import { DEFAULT_AGGREGATION_THRESHOLD } from '@/core/schema/models';
+import { siteBucketId, siteLabelOf, siteValueOf, type SiteKey } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
-import { domainToUnicode } from '@/core/url/punycode';
 
 /**
  * 临时区视图模型：把标签镜像派生为侧边栏可渲染的 section 列表。
@@ -11,6 +11,35 @@ import { domainToUnicode } from '@/core/url/punycode';
  *   固定标签区（置顶）→ 原生标签组 → 网站聚合组 → 未分组。
  * 固定空间的排除（文件夹挂起/绑定）由 excludedTabIds 传入（数据层接入后填充）。
  */
+
+/**
+ * 语言分区 siteKey 的前缀（构造与反解的唯一口径）。
+ *
+ * 此前 `Sections` 用模板串拼出 `lang-${code}`，`AutoGrouping` 再靠「前缀 + 不含点」
+ * 把字符串**反解**回「这是语言分区」——两处无共享常量，改前缀或新增分区类型
+ * 必然漏改。构造与解析都收口到本模块后，判定只剩 `parseLangSiteKey(...) !== undefined`。
+ */
+export const LANG_SITE_KEY_PREFIX = 'lang-';
+
+/** 语言分区的成组下限：单标签语言组没有组织意义（与站点阈值语义不同，故独立成常量）。 */
+export const MIN_LANGUAGE_GROUP_SIZE = 2;
+
+/** 构造语言分区的 siteKey。 */
+export function makeLangSiteKey(code: string): string {
+  return `${LANG_SITE_KEY_PREFIX}${code}`;
+}
+
+/**
+ * 反解语言分区 siteKey；不是语言分区时返回 undefined。
+ *
+ * 语言 code 是 BCP-47（不含点），真实站点的 siteKey 是注册域字符串（必含点）——
+ * 注册域以 `lang-` 开头的站点（如 lang-8.com）据此被排除，两个集合不相交。
+ */
+export function parseLangSiteKey(siteKey: string): string | undefined {
+  if (!siteKey.startsWith(LANG_SITE_KEY_PREFIX)) return undefined;
+  const code = siteKey.slice(LANG_SITE_KEY_PREFIX.length);
+  return code.includes('.') ? undefined : code;
+}
 
 export type TemporarySection =
   | { kind: 'pinned'; key: string; title: string; tabs: TabRecord[] }
@@ -156,11 +185,6 @@ interface SiteMergeCandidate {
   memberTabs: TabRecord[];
 }
 
-/** 站点桶键：与 aggregateBySite 的分桶键完全同口径（value + 子域）。 */
-function siteBucketId(site: SiteKey): string {
-  return `${site.value}\u0000${site.subdomain}`;
-}
-
 /**
  * 站点分区与归并候选是否同一站点。
  *
@@ -226,13 +250,10 @@ function collectSiteMergeCandidates(
       }
     }
     if (!sameSite || !first) continue;
-    // 组标题与自动建组时的标题同口径（aggregateBySite 的 groupKey.label）：
-    // 子域非空用「子域.注册域」，子域为空（本地/IP）沿用解析器原始 value（含端口）。
+    // 组标题与自动建组时的标题同口径（aggregateBySite 的 groupKey.label）。
     // 一律用 subLabel（丢端口）时，localhost:3000 之类自动组标题含端口 → 永不匹配，
     // 该站点的碎片化归并对本地/IP 站点完全失效。
-    const groupValue =
-      first.subdomain === '' ? first.value : subLabel(first.subdomain, first.registrableDomain);
-    if (group.title !== domainToUnicode(groupValue)) continue;
+    if (group.title !== siteLabelOf(first)) continue;
     if (!eligibleSiteKeys.has(siteBucketId(first))) continue;
     candidates.push({
       groupId: group.id,
@@ -278,7 +299,7 @@ function buildSitePlan({
   candidates: readonly SiteMergeCandidate[];
   sortCmp: (a: TabRecord | undefined, b: TabRecord | undefined) => number;
 }): SitePlan {
-  const effectiveThreshold = threshold ?? 2;
+  const effectiveThreshold = threshold ?? DEFAULT_AGGREGATION_THRESHOLD;
   const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold });
   const absorbedGroupIds = new Set<number>();
   for (const candidate of candidates) {
@@ -310,13 +331,10 @@ function buildSitePlan({
       if (takenIds.has(singles[i]!.id)) singles.splice(i, 1);
     }
     // 分区 key 与 aggregateBySite 同口径：子域非空用「子域.注册域」，否则沿用解析器原始键。
-    const value =
-      candidate.subdomain === ''
-        ? candidate.key.value
-        : subLabel(candidate.subdomain, candidate.registrableDomain);
+    // 标题走 siteLabelOf（全仓唯一口径），不再在此处重写一遍组合规则。
     const groupKey: SiteKey = {
-      value,
-      label: domainToUnicode(value),
+      value: siteValueOf(candidate.key),
+      label: siteLabelOf(candidate.key),
       registrableDomain: candidate.registrableDomain,
       subdomain: candidate.subdomain
     };
@@ -490,12 +508,13 @@ export function deriveSections({
     };
     for (const tab of eligible) pushLang(tab.language || 'unknown', tab);
     for (const code of [...byLang.keys()].sort()) {
+      const siteKey = makeLangSiteKey(code);
       sections.push({
         kind: 'site',
-        key: `lang-${code}`,
+        key: siteKey,
         title: languageLabel(code, t),
         tabs: byLang.get(code) ?? [],
-        siteKey: `lang-${code}`
+        siteKey
       });
     }
     return sections;

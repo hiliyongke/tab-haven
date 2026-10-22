@@ -92,12 +92,21 @@ export class KeeperPolicy {
 
   static readonly default = new KeeperPolicy();
 
-  select(group: DuplicateGroup): { keeper: TabRecord; removable: TabRecord[] } {
-    // 重复组长度 ≥ 2，组内必有元素，故 rankForKeep 必返回 keeper。
+  /**
+   * 选出保留者与可清理者。
+   *
+   * `keeper` 刻意声明为可空：重复组长度为 0 时（上游 `duplicates()` 的
+   * `length >= 2` 约束一旦放宽即可能出现）没有任何标签可留。此前用
+   * `?? group.tabs[0]!` 兜底，等于用断言把「永不发生」的假设压进类型 ——
+   * 返回类型宣称 `TabRecord` 而运行时是 `undefined`，下游 `keeper.id` 当场崩。
+   * 可空类型逼调用方显式处理，空组返回空结果而非假 keeper。
+   */
+  select(group: DuplicateGroup): { keeper: TabRecord | undefined; removable: TabRecord[] } {
     // 口径直接委托单一事实来源：最近访问 > 激活 > 固定 > 位置靠前 > id 大，
     // 与复用引擎的「同网址唯一化」逐位一致（缺陷 IA-3：曾各自实现一套排序）。
     // 「位置靠前 / id 大」兜底按字段判定，不依赖传入顺序。
-    const keeper = rankForKeep(group.tabs) ?? group.tabs[0]!;
+    const keeper = rankForKeep(group.tabs) ?? group.tabs[0];
+    if (!keeper) return { keeper: undefined, removable: [] };
 
     const removable = group.tabs.filter(
       (tab) => tab !== keeper && !(this.pinnedExempt && tab.pinned)
