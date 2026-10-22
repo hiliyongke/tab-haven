@@ -396,8 +396,16 @@ export function SnapshotsPanel({
     setEditingName(current);
   };
   const commitRename = async () => {
+    if (!editingId) return;
+    // 空名在 store 层会被丢弃（快照名是列表里的唯一可读标识，空名没有意义），
+    // 入口侧必须先拦住并说明：否则用户改名后点保存，编辑框静默退回旧名，
+    // 与「保存失败」无从区分。拦下时**保留**编辑态，用户可以接着输入。
+    if (editingName.trim() === '') {
+      notifyError(t('快照名不能为空'));
+      return;
+    }
     try {
-      if (editingId) await renameSnapshot(editingId, editingName);
+      await renameSnapshot(editingId, editingName);
     } catch {
       notifyError(t('操作失败，请稍后重试'));
     } finally {

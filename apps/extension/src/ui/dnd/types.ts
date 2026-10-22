@@ -72,6 +72,17 @@ export const FIXED_AREA_DROPPABLE = 'fixed-area';
 /** 顶部常驻磁贴区投放目标（拖标签到此固定）。 */
 export const PINNED_STRIP_DROPPABLE = 'pinned-strip';
 
+/**
+ * 纯落点数据：这类 droppable 不接受「被拖起来」，只作为投放区存在。
+ * `type` 与上面的 DOM id 常量同值（两套语义本就一一对应）。
+ */
+export interface DropZoneData {
+  type: typeof FIXED_AREA_DROPPABLE | typeof PINNED_STRIP_DROPPABLE;
+}
+
+/** 落点上可能出现的全部 data 形态（拖拽源 5 类 + 投放区 2 类）。 */
+export type DropTargetData = DragData | DropZoneData;
+
 /** 判断两个拖拽元素是否属于同一容器（同一列表内才允许排序）。 */
 export function isSameContainer(a: DragData | undefined, b: DragData | undefined): boolean {
   if (!a || !b || a.type !== b.type) return false;

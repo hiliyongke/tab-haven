@@ -67,16 +67,22 @@ function toComparisonKey(raw: string): string {
 }
 
 /**
- * 提取 URL 的主机名；解析失败返回空串。
+ * 提取 URL 的主机名；无 URL / 无法解析 / 解析出空主机时返回 `undefined`。
  *
  * 唯一事实来源在此：各调用点自写 `new URL(url).hostname` 时，多份副本口径容易漂移。
+ *
+ * 刻意返回 `undefined` 而不是空串：空串是一个「长得像主机名」的合法字符串，
+ * 一旦流入分组键、白名单匹配或展示文案，就凭空多出一个名为空的站点
+ * （多个无法解析的 URL 会被当成同一个 '' 站点聚合在一起）；
+ * 而调用方用 `if (host)` 判断时，也分不清「没解析出来」和「解析出空串」。
+ * 无主机就是无主机，用类型表达而不是用哨兵值表达。
  */
-export function hostnameOf(url: string | undefined): string {
-  if (!url) return '';
+export function hostnameOf(url: string | undefined): string | undefined {
+  if (!url) return undefined;
   try {
-    return new URL(url).hostname;
+    return new URL(url).hostname || undefined;
   } catch {
-    return '';
+    return undefined;
   }
 }
 

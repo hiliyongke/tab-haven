@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from '@/i18n';
+import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { canSafelyDiscardTab, type TabRecord } from '@/core/tab-types';
@@ -18,7 +19,8 @@ import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/commo
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import { RowItem } from '@/ui/common/RowItem';
 import { StatusBadges } from '@/ui/common/StatusBadges';
-import { DragType } from '@/ui/dnd/types';
+import { classifyDrop } from '@/ui/dnd/dropPolicy';
+import { DragType, type DragData } from '@/ui/dnd/types';
 
 /** 固定条目行：复用分组标签行（row-item）的视觉与交互，排序用全局 dnd-kit。
  *  运行时状态（isOpen / runtimeTab）由 FolderRow 建索引后下传；本组件纯 memo 叶子，
@@ -59,6 +61,26 @@ export const FolderItemRow = memo(function FolderItemRow({
       url: item.url
     }
   });
+  // 落点反馈与松手执行同源（ui/dnd/dropPolicy）：只有标签 / 分组 / 其他条目
+  // 才算可放入。磁贴、文件夹拖到条目上时显示禁用态而不是假高亮。
+  const { active } = useDndContext();
+  const activeData = active?.data.current as DragData | undefined;
+  const dropOutcome =
+    sortable.isOver && activeData
+      ? classifyDrop(activeData, {
+          id: item.id,
+          data: {
+            type: DragType.FolderItem,
+            folderId: folder.id,
+            itemId: item.id,
+            title: item.title || '',
+            url: item.url
+          }
+        })
+      : undefined;
+  const dropAccepted = dropOutcome?.kind === 'accept';
+  const dropRejected = dropOutcome?.kind === 'reject';
+
   // 同 TabRow：键盘监听挂主按钮，指针监听挂整行（避免同一事件双重激活）。
   // 全部 memo 化：解构/新建对象直接下传会击穿 RowItem 的 memo（与 TabRow 同一教训，
   // 见 TabRow.tsx「行内派生元素一律 memo 化」）。
@@ -247,7 +269,8 @@ export const FolderItemRow = memo(function FolderItemRow({
         }
         isActive={isActive}
         isMediaPlaying={runtimeTab ? runtimeTab.audible && !runtimeTab.muted : false}
-        isDropTarget={sortable.isOver}
+        isDropTarget={dropAccepted}
+        isDropRejected={dropRejected}
         onClick={handleOpen}
         buttonTitle={item.title || item.url}
         title={titleNode}

@@ -3,6 +3,7 @@ import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types'
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
+import { tabGroups } from '@/platform/tabGroups';
 
 /**
  * tabs 平台适配层：chrome API 映射与查询。
@@ -15,29 +16,31 @@ import { logDegraded } from '@/platform/diagnostics';
 type ChromeTab = Browser.tabs.Tab;
 type ChromeTabGroup = Browser.tabGroups.TabGroup;
 
-// wxt 生成的 browser 类型对 tabGroups 的 create 以及 update 的
-// title/color 属性覆盖不全，这里做一次性、受控的类型桥接（集中声明，避免散落的 never 绕过）。
-// 注：chrome.tabGroups 没有 remove API（公开方法仅 get/query/update/move），
-// 解散组的标准做法是 tabs.ungroup 成员，见下方 removeGroup。
-interface TabGroupMutableProps {
-  title?: string;
-  color?: string;
-  collapsed?: boolean;
+/**
+ * Chrome 在 `tabs.Tab` 上返回的、wxt 生成类型未收录的字段。
+ *
+ * 这些字段没有公开类型，读取必然要断言；但此前每一处都各写一遍
+ * `as unknown as { xxx?: T }`，字段新增或改名要改多处。断言集中到 `extrasOf`
+ * 这一处，字段清单也随之前后一致。
+ */
+interface ChromeTabExtras {
+  /** 分屏视图 id（Chrome 140+）；未分屏时为 0，不是 undefined。 */
+  splitViewId?: unknown;
+  attention?: boolean;
+  language?: string;
 }
-const tabGroups = browser.tabGroups as unknown as {
-  create: (options: object) => Promise<{ id: number }>;
-  update: (groupId: number, updateProperties: TabGroupMutableProps) => Promise<unknown>;
-  /** 用于判定组是否仍存在（区分「已解散」与「解散失败」），见 removeGroup。 */
-  get: (groupId: number) => Promise<unknown>;
-  move: (groupId: number, options: { index: number }) => Promise<unknown>;
-};
+
+const extrasOf = (tab: ChromeTab): ChromeTabExtras => tab as unknown as ChromeTabExtras;
 
 /** chrome.tabs.Tab → TabRecord 领域映射。 */
 export function mapTab(tab: ChromeTab): TabRecord {
+  const extras = extrasOf(tab);
   // chrome 140+ 会给每条标签返回 splitViewId，未分屏时为 0（非 undefined）。
   // 仅正整数表示真实拆分视图，其余归一化为 undefined。
-  const rawSplit = (tab as unknown as { splitViewId?: unknown }).splitViewId;
-  const splitViewId = typeof rawSplit === 'number' && rawSplit > 0 ? rawSplit : undefined;
+  const splitViewId =
+    typeof extras.splitViewId === 'number' && extras.splitViewId > 0
+      ? extras.splitViewId
+      : undefined;
   return {
     id: tab.id ?? -1,
     windowId: tab.windowId ?? -1,
@@ -58,8 +61,8 @@ export function mapTab(tab: ChromeTab): TabRecord {
     lastAccessed: tab.lastAccessed,
     autoDiscardable: tab.autoDiscardable,
     openerTabId: tab.openerTabId,
-    attention: (tab as unknown as { attention?: boolean }).attention,
-    language: (tab as unknown as { language?: string }).language
+    attention: extras.attention,
+    language: extras.language
   };
 }
 
@@ -406,16 +409,28 @@ export async function waitForTabGroupAssignment(
   intervalMs = 200
 ): Promise<void> {
   const target = new Set(tabIds);
+  let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const tabs = await browser.tabs.query({ currentWindow: true });
       const live = tabs.filter((tab) => tab.id !== undefined && target.has(tab.id));
       // 仅要求「仍存活」的成员已入组；中途关闭的标签不阻塞。
       if (live.every((tab) => (tab.groupId ?? NO_GROUP) === groupId)) return;
-    } catch {
-      // 查询失败视为未收敛，继续下一次尝试
+      lastError = undefined;
+    } catch (error) {
+      // 单次查询失败视为未收敛，继续下一次尝试；但要带出循环：
+      // 「每次都查询失败」与「已收敛」在调用方本无法区分，全程失败必须留痕，
+      // 否则分组写入的收敛等待会变成一条永不报警的死路径。
+      lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  if (lastError !== undefined) {
+    logDegraded(
+      'tabs',
+      `等待 ${tabIds.length} 个标签入组 ${groupId} 期间标签查询持续失败`,
+      lastError
+    );
   }
 }
 

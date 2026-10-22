@@ -784,5 +784,20 @@
   "i18n_003rcwm": "Open",
   "i18n_1rajc89": "How it's built and verified",
   "i18n_1qeetb5": "Verify it yourself",
-  "i18n_0c6wxpz": "Don't take our word on zero outbound requests: open DevTools, watch the Network panel on the extension context — the count is zero."
+  "i18n_0c6wxpz": "Don't take our word on zero outbound requests: open DevTools, watch the Network panel on the extension context — the count is zero.",
+  "i18n_0k0lohu": "Site groups are formed by domain automatically — drop into a native tab group or a folder instead",
+  "i18n_18emwi1": "The pin strip takes single tabs only — a whole group can't be pinned",
+  "i18n_14xjysc": "Saved items can't be dropped on a pin or the empty favorites area",
+  "i18n_04n079q": "Pins can be dropped on the tab list to unpin, or on another pin to reorder",
+  "i18n_15evhcl": "Folders can only be reordered within the favorites area",
+  "i18n_1smon7m": "This drop target doesn't support this action",
+  "i18n_0229h7z": "Added to tab group",
+  "i18n_0jckj2b": "This position doesn't accept drops",
+  "i18n_0g064j4": "Couldn't find the row for the active tab. Please try again.",
+  "i18n_13h07ot": "No tabs to organize",
+  "i18n_0ybdk8m": "This tab can't be pinned",
+  "i18n_1u3mp03": "Nothing to undo",
+  "i18n_17qq1ml": "This action no longer exists. It may have already been undone",
+  "i18n_0gwmb9c": "Nothing to redo",
+  "i18n_0md0xsk": "Snapshot name can't be empty"
 }

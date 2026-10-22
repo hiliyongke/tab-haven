@@ -80,18 +80,22 @@ function decodeLabel(input: string): string {
 
 /**
  * 域名的 punycode → Unicode（逐标签解码 xn-- 前缀标签，其余原样保留）。
- * 任何一步失败都回退为原始 hostname（展示层安全兜底）。
+ *
+ * 解码失败**只回退出问题的那一个标签**，不回退整条域名：整体回退时，一个畸形
+ * 标签（用户输入、被截断的 host）就会把其余本可正常显示的 Unicode 标签一起打回
+ * `xn--` 原文，故障范围被人为放大，且调用方无从得知发生过失败。
  */
 export function domainToUnicode(hostname: string): string {
   if (!hostname.includes('xn--')) return hostname;
-  try {
-    return hostname
-      .split('.')
-      .map((label) =>
-        label.toLowerCase().startsWith('xn--') ? decodeLabel(label.slice(4)) : label
-      )
-      .join('.');
-  } catch {
-    return hostname;
-  }
+  return hostname
+    .split('.')
+    .map((label) => {
+      if (!label.toLowerCase().startsWith('xn--')) return label;
+      try {
+        return decodeLabel(label.slice(4));
+      } catch {
+        return label;
+      }
+    })
+    .join('.');
 }

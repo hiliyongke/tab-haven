@@ -58,9 +58,17 @@ export function createFolderSlice(ctx: DataContext): Partial<DataState> {
     },
 
     deleteFolder: async (folderId) => {
+      // 用 `?? []` 兜住「文件夹不在列表里」会让整条删除**空转一遍还返回成功**：
+      // 绑定清理 0 条、写库 0 变更，界面显示已删除而文件夹还在。
+      // 找不到目标即状态不一致（调用方只可能传列表里的 id），必须可观测。
+      const folder = ctx.get().folders.find((f) => f.id === folderId);
+      if (!folder) {
+        logDegraded('dataStore', `删除文件夹失败：id ${folderId} 不在当前文件夹列表中`);
+        return;
+      }
       const result = await mutateSession((session) => {
         const bindings = { ...session.itemTabBindings };
-        for (const item of ctx.get().folders.find((f) => f.id === folderId)?.items ?? []) {
+        for (const item of folder.items) {
           delete bindings[item.id];
         }
         return { itemTabBindings: bindings };

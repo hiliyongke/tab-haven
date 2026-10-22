@@ -19,7 +19,7 @@ import {
 import { UNDO_PERSIST_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
 import { queryWindowGroups, queryWindowTabs, resolveRestoreWindowId } from '@/platform/tabs';
-import { logFailure } from '@/platform/diagnostics';
+import { logDegraded, logFailure } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 
@@ -372,7 +372,13 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
     // 组表同样要按**目标窗口**取：tabStore 只持有当前窗口的组，跨窗口撤销时
     // 用它匹配会全漏，恢复后标签还在、原生分组却丢了。
-    const groups = await queryWindowGroups(windowId).catch(() => useTabStore.getState().groups);
+    // 因此查询失败**不能**退回 tabStore 的组：那正好是上面警告过的错误做法 ——
+    // 跨窗口时会把 A 窗口的组名套到 B 窗口的标签上，撤销恢复按错误组名重建分组
+    // （比「缺组名」更糟：缺了只是丢分组，错了是进错组）。宁可空表，且必须留痕。
+    const groups = await queryWindowGroups(windowId).catch((error) => {
+      logDegraded('undo', `窗口 ${windowId} 原生组查询失败，撤销记录缺组名`, error);
+      return [];
+    });
     const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
     const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
     const closed = targets.filter((tab) => closedIds.includes(tab.id));
@@ -623,11 +629,16 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       const groupNameById = new Map<number, string | undefined>();
       for (const windowId of new Set(closing.map((tab) => tab.windowId))) {
         // 当前窗口用 tabStore 快照（无需再查）；其他窗口走 platform 查询，
-        // 查询失败只影响组名（退化为无组名），不阻断关闭本身。
+        // 查询失败只影响组名（退化为无组名），不阻断关闭本身 —— 但必须留痕：
+        // 组名缺失意味着撤销回来时无法按名重建组（原生分组就此丢失），
+        // 用户看到的是「撤销了但分组没了」，而诊断里本该有据可查。
         const groups =
           windowId === currentWindowId
             ? useTabStore.getState().groups
-            : await queryWindowGroups(windowId).catch(() => []);
+            : await queryWindowGroups(windowId).catch((error) => {
+                logDegraded('undo', `窗口 ${windowId} 原生组查询失败，撤销记录缺组名`, error);
+                return [];
+              });
         for (const group of groups) groupNameById.set(group.id, group.title);
       }
 
@@ -676,7 +687,19 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       // 或残缺栈，表现为「点了撤销没反应」（面板秒开后立即按 ⌘Z 可复现）。
       if (!get().ready) await get().load();
       const [latest] = popBatch(get().batches);
-      if (!latest) return;
+      if (!latest) {
+        // 撤销栈为空时不能静默：命令面板的「撤销」与快捷键常驻可用，用户点了
+        // 必须知道原因，否则「没有可撤销的操作」会被读成「扩展坏了 / 快捷键失灵」。
+        set({
+          toast: {
+            message: translate('没有可撤销的操作'),
+            canUndo: false,
+            batchId: undefined
+          }
+        });
+        scheduleToastClear();
+        return;
+      }
       undoInFlight = true;
       set({ undoing: true });
       try {
@@ -718,7 +741,20 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     undoBatch: async (batchId) => {
       if (undoInFlight) return;
       const batch = get().batches.find((entry) => entry.id === batchId);
-      if (!batch) return;
+      if (!batch) {
+        // 按 id 找不到批次（已被另一页面/上一次撤销消费）。撤销历史面板里的
+        // 条目是持久化的，用户点得到就必须给答复，静默会被读成「点了没反应」。
+        set({
+          toast: {
+            message: translate('该操作已不存在，可能已被撤销'),
+            canUndo: false,
+            batchId: undefined,
+            tone: 'error'
+          }
+        });
+        scheduleToastClear();
+        return;
+      }
       undoInFlight = true;
       set({ undoing: true });
       try {
@@ -765,7 +801,18 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       // 同上：重做栈同样要等 load 完成，否则取到的是未加载的空栈。
       if (!get().ready) await get().load();
       const [latest] = popBatch(get().redoBatches);
-      if (!latest) return;
+      if (!latest) {
+        // 同 undo：重做栈为空时必须说出来，否则表现为「点了重做没反应」。
+        set({
+          toast: {
+            message: translate('没有可重做的操作'),
+            canUndo: false,
+            batchId: undefined
+          }
+        });
+        scheduleToastClear();
+        return;
+      }
       undoInFlight = true;
       set({ redoing: true });
       try {
@@ -812,10 +859,15 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
           // 组名必须在关闭前捕获（整组关闭后组已消失，撤销记录会缺 groupName）。
           // 与 closeRestoredBatch 同口径：按重做目标窗口取组表，不能用当前窗口的。
+          // 指定窗口时的查询失败同样**不能**退回 tabStore 的组（那是当前窗口的表，
+          // 套到别的窗口的标签上就是张冠李戴）；宁可缺组名，且必须留痕。
           const groups =
             redoWindowId === undefined
               ? useTabStore.getState().groups
-              : await queryWindowGroups(redoWindowId).catch(() => useTabStore.getState().groups);
+              : await queryWindowGroups(redoWindowId).catch((error) => {
+                  logDegraded('undo', `窗口 ${redoWindowId} 原生组查询失败，撤销记录缺组名`, error);
+                  return [];
+                });
           const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
           const closedIds = await useTabStore.getState().closeTabs(targets.map((tab) => tab.id));
           const closed = targets.filter((tab) => closedIds.includes(tab.id));

@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { disbandAutoGroups, syncAutoGroups } from '@/platform/group/AutoGroupSync';
+import {
+  disbandAutoGroups,
+  reconcileAutoGroupDomains,
+  syncAutoGroups
+} from '@/platform/group/AutoGroupSync';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
+import type { TemporarySection } from '@/core/site/Sections';
+import type { TabRecord } from '@/core/tab-types';
 import { NO_GROUP } from '@/core/tab-types';
 
 const PLAN_A: AutoGroupPlan = { title: 'github.com', color: 'blue', tabIds: [1, 2] };
@@ -190,5 +196,80 @@ describe('AutoGroupSync 生命周期', () => {
 
     expect(groupMock).toHaveBeenCalledTimes(1);
     expect(first + second).toBe(1);
+  });
+});
+
+describe('reconcileAutoGroupDomains（自动组域名漂移校正）', () => {
+  function tab(id: number, url: string, groupId: number): TabRecord {
+    return {
+      id,
+      windowId: 1,
+      index: id,
+      active: false,
+      pinned: false,
+      incognito: false,
+      url,
+      groupId
+    };
+  }
+
+  function nativeSection(title: string, tabs: TabRecord[], groupId = 7): TemporarySection {
+    return { kind: 'native', key: `group-${groupId}`, title, tabs, groupId, collapsed: false };
+  }
+
+  function stubUngroup(): ReturnType<typeof vi.fn> {
+    const ungroupMock = vi.fn(async () => undefined);
+    const tabs = fakeBrowser.tabs as unknown as { ungroup: typeof ungroupMock };
+    tabs.ungroup = ungroupMock as unknown as typeof tabs.ungroup;
+    return ungroupMock;
+  }
+
+  it('把自动组内的异域名成员移出，返回移出的标签数', async () => {
+    const ungroupMock = stubUngroup();
+    await fakeBrowser.storage.local.set({ 'tabs.auto-groups.v1': [7] });
+
+    const moved = await reconcileAutoGroupDomains([
+      nativeSection('github.com', [
+        tab(1, 'https://github.com/a', 7),
+        tab(2, 'https://notion.so/x', 7)
+      ])
+    ]);
+
+    expect(moved).toBe(1);
+    expect(ungroupMock).toHaveBeenCalledWith([2]);
+  });
+
+  it('组不在自动组记录内时不做任何操作（不打扰用户手动分组）', async () => {
+    const ungroupMock = stubUngroup();
+
+    const moved = await reconcileAutoGroupDomains([
+      nativeSection('github.com', [
+        tab(1, 'https://github.com/a', 7),
+        tab(2, 'https://notion.so/x', 7)
+      ])
+    ]);
+
+    expect(moved).toBe(0);
+    expect(ungroupMock).not.toHaveBeenCalled();
+  });
+
+  it('单组 ungroup 失败不影响其余组', async () => {
+    const ungroupMock = vi.fn(async (tabIds: number[]) => {
+      if (tabIds.includes(2)) throw new Error('ungroup failed');
+    });
+    const tabs = fakeBrowser.tabs as unknown as { ungroup: typeof ungroupMock };
+    tabs.ungroup = ungroupMock as unknown as typeof tabs.ungroup;
+    await fakeBrowser.storage.local.set({ 'tabs.auto-groups.v1': [7, 8] });
+
+    const moved = await reconcileAutoGroupDomains([
+      nativeSection('github.com', [
+        tab(1, 'https://github.com/a', 7),
+        tab(2, 'https://notion.so/x', 7)
+      ]),
+      nativeSection('a.com', [tab(3, 'https://a.com/1', 8), tab(4, 'https://b.com/1', 8)], 8)
+    ]);
+
+    expect(ungroupMock).toHaveBeenCalledTimes(2);
+    expect(moved).toBe(1);
   });
 });

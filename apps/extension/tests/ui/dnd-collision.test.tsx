@@ -84,19 +84,35 @@ function args(options: {
   withinIds?: string[];
   /** 各容器的矩形（用于中心距离计算）。 */
   rects?: Record<string, { left: number; top: number; width: number; height: number }>;
+  /**
+   * 指针坐标（默认 (10,10)，落在默认矩形内）。
+   * 传面板外的坐标才能模拟「指针不在任何投放目标上」—— 只调 rects 而指针仍在
+   * 默认位置时，pointerWithin 会命中所有容器，验的就不再是空白场景了。
+   */
+  pointer?: { x: number; y: number };
 }): Parameters<CollisionDetection>[0] {
   const containers = options.containers.map((item) => item);
   // dnd-kit 的 args 结构庞大且带泛型，这里只提供被测函数真正读取的字段
   return {
     active: { id: 'active', data: { current: options.active } },
     droppableContainers: containers,
+    // 矩形必须是 DOMRect 形状（dnd-kit 的 pointerWithin 读 top/bottom/left/right，
+    // 只给 left+width 会让它判成「处处不在矩形内」——pointerWithin 分支会在测试里
+    // 静默退化成空数组，所有「指针精确命中」的断言其实都在验 closestCenter 兜底）。
     droppableRects: new Map(
-      containers.map((item) => [
-        item.id,
-        options.rects?.[item.id] ?? { left: 0, top: 0, width: 100, height: 20 }
-      ])
+      containers.map((item) => {
+        const rect = options.rects?.[item.id] ?? { left: 0, top: 0, width: 100, height: 20 };
+        return [
+          item.id,
+          {
+            ...rect,
+            right: rect.left + rect.width,
+            bottom: rect.top + rect.height
+          }
+        ];
+      })
     ),
-    pointerCoordinates: { x: 10, y: 10 },
+    pointerCoordinates: options.pointer ?? { x: 10, y: 10 },
     collisionRect: { left: 0, top: 0, width: 100, height: 20 },
     // pointerWithin 走真实实现：用碰撞矩形与容器矩形求交
     ...({} as Record<string, never>)
@@ -153,7 +169,7 @@ describe('dragCollisionDetection：卡片层级（分组 / 文件夹）', () => 
 });
 
 describe('dragCollisionDetection：磁贴层级（横向）', () => {
-  it('只在磁贴与磁贴条之间判定，忽略标签行', () => {
+  it('指针在磁贴区内时只在磁贴与磁贴条之间判定，忽略标签行', () => {
     const result = dragCollisionDetection(
       args({
         active: dndPin('p1'),
@@ -168,6 +184,65 @@ describe('dragCollisionDetection：磁贴层级（横向）', () => {
 
     expect(ids(result)).not.toContain('tab-row-1');
     expect(ids(result).every((id) => ['pin-1', 'pin-2', 'pinned-strip'].includes(id))).toBe(true);
+  });
+
+  it('指针精确落在标签行上时回退到行层级：磁贴可拖回标签区取消固定', () => {
+    // 不加这条回退，「磁贴拖回标签区 = 取消固定」在契约里写得到、碰撞层永远命中不到。
+    const result = dragCollisionDetection(
+      args({
+        active: dndPin('p1'),
+        containers: [
+          container('pin-1', dndPin('p1', 'P')),
+          container('pinned-strip', { type: 'pinned-strip' }),
+          container('tab-row-1', dndTab(1, 'a'))
+        ],
+        rects: {
+          'pin-1': { left: 0, top: 0, width: 300, height: 40 },
+          'pinned-strip': { left: 0, top: 0, width: 300, height: 100 },
+          'tab-row-1': { left: 0, top: 200, width: 300, height: 24 }
+        },
+        pointer: { x: 10, y: 210 }
+      })
+    );
+
+    expect(ids(result)).toContain('tab-row-1');
+  });
+
+  it('指针落在面板空白处不凭空命中最近的行（避免误取消固定）', () => {
+    const result = dragCollisionDetection(
+      args({
+        active: dndPin('p1'),
+        containers: [
+          container('pin-1', dndPin('p1', 'P')),
+          container('pinned-strip', { type: 'pinned-strip' }),
+          container('tab-row-1', dndTab(1, 'a'))
+        ],
+        pointer: { x: 9999, y: 9999 }
+      })
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('指针落在收藏夹空白时命中 fixed-area（拖磁贴到收藏夹有落点可拒绝）', () => {
+    const result = dragCollisionDetection(
+      args({
+        active: dndPin('p1'),
+        containers: [
+          container('pin-1', dndPin('p1', 'P')),
+          container('pinned-strip', { type: 'pinned-strip' }),
+          container('fixed-area', { type: 'fixed-area' })
+        ],
+        rects: {
+          'pin-1': { left: 0, top: 0, width: 300, height: 40 },
+          'pinned-strip': { left: 0, top: 0, width: 300, height: 100 },
+          'fixed-area': { left: 0, top: 200, width: 300, height: 300 }
+        },
+        pointer: { x: 10, y: 300 }
+      })
+    );
+
+    expect(ids(result)).toEqual(['fixed-area']);
   });
 });
 
@@ -207,7 +282,8 @@ describe('dragCollisionDetection：行层级（标签 / 固定条目）', () => 
           container('tab-a1', dndTab(11, 'section-a', 'A1')),
           container('tab-b1', dndTab(21, 'section-b', 'B1')),
           container('fixed-area', { type: 'fixed-area' })
-        ]
+        ],
+        pointer: { x: 9999, y: 9999 }
       })
     );
 
@@ -225,7 +301,8 @@ describe('dragCollisionDetection：行层级（标签 / 固定条目）', () => 
           container('tab-b1', dndTab(21, 'section-b', 'B1')),
           container('fixed-area', { type: 'fixed-area' }),
           container('pinned-strip', { type: 'pinned-strip' })
-        ]
+        ],
+        pointer: { x: 9999, y: 9999 }
       })
     );
 
@@ -241,7 +318,8 @@ describe('dragCollisionDetection：行层级（标签 / 固定条目）', () => 
         containers: [
           container('fixed-area', { type: 'fixed-area' }),
           container('pinned-strip', { type: 'pinned-strip' })
-        ]
+        ],
+        pointer: { x: 9999, y: 9999 }
       })
     );
 

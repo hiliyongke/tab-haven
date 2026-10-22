@@ -31,10 +31,14 @@ let initialized = false;
  */
 function pickExplicitKeys<T extends object>(raw: unknown, parsed: T): Partial<T> {
   if (raw === null || typeof raw !== 'object') return {};
-  const source = parsed as unknown as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(raw as Record<string, unknown>)) {
-    if (key in source) out[key] = source[key];
+  // 遍历 **parsed 的键**（键名受 `keyof T` 约束）而不是把 parsed 降格成
+  // `Record<string, unknown>` 再去索引：后者用一个 `as unknown as` 把「键」与
+  // 「T 的字段」之间的关联一并抹掉，此后字段名写错也检查不出来。
+  // 外部键名无法被类型证明属于 T，故只把**键名**这一处放宽。
+  const given = new Set(Object.keys(raw));
+  const out: Partial<Record<keyof T, unknown>> = {};
+  for (const key of Object.keys(parsed) as Array<keyof T>) {
+    if (given.has(String(key))) out[key] = parsed[key];
   }
   return out as Partial<T>;
 }

@@ -45,6 +45,11 @@ const MAX_CHUNKS = Math.floor(QUOTA_BYTES / CHUNK_BYTES);
  */
 const QUOTA_MARGIN_BYTES = 512;
 const MIRROR_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 镜像 30 天无更新视为过期
+/**
+ * 镜像写失败的重试基数：sync 的写配额是分钟级的（MAX_WRITE_OPERATIONS_PER_MINUTE），
+ * 立刻重试只会持续撞墙，因此第 1 次就等 30s，其后按 ×2 递增。
+ */
+const RETRY_BASE_DELAY_MS = 30_000;
 
 /** 镜像内容 schema（不校验设置细节，交给 SettingsSchema 在读取端校验）。 */
 const MirrorPayloadSchema = z.object({
@@ -170,7 +175,7 @@ class SyncMirror {
     // 已有待重试任务时以最新 payload 替换（与 pendingPayload 的末值语义一致），
     // 否则旧数据会在新数据写入成功后复活，镜像回滚。
     if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
-    const delay = 30_000 * 2 ** (this.retryAttempts - 1);
+    const delay = RETRY_BASE_DELAY_MS * 2 ** (this.retryAttempts - 1);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
       void this.write(payload);

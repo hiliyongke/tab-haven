@@ -9,6 +9,7 @@ import {
 } from '@/platform/tabs';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
+import { logDegraded } from '@/platform/diagnostics';
 import type { DataContext, DataState } from './types';
 
 /** 磁贴切片：常驻磁贴的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
@@ -17,9 +18,17 @@ import { PINS_LIMIT } from '@/core/schema/models';
 export function createPinsSlice(ctx: DataContext): Partial<DataState> {
   return {
     addPin: async (tab) => {
-      if (!tab.url) return;
+      // 三条「无法满足」的分支都必须**返回 false 并留痕**：调用方据此决定提示，
+      // 静默 return 会让 Promise 照常 resolve，界面弹出「已固定」而磁贴并未生成。
+      if (!tab.url) {
+        logDegraded('dataStore', '固定失败：该标签没有网址');
+        return false;
+      }
       const pin = pinFromTab({ url: tab.url, title: tab.title || '', favIconUrl: tab.favIconUrl });
-      if (!pin) return;
+      if (!pin) {
+        logDegraded('dataStore', '固定失败：该标签不是 http(s) 网址');
+        return false;
+      }
       // 与 createFolder 同款预检：PINS_LIMIT 只在落盘 schema 生效，超限会被整批拒绝，
       // 而内存已 set —— 界面显示已固定、重启后消失。先拦住并明说原因。
       if (
@@ -30,7 +39,7 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
           'dataStore',
           `常驻磁贴数量已达上限 ${PINS_LIMIT} 个，本次未固定（请先移除不再需要的磁贴）`
         );
-        return;
+        return false;
       }
       await ctx.writePins((current) =>
         dedupePins([...current.filter((p) => p.identity !== pin.identity), pin])
@@ -41,6 +50,7 @@ export function createPinsSlice(ctx: DataContext): Partial<DataState> {
       // 标签变为固定后应从临时区（站点分组）立即移入置顶区：主动刷新快照
       // 消除对 pinned 事件回灌时序的依赖。
       tabSyncService.requestRefresh();
+      return true;
     },
 
     removePin: async (pin) => {

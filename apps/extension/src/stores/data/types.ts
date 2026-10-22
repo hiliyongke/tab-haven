@@ -149,7 +149,15 @@ interface DataState {
   /** 将固定文件夹恢复为原生标签组，并移除已转换的固定文件夹。 */
   syncFolderToNativeGroup: (folderId: string) => Promise<boolean>;
 
-  addPin: (tab: TabRecord) => Promise<void>;
+  /**
+   * 固定为常驻磁贴；返回**是否真的固定成功**。
+   *
+   * 返回值而非 `Promise<void>`：本操作存在多条「无法满足」的分支（标签无 URL、
+   * 非 http(s)、已达上限），它们过去是静默 return，而 Promise 照常 resolve ——
+   * 调用方于是照常弹出「已固定标签」，界面宣布成功而磁贴从未生成。
+   * 是否成功必须由调用方拿到，不能靠猜。
+   */
+  addPin: (tab: TabRecord) => Promise<boolean>;
   removePin: (pin: PersistentPin) => Promise<void>;
   reorderPins: (sourceId: string, targetId: string, placeAfter: boolean) => Promise<void>;
   openPin: (pin: PersistentPin) => Promise<void>;

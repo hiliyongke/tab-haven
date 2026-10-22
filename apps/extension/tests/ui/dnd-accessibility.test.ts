@@ -60,6 +60,23 @@ describe('拖拽读屏播报（本地化）', () => {
     expect(announcements.onDragOver({ active: activeOf(TAB_A), over: null })).toBeUndefined();
   });
 
+  it('结构性不可投放的落点播报「不能放置」，而不是「移动到」', () => {
+    // 读屏用户看不到落点禁用态，语言是唯一的信息来源：
+    // 先说「移动到 X」、松手后无事发生，等于把视觉层的假高亮原样复制给语音层。
+    const { announcements } = buildDragAccessibility(translate);
+    const active = activeOf(TAB_A);
+    const siteSection = {
+      type: DragType.Section,
+      sectionKey: 'site-a',
+      title: '站点 A',
+      tabIds: [1]
+    };
+    const over = activeOf(siteSection) as unknown as Over;
+
+    expect(announcements.onDragOver({ active, over })).toBe(translate('该位置不能放置'));
+    expect(announcements.onDragEnd({ active, over })).toBe(translate('该位置不能放置'));
+  });
+
   it('文件夹拖拽用名称播报', () => {
     const { announcements } = buildDragAccessibility(translate);
 

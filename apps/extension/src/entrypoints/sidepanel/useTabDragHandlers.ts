@@ -7,7 +7,8 @@ import {
   computeReorderIndex,
   groupTabs,
   moveTab,
-  moveTabs
+  moveTabs,
+  setPinned
 } from '@/platform/tabs';
 import { useDataStore, type AddTabsToFolderResult } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -16,24 +17,13 @@ import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { logDegraded } from '@/platform/diagnostics';
 import {
   DragType,
-  FIXED_AREA_DROPPABLE,
-  PINNED_STRIP_DROPPABLE,
   isSameContainer,
   type DragData,
+  type DropTargetData,
   type SectionDragData
 } from '@/ui/dnd/types';
+import { resolveDrop, type DropRejectCode } from '@/ui/dnd/dropPolicy';
 import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
-
-/** 落点是否属于固定空间（文件夹 / 固定条目 / 固定图标 / 两处空白投放区）。 */
-function isFixedSpaceTarget(overId: string | number, overData?: DragData): boolean {
-  return (
-    overId === FIXED_AREA_DROPPABLE ||
-    overId === PINNED_STRIP_DROPPABLE ||
-    overData?.type === DragType.Folder ||
-    overData?.type === DragType.FolderItem ||
-    overData?.type === DragType.Pin
-  );
-}
 
 /**
  * 拖拽分发 hook：把 dnd-kit 的 onDragEnd 按 DragData 类型分派到
@@ -43,9 +33,49 @@ function isFixedSpaceTarget(overId: string | number, overData?: DragData): boole
  * 一律经 store getState 读取最新状态，因此引用稳定（useCallback 空/少量依赖），
  * 不会导致下游 memo 组件失效。排序所需的分区成员由拖拽数据自带的 tabIds 提供，
  * 因此本 hook 不接收渲染期的分区列表。
+ *
+ * **可行性判定不在本文件**：能放下什么、放不下为什么，统一由 `ui/dnd/dropPolicy`
+ * 回答。这里只负责「执行」与「拒绝时把原因翻译成人话」——判定一旦散落回分发层，
+ * 就会重新出现「落点亮着却不动」「拖了完全没反应」两难。
  */
 export function useTabDragHandlers() {
   const { t } = useTranslation();
+
+  /**
+   * 拒绝原因 → 用户可读文案。
+   *
+   * 集中在这一处而不是散进各分支：同一个原因（例如排序开关关闭）可能由多个
+   * 组合触发，文案必须一字不差，否则用户会以为是两个不同的问题。
+   */
+  const rejectMessage = useCallback(
+    (code: DropRejectCode): string => {
+      switch (code) {
+        case 'importing':
+          return t('正在导入备份，请稍后再改');
+        case 'sync-off':
+          return t('已关闭「标签顺序双向同步」，拖拽排序不会写回浏览器；可在设置中开启');
+        case 'recency':
+          return t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序');
+        case 'virtualized':
+          return t('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）');
+        case 'mixed-pin':
+          return t('常驻磁贴与浏览器固定标签之间不支持排序。');
+        case 'tab-to-site-section':
+          return t('站点分组按域名自动归类，不能手动拖入；可拖到原生标签组或收藏夹');
+        case 'section-to-pin':
+          return t('磁贴区只接单个标签，不能把整个分组固定');
+        case 'item-to-fixed':
+          return t('收藏夹条目不能拖到磁贴或收藏夹空白处');
+        case 'pin-to-fixed':
+          return t('磁贴只能拖回标签区取消固定，或与其他磁贴排序');
+        case 'folder-outside':
+          return t('文件夹只能在收藏夹内调整顺序');
+        default:
+          return t('这个位置不支持该操作');
+      }
+    },
+    [t]
+  );
 
   /**
    * 落点方向：**由 dnd-kit 的 sortable index 判定，不做几何比较。**
@@ -61,11 +91,17 @@ export function useTabDragHandlers() {
    * 这与 arrayMove(items, from, to) 一致：over 总被挤到源的相邻位。
    */
   const isPlaceAfter = useCallback(
-    (event: DragEndEvent, activeData?: DragData, overData?: DragData): boolean => {
+    (event: DragEndEvent, activeData?: DragData, overData?: DropTargetData): boolean => {
       // 跨容器拖拽时 from/to 属于不同的 SortableContext items 数组，两者 index
       // 无比较语义（拖到大分区末尾 vs 小分区中间的方向判断会任意偏一位）。
       // 跨容器场景一律退回「插后」（与索引缺失同一兜底口径）。
-      if (activeData && overData && !isSameContainer(activeData, overData)) return true;
+      if (
+        activeData &&
+        overData &&
+        !isSameContainer(activeData, overData as DragData | undefined)
+      ) {
+        return true;
+      }
       const from = (event.active.data.current as { sortable?: { index?: number } } | undefined)
         ?.sortable?.index;
       const to = (event.over?.data.current as { sortable?: { index?: number } } | undefined)
@@ -151,23 +187,14 @@ export function useTabDragHandlers() {
   const handleMoveTab = useCallback(
     (tabId: number, direction: -1 | 1) => {
       const dataStore = useDataStore.getState();
-      // 与拖拽路径共用同一道闸门：recency 下显示顺序与 index 已解耦，
-      // 键盘移动会改动浏览器 index 而界面纹丝不动——必须显式告知（同拖拽口径）。
+      // 与拖拽路径共用同一道闸门与同一句文案（rejectMessage）：
+      // 键盘移动会改动浏览器 index 而界面纹丝不动——必须显式告知。
       const blocked = reorderBlockedReason({
         tabOrderSync: dataStore.settings.tabOrderSync,
         sortMode: dataStore.settings.sortMode
       });
-      if (blocked === 'recency') {
-        useUndoStore
-          .getState()
-          .notify(t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序'));
-        return;
-      }
-      if (blocked === 'sync-off') {
-        // 与拖拽路径同口径：静默失效会让用户以为 Alt+↑↓ 坏了。
-        useUndoStore
-          .getState()
-          .notify(t('已关闭「标签顺序双向同步」，拖拽排序不会写回浏览器；可在设置中开启'));
+      if (blocked) {
+        useUndoStore.getState().notify(rejectMessage(blocked));
         return;
       }
       const allTabs = useTabStore.getState().tabs;
@@ -177,7 +204,7 @@ export function useTabDragHandlers() {
       if (!target) return;
       handleReorder(tabId, target.id, direction > 0);
     },
-    [handleReorder, t]
+    [handleReorder, rejectMessage]
   );
 
   /** 拖标签/分组到固定空间空白区：请求 FixedArea 弹出命名弹窗。 */
@@ -273,215 +300,231 @@ export function useTabDragHandlers() {
     []
   );
 
-  /** 全局 dnd-kit 拖拽结束：按 data 类型分派排序 / 跨容器投放。 */
+  /** 全局 dnd-kit 拖拽结束：判定交给 dropPolicy，本函数只执行与反馈。 */
   const onDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over) return;
       const activeData = active.data.current as DragData | undefined;
-      const overData = over.data.current as DragData | undefined;
       if (!activeData) return;
+      const overData = over.data.current as DropTargetData | undefined;
       const { notify, notifyError } = useUndoStore.getState();
       const dataStore = useDataStore.getState();
-      // 导入事务进行中：固定空间（文件夹/固定图标）的写入会被有意丢弃，以防与事务的
-      // 串行写交错。此时投进固定空间只会「看起来没反应」，必须明确拒绝并说明原因，
-      // 而不是让用户以为扩展卡住或数据丢了。临时区排序不受影响，故只拦固定空间目标。
-      if (dataStore.importing && isFixedSpaceTarget(over.id, overData)) {
-        notify(t('正在导入备份，请稍后再改'));
+
+      const resolution = resolveDrop(
+        activeData,
+        { id: over.id, data: overData },
+        {
+          tabOrderSync: dataStore.settings.tabOrderSync,
+          sortMode: dataStore.settings.sortMode,
+          importing: dataStore.importing
+        }
+      );
+      // 拖回原位：结果与松手前一致，静默是正确的（也避免误拖 4px 就弹提示）。
+      if (resolution.kind === 'noop') return;
+      if (resolution.kind === 'reject') {
+        notify(rejectMessage(resolution.code));
         return;
       }
-      // 列表内排序是否被阻断：统一判定，UI 与拖拽分发共用同一口径
-      // （详见 core/site/reorderCapability）。
-      const blocked = reorderBlockedReason({
-        tabOrderSync: dataStore.settings.tabOrderSync,
-        sortMode: dataStore.settings.sortMode
-      });
 
-      // 标签：跨容器排序（受排序开关控制）/ 拖入文件夹 / 拖到固定空间空白（建文件夹）/ 拖到顶部固定区（固定）。
-      if (activeData.type === DragType.Tab) {
-        if (overData?.type === DragType.Tab) {
-          // sync-off：拖拽排序不会写回浏览器。这条路径必须显式说明（与 recency
-          // 同口径），否则用户看不到「设置项 → 拖拽失效」的因果链，只能判定扩展有 bug。
-          if (blocked === 'sync-off') {
-            notify(t('已关闭「标签顺序双向同步」，拖拽排序不会写回浏览器；可在设置中开启'));
+      const placeAfter = isPlaceAfter(event, activeData, overData);
+      const action = resolution.action;
+
+      switch (action.kind) {
+        // 临时区标签排序。跨原生组时额外把 source 加入目标组（moveTab 只改位置不改归属）。
+        case 'reorder-tabs': {
+          if (activeData.type !== DragType.Tab || overData?.type !== DragType.Tab) return;
+          handleReorder(activeData.tabId, overData.tabId, placeAfter);
+          const latest = useTabStore.getState().tabs;
+          const sourceTab = latest.find((candidate) => candidate.id === activeData.tabId);
+          const overTab = latest.find((candidate) => candidate.id === overData.tabId);
+          if (
+            sourceTab &&
+            overTab &&
+            overTab.groupId !== undefined &&
+            overTab.groupId >= 0 &&
+            sourceTab.groupId !== overTab.groupId
+          ) {
+            // 目标组可能刚被解散：groupTabs 内部降级记录并保持未分组。
+            // 分组写入失败同样无 tabs 事件可自愈，必须给用户可见反馈（与相邻分支同口径）。
+            void groupTabs([sourceTab.id], overTab.groupId).catch(() =>
+              notifyError(t('操作失败，请稍后重试'))
+            );
+          }
+          return;
+        }
+
+        // 浏览器原生置顶标签排序（磁贴间，走 chrome.tabs.move，不落扩展存储）。
+        case 'reorder-pinned-tabs': {
+          if (
+            activeData.type !== DragType.Pin ||
+            overData?.type !== DragType.Pin ||
+            activeData.tabId === undefined ||
+            overData.tabId === undefined
+          ) {
             return;
           }
-          if (dataStore.settings.tabOrderSync) {
-            // recency 下显示顺序与 index 已解耦，拖了不会反映到界面，必须告知。
-            if (blocked === 'recency') {
-              notify(t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序'));
-              return;
-            }
-            // 任一侧行处于「超阈值强制虚拟化」分区（canReorder=false，UI 已提示
-            // 排序暂停）时拦截真实排序：行拖拽仍可跨容器拖到固定空间，但 Tab→Tab
-            // 落点必须忽略——否则出现「提示已暂停、松手却真的重排」的行为矛盾。
-            if (activeData.canReorder === false || overData.canReorder === false) {
-              // 与行内提示同文案：虚拟化后拖拽与 Alt+↑↓ 是一并停的，
-              // 只说「不能拖拽」会让用户以为还有键盘这条路可走。
-              notify(t('标签太多，本区暂时不能调整顺序（拖拽与 Alt+↑↓ 已暂停）'));
-              return;
-            }
-            handleReorder(
-              activeData.tabId,
-              overData.tabId,
-              isPlaceAfter(event, activeData, overData)
-            );
-            // 跨原生组：把 source 标签加入目标组（moveTab 只改位置不改归属）。
-            const latest = useTabStore.getState().tabs;
-            const sourceTab = latest.find((candidate) => candidate.id === activeData.tabId);
-            const overTab = latest.find((candidate) => candidate.id === overData.tabId);
-            if (
-              sourceTab &&
-              overTab &&
-              overTab.groupId !== undefined &&
-              overTab.groupId >= 0 &&
-              sourceTab.groupId !== overTab.groupId
-            ) {
-              // 目标组可能刚被解散：groupTabs 内部降级记录并保持未分组。
-              // 分组写入失败同样无 tabs 事件可自愈，必须给用户可见反馈（与相邻分支同口径）。
-              void groupTabs([sourceTab.id], overTab.groupId).catch(() =>
-                notifyError(t('操作失败，请稍后重试'))
-              );
-            }
+          handleReorder(activeData.tabId, overData.tabId, placeAfter);
+          return;
+        }
+
+        // 标签拖到原生分组头 = 加入该组。加入后由浏览器把标签排到组尾。
+        case 'join-group': {
+          if (activeData.type !== DragType.Tab) return;
+          void groupTabs([activeData.tabId], action.groupId)
+            .then(() => notify(t('已加入标签组')))
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
+          return;
+        }
+
+        // 标签 / 整组拖进收藏夹（文件夹卡或其条目）。
+        case 'move-tabs-to-folder': {
+          const tabIds =
+            activeData.type === DragType.Tab
+              ? [activeData.tabId]
+              : activeData.type === DragType.Section
+                ? activeData.tabIds
+                : [];
+          if (tabIds.length === 0) return;
+          const targets = useTabStore.getState().tabs.filter((tab) => tabIds.includes(tab.id));
+          if (targets.length === 0) return;
+          void dataStore
+            .addTabsToFolder(targets, action.folderId)
+            .then(notifyDropResult)
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
+          return;
+        }
+
+        // 拖到收藏夹空白：弹命名框新建文件夹。
+        case 'create-folder': {
+          if (activeData.type === DragType.Tab) {
+            const tab = useTabStore
+              .getState()
+              .tabs.find((candidate) => candidate.id === activeData.tabId);
+            if (tab) requestCreateFolder(tab.title || t('无标题标签'), [tab.id]);
+            return;
+          }
+          if (activeData.type === DragType.Section) {
+            requestCreateFolder(activeData.title, activeData.tabIds);
           }
           return;
         }
-        if (overData?.type === DragType.FolderItem || overData?.type === DragType.Folder) {
-          const target = useTabStore
-            .getState()
-            .tabs.find((candidate) => candidate.id === activeData.tabId);
-          if (target) {
-            void dataStore
-              .addTabsToFolder([target], overData.folderId)
-              .then(notifyDropResult)
-              .catch(() => notifyError(t('操作失败，请稍后重试')));
-          }
-          return;
-        }
-        if (over.id === FIXED_AREA_DROPPABLE) {
+
+        // 标签拖到磁贴区：固定为常驻磁贴。
+        case 'pin-tab': {
+          if (activeData.type !== DragType.Tab) return;
           const tab = useTabStore
             .getState()
             .tabs.find((candidate) => candidate.id === activeData.tabId);
-          if (tab) requestCreateFolder(tab.title || t('无标题标签'), [tab.id]);
+          if (!tab) return;
+          void dataStore
+            .addPin(tab)
+            .then((ok) => {
+              // addPin 内部有多条「无法满足」的分支（无 URL / 非 http(s) / 已达上限）。
+              // 它们过去静默 return 而 Promise 照常 resolve，于是这里无条件弹
+              // 「已固定标签」—— 界面宣布成功、磁贴却从未生成。按返回值区分。
+              if (ok) notify(t('已固定标签'));
+              else notifyError(t('这个标签无法固定为常驻磁贴'));
+            })
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
           return;
         }
-        if (overData?.type === DragType.Pin || over.id === PINNED_STRIP_DROPPABLE) {
-          const tab = useTabStore
-            .getState()
-            .tabs.find((candidate) => candidate.id === activeData.tabId);
-          if (tab) {
-            void dataStore
-              .addPin(tab)
-              .then(() => notify(t('已固定标签')))
-              .catch(() => notifyError(t('操作失败，请稍后重试')));
-          }
-        }
-        return;
-      }
 
-      // 分组：同容器排序 / 拖入文件夹 / 拖到固定空间空白（建文件夹）。
-      if (activeData.type === DragType.Section) {
-        if (overData?.type === DragType.Section && isSameContainer(activeData, overData)) {
-          // 与标签排序共用同一道闸门：双向同步关闭时不写回浏览器，排序无从持久化。
-          if (dataStore.settings.tabOrderSync) {
-            // 同上：recency 下分区顺序同样与 index 解耦，必须显式告知。
-            if (blocked === 'recency') {
-              notify(t('当前为「最近访问」自动排序；切到「浏览器顺序」即可手动拖拽排序'));
-              return;
-            }
-            handleSectionReorder(activeData, overData, isPlaceAfter(event, activeData, overData));
-          }
-          return;
-        }
-        if (overData?.type === DragType.FolderItem || overData?.type === DragType.Folder) {
-          const targetTabs = useTabStore
+        // 持久磁贴拖回临时区：取消固定（与收藏夹条目可拖出对称）。
+        case 'unpin-pin': {
+          // 用最新快照而不是 onDragEnd 开头的引用：拖拽期间可能正好完成一次镜像恢复。
+          const pin = useDataStore
             .getState()
-            .tabs.filter((tab) => activeData.tabIds.includes(tab.id));
-          if (targetTabs.length > 0) {
-            void dataStore
-              .addTabsToFolder(targetTabs, overData.folderId)
-              .then(notifyDropResult)
-              .catch(() => notifyError(t('操作失败，请稍后重试')));
-          }
+            .pins.find((candidate) => candidate.id === action.pinId);
+          if (!pin) return;
+          void dataStore
+            .removePin(pin)
+            .then(() => notify(t('已取消固定')))
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
           return;
         }
-        if (over.id === FIXED_AREA_DROPPABLE) {
-          requestCreateFolder(activeData.title, activeData.tabIds);
-        }
-        return;
-      }
 
-      // 固定条目：同文件夹排序 / 跨文件夹移动。
-      if (activeData.type === DragType.FolderItem) {
-        if (overData?.type === DragType.FolderItem && isSameContainer(activeData, overData)) {
+        // 浏览器置顶标签的磁贴拖回临时区：取消浏览器固定。
+        // 用「确保取消」而不是 togglePinned 翻转：拖拽时快照可能已过期，
+        // 快照说未固定而实际已固定时，翻转会把标签再次固定（见 platform/tabs 注释）。
+        case 'unpin-tab': {
+          void setPinned(action.tabId, false)
+            .then((ok) => {
+              if (ok) notify(t('已取消固定'));
+              else notifyError(t('操作失败，请稍后重试'));
+            })
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
+          return;
+        }
+
+        case 'reorder-sections': {
+          if (activeData.type !== DragType.Section || overData?.type !== DragType.Section) return;
+          handleSectionReorder(activeData, overData, placeAfter);
+          return;
+        }
+
+        case 'reorder-folder-items': {
+          if (activeData.type !== DragType.FolderItem || overData?.type !== DragType.FolderItem) {
+            return;
+          }
           withFolderUndo(t('已调整顺序'), () =>
             dataStore.reorderFolderItems({
               folderId: activeData.folderId,
               sourceId: activeData.itemId,
               targetId: overData.itemId,
-              placeAfter: isPlaceAfter(event, activeData, overData)
+              placeAfter
             })
           );
           return;
         }
-        // 跨文件夹：拖到目标文件夹（或其条目）上时，把条目移入目标文件夹。
-        const targetFolderId =
-          overData?.type === DragType.Folder
-            ? overData.folderId
-            : overData?.type === DragType.FolderItem && overData.folderId !== activeData.folderId
-              ? overData.folderId
-              : undefined;
-        if (targetFolderId !== undefined) {
+
+        case 'move-folder-item': {
+          if (activeData.type !== DragType.FolderItem) return;
           withFolderUndo(t('已移动到目标文件夹'), () =>
-            dataStore.moveFolderItem(activeData.folderId, activeData.itemId, targetFolderId)
+            dataStore.moveFolderItem(activeData.folderId, activeData.itemId, action.targetFolderId)
           );
           return;
         }
-        // 移出固定空间：拖到临时区（标签行 / 分组卡）时移除条目，标签随之回到临时区。
-        if (overData?.type === DragType.Tab || overData?.type === DragType.Section) {
+
+        // 条目拖到临时区：移出收藏夹，标签随之回到临时区。
+        case 'remove-folder-item': {
+          if (activeData.type !== DragType.FolderItem) return;
           void dataStore
             .removeFolderItem(activeData.folderId, activeData.itemId)
             .then(() => notify(t('已从文件夹移除')))
             .catch(() => notifyError(t('操作失败，请稍后重试')));
+          return;
         }
-        return;
-      }
 
-      // 文件夹排序。
-      if (activeData.type === DragType.Folder && overData?.type === DragType.Folder) {
-        withFolderUndo(t('已调整顺序'), () =>
-          dataStore.moveFolder(
-            activeData.folderId,
-            overData.folderId,
-            isPlaceAfter(event, activeData, overData)
-          )
-        );
-        return;
-      }
-
-      // 顶部常驻磁贴排序。
-      // - 有 pinId：PinnedStrip 持久化 pin 排序（dataStore.reorderPins）。
-      // - 有 tabId：SectionList 内浏览器原生置顶组排序（chrome.tabs.move 改浏览器位置）。
-      if (activeData.type === DragType.Pin && overData?.type === DragType.Pin) {
-        if (activeData.pinId !== undefined && overData.pinId !== undefined) {
-          void dataStore
-            .reorderPins(
-              activeData.pinId,
-              overData.pinId,
-              isPlaceAfter(event, activeData, overData)
-            )
-            .catch(() => notifyError(t('操作失败，请稍后重试')));
-        } else if (activeData.tabId !== undefined && overData.tabId !== undefined) {
-          handleReorder(
-            activeData.tabId,
-            overData.tabId,
-            isPlaceAfter(event, activeData, overData)
+        case 'reorder-folders': {
+          if (activeData.type !== DragType.Folder || overData?.type !== DragType.Folder) return;
+          withFolderUndo(t('已调整顺序'), () =>
+            dataStore.moveFolder(activeData.folderId, overData.folderId, placeAfter)
           );
-        } else {
-          // 持久 pin（PinnedStrip）与浏览器置顶磁贴互拖：两种磁贴语义不同
-          // （一个落盘、一个在浏览器标签条），互换顺序无意义。静默无操作
-          // 会让用户以为拖拽坏了——必须明确告知不支持。
-          useUndoStore.getState().notify(t('常驻磁贴与浏览器固定标签之间不支持排序。'));
+          return;
+        }
+
+        case 'reorder-pins': {
+          if (
+            activeData.type !== DragType.Pin ||
+            overData?.type !== DragType.Pin ||
+            activeData.pinId === undefined ||
+            overData.pinId === undefined
+          ) {
+            return;
+          }
+          void dataStore
+            .reorderPins(activeData.pinId, overData.pinId, placeAfter)
+            .catch(() => notifyError(t('操作失败，请稍后重试')));
+          return;
+        }
+
+        default: {
+          // 穷尽性检查：`DropAction` 新增 kind 而这里没接住时，这一行会编译失败。
+          // 没有它，漏接一个动作只会在运行时表现为「拖了没反应」。
+          const unhandled: never = action;
+          void unhandled;
+          return;
         }
       }
     },
@@ -490,6 +533,7 @@ export function useTabDragHandlers() {
       handleSectionReorder,
       isPlaceAfter,
       notifyDropResult,
+      rejectMessage,
       requestCreateFolder,
       withFolderUndo,
       t

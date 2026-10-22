@@ -38,7 +38,12 @@ async function latestAutoSignature(): Promise<string | null> {
 async function collectWindowTabs(windowId: number): Promise<SnapshotTab[]> {
   const [rawTabs, rawGroups] = await Promise.all([
     browser.tabs.query({ windowId }),
-    browser.tabGroups.query({ windowId }).catch(() => [])
+    // 与 windowCache 同口径：查询失败不得伪装成「该窗口没有组」——那样这份自动
+    // 快照会静默丢掉全部分组信息，用户只会以为快照本来就没分组。
+    browser.tabGroups.query({ windowId }).catch((error) => {
+      logDegraded('auto-snapshot', `窗口 ${windowId} 原生组查询失败，本次快照不含分组信息`, error);
+      return [];
+    })
   ]);
   const groups = rawGroups.map(mapTabGroup);
   const groupById = new Map(groups.map((group) => [group.id, group]));
@@ -71,7 +76,12 @@ export async function runAutoSnapshot(): Promise<void> {
 
     // 与 windowCache 同款查询：populate:false 不回传标签数组（标签另行按窗口查询），
     // 且不依赖 windowTypes 参数（部分运行环境的实现不一致）。
-    const wins = await browser.windows.getAll({ populate: false }).catch(() => []);
+    // 窗口列表查询失败不能退化成空数组：那样本轮会「静默什么都不保存」，
+    // 与「所有窗口都没有可保存标签」在表现上完全一致，自动保存的缺口无从察觉。
+    const wins = await browser.windows.getAll({ populate: false }).catch((error) => {
+      logDegraded('auto-snapshot', '窗口列表查询失败，本轮未保存任何窗口', error);
+      return [];
+    });
     const normalWins = wins.filter((win) => win.incognito !== true);
     const previous = await latestAutoSignature();
     let saved = 0;

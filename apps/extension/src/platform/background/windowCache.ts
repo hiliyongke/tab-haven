@@ -4,6 +4,7 @@ import { SnapshotTabSchema, type SnapshotTab } from '@/core/schema/models';
 import { toGroupColor } from '@/core/group/groupColors';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { mapTab, mapTabGroup } from '@/platform/tabs';
+import { tabGroups } from '@/platform/tabGroups';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { buildSnapshot, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
@@ -17,6 +18,9 @@ const WindowTabsCacheSchema = z.record(z.string(), z.array(SnapshotTabSchema));
 let memWindowTabs: WindowTabsCache = {};
 let windowTabsFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const windowRefreshTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+/** 内存缓存 → storage.session 的落盘防抖（合并高频刷新，防 SW 回收后丢缓存）。 */
+const WINDOW_TABS_FLUSH_DEBOUNCE_MS = 800;
 /** 下一次关闭时跳过自动保存的窗口（归档流程已自行保存，防重复快照）。值为发放时间戳。 */
 const skipAutoSaveWindowIds = new Map<number, number>();
 
@@ -157,7 +161,11 @@ function flushWindowTabs(): void {
   windowTabsFlushTimer = undefined;
   const sessionArea = browser.storage?.session;
   if (!sessionArea) return;
-  void sessionArea.set({ [WINDOW_TABS_KEY]: memWindowTabs }).catch(() => {});
+  void sessionArea.set({ [WINDOW_TABS_KEY]: memWindowTabs }).catch((error) => {
+    // session 写失败的直接后果是：SW 被回收后该窗口的关窗自动快照**没有源数据**，
+    // 快照会静默缺内容。过去这里吞错不留痕，「快照为什么少了标签」无从查起。
+    logDegraded('window-cache', '窗口缓存落盘失败：SW 回收后关窗快照会缺少本次内容', error);
+  });
 }
 
 /**
@@ -188,40 +196,64 @@ function collectTabs(
   return out;
 }
 
-/** 查询某窗口当前标签（含原生组），更新内存缓存并安排落盘。 */
-async function refreshWindowTabs(windowId: number): Promise<void> {
+/**
+ * 查询某窗口的原生组；失败返回 undefined 并留痕。
+ *
+ * 刻意**不**退化成空数组：空数组等价于「该窗口没有组」，下游会拿它构建一份
+ * 残缺缓存去覆盖上一份完整缓存，关窗快照的分组信息就此永久丢失且零痕迹。
+ * 「查询失败」必须能与「确实没有组」区分开，由调用方决定要不要保留旧缓存。
+ */
+async function queryWindowGroups(windowId: number): Promise<TabGroupRecord[] | undefined> {
   try {
-    const [rawTabs, rawGroups] = await Promise.all([
-      browser.tabs.query({ windowId }),
-      browser.tabGroups.query({ windowId }).catch(() => [])
-    ]);
-    // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会
-    // 以空数组/残余数据复活已清理的键（驻留到浏览器重启）。丢弃即可。
-    if (isWindowRemoved(windowId)) return;
-    const list = collectTabs(rawTabs, rawGroups.map(mapTabGroup));
-    memWindowTabs[String(windowId)] = list;
-    // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置 =
-    // 激活标签之后」在第一次新建时拿不到锚点会静默失效；查询结果中的激活标签
-    // 即最近一次锚点（仅缺省时补种，之后由 onActivated 维护）。
-    if (!lastActiveTabIds.has(windowId)) {
-      const active = rawTabs.find((tab) => tab.active);
-      if (typeof active?.id === 'number') lastActiveTabIds.set(windowId, active.id);
-    }
-    if (windowTabsFlushTimer) return;
-    windowTabsFlushTimer = setTimeout(flushWindowTabs, 800);
+    return (await tabGroups.query({ windowId })).map(mapTabGroup);
   } catch (error) {
-    logDegraded('window-cache', '窗口缓存读取失败', error);
-    // 窗口可能已关闭，忽略
+    logDegraded('window-cache', `窗口 ${windowId} 原生组查询失败`, error);
+    return undefined;
   }
 }
 
+/** 查询某窗口当前标签（含原生组），更新内存缓存并安排落盘。 */
+async function refreshWindowTabs(windowId: number): Promise<void> {
+  let rawTabs: Parameters<typeof mapTab>[0][];
+  try {
+    rawTabs = await browser.tabs.query({ windowId });
+  } catch (error) {
+    logDegraded('window-cache', `窗口 ${windowId} 标签查询失败，跳过本次缓存更新`, error);
+    return;
+  }
+  const groups = await queryWindowGroups(windowId);
+  // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会
+  // 以空数组/残余数据复活已清理的键（驻留到浏览器重启）。丢弃即可。
+  if (isWindowRemoved(windowId)) return;
+  if (groups === undefined && memWindowTabs[String(windowId)] !== undefined) {
+    // 组查询失败时宁可保留上一份**完整**缓存，也不用缺分组信息的新数据覆盖它：
+    // 缓存的用途是「SW 被回收后仍能生成关窗快照」，稍旧但完整的数据价值更高；
+    // 组查询失败是瞬时故障，下一个标签事件（防抖后）即自愈。
+    return;
+  }
+  const list = collectTabs(rawTabs, groups ?? []);
+  memWindowTabs[String(windowId)] = list;
+  // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置 =
+  // 激活标签之后」在第一次新建时拿不到锚点会静默失效；查询结果中的激活标签
+  // 即最近一次锚点（仅缺省时补种，之后由 onActivated 维护）。
+  if (!lastActiveTabIds.has(windowId)) {
+    const active = rawTabs.find((tab) => tab.active);
+    if (typeof active?.id === 'number') lastActiveTabIds.set(windowId, active.id);
+  }
+  if (windowTabsFlushTimer) return;
+  windowTabsFlushTimer = setTimeout(flushWindowTabs, WINDOW_TABS_FLUSH_DEBOUNCE_MS);
+}
+
 /**
- * 重新扫描某窗口标签并写入缓存（防抖 250ms）。
+ * 重新扫描某窗口的防抖窗口（毫秒）。
  *
- * 防抖窗口是「关窗自动快照内容滞后」的主要来源之一：关窗瞬间读到的缓存
- * 最多滞后「防抖 + 落盘防抖」，最后几百毫秒的开关标签会丢进/带进快照。
+ * 该值是「关窗自动快照内容滞后」的主要来源之一：关窗瞬间读到的缓存最多滞后
+ * 「本防抖 + 落盘防抖」，最后几百毫秒的开关标签会丢进/带进快照。
  * 从 600ms 收紧到 250ms：事件合并收益仍在，滞后上限明显收窄。
+ * 与 WINDOW_TABS_FLUSH_DEBOUNCE_MS 是两段独立的延迟，调参须同时看两者。
  */
+const WINDOW_REFRESH_DEBOUNCE_MS = 250;
+
 function scheduleWindowRefresh(windowId: number): void {
   const existing = windowRefreshTimers.get(windowId);
   if (existing) clearTimeout(existing);
@@ -230,7 +262,7 @@ function scheduleWindowRefresh(windowId: number): void {
     setTimeout(() => {
       windowRefreshTimers.delete(windowId);
       void refreshWindowTabs(windowId);
-    }, 250)
+    }, WINDOW_REFRESH_DEBOUNCE_MS)
   );
 }
 
@@ -251,7 +283,9 @@ async function initWindowTabsCache(): Promise<void> {
         logDegraded('window-cache', 'session 窗口缓存数据损坏，已丢弃并从空态重建');
       }
     }
-    const wins = await browser.windows.getAll({ populate: false }).catch(() => []);
+    // 窗口列表查询失败不能退化成空数组：那样「每个窗口都没有缓存」和
+    // 「查询失败」无法区分，关窗自动快照会静默少存若干窗口且零痕迹。
+    const wins = await browser.windows.getAll({ populate: false });
     for (const win of wins) {
       if (typeof win.id === 'number') await refreshWindowTabs(win.id);
     }
@@ -297,7 +331,9 @@ async function handleWindowRemoved(windowId: number): Promise<void> {
         const cache = { ...parsed.data };
         if (cache[idKey]) {
           delete cache[idKey];
-          await sessionArea.set({ [WINDOW_TABS_KEY]: cache }).catch(() => {});
+          await sessionArea.set({ [WINDOW_TABS_KEY]: cache }).catch((error) => {
+            logDegraded('window-cache', '窗口缓存条目清理后落盘失败', error);
+          });
         }
       }
     }

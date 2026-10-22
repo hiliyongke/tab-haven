@@ -14,6 +14,11 @@ interface PinnedTileSortable {
   listeners: object | undefined;
   style: CSSProperties;
   isDragging: boolean;
+  /**
+   * 落点反馈：`target` 可投放 / `rejected` 结构上不接受当前拖拽类型。
+   * 磁贴贴在条内、离容器边界远，容器高亮会被磁贴自己挡住 —— 必须由磁贴本体表达。
+   */
+  dropState?: 'target' | 'rejected';
 }
 
 /**
@@ -62,7 +67,12 @@ export function PinnedTile({
     (isActive ? ' is-active' : '') +
     (isDiscarded ? ' is-discarded' : '') +
     (isAudible ? ' is-audible' : '') +
-    (sortable?.isDragging ? ' is-dragging' : '');
+    (sortable?.isDragging ? ' is-dragging' : '') +
+    (sortable?.dropState === 'target'
+      ? ' is-drop-target'
+      : sortable?.dropState === 'rejected'
+        ? ' is-drop-rejected'
+        : '');
 
   /* 右键菜单：磁贴只有一个 16px 的取消固定按钮（hover 才出现），触屏与键盘用户
      都没有替代路径。右键补齐带文字的操作列表。 */

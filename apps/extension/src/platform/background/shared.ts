@@ -38,14 +38,14 @@ export const syncCachedSettings = async (): Promise<void> => {
  * 各写一份判定时，任一处修口径（如空串 / 内部页的处理）另一处都静默漏改，
  * 表现为「同一个 URL 在休眠白名单里算命中、在搜索站点里算不命中」。
  */
-export const hostnameOf = (url: string | undefined): string => {
+export const hostnameOf = (url: string | undefined): string | undefined => {
   const host = coreHostnameOf(url);
   // 「有 URL 却取不到主机名」在 SW 侧是用户可见降级：白名单按主机名匹配，
   // 取不到即等价于不命中，站点会被自动休眠。空白起始页（about:blank 等）
   // 本就没有主机名，属正常态，不记诊断 —— 否则每轮休眠扫描都会为它写一条，
   // 真实故障被淹没（同 syncCachedSettings 的留痕纪律）。
   if (url && !host && inspectUrl(url, undefined).category !== 'blank-start') {
-    logDegraded('background', 'URL 无法解析为主机名，已按空主机名处理', url);
+    logDegraded('background', 'URL 无法解析为主机名，已按无主机名处理', url);
   }
   return host;
 };

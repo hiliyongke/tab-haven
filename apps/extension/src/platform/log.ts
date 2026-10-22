@@ -70,7 +70,10 @@ function redactUrls(text: string): string {
     return `\uE000${protectedTokens.length - 1}\uE000`;
   });
   for (const pattern of REDACT_PATTERNS) out = out.replace(pattern, '<url>');
-  return out.replace(/\uE000(\d+)\uE000/g, (_m, i) => protectedTokens[Number(i)] ?? '');
+  // 还原不到就**原样保留**占位串，而不是替换成空串：诊断日志里若本就含有
+  // 私有区字符（U+E000 段）组成的同形串，空串会把那段内容静默吞掉，
+  // 排查时看到的是"日志缺了一块"，比看到一个怪字符更难定位。
+  return out.replace(/\uE000(\d+)\uE000/g, (m, i) => protectedTokens[Number(i)] ?? m);
 }
 
 /** 供行为测试断言脱敏结果。内部函数，不参与产品路径。 */

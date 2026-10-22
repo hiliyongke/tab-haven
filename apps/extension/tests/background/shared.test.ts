@@ -43,13 +43,13 @@ describe('hostnameOf', () => {
     expect(hostnameOf('http://localhost:3000/x')).toBe('localhost');
   });
 
-  it('空/未定义返回空串', () => {
-    expect(hostnameOf(undefined)).toBe('');
-    expect(hostnameOf('')).toBe('');
+  it('空/未定义返回 undefined（不是空串：空串会被当成名为空的合法站点）', () => {
+    expect(hostnameOf(undefined)).toBeUndefined();
+    expect(hostnameOf('')).toBeUndefined();
   });
 
-  it('非法 URL 返回空串并留痕（不抛错给调用方）', () => {
-    expect(hostnameOf('not a url')).toBe('');
+  it('非法 URL 返回 undefined 并留痕（不抛错给调用方）', () => {
+    expect(hostnameOf('not a url')).toBeUndefined();
     expect(lastDiagnostic()).toBeDefined();
   });
 });

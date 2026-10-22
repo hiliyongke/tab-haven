@@ -27,10 +27,11 @@ export interface ReorderBlockedInput {
 /**
  * 返回阻断原因；`undefined` 表示允许列表内拖拽排序。
  *
- * 两个原因的处理方式**应当不同**：
- *  - `sync-off` 是用户主动关的开关 → 静默即可，不必打扰；
- *  - `recency` 是用户不易察觉的视图语义限制 → 必须显式告知，
- *    否则只会让人以为功能坏了。
+ * 两个原因**都必须显式告知**，只是说清的重点不同：
+ *  - `sync-off` 是用户主动关的开关 → 提示要点明「在哪能打开」；
+ *  - `recency` 是用户不易察觉的视图语义限制 → 提示要点明「切到浏览器顺序」。
+ * 任何一条静默失效都会让用户判定「拖拽坏了」—— 拖了就一定有结果或一定有说明，
+ * 这条口径由 `ui/dnd/dropPolicy`（判定）与 `useTabDragHandlers`（文案）共同保证。
  */
 export function reorderBlockedReason(input: ReorderBlockedInput): ReorderBlockedReason | undefined {
   if (!input.tabOrderSync) return 'sync-off';

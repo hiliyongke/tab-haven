@@ -26,25 +26,39 @@ export async function getRecentlyClosed(): Promise<RecentClosedEntry[]> {
   try {
     const items = await sessions.getRecentlyClosed({ maxResults: 20 });
     const entries: RecentClosedEntry[] = [];
+    let skipped = 0;
     for (const item of items) {
-      if (item.tab) {
+      const tab = item.tab;
+      const win = item.window;
+      const sessionId = tab?.sessionId ?? win?.sessionId;
+      // sessionId 是恢复的唯一钥匙。缺失时**不**用空串补位再造一条条目、然后靠
+      // 末尾 filter 把它丢掉 —— 那是「先造坏数据再补救」；直接跳过，并对跳过
+      // 条数留痕（全条跳过说明接口返回了非预期结构，值得看见）。
+      if (!sessionId) {
+        skipped += 1;
+        continue;
+      }
+      if (tab) {
         entries.push({
-          sessionId: item.tab.sessionId ?? '',
+          sessionId,
           isWindow: false,
           lastModified: item.lastModified,
-          title: item.tab.title,
-          url: item.tab.url
+          title: tab.title,
+          url: tab.url
         });
-      } else if (item.window) {
+      } else if (win) {
         entries.push({
-          sessionId: item.window.sessionId ?? '',
+          sessionId,
           isWindow: true,
           lastModified: item.lastModified,
-          tabCount: item.window.tabs?.length ?? 0
+          tabCount: win.tabs?.length ?? 0
         });
       }
     }
-    return entries.filter((entry) => entry.sessionId);
+    if (skipped > 0) {
+      logDegraded('sessions', `最近关闭列表中有 ${skipped} 条缺少 sessionId，已跳过`);
+    }
+    return entries;
   } catch (error) {
     // 静默降级必须可观测（本模块族纪律）：返回空列表会让撤销历史面板
     // 「最近关闭」分区看起来是空的，实际可能是 sessions API 失败。

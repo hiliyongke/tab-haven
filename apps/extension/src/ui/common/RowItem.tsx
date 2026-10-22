@@ -62,6 +62,8 @@ export const RowItem = memo(
       isHighlighted?: boolean;
       isSearchActive?: boolean;
       isDropTarget?: boolean;
+      /** 落点在结构上不接受当前拖拽类型：显示禁用态而非投放高亮（与 isDropTarget 互斥）。 */
+      isDropRejected?: boolean;
       density?: 'compact' | 'cozy' | 'large';
       indent?: number;
       onClick?: () => void;
@@ -92,6 +94,7 @@ export const RowItem = memo(
       isHighlighted,
       isSearchActive,
       isDropTarget,
+      isDropRejected,
       density = 'cozy',
       indent,
       onClick,
@@ -124,6 +127,7 @@ export const RowItem = memo(
       (isHighlighted ? ' is-highlighted' : '') +
       (isSearchActive ? ' is-search-active' : '') +
       (isDropTarget ? ' is-drop-target' : '') +
+      (isDropRejected ? ' is-drop-rejected' : '') +
       (indent ? ' has-indent' : '') +
       (container?.className ? ' ' + container.className : '');
     // 层级缩进：以 .row-item 的 pl-1.5(6px) 为首级，之后每级恒定 +16px。

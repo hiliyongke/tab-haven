@@ -18,13 +18,21 @@ import {
   type DragCancelEvent,
   type DragEndEvent,
   type DragStartEvent,
+  type Over,
   type ScreenReaderInstructions
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { KeyboardCode } from '@dnd-kit/core';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
-import { DragType, type DragData } from './types';
+import { classifyDrop } from './dropPolicy';
+import {
+  DragType,
+  FIXED_AREA_DROPPABLE,
+  PINNED_STRIP_DROPPABLE,
+  type DragData,
+  type DropTargetData
+} from './types';
 
 /** dnd-kit sensor 配置：必须模块级稳定对象引用。 */
 const POINTER_SENSOR_CONFIG = { activationConstraint: { distance: 4 } } as const;
@@ -88,20 +96,32 @@ export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]):
       return (
         type === DragType.Section ||
         type === DragType.Folder ||
-        type === 'fixed-area' ||
-        type === 'pinned-strip'
+        type === FIXED_AREA_DROPPABLE ||
+        type === PINNED_STRIP_DROPPABLE
       );
     });
     return closestCenter({ ...args, droppableContainers: cardContainers });
   }
 
   // 磁贴层级（常驻磁贴）：横向排列，用中心距离判断，避免 pointerWithin 对磁贴间空隙敏感。
+  //
+  // 但**只在指针仍处于磁贴区内**（磁贴本体或整条）时才这样判定。一旦指针离开，
+  // 必须放行到行层级，否则「磁贴拖回标签区取消固定」与「拖到收藏夹 → 明确拒绝」
+  // 永远没有落点可命中 —— 契约里写了、碰撞层却到不了，能力形同虚设。
+  //
+  // 放行时**只认指针精确命中的目标**，不做 closestCenter 兜底：磁贴拖拽的离开
+  // 动作本身就是「取消固定」这种有副作用的结果，用「离得最近的行」去接会让指针
+  // 从磁贴条滑到下方空白时凭空取消固定 —— 误触代价远高于「拖到空白不响应」。
   if (activeType === DragType.Pin) {
     const pinContainers = args.droppableContainers.filter((container) => {
       const type = (container.data.current as { type?: string } | undefined)?.type;
-      return type === DragType.Pin || type === 'pinned-strip';
+      return type === DragType.Pin || type === PINNED_STRIP_DROPPABLE;
     });
-    return closestCenter({ ...args, droppableContainers: pinContainers });
+    const withinPins = pointerWithin({ ...args, droppableContainers: pinContainers });
+    if (withinPins.length > 0) {
+      return closestCenter({ ...args, droppableContainers: pinContainers });
+    }
+    return pointerWithin(args);
   }
 
   // 行层级（标签/固定条目）：指针精确命中 + 面积最小，
@@ -145,8 +165,8 @@ export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]):
   return closestCenter({ ...args, droppableContainers: anyRow });
 }
 
-/** 拖拽元素的可播报名称：分组/标签用 title，文件夹用 name。 */
-function dragLabel(data: DragData | undefined): string {
+/** 拖拽元素的可播报名称：分组/标签用 title，文件夹用 name，纯投放区无名称。 */
+function dragLabel(data: DropTargetData | undefined): string {
   if (!data) return '';
   if ('title' in data) return data.title;
   return 'name' in data ? data.name : '';
@@ -157,6 +177,11 @@ function dragLabel(data: DragData | undefined): string {
  *
  * dnd-kit 内置指令与公告是英文，中文界面下读屏用户会听到与界面语言不一致的
  * 提示。这里注入 i18n 文案（指令 + 抓取/移动/放置/取消）。
+ *
+ * 播报与落点反馈同源：命中结构性不可投放的位置时播报「该位置不能放置」，
+ * 而不是先说「移动到 X」、松手后再无事发生 —— 读屏用户看不到禁用态，
+ * 语言是唯一的信息来源。
+ *
  * 导出理由同 dragCollisionDetection：这些回调藏在 DndContext 内部，
  * 不导出就没有任何回归保护。
  */
@@ -164,6 +189,19 @@ export function buildDragAccessibility(t: Translate): {
   screenReaderInstructions: ScreenReaderInstructions;
   announcements: Announcements;
 } {
+  /** 当前落点是否被结构性拒绝（设置闸门不参与：那是全局状态，播报里不反复念）。 */
+  const rejected = (active: { data: { current?: unknown } }, over: Over | null): boolean => {
+    if (!over) return false;
+    const activeData = active.data.current as DragData | undefined;
+    if (!activeData) return false;
+    return (
+      classifyDrop(activeData, {
+        id: over.id,
+        data: over.data.current as DropTargetData | undefined
+      }).kind === 'reject'
+    );
+  };
+
   return {
     screenReaderInstructions: {
       draggable: t('按空格键开始拖拽，用方向键移动，再次按空格键放置，按 Esc 取消')
@@ -171,14 +209,20 @@ export function buildDragAccessibility(t: Translate): {
     announcements: {
       onDragStart: ({ active }) =>
         t('已抓取 {{title}}', { title: dragLabel(active.data.current as DragData | undefined) }),
-      onDragOver: ({ over }) =>
-        over
-          ? t('移动到 {{title}}', { title: dragLabel(over.data.current as DragData | undefined) })
-          : undefined,
-      onDragEnd: ({ over }) =>
-        over
-          ? t('已放置 {{title}}', { title: dragLabel(over.data.current as DragData | undefined) })
-          : t('已放置回原位'),
+      onDragOver: ({ active, over }) => {
+        if (!over) return undefined;
+        if (rejected(active, over)) return t('该位置不能放置');
+        return t('移动到 {{title}}', {
+          title: dragLabel(over.data.current as DragData | undefined)
+        });
+      },
+      onDragEnd: ({ active, over }) => {
+        if (!over) return t('已放置回原位');
+        if (rejected(active, over)) return t('该位置不能放置');
+        return t('已放置 {{title}}', {
+          title: dragLabel(over.data.current as DragData | undefined)
+        });
+      },
       onDragCancel: () => t('已取消拖拽')
     }
   };

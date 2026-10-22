@@ -48,6 +48,7 @@ import {
 } from '@/platform/background/autoSnapshot';
 import { refreshBadgeSoon, showBadgeOverride } from '@/platform/background/badge';
 import { runActionClickRegroup } from '@/platform/background/actionRegroup';
+import { applyAutoGroupSetting, scheduleAutoGroupReconcile } from '@/platform/background/autoGroup';
 import { setupNoCache } from '@/platform/background/noCache';
 import { queryOmnibox, handleOmniboxEnter } from '@/platform/background/omnibox';
 import {
@@ -66,6 +67,15 @@ export default defineBackground(() => {
    * url/title/favIconUrl/pinned/muted/group）。
    */
   const WINDOW_CACHE_UPDATE_KEYS = ['url', 'title', 'favIconUrl', 'pinned', 'mutedInfo', 'groupId'];
+
+  /**
+   * 自动分组关心的 onUpdated 字段（字段口径与引擎维护的不变量一一对应）：
+   *  - url / pendingUrl / status：域名就绪（新标签打开后第一帧往往只有 pendingUrl）；
+   *  - groupId：标签入组 / 被移出 / 组解散（用户手动操作后也要重新对账）；
+   *  - pinned：固定标签不参与站点聚合。
+   * 刻意不含 title / favIconUrl：标题动画类站点会持续触发，自动分组不受其影响。
+   */
+  const AUTO_GROUP_UPDATE_KEYS = ['url', 'pendingUrl', 'groupId', 'pinned', 'status'];
 
   // 全局异常兜底：background 的 alarms / omnibox / contextMenus / 关窗缓存等
   // 异步路径漏网的 rejection，否则在诊断里一条线索都不会留。
@@ -113,7 +123,12 @@ export default defineBackground(() => {
         void (async () => {
           // 组名必须随快照一起回传：撤销恢复时若只有 groupId 而没有组名做校验，
           // 会拿旧 id 直接入组，而该 id 可能已被浏览器复用为无关组。
-          const groups = await browser.tabGroups.query({ windowId }).catch(() => []);
+          // 查询失败不得伪装成「没有组」：那等价于交出一张空组名表，恢复侧只能
+          // 盲入旧 id。降级可以，但必须留痕 —— 否则「撤销回来进错了组」无从查起。
+          const groups = await browser.tabGroups.query({ windowId }).catch((error) => {
+            logDegraded('background', `窗口 ${windowId} 原生组查询失败，撤销记录缺组名`, error);
+            return [];
+          });
           const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
           const records = closed.map((tab) => toUndoTabRecord(tab, groupNameById));
           // 协议层对单条消息的标签数有上限（防无界传输面）。原样发送超限数据会让
@@ -148,6 +163,19 @@ export default defineBackground(() => {
   // 读回后补刷一次角标：冷启动 500ms 定时器先触发时 cachedSettings 仍是默认值，
   // 角标会按默认模式渲染且无自愈路径（要等下一次标签事件/设置变更才纠正）。
   void syncCachedSettings().then(() => refreshBadgeSoon());
+
+  /**
+   * 自动分组的启动对账。
+   *
+   * 必要性：SW 每次被回收后重新拉起、浏览器每次启动，都可能存在「已经满足聚合
+   * 条件但没有分组」的存量标签（旧版本遗留、上次关闭开关后重开、SW 在写组前被回收）。
+   * 面板侧驱动被移除后，没有其它补齐入口了 —— 这里读一次开关并按需全窗口对账。
+   * 幂等：只为尚无 groupId 的标签建组，重复调用不会产出重复组。
+   */
+  void settingsRepository
+    .read()
+    .then((settings) => applyAutoGroupSetting(settings))
+    .catch((error: unknown) => logDegraded('auto-group', '启动读取自动分组设置失败', error));
 
   /**
    * 工具栏图标点击行为（settings.actionClickMode）：
@@ -220,6 +248,9 @@ export default defineBackground(() => {
     refreshBadgeSoon();
     if (typeof tab.windowId === 'number') scheduleWindowRefresh(tab.windowId);
     void enforceNewTabPosition(tab);
+    // 自动分组在标签「出生」这一帧就登记：Chrome 会把从组内标签点开的新标签
+    // 直接塞进同一个组，越早对账，用户越看不到「先错组、再跳出」的过程。
+    scheduleAutoGroupReconcile(tab.windowId);
   });
   browser.tabs.onActivated.addListener((info) => {
     if (typeof info.windowId === 'number' && typeof info.tabId === 'number') {
@@ -248,6 +279,10 @@ export default defineBackground(() => {
     ) {
       scheduleWindowRefresh(tab.windowId);
     }
+    // 域名就绪 / 入组状态变化 → 自动分组对账（120ms 合并，与上面的窗口缓存各自独立）。
+    if (AUTO_GROUP_UPDATE_KEYS.some((key) => key in changeInfo)) {
+      scheduleAutoGroupReconcile(tab.windowId);
+    }
   });
   browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
     coordinator.handleRemoved(tabId);
@@ -255,12 +290,17 @@ export default defineBackground(() => {
     // 与相邻的 onAttached / onDetached 同口径：windowId 缺失时 scheduleWindowRefresh
     // 会按 undefined 建键，缓存里多出一个永不清理的幽灵窗口。
     if (typeof removeInfo.windowId === 'number') scheduleWindowRefresh(removeInfo.windowId);
+    // 少一个标签可能让分组回到阈值以下，也可能让某个自动组变空被回收。
+    scheduleAutoGroupReconcile(removeInfo.windowId);
   });
   browser.tabs.onAttached.addListener((_tabId, attachInfo) => {
     if (typeof attachInfo.newWindowId === 'number') scheduleWindowRefresh(attachInfo.newWindowId);
+    // 跨窗口移动：目标窗口的成员构成变了（源窗口由 onDetached 覆盖），重新对账。
+    scheduleAutoGroupReconcile(attachInfo.newWindowId);
   });
   browser.tabs.onDetached.addListener((_tabId, detachInfo) => {
     if (typeof detachInfo.oldWindowId === 'number') scheduleWindowRefresh(detachInfo.oldWindowId);
+    scheduleAutoGroupReconcile(detachInfo.oldWindowId);
   });
   // 预渲染置换：旧标签被新标签替换（无 onCreated/onRemoved 对），
   // 需显式结算旧任务并把新标签纳入追踪，否则窗口标签缓存与复用追踪短暂失真。
@@ -399,7 +439,7 @@ export default defineBackground(() => {
     else clearContextMenus();
   });
   // 设置变更：缓存更新 + 右键菜单开关联动（开关重新打开时按当前文件夹重建）
-  // + 角标即时刷新 + 自动休眠闹钟启停 + 工具栏点击行为切换
+  // + 角标即时刷新 + 自动休眠闹钟启停 + 工具栏点击行为切换 + 自动分组开关联动
   settingsRepository.watch((settings) => {
     void syncCachedSettings();
     coordinator.setEnabled(settings.uniqueUrlTabs);
@@ -409,6 +449,9 @@ export default defineBackground(() => {
     // 自动保存开关/间隔变更即时对齐闹钟（周期变化也需重建，alarms 无法就地改周期）。
     void syncAutoSnapshotAlarm(settings);
     void syncActionClickBehavior();
+    // 开启即补齐存量标签；关闭即解散本功能创建的组。聚合模式 / 阈值变化同样
+    // 经此重新对账 —— 三者是「自动组内同站点」这条不变量的全部输入。
+    applyAutoGroupSetting(settings);
     refreshBadgeSoon();
   });
 
@@ -428,7 +471,12 @@ export default defineBackground(() => {
     const id = info.menuItemId as string;
     if (id.startsWith('th:page:add-folder:') || id.startsWith('th:link:add-folder:')) {
       const folderId = id.split(':').at(-1);
-      if (!folderId) return;
+      if (!folderId) {
+        // 菜单 id 由本模块拼装（th:*:add-folder:<folderId>），解析不出 id 说明
+        // 拼装侧与解析侧已经不一致；静默 return 会让这个右键项彻底无声失效。
+        logDegraded('background', `右键菜单 id 无法解析出文件夹 id：${id}`);
+        return;
+      }
       if (id.startsWith('th:link:')) {
         if (info.linkUrl) {
           void addEntryToFolder(folderId, {
@@ -562,17 +610,29 @@ export default defineBackground(() => {
 
   // regroup 模式：openPanelOnActionClick 为 false 时 Chrome 才会派发 onClicked，
   // 两种点击方式由设置驱动的 behavior 切换实现并存。
+  // 「整理完成」角标反馈的色值与时长。
+  // 色值只能写死：chrome.action 的 badge 背景色只接受 CSS 颜色字符串，
+  // 读不到设计令牌/CSS 变量（这是浏览器 API 的边界，不是绕过设计系统的口子）。
+  const BADGE_DONE_COLOR = '#16a34a';
+  const BADGE_DONE_TTL_MS = 1500;
+
   browser.action?.onClicked.addListener(() => {
     void (async () => {
       try {
         const settings = await settingsRepository.read();
         if (settings.actionClickMode !== 'regroup') return;
         const count = await runActionClickRegroup();
-        if (count <= 0) return;
+        if (count <= 0) {
+          // 「后台整理」模式下没有面板承载反馈，整理出 0 个标签时用户点完图标
+          // 什么都不会发生 —— 与「整理失败」无法区分。给一条说明结果的通知
+          // （整理成功走下面轻量的角标 ✓，不打扰）。
+          notifyUser('Tabs', t('没有可整理的标签'));
+          return;
+        }
         // 轻量完成反馈：角标短暂打勾（无文案噪音），随后按设置恢复正常角标。
         // 走 badge 模块的带到期时间的覆盖态：裸 setTimeout 在 SW 被回收后不会
         // 触发，角标会永久停在 ✓。
-        showBadgeOverride('✓', '#16a34a', 1500);
+        showBadgeOverride('✓', BADGE_DONE_COLOR, BADGE_DONE_TTL_MS);
       } catch (error) {
         logDegraded('background', '工具栏点击处理失败', error);
       }

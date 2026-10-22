@@ -1,3 +1,4 @@
+import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
@@ -5,7 +6,8 @@ import type { PersistentPin } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useTabStore } from '@/stores/tabStore';
 import { PinnedTile } from '@/ui/tabs/PinnedTile';
-import { DragType } from '@/ui/dnd/types';
+import { classifyDrop } from '@/ui/dnd/dropPolicy';
+import { DragType, type DragData } from '@/ui/dnd/types';
 
 /** 固定标签磁贴的运行时状态（合并当前打开的标签：active / audible / discarded）。 */
 export interface PinRuntime {
@@ -107,6 +109,24 @@ export function SortablePinnedTile({
     data: { type: DragType.Pin, pinId, tabId, title, url }
   });
 
+  // 落点反馈与松手执行同源（ui/dnd/dropPolicy）：磁贴盖住了容器内大部分面积，
+  // 拖标签悬停在磁贴上时容器高亮被完全挡住，只能由磁贴本体表达「可固定 / 放不进」。
+  const { active } = useDndContext();
+  const activeData = active?.data.current as DragData | undefined;
+  const dropOutcome =
+    sortable.isOver && activeData
+      ? classifyDrop(activeData, {
+          id,
+          data: { type: DragType.Pin, pinId, tabId, title, url }
+        })
+      : undefined;
+  const dropState: 'target' | 'rejected' | undefined =
+    dropOutcome?.kind === 'accept'
+      ? 'target'
+      : dropOutcome?.kind === 'reject'
+        ? 'rejected'
+        : undefined;
+
   return (
     <PinnedTile
       title={title}
@@ -127,7 +147,8 @@ export function SortablePinnedTile({
           transform: CSS.Transform.toString(sortable.transform),
           transition: sortable.transition
         },
-        isDragging: sortable.isDragging
+        isDragging: sortable.isDragging,
+        dropState
       }}
     />
   );

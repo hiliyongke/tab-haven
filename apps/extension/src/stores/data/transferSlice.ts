@@ -228,7 +228,12 @@ export function createTransferSlice(ctx: DataContext): Partial<DataState> {
         const seen = new Set<string>();
         for (const folder of current) {
           for (const item of folder.items) {
-            seen.add(webComparisonKey(item.url ?? '', undefined) ?? item.url ?? '');
+            // 无 URL 的条目（挂起项）没有可比较的键，不能用空串**假装**有一个：
+            // 空串会让所有无 URL 的已有条目共用一个 key，等于宣称它们彼此重复，
+            // 也让「已存在」判定出现一条永远匹配不上、却占着位子的假记录。
+            // 跳过即可 —— 它们本来就无法与书签 URL 比对。
+            const key = item.url ? (webComparisonKey(item.url, undefined) ?? item.url) : undefined;
+            if (key) seen.add(key);
           }
         }
         const uniqueLeaves = (

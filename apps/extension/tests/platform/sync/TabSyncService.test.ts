@@ -24,6 +24,31 @@ afterEach(() => {
 // fake-browser 未实现 onMoved/onAttached 等事件对象的 addListener/removeListener，
 // 这里自建最小事件分发：spy addListener 把回调收集起来，trigger 时一并调用。
 // 这样既能驱动 TabSyncService 的 signal，又不受 fake-browser 未实现事件的限制。
+
+/** 自建事件桩的形态（fake-browser 的类型里没有 trigger，addListener 也不可用）。 */
+interface StubEvent {
+  addListener: (cb: (...args: unknown[]) => void) => void;
+  removeListener: (cb: (...args: unknown[]) => void) => void;
+  trigger: (...args: unknown[]) => void;
+}
+
+/**
+ * 取事件桩。断言集中在**这两个助手**里：此前每个调用点各写一遍
+ * `as any` 并配一条 eslint-disable，等于在全仓唯一的零豁免纪律上开了 4 个口子。
+ */
+const stubEventOf = (ns: 'tabs' | 'tabGroups', name: string): StubEvent => {
+  const evt = (fakeBrowser[ns] as unknown as Record<string, StubEvent>)[name];
+  // 取不到就明确失败：返回一个「看起来能用」的 undefined 会让后面的
+  // addListener 赋值在更远处崩，线索与成因相隔太远。
+  if (!evt) throw new Error(`fake-browser 未暴露事件 ${ns}.${name}`);
+  return evt;
+};
+
+/** 触发一个事件桩。 */
+const triggerEvent = (event: unknown, ...args: unknown[]): void => {
+  (event as StubEvent).trigger(...args);
+};
+
 function stubEvents(): void {
   const eventNames: Array<['tabs' | 'tabGroups', string]> = [
     ['tabs', 'onCreated'],
@@ -40,12 +65,7 @@ function stubEvents(): void {
     ['tabGroups', 'onRemoved']
   ];
   for (const [ns, name] of eventNames) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const evt = (fakeBrowser[ns] as any)[name] as {
-      addListener: (cb: (...args: unknown[]) => void) => void;
-      removeListener: (cb: (...args: unknown[]) => void) => void;
-      trigger: (...args: unknown[]) => void;
-    };
+    const evt = stubEventOf(ns, name);
     const listeners = new Set<(...args: unknown[]) => void>();
     evt.addListener = vi.fn((cb: (...args: unknown[]) => void) => {
       listeners.add(cb);
@@ -78,8 +98,7 @@ describe('TabSyncService', () => {
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() =>
       Promise.resolve([makeTab({ id: 1, title: 'A' }), makeTab({ id: 2, title: 'B' })])
     );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (fakeBrowser.tabs.onCreated as any).trigger({ id: 2 });
+    triggerEvent(fakeBrowser.tabs.onCreated, { id: 2 });
     await vi.waitFor(() => expect(snapshots.length).toBeGreaterThanOrEqual(2));
 
     stop();
@@ -113,8 +132,7 @@ describe('TabSyncService', () => {
       Promise.resolve([makeTab({ id: 1 }), makeTab({ id: 2 })])
     );
     const before = snapshotCount.value;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (fakeBrowser.tabs.onCreated as any).trigger({ id: 2 });
+    triggerEvent(fakeBrowser.tabs.onCreated, { id: 2 });
     await vi.waitFor(() => expect(snapshotCount.value).toBeGreaterThan(before));
 
     stop2();
@@ -137,8 +155,7 @@ describe('TabSyncService', () => {
 
     // 连续触发 10 个事件，应在节流窗口内被合并为少量查询（而非 10 次）
     for (let i = 0; i < 10; i += 1) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (fakeBrowser.tabs.onUpdated as any).trigger(1, { title: `t${i}` });
+      triggerEvent(fakeBrowser.tabs.onUpdated, 1, { title: `t${i}` });
     }
     await new Promise((r) => setTimeout(r, 150));
     // 合并生效后，查询次数应远小于事件数：首帧 + trailing 若干，远小于 10

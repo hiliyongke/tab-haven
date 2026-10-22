@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n';
-import { useDndMonitor, useDroppable } from '@dnd-kit/core';
+import { useDndContext, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -10,7 +10,8 @@ import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { useScrollFade } from '@/ui/common/useScrollFade';
-import { FIXED_AREA_DROPPABLE } from '@/ui/dnd/types';
+import { classifyDrop } from '@/ui/dnd/dropPolicy';
+import { FIXED_AREA_DROPPABLE, type DragData } from '@/ui/dnd/types';
 import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
 import { FolderRow } from './FolderRow';
 
@@ -19,8 +20,15 @@ interface CreateFolderRequest {
   tabIds: number[];
 }
 
-/** 固定空间区域：header（折叠/新建）+ 文件夹列表（复用分组卡片视觉），
- *  整体是 useDroppable 目标（拖标签/分组到空白处创建新文件夹）。 */
+/** 投放区数据：模块级常量，避免每次渲染新建对象让 dnd-kit 重算 droppable。 */
+const FIXED_AREA_DROP_DATA = { type: FIXED_AREA_DROPPABLE } as const;
+
+/** 固定空间区域：header（说明/新建）+ 文件夹列表（复用分组卡片视觉），
+ *  整体是 useDroppable 目标（拖标签/分组到空白处创建新文件夹）。
+ *
+ *  刻意**不提供折叠**：收藏夹是侧边栏的一级标题，与「站点分组 / 未分组」同级；
+ *  一级标题一旦可收起，下方列表就失去归属锚点。固定区本身已有 34vh 内滚上限，
+ *  文件夹再多也不会把标签列表挤出首屏——当初的折叠动机已被这条上限覆盖。 */
 export function FixedArea() {
   const { t } = useTranslation();
   const folders = useDataStore((state) => state.folders);
@@ -32,34 +40,8 @@ export function FixedArea() {
   const notifyError = useUndoStore((state) => state.notifyError);
   const [creating, setCreating] = useState(false);
   const [dropRequest, setDropRequest] = useState<CreateFolderRequest | null>(null);
-  // 固定空间折叠：文件夹一多就首次自动折叠，避免 34vh 独立滚动区把标签列表
-  // 挤到折叠线以下。阈值取 2 而非 5：侧边栏窄，两个文件夹已足以占满
-  // 一屏，首屏的主角应当是标签列表。
-  // 用户手动切换后（非 null）遵循用户选择，不再按阈值自动改变。
-  const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(null);
-  // 拖拽期间强制展开：折叠时 `{!collapsed && children}` 不挂载任何文件夹，
-  // 投放只能落到外壳上 —— 而落到外壳的语义是「按标签标题新建一个文件夹」
-  // （见 useTabDragHandlers 的 FIXED_AREA_DROPPABLE 分支）。阈值 2 意味着
-  // 只要有两个以上文件夹，一次正常的「拖进阅读清单」就会误建成新文件夹。
-  // 拖拽开始即展开，让真实文件夹成为可投放目标。
-  const [dragExpanded, setDragExpanded] = useState(false);
   /** 概念说明的手动开关（与首启自动展示的 conceptsSeen 相互独立）。 */
   const [showConcepts, setShowConcepts] = useState(false);
-  useDndMonitor({
-    onDragStart: () => setDragExpanded(true),
-    onDragEnd: (event) => {
-      const overId = event.over?.id;
-      // 确实投进了某个文件夹才把展开固化下来（否则拖完又折回去，
-      // 用户看不到刚放进去的条目）；只是拖标签排序则恢复原状态。
-      const droppedIntoFolder = typeof overId === 'string' && overId.startsWith('folder:');
-      setDragExpanded(false);
-      if (droppedIntoFolder) setCollapsedOverride(false);
-    },
-    onDragCancel: () => setDragExpanded(false)
-  });
-  // 阈值取 5 而非 2：2 意味着用户刚建到第三个文件夹，固定空间就自动收起，
-  // 「我建的文件夹一刷新就收起来了」—— 阈值必须高于「刚开始用」的规模。
-  const collapsed = dragExpanded ? false : (collapsedOverride ?? folders.length > 5);
   // 不订阅 tabs：它仅用于建文件夹弹窗确认时的一次性过滤，订阅会让每次标签快照
   // 都重渲染整个固定区。事件期经 getState 读最新值即可（与其它 handler 同一约定）。
   const folderSortableIds = useMemo(
@@ -68,8 +50,15 @@ export function FixedArea() {
   );
   const { isOver, setNodeRef } = useDroppable({
     id: FIXED_AREA_DROPPABLE,
-    data: { type: 'fixed-area' }
+    data: FIXED_AREA_DROP_DATA
   });
+  // 落点接受与否与松手执行同源（ui/dnd/dropPolicy）：
+  // 拖文件夹 / 磁贴 / 收藏夹条目到这里时显示禁用态，而不是亮一下再无声失败。
+  const { active } = useDndContext();
+  const activeData = active?.data.current as DragData | undefined;
+  const dropOutcome = activeData
+    ? classifyDrop(activeData, { id: FIXED_AREA_DROPPABLE, data: FIXED_AREA_DROP_DATA })
+    : undefined;
   // 滚动边界提示要监听容器节点，而 CategoryModule 只透传 dnd 的 setNodeRef
   // （不提供独立 ref）：这里把它包一层，顺带把节点留在本地 ref 里，
   // 免去全局 querySelector（那会取到页面上任意一处 .fixed-area）。
@@ -94,10 +83,9 @@ export function FixedArea() {
   }, []);
 
   // 滚动边界提示：抽出为 useScrollFade，供其余内滚区复用。
-  // 传 collapsed 作重挂信号：折叠闸门 `{!collapsed && children}` 会**整体替换**
-  // 内容层节点，而 hook 默认只在挂载时跑一次——不重挂的话它观察的还是上一个
-  // 已失效的内容节点，展开/折叠后渐隐状态不再更新。
-  useScrollFade(scrollRef, collapsed);
+  // 内容层不再有「折叠时整体替换」，文件夹增删由 hook 内的 MutationObserver 覆盖，
+  // 不需要额外的重挂信号。
+  useScrollFade(scrollRef);
 
   const handleConfirmDrop = (name: string) => {
     const request = dropRequest;
@@ -125,18 +113,10 @@ export function FixedArea() {
           className="module-shell fixed-area scroll-fade"
           setNodeRef={attachNodeRef}
           isOver={isOver}
-          /* 身份标识不用容器边框（会与密集列表的扁平语言冲突），
-             改用标题前的品牌色条 —— 与原生组/站点组的强调色条同一套语言，
-             但取品牌色表示「这是长期资产的归口」，与临时分组区分。 */
-          accent="var(--c-brand-500)"
-          icon={
-            <Icon
-              d={Icons.chevron}
-              className={'h-3.5 w-3.5 transition-transform' + (collapsed ? '' : ' rotate-90')}
-            />
-          }
-          onToggle={() => setCollapsedOverride(!collapsed)}
-          collapsed={collapsed}
+          dropRejected={dropOutcome?.kind === 'reject'}
+          /* 标题不带强调色条：收藏夹与「站点分组」同为一级模块头，两者必须同构
+             （模块头 = 纯标题 + 计数 + 操作；强调色只属于模块内的分区卡片，
+             文件夹卡片自己带品牌色条，见 FolderRow）。 */
           action={
             <div className="flex items-center gap-0.5">
               {/* 概念卡常驻入口：它原本只在「一个文件夹都没有」时出现，而用户
@@ -195,9 +175,8 @@ export function FixedArea() {
           ))}
         </CategoryModule>
       </SortableContext>
-      {/* 弹窗必须脱离 CategoryModule 的折叠闸门（{!collapsed && children}）：
-          折叠态下点「+」/拖入命名若被闸门挡住不挂载，会表现为点了没反应
-          （FolderRow / sectionCards 同型陷阱）。弹窗经 Portal 挂到 body。 */}
+      {/* 弹窗放在模块内容层之外：它是页面级模态（Portal 挂到 body），不属于列表内容，
+          也不该跟着列表结构参与拖拽 / 行级键盘语义。 */}
       {creating && (
         <PromptDialog
           title={t('新建文件夹')}

@@ -138,7 +138,12 @@ export class ReuseCoordinator {
     if (this.allowancesReady) {
       const ready = this.allowancesReady;
       this.allowancesReady = undefined;
-      await ready.catch(() => {});
+      // 账本恢复失败意味着已发放的复用豁免令牌可能没回来，接下来的去重会把
+      // 刚恢复/刚创建的标签误判为重复并合并 —— 这正是「标签莫名消失」的成因。
+      // 吞掉这个失败会让该现象彻底无从排查。
+      await ready.catch((error) => {
+        logDegraded('reuse-coordinator', '复用豁免账本恢复失败，后续去重可能误合并', error);
+      });
     }
     for (;;) {
       const entry = this.nextDirty();

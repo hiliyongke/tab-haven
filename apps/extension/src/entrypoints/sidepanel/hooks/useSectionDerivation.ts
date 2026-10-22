@@ -8,7 +8,8 @@ import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
  * 这里集中了三个**性能敏感**的约定，收在一处才不至于在下次改动中被无意破坏：
  *
  * 1. `deriveSections` 是全量计算（排序 + 站点聚合 + opener 树），非过滤态下
- *    「自动分组 effect」与「展示用 allSections」入参完全相同 —— 必须只算一次共用；
+ *    展示结果直接复用基线，不再派生第二次（两者入参集合相同）；
+ *    （原生分组的写入在 background，已不再消费面板的派生结果）；
  * 2. `pinnedSection` / `restSections` / `pinnedSortableIds` 必须保持引用稳定：
  *    `SectionList` 是 memo 组件，dnd-kit 的 `SortableContext value` 也吃引用，
  *    每次渲染新建数组会让整棵列表树无效重渲染；
@@ -142,7 +143,6 @@ export function useSectionDerivation(options: SectionDerivationOptions) {
   }, [allSectionsCollapsed, collapsibleSections, setGroupCollapsed, toggleSiteCollapsed]);
 
   return {
-    baseSections,
     pinnedSection,
     restSections,
     pinnedSortableIds,

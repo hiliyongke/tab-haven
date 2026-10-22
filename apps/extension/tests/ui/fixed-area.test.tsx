@@ -598,25 +598,26 @@ describe('PinnedStrip', () => {
   });
 });
 
-describe('FixedArea 折叠阈值与概念说明', () => {
-  it('用到第 3 个文件夹时不自动收起（阈值须高于「刚开始用」的规模）', () => {
-    stubStores({
-      folders: [0, 1, 2].map((i) => folderWith(`夹${i}`, ['https://a.com/']))
-    });
-
-    renderInDnd(<FixedArea />);
-
-    expect(screen.getByText('夹0')).toBeInTheDocument();
-  });
-
-  it('超过 5 个文件夹时默认收起（避免把主列表挤出首屏）', () => {
+describe('FixedArea 一级标题不折叠与概念说明', () => {
+  it('文件夹再多也全部渲染（收藏夹是侧边栏一级标题，不提供折叠）', () => {
     stubStores({
       folders: [0, 1, 2, 3, 4, 5].map((i) => folderWith(`夹${i}`, ['https://a.com/']))
     });
 
     renderInDnd(<FixedArea />);
 
-    expect(screen.queryByText('夹0')).toBeNull();
+    // 折叠会把一级标题下的全部文件夹藏起来：用户只看到一条空标题，
+    // 下方列表失去归属锚点。固定区本身有 34vh 内滚上限，不需要再收。
+    expect(screen.getByText('夹0')).toBeInTheDocument();
+    expect(screen.getByText('夹5')).toBeInTheDocument();
+  });
+
+  it('标题不包在按钮里（一级标题没有折叠开关）', () => {
+    stubStores({ folders: [folderWith('工作', ['https://a.com/'])] });
+
+    renderInDnd(<FixedArea />);
+
+    expect(screen.getByText(translate('收藏夹')).closest('button')).toBeNull();
   });
 
   it('已有文件夹时仍能调出概念说明（需要区分 5 种固定语义时恰好有帮助）', () => {

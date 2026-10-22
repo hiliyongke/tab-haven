@@ -18,6 +18,7 @@ export function CategoryModule({
   className,
   setNodeRef,
   isOver,
+  dropRejected,
   'aria-label': ariaLabel,
   icon,
   accent,
@@ -36,11 +37,20 @@ export function CategoryModule({
   setNodeRef?: (node: HTMLElement | null) => void;
   /** droppable 高亮状态。 */
   isOver?: boolean;
+  /**
+   * 落点在结构上不接受当前拖拽类型：渲染禁用态而不是投放高亮。
+   * 两态互斥，判断口径由 ui/dnd/dropPolicy 统一给出。
+   */
+  dropRejected?: boolean;
   /** a11y 标签（如 "固定空间"）。 */
   'aria-label'?: string;
   /** 标题前的强调色条（固定空间用品牌色标识「长期资产归口」）。 */
   accent?: string;
-  /** 折叠相关：仅固定空间外壳使用；不传则头不可折叠、children 恒渲染。 */
+  /**
+   * 折叠相关：传 onToggle 才渲染可点击头部，缺省为纯展示头、children 恒渲染。
+   * 现无调用方使用（收藏夹作为一级标题刻意不折叠），保留是因为它与
+   * SectionHead 的折叠语义同源，后续给某个模块加折叠时不必重写一套。
+   */
   icon?: ReactNode;
   onToggle?: () => void;
   collapsed?: boolean;
@@ -50,7 +60,9 @@ export function CategoryModule({
       ref={setNodeRef}
       aria-label={ariaLabel}
       className={
-        'section-card' + (className ? ' ' + className : '') + (isOver ? ' is-drop-target' : '')
+        'section-card' +
+        (className ? ' ' + className : '') +
+        (isOver ? (dropRejected ? ' is-drop-rejected' : ' is-drop-target') : '')
       }
     >
       <SectionHead

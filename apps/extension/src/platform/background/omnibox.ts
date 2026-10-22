@@ -72,7 +72,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     // 非 http(s) 的固定图标不给建议（同时下方回车路径也会再校验一次）。
     if (!isOpenableUrl(pin.url)) continue;
     const host = hostnameOf(pin.url);
-    if (!q || host.includes(q) || pin.title.toLowerCase().includes(q)) {
+    if (!q || host?.includes(q) || pin.title.toLowerCase().includes(q)) {
       out.push({
         content: `pin:${pin.url}`,
         description: t('打开固定：{{name}}', { name: escapeSuggestionText(pin.title) })

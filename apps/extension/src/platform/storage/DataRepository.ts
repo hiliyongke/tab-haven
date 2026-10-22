@@ -6,6 +6,18 @@ import { logDegraded } from '@/platform/diagnostics';
 const QUARANTINE_ENTRY_LIMIT = 32 * 1024;
 
 /**
+ * 取 ZodArray 的元素 schema。
+ *
+ * zod 的 ZodArray 泛型不协变，`instanceof z.ZodArray` 收窄之后仍然取不到
+ * `.element`，于是每个需要逐元素恢复的调用点都得写一遍
+ * `as unknown as z.ZodArray<z.ZodTypeAny>`。断言集中到这一处：需要 element
+ * 的地方很多，但「绕开泛型不变性」这件事只应有唯一事实来源。
+ */
+function zodArrayElement(schema: z.ZodArray): z.ZodTypeAny {
+  return (schema as unknown as { element: z.ZodTypeAny }).element;
+}
+
+/**
  * 深拷贝（结构化克隆优先，不可用时退化为 JSON 往返）。
  *
  * 仓库默认值与落盘数据都是 JSON 同构的纯数据，两种方式等价；structuredClone
@@ -82,9 +94,9 @@ export class DataRepository<T> {
 
       // 数组类数据：逐元素尝试恢复，丢弃坏元素而非整块丢弃（如文件夹列表中单个坏条目不应连累全部）。
       if (this.schema instanceof z.ZodArray && Array.isArray(raw)) {
-        const arrSchema = this.schema as unknown as z.ZodArray<z.ZodTypeAny>;
+        const element = zodArrayElement(this.schema);
         const recovered = raw.flatMap((item) => {
-          const r = arrSchema.element.safeParse(item);
+          const r = element.safeParse(item);
           return r.success ? [r.data] : [];
         });
         const reparsed = this.schema.safeParse(recovered);
@@ -180,7 +192,11 @@ export class DataRepository<T> {
         entry.head = serialized.slice(0, 512);
       }
       const quarantine = await browser.storage.local.get('tabs.quarantine');
-      const list = (quarantine['tabs.quarantine'] as unknown[]) || [];
+      // 读出来的是 `unknown`：直接断言成数组再 push，一旦存进去的是非数组
+      // （异常写入 / 旧版本残留），push 会在 try 里抛错把整次隔离吞掉。
+      // 用 Array.isArray 收窄，非数组时从空列表重新开始（旧值本就无法追加）。
+      const existing = quarantine['tabs.quarantine'];
+      const list: unknown[] = Array.isArray(existing) ? existing : [];
       list.push(entry);
       await browser.storage.local.set({ 'tabs.quarantine': list.slice(-20) });
     } catch (error) {

@@ -11,7 +11,7 @@ import {
 } from '@/platform/tabs';
 import { sendMessageWithAck } from '@/platform/messages';
 import { snapshotsRepository } from '@/platform/storage/repositories';
-import { logFailure } from '@/platform/diagnostics';
+import { logDegraded, logFailure } from '@/platform/diagnostics';
 import { useUndoStore } from '@/stores/undoStore';
 import type { RestoreSnapshotResult } from '@/platform/snapshot/snapshots';
 import {
@@ -222,9 +222,11 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       }
     }
     // 只关闭已保存的可恢复标签：chrome:// 等内部页无法入档，保留在原窗口（不静默丢失）。
-    const closableIds = tabs
-      .filter((tab) => typeof tab.id === 'number' && tab.url && /^https?:\/\//i.test(tab.url))
-      .map((tab) => tab.id!);
+    // 用 flatMap 直接产出已收窄的 id，而不是「filter 之后再用 `tab.id!` 断言」：
+    // 断言只是让编译器闭嘴，一旦 filter 条件被改动，undefined 会静默混进 tabs.remove。
+    const closableIds = tabs.flatMap((tab) =>
+      typeof tab.id === 'number' && tab.url && /^https?:\/\//i.test(tab.url) ? [tab.id] : []
+    );
     // 若关闭后窗口将随之关闭（全部标签都已保存），提前请求跳过本次关窗自动保存，
     // 避免 background 再写一条同内容的 auto 快照。
     if (windowId !== undefined && closableIds.length > 0 && closableIds.length === tabs.length) {
@@ -316,7 +318,12 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   renameSnapshot: async (id, name) => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      // 入口（SnapshotsPanel）已先拦并提示，这里守住第二道：
+      // 静默 return 会让「改了名却没生效」在诊断里完全不留痕迹。
+      logDegraded('snapshotStore', '重命名快照收到空名称，已忽略');
+      return;
+    }
     const next = await withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
       const current = await snapshotsRepository.read();
       const updated = current.map((snap) => (snap.id === id ? { ...snap, name: trimmed } : snap));

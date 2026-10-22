@@ -1,13 +1,14 @@
 import { useMemo, useRef } from 'react';
 import { useTranslation } from '@/i18n';
-import { useDroppable } from '@dnd-kit/core';
+import { useDndContext, useDroppable } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import type { PersistentPin } from '@/core/schema/models';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useScrollFade } from '@/ui/common/useScrollFade';
-import { PINNED_STRIP_DROPPABLE } from '@/ui/dnd/types';
+import { classifyDrop } from '@/ui/dnd/dropPolicy';
+import { PINNED_STRIP_DROPPABLE, type DragData } from '@/ui/dnd/types';
 import {
   SortablePinnedTile,
   makePinMiddleClickHandler,
@@ -22,6 +23,9 @@ import {
  * closed 降透明度、audible 绿点、discarded 灰化、split 角标）。
  * 拖拽排序使用全局 dnd-kit（SortableContext 挂在外层 DndContext 下）。
  */
+/** 投放区数据：模块级常量，避免每次渲染新建对象让 dnd-kit 重算 droppable。 */
+const PINNED_STRIP_DROP_DATA = { type: PINNED_STRIP_DROPPABLE } as const;
+
 export function PinnedStrip() {
   const { t } = useTranslation();
   const pins = useDataStore((state) => state.pins);
@@ -35,8 +39,22 @@ export function PinnedStrip() {
   useScrollFade(pinGridRef, pins.length);
   const { isOver, setNodeRef } = useDroppable({
     id: PINNED_STRIP_DROPPABLE,
-    data: { type: 'pinned-strip' }
+    data: PINNED_STRIP_DROP_DATA
   });
+  // 落点反馈与松手执行同源（ui/dnd/dropPolicy）：分组/文件夹/条目拖来时显示禁用态。
+  const { active } = useDndContext();
+  const activeData = active?.data.current as DragData | undefined;
+  const dropOutcome = activeData
+    ? classifyDrop(activeData, { id: PINNED_STRIP_DROPPABLE, data: PINNED_STRIP_DROP_DATA })
+    : undefined;
+  const dropRejected = dropOutcome?.kind === 'reject';
+  const dropFeedback = !isOver
+    ? ''
+    : dropRejected
+      ? ' is-drop-rejected'
+      : dropOutcome?.kind === 'accept'
+        ? ' is-drop-target'
+        : '';
 
   // 一次建索引取代「每个磁贴各扫一遍全量标签」。
   // 注意 hook 必须在早退之前调用：pins 为空时组件仍要返回 null，但 hooks 顺序不能变。
@@ -56,7 +74,7 @@ export function PinnedStrip() {
     <SortableContext items={pinIds} strategy={rectSortingStrategy}>
       <section
         ref={setNodeRef}
-        className={'pinned-strip' + (isOver ? ' is-drop-target' : '')}
+        className={'pinned-strip' + dropFeedback}
         aria-label={t('常驻磁贴')}
         data-drop-label={t('拖到磁贴条固定')}
       >

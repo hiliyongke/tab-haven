@@ -69,12 +69,29 @@ export interface CollectOptions {
 const resolveSuffixes = (options: CollectOptions): readonly string[] =>
   options.keySuffixes ?? DEFAULT_KEY_SUFFIXES;
 
-const parseOptions: ParserOptions = {
+/**
+ * 解析器配置：扫描器与 lint 必须共用同一份。
+ *
+ * 此前两处各持一份字面量（内容相同但互无约束），任一侧改插件或开关，另一侧
+ * 都会静默漏改 —— 表现是「扫描器收进词典、lint 又判为裸露中文」这类自相矛盾。
+ */
+export const parseOptions: ParserOptions = {
   sourceType: 'module',
   // errorRecovery：单个新语法不至于让整个仓库扫描失败；错误节点会被跳过。
   errorRecovery: true,
   plugins: ['typescript', 'jsx', 'decorators-legacy']
 };
+
+/**
+ * 解析源码为 AST —— 全仓唯一的解析器返回类型断言点。
+ *
+ * 第三方 parser 的返回类型与本地 `AstNode` 不兼容，调用点本会各自写
+ * `as unknown as AstNode`；集中到此处后，「绕开 parser 类型」这件事只有一份实现，
+ * 且必然与 `parseOptions` 同源。
+ */
+export function parseAst(content: string): AstNode {
+  return parse(content, parseOptions) as unknown as AstNode;
+}
 
 /**
  * 遍历时跳过的目录：这些目录里没有业务源码，扫进来只是白耗时间，
@@ -299,7 +316,7 @@ export function collectFromFile(
 
   let ast: AstNode;
   try {
-    ast = parse(content, parseOptions) as unknown as AstNode;
+    ast = parseAst(content);
   } catch (error) {
     return {
       entries: [],

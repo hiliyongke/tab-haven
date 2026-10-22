@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
-import { parse, type ParserOptions } from '@babel/parser';
-import { DEFAULT_KEY_SUFFIXES, visit, walk, type AstNode, type AstValue } from '../collect.ts';
+import {
+  DEFAULT_KEY_SUFFIXES,
+  parseAst,
+  visit,
+  walk,
+  type AstNode,
+  type AstValue
+} from '../collect.ts';
 import type { KitPaths } from '../paths.ts';
 
 /**
@@ -61,12 +67,6 @@ const DIAGNOSTIC_CALLS = new Set([
   'reportPersistenceFailure'
 ]);
 
-const parseOptions: ParserOptions = {
-  sourceType: 'module',
-  errorRecovery: true,
-  plugins: ['typescript', 'jsx', 'decorators-legacy']
-};
-
 const asNodes = (value: AstValue): AstNode[] =>
   Array.isArray(value)
     ? value.filter(
@@ -113,8 +113,15 @@ export function lint(paths: KitPaths): LintResult {
 
     let ast: AstNode;
     try {
-      ast = parse(content, parseOptions) as unknown as AstNode;
-    } catch {
+      ast = parseAst(content);
+    } catch (error) {
+      // 解析失败不能静默 `continue`：坏语法文件（或 parser 不支持的语法）会被
+      // 永久跳过，lint 仍然报告「通过」，而该文件的中文文案实际一条都没检查。
+      reports.push(
+        `${file}: 解析失败，本文件未做文案检查（${
+          error instanceof Error ? error.message : String(error)
+        }）`
+      );
       continue;
     }
 

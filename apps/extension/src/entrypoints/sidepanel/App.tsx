@@ -50,7 +50,6 @@ import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
 import { pulseTabRows, useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
-import { useAutoGroupSync } from '@/entrypoints/sidepanel/hooks/useAutoGroupSync';
 import { useSearchController } from '@/ui/search/useSearchController';
 import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
@@ -430,6 +429,11 @@ export default function App() {
   /** 初始化失败后的自动重试定时器句柄（跨 effect 实例共享，cleanup 才能清到）。 */
   const retryTimerRef = useRef<number | undefined>(undefined);
 
+  /** 初始化失败后的自动重试延迟：给仓库读取一次喘息，避免在同一故障上立刻重试。 */
+  const INIT_RETRY_DELAY_MS = 1000;
+  /** 自动重试次数上限（含首次）。用尽即转错误态，交回用户手动重试。 */
+  const INIT_MAX_ATTEMPTS = 2;
+
   // 同步服务：事件 → 快照 → store 订阅自动重渲染。
   // 依赖里刻意不含 `t`：语言切换会导致 t 引用变化，进而重放整个数据层初始化
   // （重读全部仓库 + 重新订阅标签事件），切换一次语言等于重启一次面板。
@@ -439,16 +443,25 @@ export default function App() {
     // 只属于当次闭包，第二次挂载的 cleanup 清不到第一次排上的定时器。
     // 初始化失败时 toast 并自动重试一次（dataStore 已回滚 initialized 守卫，允许重入），
     // 避免面板永久停在 Loading 骨架屏。
-    void initializeData().catch(() => {
-      if (cancelled) return;
-      notify(translate('数据加载失败，请检查扩展权限'));
-      retryTimerRef.current = window.setTimeout(() => {
-        void initializeData().catch(() => {
-          // 自动重试仍失败：转错误态（手动重试 / 重新打开面板），不再静默。
-          if (!cancelled) setLoadFailed(true);
-        });
-      }, 1000);
-    });
+    // 重试次数是**命名常量**而不是「再嵌一层 catch」：后者把「只重试一次」这个
+    // 决定焊死在控制流里，想改成两次只能再加一层嵌套，且每次嵌套都要重写一遍
+    // 取消判断与失败处理。
+    const attemptInit = (attempt: number): void => {
+      void initializeData().catch(() => {
+        if (cancelled) return;
+        if (attempt === 1) notify(translate('数据加载失败，请检查扩展权限'));
+        if (attempt < INIT_MAX_ATTEMPTS) {
+          retryTimerRef.current = window.setTimeout(
+            () => attemptInit(attempt + 1),
+            INIT_RETRY_DELAY_MS
+          );
+          return;
+        }
+        // 重试次数用尽：转错误态（手动重试 / 重新打开面板），不再静默。
+        setLoadFailed(true);
+      });
+    };
+    attemptInit(1);
     void loadUndo().catch((error: unknown) => {
       logFailure('sidepanel', '撤销历史加载失败', error);
     });
@@ -502,10 +515,12 @@ export default function App() {
     []
   );
 
-  // 首启引导延迟弹出：数据就绪后先让用户看到真实列表约 0.9s，
+  // 首启引导延迟弹出：数据就绪后先让用户看到真实列表 TOUR_AUTO_OPEN_DELAY_MS，
   // 避免模态遮罩第一时间盖住被介绍的对象。引导完成（onboarded）后不再触发。
   // 延迟窗口内用户一旦开始操作（指针/键盘）即放弃本次自动弹出 ——
   // 用户已经上手了，再弹模态介绍只会打断他（可从设置页「重新观看引导」找回）。
+  const TOUR_AUTO_OPEN_DELAY_MS = 900;
+
   useEffect(() => {
     if (!dataReady || settings.onboarded) return;
     let cancelled = false;
@@ -521,7 +536,7 @@ export default function App() {
     const timer = window.setTimeout(() => {
       detach();
       if (!cancelled) setShowTour(true);
-    }, 900);
+    }, TOUR_AUTO_OPEN_DELAY_MS);
     window.addEventListener('pointerdown', cancel, true);
     window.addEventListener('keydown', cancel, true);
     return () => {
@@ -545,7 +560,6 @@ export default function App() {
 
   // 分区派生与折叠态展示（含复用基线的性能约定，见该 hook 注释）。
   const {
-    baseSections,
     pinnedSection,
     restSections,
     pinnedSortableIds,
@@ -621,12 +635,9 @@ export default function App() {
     [handleNavKeyDown, handleSearchKeyDown]
   );
 
-  // 自动原生分组：把聚合结果落成浏览器 tabGroups / 关闭时解散（细则见该 hook 注释）。
-  useAutoGroupSync({
-    sections: baseSections,
-    autoGroupNative: settings.autoGroupNative,
-    groupMode: settings.groupMode
-  });
+  // 原生分组的写入（建组 / 吸收 / 移出漂移成员 / 开关解散）全部由 background 的
+  // autoGroup 引擎负责：那是「浏览器状态 → 浏览器状态」的同步，不该依赖面板是否挂载，
+  // 也不该等「快照 → 重渲染 → 再派生」这一圈。面板只负责派生分区用于渲染。
 
   // 拖拽分发（排序/投放/建文件夹/固定）独立为 hook，handler 引用稳定。
   const { onDragEnd, handleReorder, handleMoveTab } = useTabDragHandlers();
@@ -745,12 +756,16 @@ export default function App() {
         notify(t('没有可清理的重复标签'));
         return;
       }
-      // 关闭是异步的（tabs 事件回灌后才移除行）；保留项始终在 DOM 里，可立即脉冲。
-      window.setTimeout(() => pulseTabRows(plan.keepIds), 80);
+      // 保留项全程留在 DOM 里（关闭只作用于 removable），因此脉冲不需要
+      // 「等 80ms 猜 DOM 已更新」这种拍脑袋的时间窗口 —— 改为等关闭动作
+      // **完成后**再脉冲，用确定性信号取代猜测的延迟。
       return closeWithUndo(
         liveTabs,
         plan.removable.map((tab) => tab.id)
-      );
+      ).then((result) => {
+        pulseTabRows(plan.keepIds);
+        return result;
+      });
     });
   }, [runBatch, closeWithUndo, notify, t]);
   /**

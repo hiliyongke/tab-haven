@@ -5,22 +5,65 @@ import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
 
 /**
+ * 高亮持续时间：必须与 `.is-located` 的 CSS 动画时长保持一致 ——
+ * 改动画不改这里，高亮会提前消失；改这里不改动画，class 已摘而动画还在跑。
+ */
+const LOCATE_HIGHLIGHT_MS = 1200;
+/** 虚拟列表下目标行可能尚未挂载（滚动事件刚发出），重试间隔。 */
+const LOCATE_RETRY_INTERVAL_MS = 50;
+/**
+ * 等待目标行挂载的总时长上限。
+ *
+ * 用**时间**而不是「次数 × 间隔」表达上限：后者一旦有人只调其中一个数字，
+ * 注释里写的「约 600ms」就成了假话，实际等待窗口被悄悄改变。
+ */
+const LOCATE_MAX_WAIT_MS = 600;
+
+/**
+ * 视觉行元素：滚动锚点是 `<li>`，动画定义在内部 `.row-item` 上。
+ * 取不到 `.row-item`（结构变了）时退回锚点本身，至少让高亮可见。
+ */
+function visualRowOf(target: HTMLElement): HTMLElement {
+  return target.querySelector<HTMLElement>('.row-item') ?? target;
+}
+
+/**
+ * 重播一次定位脉冲。
+ *
+ * 「先摘 class → 读一次 `offsetWidth` 强制同步布局 → 再挂回 class」是让同一个 CSS
+ * 动画重新播放的唯一可靠手段：同一帧内 remove+add 会被浏览器合并，动画不会重启。
+ * 这个强制重排的技巧在本仓只有这一份实现（`pulseTabRows` 与 `useLocateActive`
+ * 共用），此前两处各写一遍，改一处必漏另一处。
+ *
+ * `timers` 用于把清理定时器交给调用方的生命周期管理（组件卸载时一并清掉）；
+ * 不传表示无需跟踪（如一次性批量脉冲，元素上再挂一次 class 也无害）。
+ */
+function playLocatePulse(row: HTMLElement, timers?: Set<number>): void {
+  row.classList.remove('is-located');
+  void row.offsetWidth;
+  row.classList.add('is-located');
+  const id = window.setTimeout(() => {
+    row.classList.remove('is-located');
+    timers?.delete(id);
+  }, LOCATE_HIGHLIGHT_MS);
+  timers?.add(id);
+}
+
+/**
  * 给指定标签行播放一次定位脉冲（复用 `.is-located` 的既有动画）。
  *
  * 与 useLocateActive 共用同一套 DOM 约定（`data-tabs-tab-id` → 内部 `.row-item`），
  * 因此放在同文件：两处一旦分家，选择器改动就会漏掉另一处。
  * 用途：批量操作后高亮「被保留的项」（如清理重复后让用户看到每个域名留下了哪一个）。
+ *
+ * 只查临时区（data-tabs-tab-id）：清理重复的保留项一定是临时区标签，
+ * 固定区条目（data-folder-tab-id）不参与，避免同 id 命中到固定区去。
  */
 export function pulseTabRows(tabIds: readonly number[]): void {
   for (const tabId of tabIds) {
     const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${tabId}"]`);
-    const row = target?.querySelector<HTMLElement>('.row-item') ?? target;
-    if (!row) continue;
-    row.classList.remove('is-located');
-    // 强制重排以重播动画（与 useLocateActive 内同款技巧）
-    void row.offsetWidth;
-    row.classList.add('is-located');
-    window.setTimeout(() => row.classList.remove('is-located'), 1200);
+    if (!target) continue;
+    playLocatePulse(visualRowOf(target));
   }
 }
 
@@ -33,7 +76,8 @@ export function pulseTabRows(tabIds: readonly number[]): void {
  *
  * 递归重试的必要性：虚拟列表下目标行可能不在渲染窗口内（DOM 不存在）。
  * 流程是「先发滚动事件让虚拟列表滚到目标 index → 行挂载后 querySelector 才能命中」，
- * 命中即止，最多重试 12 次（约 600ms），期间有新的定位请求则本次作废（requestId 守卫）。
+ * 命中即止，超过 LOCATE_MAX_WAIT_MS 仍未挂载即放弃并明确告知（不静默失败）；
+ * 期间有新的定位请求则本次作废（requestId 守卫）。
  *
  * 文案走 `i18n.t` 而非 `useTranslation()` 的 `t`：`t` 的引用随语言切换变化，
  * 会让本 hook 的回调在切换语言时重建，进而让依赖它的键盘监听 effect 重新挂载。
@@ -88,12 +132,7 @@ export function useLocateActive(params: {
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
-      // 高亮动画定义在 .row-item 上：滚动锚点是 li，视觉行是内部 .row-item。
-      const row = target.querySelector<HTMLElement>('.row-item') ?? target;
-      row.classList.remove('is-located');
-      void row.offsetWidth;
-      row.classList.add('is-located');
-      schedule(() => row.classList.remove('is-located'), 1200);
+      playLocatePulse(visualRowOf(target), timersRef.current);
       return true;
     };
 
@@ -107,13 +146,18 @@ export function useLocateActive(params: {
     // 首次直查：目标行已在 DOM 时零延迟定位。
     if (locateTarget()) return;
     dispatchLocateEvents();
-    let attempts = 0;
+    const deadline = Date.now() + LOCATE_MAX_WAIT_MS;
     const retryLocate = () => {
       if (requestId !== locateRequestRef.current) return;
       dispatchLocateEvents();
       if (locateTarget()) return;
-      attempts += 1;
-      if (attempts < 12) schedule(retryLocate, 50);
+      if (Date.now() >= deadline) {
+        // 到点仍未挂载（该行始终不在虚拟列表的渲染窗口内）：必须说出来，
+        // 静默放弃会表现为「点了定位什么都没发生」。
+        notify(translate('没找到激活标签所在的行，可稍后重试'));
+        return;
+      }
+      schedule(retryLocate, LOCATE_RETRY_INTERVAL_MS);
     };
     schedule(retryLocate, 0);
   }, [activeTabId, notify, clearQuery]);

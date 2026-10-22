@@ -8,7 +8,8 @@ import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { SectionHead } from '@/ui/common/SectionHead';
-import { DragType, type DragData } from '@/ui/dnd/types';
+import { classifyDrop, dropFeedbackClass } from '@/ui/dnd/dropPolicy';
+import type { DragData } from '@/ui/dnd/types';
 
 /**
  * 通用分组卡片壳（原生组 / 站点组 / 固定文件夹 / 未分组 / 浏览器置顶 共用）：
@@ -65,20 +66,16 @@ export function GroupCard({
           : undefined,
         activatorRef: sortable.setActivatorNodeRef
       };
-  // 仅「跨容器投放」（拖标签/分组到本卡片）显示整卡投放高亮；
-  // 同层排序时的 isOver 只参与落点判断，不触发盒子高亮，避免排序路径上卡片乱闪。
+  // 落点反馈与松手执行共用同一份判定（ui/dnd/dropPolicy）：
+  // 亮起即代表松手真的会做事，禁用态即代表放不进去，不存在第三种结局。
   const { active } = useDndContext();
-  const activeType = (active?.data.current as DragData | undefined)?.type;
-  // 拖标签/分组/固定条目到本卡片时高亮投放反馈（固定条目 → 文件夹为跨文件夹移动，→ 分组为移出固定空间）。
-  const receivingDrop =
-    activeType === DragType.Tab ||
-    activeType === DragType.Section ||
-    activeType === DragType.FolderItem;
+  const activeData = active?.data.current as DragData | undefined;
+  const outcome = activeData ? classifyDrop(activeData, { id, data: dragData }) : undefined;
   const cardClass =
     'section-card' +
     (accent ? ' is-accented' : '') +
     (sortable.isDragging ? ' is-sorting' : '') +
-    (receivingDrop && sortable.isOver ? ' is-drop-target' : '') +
+    dropFeedbackClass(sortable.isOver, outcome) +
     (className ? ' ' + className : '');
   const style: CSSProperties = {
     transform: CSS.Transform.toString(sortable.transform),

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { groupColorForLabel, planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
+import {
+  groupColorForLabel,
+  planAutoGroupDomainCorrections,
+  planAutoGroups,
+  planRegroup
+} from '@/core/group/AutoGrouping';
 import { AUTO_GROUP_COLOR_NAMES, GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 import type { TemporarySection } from '@/core/site/Sections';
 import type { TabRecord } from '@/core/tab-types';
@@ -44,6 +49,28 @@ describe('planAutoGroups', () => {
     expect(plans[0]).toMatchObject({ title: 'github.com', tabIds: [1] });
   });
 
+  it('本地站点：端口不同即不同站点，不并入同名既有组', () => {
+    // 回归：站点标签曾一律算成 subLabel(subdomain, registrableDomain)，而 local/ip
+    // 站点的 registrableDomain **不含端口** —— localhost:3000 与 localhost:8080
+    // 会被算成同一个 "localhost"，于是 8080 的标签被吸收进 3000 的组（两站点被合并）。
+    // 建组标题与同站点判定必须是同一口径（都保留端口），见 siteLabelOfSite。
+    const plans = planAutoGroups([
+      {
+        kind: 'site',
+        key: 'site-localhost:3000',
+        title: 'localhost:3000',
+        siteKey: 'localhost:3000',
+        mergedGroupIds: [7],
+        tabs: [
+          makeTab(1, { url: 'http://localhost:3000/a', groupId: 7 }),
+          makeTab(2, { url: 'http://localhost:8080/b', groupId: NO_GROUP })
+        ]
+      }
+    ]);
+    // 8080 不是 3000 的同站点成员：无可吸收标签，不应产出计划。
+    expect(plans).toHaveLength(0);
+  });
+
   it('单标签语言分组不产出计划（噪音）', () => {
     const langSection: TemporarySection = {
       kind: 'site',
@@ -84,6 +111,101 @@ describe('planAutoGroups', () => {
     const plans = planAutoGroups([pinned, native, siteSection('en', [makeTab(5), makeTab(6)])]);
     expect(plans).toHaveLength(1);
     expect(plans[0]!.title).toBe('en');
+  });
+});
+
+describe('planAutoGroupDomainCorrections（Chrome 组继承的回归）', () => {
+  function nativeSection(title: string, tabs: TabRecord[], groupId = 7): TemporarySection {
+    return { kind: 'native', key: `group-${groupId}`, title, tabs, groupId, collapsed: false };
+  }
+
+  it('自动组内混入异域名成员时只移出异域标签（Chrome 把点链接打开的新标签塞进了同组）', () => {
+    const corrections = planAutoGroupDomainCorrections(
+      [
+        nativeSection('github.com', [
+          makeTab(1, { url: 'https://github.com/a', groupId: 7 }),
+          makeTab(2, { url: 'https://notion.so/x', groupId: 7 })
+        ])
+      ],
+      new Set([7])
+    );
+    expect(corrections).toEqual([{ groupId: 7, title: 'github.com', tabIds: [2] }]);
+  });
+
+  it('非自动组（用户手动建的组）绝不校正，即使标题就是域名', () => {
+    const corrections = planAutoGroupDomainCorrections(
+      [
+        nativeSection('github.com', [
+          makeTab(1, { url: 'https://github.com/a', groupId: 7 }),
+          makeTab(2, { url: 'https://notion.so/x', groupId: 7 })
+        ])
+      ],
+      new Set<number>()
+    );
+    expect(corrections).toHaveLength(0);
+  });
+
+  it('组标题被用户改名后无法证明归属，跳过校正', () => {
+    const corrections = planAutoGroupDomainCorrections(
+      [
+        nativeSection('工作', [
+          makeTab(1, { url: 'https://github.com/a', groupId: 7 }),
+          makeTab(2, { url: 'https://notion.so/x', groupId: 7 })
+        ])
+      ],
+      new Set([7])
+    );
+    expect(corrections).toHaveLength(0);
+  });
+
+  it('加载中（url 为空）的成员不参与判定：避免误移出同域新标签', () => {
+    const corrections = planAutoGroupDomainCorrections(
+      [
+        nativeSection('github.com', [
+          makeTab(1, { url: 'https://github.com/a', groupId: 7 }),
+          makeTab(2, { url: '', groupId: 7 })
+        ])
+      ],
+      new Set([7])
+    );
+    expect(corrections).toHaveLength(0);
+  });
+
+  it('www 归一化后同站点不校正；子域不同按「一子域一组」口径移出', () => {
+    const sameSite = planAutoGroupDomainCorrections(
+      [
+        nativeSection('github.com', [
+          makeTab(1, { url: 'https://github.com/a', groupId: 7 }),
+          makeTab(2, { url: 'https://www.github.com/b', groupId: 7 })
+        ])
+      ],
+      new Set([7])
+    );
+    expect(sameSite).toHaveLength(0);
+
+    const subdomain = planAutoGroupDomainCorrections(
+      [
+        nativeSection('github.com', [
+          makeTab(1, { url: 'https://github.com/a', groupId: 7 }),
+          makeTab(2, { url: 'https://gist.github.com/b', groupId: 7 })
+        ])
+      ],
+      new Set([7])
+    );
+    expect(subdomain).toEqual([{ groupId: 7, title: 'github.com', tabIds: [2] }]);
+  });
+
+  it('本地站点按含端口的口径比对（组标题与建组时一致）', () => {
+    const corrections = planAutoGroupDomainCorrections(
+      [
+        nativeSection('localhost:3000', [
+          makeTab(1, { url: 'http://localhost:3000/a', groupId: 7 }),
+          makeTab(2, { url: 'http://localhost:8080/b', groupId: 7 })
+        ])
+      ],
+      new Set([7])
+    );
+    expect(corrections).toEqual([{ groupId: 7, title: 'localhost:3000', tabIds: [2] }]);
   });
 });
 

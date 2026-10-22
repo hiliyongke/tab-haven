@@ -1,5 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
+import { planAutoGroupDomainCorrections } from '@/core/group/AutoGrouping';
+import type { TemporarySection } from '@/core/site/Sections';
 import { NO_GROUP } from '@/core/tab-types';
 import { chainTail } from '@/core/util/concurrency';
 import { groupExists, removeGroup, updateGroupMeta } from '@/platform/tabs';
@@ -220,4 +222,46 @@ async function runDisbandAutoGroups(): Promise<number> {
 /** 解散本功能创建的全部自动组（关闭自动分组开关时调用），返回实际解散的组数。 */
 export function disbandAutoGroups(): Promise<number> {
   return enqueue(() => runDisbandAutoGroups());
+}
+
+/**
+ * 自动组「域名漂移」校正：把不属于组标题所指站点的成员移出自动组，返回移出的标签数。
+ *
+ * 为什么需要（根因）：Chrome 会把「从组内标签点击链接打开的新标签」自动加入同一个组。
+ * 这类标签一出生就带 groupId，而自动分组只处理未分组标签（见 planAutoGroups），
+ * 于是跨域链接永久滞留在 opener 的域名组里——用户看到的现象就是「在网页里点链接
+ * 打开的新网页不会按域名归类」；同域链接因继承的组本就正确，不会暴露问题。
+ *
+ * 移出后由 tabs.ungroup 自身的 groupId 变更事件驱动下一轮快照，届时该标签作为
+ * 未分组标签参与聚合（达阈值则建组，不足阈值留在未分组——沿用既有阈值语义）。
+ * 只处理 autoGroupsRepository 记录的组：那是本功能创建的自动组，不触碰用户手动建的组。
+ */
+async function runReconcileAutoGroupDomains(
+  sections: readonly TemporarySection[]
+): Promise<number> {
+  const autoGroupIds = new Set(await autoGroupsRepository.read());
+  const corrections = planAutoGroupDomainCorrections(sections, autoGroupIds);
+  let moved = 0;
+  for (const correction of corrections) {
+    try {
+      await browser.tabs.ungroup([...correction.tabIds] as [number, ...number[]]);
+      moved += correction.tabIds.length;
+    } catch (error) {
+      // 单组失败不影响其余组：成员可能已被关闭或用户手动移出，下一轮快照重新判定
+      logDegraded('auto-group', `校正自动组「${correction.title}」的异域名成员失败`, error);
+    }
+  }
+  return moved;
+}
+
+/**
+ * 自动组「域名漂移」校正。与 syncAutoGroups 共用串行链：
+ * 建组与移出交叠会让同一标签在两轮里被反复搬动（组空回收 / 重建）。
+ *
+ * 无 native 分区时直接返回：绝大多数窗口没有原生组，这条响应式路径不该为此
+ * 每轮多付一次 storage 读取。
+ */
+export function reconcileAutoGroupDomains(sections: readonly TemporarySection[]): Promise<number> {
+  if (!sections.some((section) => section.kind === 'native')) return Promise.resolve(0);
+  return enqueue(() => runReconcileAutoGroupDomains(sections));
 }
