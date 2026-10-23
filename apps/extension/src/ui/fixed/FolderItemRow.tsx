@@ -4,9 +4,10 @@ import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 import { canSafelyDiscardTab, type TabRecord } from '@/core/tab-types';
+import { folderItemRowIdProps } from '@/ui/domContract';
 
 /** 固定条目行的运行时状态（由 FolderRow 一次性建索引下传，避免每行各自扫全量标签）。 */
-export interface FolderItemRuntime {
+interface FolderItemRuntime {
   isOpen: boolean;
   runtimeTab?: TabRecord;
 }
@@ -256,7 +257,7 @@ export const FolderItemRow = memo(function FolderItemRow({
     // 与标签行共用该属性时，⌘J 定位的 querySelector 取「第一个命中」，固定区
     // DOM 在列表之前 → 同 URL 未绑定时定位永远落在条目上而非列表行。
     // 定位工具按「真实行优先、条目兜底」两段查找（见 useLocateActive）。
-    <li data-folder-tab-id={runtimeTab?.id} onContextMenu={openMenu}>
+    <li {...folderItemRowIdProps(runtimeTab?.id)} onContextMenu={openMenu}>
       <RowItem
         faviconPageUrl={item.url}
         faviconTitle={item.title}

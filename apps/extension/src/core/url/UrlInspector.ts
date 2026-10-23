@@ -8,15 +8,32 @@
  * 本模块是整个产品 URL 判定的唯一事实来源（复用引擎、聚合、清理共用）。
  */
 
-export type UrlCategory = 'web' | 'blank-start' | 'internal';
+type UrlCategory = 'web' | 'blank-start' | 'internal';
 
-export interface UrlInspection {
+interface UrlInspection {
   /** web = 可参与复用/聚合的 http(s) 页；blank-start = 空白起始页等待导航；internal = 浏览器内部页。 */
   category: UrlCategory;
   /** 同 URL 比较键：导航中取 pendingUrl，否则取已提交 URL。 */
   comparisonKey: string;
   /** 已提交 URL（可能为空串）。 */
   committedUrl: string;
+}
+
+/**
+ * http(s) 绝对 URL 的前缀判定（全仓唯一实现）。
+ *
+ * 此前同一条正则被抄在 10 个文件里（快照收集、图标、角标、搜索、导入 schema…），
+ * 改口径必然漏改，表现为「同一个 URL 在快照里算网页、在导入里算不安全」。
+ *
+ * 与下面的 `isWebUrl` 分工不同，不要互相替换：本函数是**严格前缀判定**，用于
+ * 外部输入白名单（导入的备份、地址栏直开）——`https:example.com` 这类不带 `//`
+ * 的写法不该被放行去 `tabs.create`；`isWebUrl` 是**解析后协议判定**，用于浏览器
+ * 已给出的 URL 分类，输入形态由浏览器保证。
+ */
+const HTTP_SCHEME_PREFIX = /^https?:\/\//i;
+
+export function isHttpUrl(url: string | undefined): url is string {
+  return url !== undefined && HTTP_SCHEME_PREFIX.test(url);
 }
 
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);

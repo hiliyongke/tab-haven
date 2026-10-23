@@ -4,6 +4,7 @@ import { foldersRepository, pinsRepository } from '@/platform/storage/repositori
 import { t } from '@/i18n/headless';
 import { openSidePanel } from '@/platform/sidePanel';
 import { hostnameOf, runPanelSearch } from './shared';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 
 interface OmniSuggestion {
   content: string;
@@ -23,9 +24,12 @@ function escapeSuggestionText(text: string): string {
   );
 }
 
+/** 地址栏「已打开标签直达」的建议条数上限。 */
+const OMNIBOX_TAB_SUGGESTIONS = 5;
+
 /** 仅 http(s) 才允许经地址栏打开（固定图标可来自导入的备份）。 */
 function isOpenableUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url);
+  return isHttpUrl(url);
 }
 
 /** 实时建议：已打开标签直达 / 文件夹 / 固定条目 / 站内搜索。 */
@@ -38,7 +42,8 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
   ]);
   const out: OmniSuggestion[] = [];
   // 已打开标签直达并置顶：地址栏的高频意图是「切回去」而非再开一个。
-  // 当前激活标签排最后（用户正看着它）；上限 5 条，给下方建议留展示位。
+  // 当前激活标签排最后（用户正看着它）；上限 OMNIBOX_TAB_SUGGESTIONS 条，
+  // 给下方建议留展示位（地址栏下拉总共只有 8 行左右）。
   if (q) {
     const matchedTabs = tabs
       .filter(
@@ -50,7 +55,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
         if (a.active !== b.active) return a.active ? 1 : -1;
         return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0);
       })
-      .slice(0, 5);
+      .slice(0, OMNIBOX_TAB_SUGGESTIONS);
     for (const tab of matchedTabs) {
       out.push({
         content: `tab:${tab.id}`,

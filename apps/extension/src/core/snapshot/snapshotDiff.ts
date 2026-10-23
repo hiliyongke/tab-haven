@@ -1,5 +1,5 @@
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
-import { webComparisonKey } from '@/core/url/UrlInspector';
+import { isHttpUrl, webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 快照恢复 diff：把「恢复会发生什么」变成决策前可见的纯函数。
@@ -15,10 +15,10 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
  */
 
 /** 单条快照条目的 diff 分类。 */
-export type SnapshotDiffStatus = 'create' | 'existing' | 'skipped';
+type SnapshotDiffStatus = 'create' | 'existing' | 'skipped';
 
 /** diff 结果条目：原条目 + 分类。 */
-export interface SnapshotDiffEntry {
+interface SnapshotDiffEntry {
   tab: SnapshotTab;
   status: SnapshotDiffStatus;
 }
@@ -57,7 +57,7 @@ export function snapshotDiff(
 
   for (const tab of tabs) {
     // 不可恢复：非 http(s)（采集端已过滤，此处兜底导入数据）。
-    if (!/^https?:\/\//i.test(tab.url)) {
+    if (!isHttpUrl(tab.url)) {
       skipped.push({ tab, status: 'skipped' });
       continue;
     }

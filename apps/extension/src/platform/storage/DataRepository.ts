@@ -1,9 +1,15 @@
 import { browser } from 'wxt/browser';
 import { z, type ZodType } from 'zod';
 import { logDegraded } from '@/platform/diagnostics';
+import { QUARANTINE_KEY } from './keys';
 
 /** 隔离区单条原始数据的体积上限（超出只留摘要，避免撑爆 local 配额）。 */
 const QUARANTINE_ENTRY_LIMIT = 32 * 1024;
+// 隔离区键名见 @/platform/storage/keys（PRIVACY.md 第 3 节登记的 32KB / 最近 20 条口径即指本品）。
+/** 超限条目保留的头部字节数：够定位数据类型与字段，不足以撑爆配额。 */
+const QUARANTINE_HEAD_BYTES = 512;
+/** 隔离区保留的条目数：只留最近的若干条，隔离区自身不得成为无界增长面。 */
+const QUARANTINE_MAX_ENTRIES = 20;
 
 /**
  * 取 ZodArray 的元素 schema。
@@ -189,16 +195,18 @@ export class DataRepository<T> {
         entry.raw = raw;
       } else {
         entry.truncated = true;
-        entry.head = serialized.slice(0, 512);
+        entry.head = serialized.slice(0, QUARANTINE_HEAD_BYTES);
       }
-      const quarantine = await browser.storage.local.get('tabs.quarantine');
+      const quarantine = await browser.storage.local.get(QUARANTINE_KEY);
       // 读出来的是 `unknown`：直接断言成数组再 push，一旦存进去的是非数组
       // （异常写入 / 旧版本残留），push 会在 try 里抛错把整次隔离吞掉。
       // 用 Array.isArray 收窄，非数组时从空列表重新开始（旧值本就无法追加）。
-      const existing = quarantine['tabs.quarantine'];
+      const existing = quarantine[QUARANTINE_KEY];
       const list: unknown[] = Array.isArray(existing) ? existing : [];
       list.push(entry);
-      await browser.storage.local.set({ 'tabs.quarantine': list.slice(-20) });
+      await browser.storage.local.set({
+        [QUARANTINE_KEY]: list.slice(-QUARANTINE_MAX_ENTRIES)
+      });
     } catch (error) {
       // 隔离失败不影响主流程
       logDegraded('storage', `坏数据隔离失败（${this.key}）`, error);

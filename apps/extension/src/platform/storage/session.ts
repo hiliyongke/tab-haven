@@ -1,6 +1,8 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { SESSION_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { createSerialChain } from '@/core/util/concurrency';
+import { SESSION_KEY } from './keys';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -28,8 +30,6 @@ interface SessionData {
   /** 手动移出网站聚合的标签 id。 */
   manualStandaloneTabIds: number[];
 }
-
-const SESSION_KEY = 'tabs.session';
 
 const EMPTY_SESSION: SessionData = { itemTabBindings: {}, manualStandaloneTabIds: [] };
 
@@ -74,7 +74,7 @@ async function writeSession(data: SessionData): Promise<boolean> {
 }
 
 /** 会话写操作串行队列（模块级，进程内全局唯一）。 */
-let chain: Promise<void> = Promise.resolve();
+const chain = createSerialChain();
 
 /**
  * 本上下文上一次真实写入的持久化结果（无变更跳过写盘时沿用）。
@@ -141,11 +141,9 @@ export function mutateSession(
     }
   };
 
-  // 双保险：step 自身已 try/catch，第二个参数再兜住上一次遗留的 rejection，
-  // 确保队列不会被污染成永久 rejected。
-  chain = chain.then(step, step);
-
-  return chain.then(() => result);
+  // step 自身已 try/catch；链尾再由 SerialChain 兜底，确保队列不会被污染成
+  // 永久 rejected（届时此后每个 mutateSession 都永不 resolve）。
+  return chain.enqueue(step).then(() => result);
 }
 
 /** 增量更新会话数据（队列内 read-modify-write，串行化防竞态）。 */

@@ -32,6 +32,50 @@ export function chainTail<T>(run: Promise<T>): Promise<void> {
 }
 
 /**
+ * 串行链：把「排队 → 执行 → 兜底」三步收口成一处。
+ *
+ * 此前各处自行维护 `let chain = Promise.resolve()` 并手写 `chain = run.catch(...)`，
+ * 全仓抄了 8 份且兜底口径不一（静默吞 / 留痕 / 只兜 reject 不兜 throw）。漏兜底
+ * 的那一份就会让链永久 rejected（见 chainTail 的说明），且故障点分散、无法单点加固。
+ * 现在由本工厂统一保证：链尾**恒被兜底**，单次操作失败不会污染后续入队。
+ */
+export interface SerialChain {
+  /**
+   * 入队并返回该操作的原始 Promise（失败会 reject 给调用方）。
+   *
+   * 适用「写盘成功才更新内存」这类需要回执的场景：调用方自己消化 reject，
+   * 链本身不受影响。
+   */
+  enqueue<T>(op: () => Promise<T>): Promise<T>;
+  /**
+   * 入队并把失败就地留痕、消解为 resolve，返回已兜底的 Promise。
+   *
+   * 适用「void 调用、无人接 rejection」的场景：操作内部再抛也会被 `onError`
+   * 接住，不会出现无人接的 rejection。
+   */
+  enqueueSettled(op: () => Promise<void>, onError: (error: unknown) => void): Promise<void>;
+}
+
+export function createSerialChain(): SerialChain {
+  let tail: Promise<unknown> = Promise.resolve();
+  return {
+    enqueue<T>(op: () => Promise<T>): Promise<T> {
+      const run = tail.then(op);
+      tail = chainTail(run);
+      return run;
+    },
+    enqueueSettled(op, onError) {
+      const run = tail.then(op);
+      const guarded = run.catch((error: unknown) => {
+        onError(error);
+      });
+      tail = guarded;
+      return guarded;
+    }
+  };
+}
+
+/**
  * 以不超过 `limit` 的并发度执行全部任务，返回与 `items` 等长、同序的结果数组。
  *
  * `task` 抛错时：该任务所在槽位的 worker 停止，其余在途任务继续，最终以第一个

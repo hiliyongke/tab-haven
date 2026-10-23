@@ -6,6 +6,7 @@ import { settingsRepository, snapshotsRepository } from '@/platform/storage/repo
 import { buildSnapshot, collectSnapshotTabs, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { logDegraded } from '@/platform/diagnostics';
+import { AUTO_SNAPSHOT_ALARM } from '@/platform/storage/keys';
 
 /**
  * 定时自动快照。
@@ -18,10 +19,13 @@ import { logDegraded } from '@/platform/diagnostics';
  *  - 内容未变化时跳过写入，避免生成一串完全相同的噪音快照并快速耗尽 maxAutoSnapshots。
  */
 
-const AUTO_SNAPSHOT_ALARM = 'tabs-auto-snapshot';
-
-/** 现场指纹：定时快照的去重依据（URL 集合 + 顺序）。 */
-function signatureOf(tabs: readonly SnapshotTab[]): string {
+/** 现场指纹：定时快照的去重依据（URL 集合 + 顺序）。
+ *
+ * 与 `core/util/signature` 的 `structuralSignature` **不是同一件事**：那个是
+ * 「整份数据的结构签名」（用于判断持久化内容是否真的变了，含 favicon 摘要处理），
+ * 这里只比 URL 序列。改名前的 `signatureOf` 与它同词根，容易被误选。
+ */
+function urlSetFingerprint(tabs: readonly SnapshotTab[]): string {
   return tabs.map((tab) => tab.url).join('|');
 }
 
@@ -31,7 +35,7 @@ async function latestAutoSignature(): Promise<string | null> {
   const latest = all
     .filter((snap) => snap.origin === 'auto')
     .sort((a, b) => b.createdAt - a.createdAt)[0];
-  return latest ? signatureOf(latest.tabs) : null;
+  return latest ? urlSetFingerprint(latest.tabs) : null;
 }
 
 /** 采集某窗口可恢复的标签（口径见 `collectSnapshotTabs`，全仓唯一实现）。 */
@@ -81,7 +85,8 @@ export async function runAutoSnapshot(): Promise<void> {
       });
       if (tabs.length === 0) continue;
       // 单窗口场景与上一份完全相同则跳过；多窗口时以首窗口差异判断（其余窗口仍需各自保存）。
-      if (normalWins.length === 1 && previous !== null && signatureOf(tabs) === previous) continue;
+      if (normalWins.length === 1 && previous !== null && urlSetFingerprint(tabs) === previous)
+        continue;
       const snapshot = buildSnapshot({
         name: '',
         fallbackName: DEFAULT_SNAPSHOT_NAMES.auto,

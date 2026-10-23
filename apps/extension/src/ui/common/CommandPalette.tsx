@@ -84,6 +84,8 @@ interface CommandItem {
 
 /** 空查询时标签项的挂载上限（含 Favicon 的行有真实渲染成本；输入后过滤路径不受限）。 */
 const EMPTY_QUERY_TAB_LIMIT = 20;
+/** dashboard 里「最近关闭批次」与「最近快照」各展示的条数。 */
+const DASHBOARD_RECENT_LIMIT = 3;
 
 /**
  * 命令区内的分组（仅在命令段渲染组标题）：扫读时组标题把 14 条平铺命令切成
@@ -404,9 +406,9 @@ export function CommandPalette({
       }));
     const q = query.trim().toLowerCase();
     if (!q) {
-      // 空查询 = dashboard：最近关闭批次 + 最近快照（各前 3 条）+ 截断的标签直达。
+      // 空查询 = dashboard：最近关闭批次 + 最近快照（各 DASHBOARD_RECENT_LIMIT 条）+ 截断的标签直达。
       const recentItems: CommandItem[] = undoBatches
-        .slice(-3)
+        .slice(-DASHBOARD_RECENT_LIMIT)
         .reverse()
         .map((batch) => {
           // 撤销条目不含标题（UndoTabRecord 只有 url/位置/组信息），展示用主机名。
@@ -428,7 +430,9 @@ export function CommandPalette({
             run: () => void useUndoStore.getState().undoBatch(batch.id)
           };
         });
-      for (const snap of [...snapshots].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3)) {
+      for (const snap of [...snapshots]
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, DASHBOARD_RECENT_LIMIT)) {
         recentItems.push({
           id: `snap-${snap.id}`,
           label: snap.name,

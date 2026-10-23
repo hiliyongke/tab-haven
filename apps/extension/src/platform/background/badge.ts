@@ -95,13 +95,16 @@ async function refreshBadge(): Promise<void> {
   }
 }
 
+/** 防抖窗口：标签事件连续触发时合并为一次全量查询。 */
+const BADGE_DEBOUNCE_MS = 500;
+
 /** 防抖刷新角标（事件高频时合并）。 */
 function refreshBadgeSoon(): void {
   if (badgeTimer) return;
   badgeTimer = setTimeout(() => {
     badgeTimer = undefined;
     void refreshBadge();
-  }, 500);
+  }, BADGE_DEBOUNCE_MS);
 }
 
 export { refreshBadge, refreshBadgeSoon };

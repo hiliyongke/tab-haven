@@ -114,12 +114,12 @@ export const useTabStore = create<TabState>()((set, get) => ({
 
   setLanguage: (tabId, lang) => {
     set((state) => {
-      const idx = state.tabs.findIndex((t) => t.id === tabId);
-      if (idx < 0) return {};
-      const current = state.tabs[idx];
+      const index = state.tabs.findIndex((t) => t.id === tabId);
+      if (index < 0) return {};
+      const current = state.tabs[index];
       if (!current || current.language === lang) return {};
       const tabs = state.tabs.slice();
-      tabs[idx] = { ...current, language: lang };
+      tabs[index] = { ...current, language: lang };
       return { tabs };
     });
   },

@@ -25,7 +25,7 @@ export const LANG_SITE_KEY_PREFIX = 'lang-';
 export const MIN_LANGUAGE_GROUP_SIZE = 2;
 
 /** 构造语言分区的 siteKey。 */
-export function makeLangSiteKey(code: string): string {
+function makeLangSiteKey(code: string): string {
   return `${LANG_SITE_KEY_PREFIX}${code}`;
 }
 

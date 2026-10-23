@@ -23,7 +23,11 @@ import { FolderItemRow } from './FolderItemRow';
  * 全量标签 → 条目匹配索引（按 tabs 数组引用做模块级缓存）。
  *
  * N 个 FolderRow 各自建索引是 N×O(标签) 的重复劳动；索引内容只取决于 tabs
- * 引用，缓存后每次快照全局只建一次（与 PinnedStrip 的 buildPinRuntimeIndex 同思路）。
+ * 引用，缓存后每次快照全局只建一次。
+ *
+ * 与 `@/ui/tabs/pinRuntime` 的 `buildPinRuntimeIndex` 是**两套**索引，不要合并：
+ * 那个按 pin 身份（去参 URL）索引到磁贴运行时，本索引按完整比较键 / 原始 URL /
+ * tabId 索引到标签记录，消费方与键口径都不同。
  */
 interface TabRuntimeIndex {
   byKey: Map<string, TabRecord>;

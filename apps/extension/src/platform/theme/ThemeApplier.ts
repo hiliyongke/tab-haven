@@ -12,6 +12,12 @@ type ThemePreference = 'system' | 'light' | 'dark';
 const THEME_MIRROR_KEY = 'tabs:theme';
 const HUE_MIRROR_KEY = 'tabs:theme-hue';
 
+/**
+ * 过渡时长：须 ≥ main.css 里 `.theme-transition` 的 transition-duration，
+ * 提前摘类会把过渡截断成跳色。
+ */
+const THEME_TRANSITION_MS = 220;
+
 /** 色号定义见 `@/core/theme/colorThemes`（色号 id 的唯一权威来源）。 */
 import type { ColorTheme } from '@/core/theme/colorThemes';
 export type { ColorTheme };
@@ -45,7 +51,7 @@ export function applyTheme(preference: ThemePreference, colorTheme: ColorTheme =
     themeTransitionTimer = window.setTimeout(() => {
       root.classList.remove('theme-transition');
       themeTransitionTimer = undefined;
-    }, 220);
+    }, THEME_TRANSITION_MS);
   }
   root.dataset.themePreference = preference;
   root.dataset.theme = resolved;

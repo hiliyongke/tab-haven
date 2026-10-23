@@ -24,7 +24,7 @@ import {
  */
 
 /** Settings 中类型为 boolean 的键（Toggle 行专用）。 */
-export type BooleanSettingKey =
+type BooleanSettingKey =
   | 'tabOrderSync'
   | 'showPinnedStrip'
   | 'showUrl'
@@ -47,7 +47,7 @@ export type BooleanSettingKey =
   | 'contextMenusEnabled'
   | 'omniboxEnabled';
 
-export interface SettingRowContext {
+interface SettingRowContext {
   settings: Settings;
   update: (key: keyof Settings, value: unknown) => void;
   t: (key: string) => string;

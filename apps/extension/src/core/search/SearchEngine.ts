@@ -107,6 +107,15 @@ interface PreparedTarget {
 const URL_WEIGHT = 8;
 const PINYIN_WEIGHT = 4;
 
+/**
+ * 默认结果条数上限。
+ *
+ * 与「索引多少份历史快照」（`historyIndex` 的 HISTORY_SNAPSHOT_LIMIT）**不是
+ * 一回事**：那个是索引规模，这个是单次查询返回的条数。两者恰好同为 20 时极易被
+ * 当成同一个旋钮误调，故显式命名区分。
+ */
+export const DEFAULT_SEARCH_LIMIT = 50;
+
 function firstLetterPinyin(title: string, pinyin: (typeof import('pinyin-pro'))['pinyin']): string {
   // 首字母模式：["t","h","g"] → "thg"
   return pinyin(title, { pattern: 'first', toneType: 'none', type: 'array' })
@@ -191,7 +200,7 @@ export class SearchEngine {
   }
 
   /** 空查询返回空结果。 */
-  search(input: string, limit = 50): SearchHit[] {
+  search(input: string, limit = DEFAULT_SEARCH_LIMIT): SearchHit[] {
     const query = input.trim().toLowerCase();
     if (!query) return [];
 

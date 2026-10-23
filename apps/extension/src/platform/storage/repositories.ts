@@ -5,8 +5,7 @@ import { getRepositories } from '@/platform/registry';
  *
  * 实例化已收口到组合根 `src/platform/registry.ts`；此处仅以具名常量
  * 重新导出默认实例，供 background / options / snapshot 等消费方零改动沿用。
- * 需要注入测试假实现的消费方（如 dataStore）应通过 `getRepositories()`
- * 取用，以便 `setRepositoriesForTest()` 生效。
+ * 运行时不可替换（registry 不提供注入 setter，理由见该模块注释）。
  *
  * 所有写入都经过 zod 校验（见 DataRepository）。
  */

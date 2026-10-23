@@ -75,7 +75,7 @@ export function popBatch(batches: UndoBatch[]): [UndoBatch | undefined, UndoBatc
  * `id` / `now` 默认取宿主时钟与随机源。core 其余部分是纯函数，这里刻意留出注入点：
  * 撤销批次需要唯一 id 与时间戳，但把它们硬编码在领域层会让单测不可重现。
  */
-export interface CreateUndoBatchOptions {
+interface CreateUndoBatchOptions {
   /** 关闭发生时的窗口 id（撤销回到原窗口）。 */
   windowId?: number;
   /** 批次创建时间戳（默认 Date.now()）。 */

@@ -19,7 +19,7 @@ import { tabGroups } from '@/platform/tabGroups';
  */
 
 /** 恢复结果：成功条数 + 失败条目（失败项需保留在撤销栈中供用户重试）。 */
-export interface RestoreResult {
+interface RestoreResult {
   /**
    * 本次真正新建的标签数。
    * 「目标窗口已打开同 URL」的按已恢复计入而不新建（用户意图是「这个页面要在」，

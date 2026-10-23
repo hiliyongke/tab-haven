@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 
 /**
  * 站点图标地址构造：一律走浏览器自己的 favicon 通道
@@ -28,7 +29,7 @@ const FAVICON_SIZE = 32;
  * 空值）一律返回 null 走首字母回退，避免发出注定失败的请求。
  */
 export function buildFaviconSrc(pageUrl: string | undefined): string | null {
-  if (!pageUrl || !/^https?:\/\//i.test(pageUrl)) return null;
+  if (!isHttpUrl(pageUrl)) return null;
   return (
     `chrome-extension://${browser.runtime.id}/_favicon/` +
     `?pageUrl=${encodeURIComponent(pageUrl)}&size=${FAVICON_SIZE}`

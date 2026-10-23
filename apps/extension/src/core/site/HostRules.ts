@@ -7,9 +7,9 @@
  *    Public Suffix List 数据中（实测 tldts 7.4 不覆盖），归组键取三级域。
  */
 
-export type HostKind = 'local' | 'ip' | 'public' | 'domain';
+type HostKind = 'local' | 'ip' | 'public' | 'domain';
 
-export interface HostClassification {
+interface HostClassification {
   kind: HostKind;
   /** 命中托管清单时的后缀（如 github.io）；否则为 null。 */
   hostedSuffix: string | null;
@@ -25,7 +25,7 @@ function isValidIpv4(hostname: string): boolean {
 }
 
 /** 托管公共后缀清单（业务规则，随产品版本维护）。 */
-export const HOSTED_PUBLIC_SUFFIXES: ReadonlySet<string> = new Set([
+const HOSTED_PUBLIC_SUFFIXES: ReadonlySet<string> = new Set([
   'blogspot.com',
   'firebaseapp.com',
   'github.io',

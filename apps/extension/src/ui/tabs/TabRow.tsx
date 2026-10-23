@@ -19,6 +19,7 @@ import { StatusBadges } from '@/ui/common/StatusBadges';
 import { useUndoStore } from '@/stores/undoStore';
 import { writeClipboardText } from '@/platform/clipboard';
 import { DragType } from '@/ui/dnd/types';
+import { tabRowIdProps } from '@/ui/domContract';
 
 /**
  * 标签行：拖拽 / 预览 / Alt+↑↓ 重排等容器逻辑；视觉壳复用通用 RowItem。
@@ -376,7 +377,7 @@ export const TabRow = memo(function TabRow({
   );
 
   return (
-    <li ref={liRef} data-tabs-tab-id={tab.id} onContextMenu={handleContextMenu}>
+    <li ref={liRef} {...tabRowIdProps(tab.id)} onContextMenu={handleContextMenu}>
       <RowItem
         faviconPageUrl={tab.url}
         faviconTitle={tab.title || ''}

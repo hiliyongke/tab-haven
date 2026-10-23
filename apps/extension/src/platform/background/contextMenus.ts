@@ -3,6 +3,7 @@ import type { FixedFolder } from '@/core/schema/models';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { canSafelyDiscardTab } from '@/core/tab-types';
 import { createFolderItem } from '@/core/fixed/FolderOps';
+import { createSerialChain } from '@/core/util/concurrency';
 import { mapTab } from '@/platform/tabs';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
 import { FOLDERS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
@@ -48,13 +49,13 @@ const menuText = (key: MenuMessageKey): string => browser.i18n.getMessage(key) |
  * setupMenus 并发触发，removeAll 与 create 交错会产生重复 id 的 rejection，
  * 全部菜单写操作经此队列串行执行；单次失败只告警不阻塞后续。
  */
-let menuWriteChain: Promise<void> = Promise.resolve();
+const menuWriteChain = createSerialChain();
 
 function enqueueMenuWrite(task: () => Promise<void>): void {
-  menuWriteChain = menuWriteChain.then(() =>
+  void menuWriteChain.enqueueSettled(task, (error) =>
     // 走诊断管道而非 console.warn：本模块运行在 SW 上下文，那里 console 的输出
     // 无法被 readAllDiagnostics / 「导出诊断」读到（同 ReuseCoordinator 的纪律）。
-    task().catch((error) => logDegraded('contextMenus', '右键菜单写入失败', error))
+    logDegraded('contextMenus', '右键菜单写入失败', error)
   );
 }
 

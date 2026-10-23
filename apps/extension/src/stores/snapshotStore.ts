@@ -21,14 +21,14 @@ import {
   persistSnapshot,
   replaceSpaceSnapshot,
   restoreSnapshot,
-  setSnapshotEvictionListener,
-  SNAPSHOTS_RMW_LOCK
+  setSnapshotEvictionListener
 } from '@/platform/snapshot/snapshots';
 import { parseWorkona } from '@/core/insights/workonaImport';
 import { newId } from '@/core/util/id';
 import { buildPartialSnapshot } from '@/core/snapshot/snapshotDiff';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
-import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 
 /**
  * 把「本次快照恢复新建出来的标签」记为一批可撤销项。
@@ -256,7 +256,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     // 用 flatMap 直接产出已收窄的 id，而不是「filter 之后再用 `tab.id!` 断言」：
     // 断言只是让编译器闭嘴，一旦 filter 条件被改动，undefined 会静默混进 tabs.remove。
     const closableIds = tabs.flatMap((tab) =>
-      typeof tab.id === 'number' && tab.url && /^https?:\/\//i.test(tab.url) ? [tab.id] : []
+      typeof tab.id === 'number' && isHttpUrl(tab.url) ? [tab.id] : []
     );
     // 若关闭后窗口将随之关闭（全部标签都已保存），提前请求跳过本次关窗自动保存，
     // 避免 background 再写一条同内容的 auto 快照。

@@ -7,7 +7,7 @@
  * Web Locks 是 MV3 各上下文（含 SW）都可用的跨上下文互斥原语。
  *
  * 环境不支持（单测 jsdom / 旧引擎）时退化为直接执行：调用方页内互斥
- * （如 undoInFlight / 页内串行链）仍然生效，语义不弱于引入本锁之前。
+ * （如页内串行链 / store 内的执行中标志）仍然生效，语义不弱于引入本锁之前。
  * 降级会留痕（一次）——锁失效而无人知晓比没有锁更危险。
  */
 // 从日志内核（叶子模块）取留痕能力：若从 `@/platform/diagnostics` 引入会形成
@@ -32,7 +32,7 @@ export async function withCrossPageLock<T>(name: string, fn: () => Promise<T>): 
 }
 
 /**
- * folders/pins/autoGroups 分区的 RMW 锁（快照库锁见 snapshots.ts 的 SNAPSHOTS_RMW_LOCK）。
+ * folders/pins/autoGroups 及其余分区的 RMW 锁（**全仓锁名的唯一声明处**）。
  *
  * 这些分区有两个独立写入方：面板（coalesced「末值落盘」）与 background
  * （右键菜单加条目/固定页面、自动分组记账）。锁外 read-modify-write 交错时
@@ -70,3 +70,13 @@ export const UNDO_EXEC_LOCK = 'tabs.undo-exec';
  * （该轮自动休眠失去撤销出口）。
  */
 export const AUTO_DISCARD_RMW_LOCK = 'tabs.auto-discard-rmw';
+/**
+ * 快照库 read-modify-write：快照列表是整表写，面板归档与 background 关窗自动
+ * 保存并发时后写覆盖先写（刚归档的快照凭空消失）。
+ */
+export const SNAPSHOTS_RMW_LOCK = 'tabs.snapshots-rmw';
+/**
+ * 诊断环形缓冲：写入方是所有 platform 模块的降级留痕（并发度最高的一处），
+ * 锁外交替会让缓冲区在截断边界上互相截断。
+ */
+export const DIAG_RMW_LOCK = 'tabs.diagnostics-rmw';

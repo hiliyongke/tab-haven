@@ -4,16 +4,16 @@ import {
   createFolder as createFolderModel,
   dedupePins
 } from '@/core/fixed/FolderOps';
-import { fixedItemKey } from '@/core/commands/folderCommands';
+import { fixedItemKey } from '@/core/fixed/FolderOps';
 import { EXPORT_FILE_VERSION, parseExportFile, type Settings } from '@/core/schema/models';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { logFailure } from '@/platform/diagnostics';
-import { SNAPSHOTS_RMW_LOCK } from '@/platform/snapshot/snapshots';
 import {
   COLLAPSE_RMW_LOCK,
   FOLDERS_RMW_LOCK,
   PINS_RMW_LOCK,
   SETTINGS_RMW_LOCK,
+  SNAPSHOTS_RMW_LOCK,
   withCrossPageLock
 } from '@/platform/storage/crossPageLock';
 import { mutateSession } from '@/platform/storage/session';

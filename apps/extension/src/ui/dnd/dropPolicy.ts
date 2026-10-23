@@ -21,11 +21,16 @@ import {
   FIXED_AREA_DROPPABLE,
   PINNED_STRIP_DROPPABLE,
   type DragData,
-  type DropTargetData
+  type DropTargetData,
+  type FolderDragData,
+  type FolderItemDragData,
+  type PinDragData,
+  type SectionDragData,
+  type TabDragData
 } from './types';
 
 /** 落点身份：draggable 的 id + data（与 dnd-kit 的 `over` 一一对应）。 */
-export interface DropTarget {
+interface DropTarget {
   id: string | number;
   data?: DropTargetData;
 }
@@ -108,82 +113,82 @@ const isFixedArea = (target: DropTargetData | undefined): boolean =>
 const isPinnedStrip = (target: DropTargetData | undefined): boolean =>
   target?.type === PINNED_STRIP_DROPPABLE;
 
-/**
- * 结构判定：只看「源类型 × 落点类型」，不看任何开关。
- *
- * 视觉层必须用这个而不是 `resolveDrop`：设置闸门会让整个界面同时变成不可投放，
- * 而「这个位置本来就不收」才是需要提前画出来的。
- */
-export function classifyDrop(active: DragData, target: DropTarget): DropOutcome {
-  const over = target.data;
-  if (!over) return reject('unsupported');
+/** 收藏夹落点（文件夹卡或其条目）携带的目标文件夹 id；非收藏夹落点返回 undefined。 */
+function folderIdOf(over: DropTargetData): string | undefined {
+  return over.type === DragType.Folder || over.type === DragType.FolderItem
+    ? over.folderId
+    : undefined;
+}
 
-  if (active.type === DragType.Tab) {
-    if (over.type === DragType.Tab) {
-      if (over.tabId === active.tabId) return NOOP;
-      return accept({ kind: 'reorder-tabs' });
-    }
-    if (over.type === DragType.Section) {
-      // 站点分组 / 语言分组是派生视图，没有 groupId 就没有「加入」这个动作。
-      if (over.groupId === undefined) return reject('tab-to-site-section');
-      return accept({ kind: 'join-group', groupId: over.groupId });
-    }
-    if (over.type === DragType.Folder || over.type === DragType.FolderItem) {
-      return accept({ kind: 'move-tabs-to-folder', folderId: over.folderId });
-    }
-    if (over.type === DragType.Pin) return accept({ kind: 'pin-tab' });
-    if (isFixedArea(over) || isPinnedStrip(over)) return accept({ kind: 'pin-tab' });
-    return reject('unsupported');
+/** 拖起的是标签行（DragType.Tab）。 */
+function classifyTabDrop(active: TabDragData, over: DropTargetData): DropOutcome {
+  if (over.type === DragType.Tab) {
+    if (over.tabId === active.tabId) return NOOP;
+    return accept({ kind: 'reorder-tabs' });
   }
-
-  if (active.type === DragType.Section) {
-    if (over.type === DragType.Section) {
-      if (over.sectionKey === active.sectionKey) return NOOP;
-      return accept({ kind: 'reorder-sections' });
-    }
-    if (over.type === DragType.Folder || over.type === DragType.FolderItem) {
-      return accept({ kind: 'move-tabs-to-folder', folderId: over.folderId });
-    }
-    if (isFixedArea(over)) return accept({ kind: 'create-folder' });
-    // 磁贴区是「单个常用页面」的集合，整组塞进去会破坏它的粒度语义。
-    // 注意：碰撞检测把分组拖拽限制在卡片层级（cardContainers），所以 Pin 本身
-    // 到不了这里，真正可达的是整条 `pinned-strip`。
-    if (over.type === DragType.Pin || isPinnedStrip(over)) return reject('section-to-pin');
-    // 标签行同理不在分组的候选集里：落到这里只可能是契约被单独调用，按兜底处理。
-    return reject('unsupported');
+  if (over.type === DragType.Section) {
+    // 站点分组 / 语言分组是派生视图，没有 groupId 就没有「加入」这个动作。
+    if (over.groupId === undefined) return reject('tab-to-site-section');
+    return accept({ kind: 'join-group', groupId: over.groupId });
   }
+  const folderId = folderIdOf(over);
+  if (folderId !== undefined) return accept({ kind: 'move-tabs-to-folder', folderId });
+  if (over.type === DragType.Pin) return accept({ kind: 'pin-tab' });
+  if (isFixedArea(over) || isPinnedStrip(over)) return accept({ kind: 'pin-tab' });
+  return reject('unsupported');
+}
 
-  if (active.type === DragType.FolderItem) {
-    if (over.type === DragType.FolderItem) {
-      if (over.itemId === active.itemId) return NOOP;
-      if (over.folderId === active.folderId) return accept({ kind: 'reorder-folder-items' });
-      return accept({ kind: 'move-folder-item', targetFolderId: over.folderId });
-    }
-    if (over.type === DragType.Folder) {
-      // 拖回自己所属文件夹的头部：位置本来就没变，不写盘也不提示。
-      if (over.folderId === active.folderId) return NOOP;
-      return accept({ kind: 'move-folder-item', targetFolderId: over.folderId });
-    }
-    if (over.type === DragType.Tab || over.type === DragType.Section) {
-      return accept({ kind: 'remove-folder-item' });
-    }
-    // 条目进磁贴区需要先变成真实标签（可能未打开），不做隐式打开。
-    if (over.type === DragType.Pin || isPinnedStrip(over) || isFixedArea(over)) {
-      return reject('item-to-fixed');
-    }
-    return reject('unsupported');
+/** 拖起的是分组头（DragType.Section）。 */
+function classifySectionDrop(active: SectionDragData, over: DropTargetData): DropOutcome {
+  if (over.type === DragType.Section) {
+    if (over.sectionKey === active.sectionKey) return NOOP;
+    return accept({ kind: 'reorder-sections' });
   }
+  const folderId = folderIdOf(over);
+  if (folderId !== undefined) return accept({ kind: 'move-tabs-to-folder', folderId });
+  if (isFixedArea(over)) return accept({ kind: 'create-folder' });
+  // 磁贴区是「单个常用页面」的集合，整组塞进去会破坏它的粒度语义。
+  // 注意：碰撞检测把分组拖拽限制在卡片层级（cardContainers），所以 Pin 本身
+  // 到不了这里，真正可达的是整条 `pinned-strip`。
+  if (over.type === DragType.Pin || isPinnedStrip(over)) return reject('section-to-pin');
+  // 标签行同理不在分组的候选集里：落到这里只可能是契约被单独调用，按兜底处理。
+  return reject('unsupported');
+}
 
-  if (active.type === DragType.Folder) {
-    if (over.type === DragType.Folder) {
-      if (over.folderId === active.folderId) return NOOP;
-      return accept({ kind: 'reorder-folders' });
-    }
-    // 收藏夹是固定空间唯一的一层容器：再往外没有落点，往里也没有嵌套。
-    return reject('folder-outside');
+/** 拖起的是收藏夹条目（DragType.FolderItem）。 */
+function classifyFolderItemDrop(active: FolderItemDragData, over: DropTargetData): DropOutcome {
+  if (over.type === DragType.FolderItem) {
+    if (over.itemId === active.itemId) return NOOP;
+    if (over.folderId === active.folderId) return accept({ kind: 'reorder-folder-items' });
+    return accept({ kind: 'move-folder-item', targetFolderId: over.folderId });
   }
+  if (over.type === DragType.Folder) {
+    // 拖回自己所属文件夹的头部：位置本来就没变，不写盘也不提示。
+    if (over.folderId === active.folderId) return NOOP;
+    return accept({ kind: 'move-folder-item', targetFolderId: over.folderId });
+  }
+  if (over.type === DragType.Tab || over.type === DragType.Section) {
+    return accept({ kind: 'remove-folder-item' });
+  }
+  // 条目进磁贴区需要先变成真实标签（可能未打开），不做隐式打开。
+  if (over.type === DragType.Pin || isPinnedStrip(over) || isFixedArea(over)) {
+    return reject('item-to-fixed');
+  }
+  return reject('unsupported');
+}
 
-  // Pin
+/** 拖起的是收藏夹卡（DragType.Folder）。 */
+function classifyFolderDrop(active: FolderDragData, over: DropTargetData): DropOutcome {
+  if (over.type === DragType.Folder) {
+    if (over.folderId === active.folderId) return NOOP;
+    return accept({ kind: 'reorder-folders' });
+  }
+  // 收藏夹是固定空间唯一的一层容器：再往外没有落点，往里也没有嵌套。
+  return reject('folder-outside');
+}
+
+/** 拖起的是磁贴（DragType.Pin，持久化磁贴或浏览器置顶标签）。 */
+function classifyPinDrop(active: PinDragData, over: DropTargetData): DropOutcome {
   if (over.type === DragType.Pin) {
     if (active.pinId !== undefined && over.pinId !== undefined) {
       if (active.pinId === over.pinId) return NOOP;
@@ -204,6 +209,34 @@ export function classifyDrop(active: DragData, target: DropTarget): DropOutcome 
   // 拖回磁贴条空白：没有目标磁贴就没有新位置，等价于取消。
   if (isPinnedStrip(over)) return NOOP;
   return reject('pin-to-fixed');
+}
+
+/**
+ * 结构判定：只看「源类型 × 落点类型」，不看任何开关。
+ *
+ * 视觉层必须用这个而不是 `resolveDrop`：设置闸门会让整个界面同时变成不可投放，
+ * 而「这个位置本来就不收」才是需要提前画出来的。
+ *
+ * 实现按**拖起的类型**分成五个单职责函数：原先全挤在一个函数里时 35 个 if
+ * 层层嵌套，改一条落点规则要在 240 行的上下文里定位；分拆后每个函数只回答
+ * 「这一类东西能放到哪里」，`switch (active.type)` 由 TypeScript 收窄成具体
+ * 的 data 形态，各函数内无需再判 `active.type`。
+ */
+export function classifyDrop(active: DragData, target: DropTarget): DropOutcome {
+  const over = target.data;
+  if (!over) return reject('unsupported');
+  switch (active.type) {
+    case DragType.Tab:
+      return classifyTabDrop(active, over);
+    case DragType.Section:
+      return classifySectionDrop(active, over);
+    case DragType.FolderItem:
+      return classifyFolderItemDrop(active, over);
+    case DragType.Folder:
+      return classifyFolderDrop(active, over);
+    case DragType.Pin:
+      return classifyPinDrop(active, over);
+  }
 }
 
 /**

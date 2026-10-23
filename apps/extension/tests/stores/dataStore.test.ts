@@ -9,9 +9,9 @@ import {
   COLLAPSE_RMW_LOCK,
   FOLDERS_RMW_LOCK,
   PINS_RMW_LOCK,
-  SETTINGS_RMW_LOCK
+  SETTINGS_RMW_LOCK,
+  SNAPSHOTS_RMW_LOCK
 } from '@/platform/storage/crossPageLock';
-import { SNAPSHOTS_RMW_LOCK } from '@/platform/snapshot/snapshots';
 import { readSession } from '@/platform/storage/session';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {

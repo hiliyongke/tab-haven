@@ -61,7 +61,7 @@ function autoGroupSignature(settings: AutoGroupSettingKeys): string {
 }
 
 /** applyAutoGroupSetting 关心的设置子集（自动分组不变量的全部输入）。 */
-export interface AutoGroupSettingKeys {
+interface AutoGroupSettingKeys {
   autoGroupNative: boolean;
   groupMode: 'site' | 'opener' | 'language';
   aggregationThreshold: number;
@@ -83,7 +83,7 @@ export function scheduleAutoGroupReconcile(windowId: number | undefined): void {
 }
 
 /** 对所有普通窗口调度一次对账（启动 / 开关重新打开时补齐存量标签）。 */
-export async function reconcileAllWindows(): Promise<void> {
+async function reconcileAllWindows(): Promise<void> {
   try {
     const windows = await browser.windows.getAll({ windowTypes: ['normal'] });
     for (const win of windows) scheduleAutoGroupReconcile(win.id);

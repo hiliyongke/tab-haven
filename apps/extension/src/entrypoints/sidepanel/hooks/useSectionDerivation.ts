@@ -21,7 +21,7 @@ import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 const EMPTY_COLLAPSED_GROUPS: ReadonlySet<number> = new Set();
 const EMPTY_COLLAPSED_SITES: readonly string[] = [];
 
-export interface SectionDerivationOptions {
+interface SectionDerivationOptions {
   tabs: readonly TabRecord[];
   groups: readonly TabGroupRecord[];
   /** 过滤后的标签集（仅过滤态使用；过滤态下用它与基线区分）。 */

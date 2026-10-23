@@ -3,7 +3,7 @@ import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
 import { planAutoGroupDomainCorrections } from '@/core/group/AutoGrouping';
 import type { TemporarySection } from '@/core/site/Sections';
 import { NO_GROUP } from '@/core/tab-types';
-import { chainTail } from '@/core/util/concurrency';
+import { createSerialChain } from '@/core/util/concurrency';
 import { groupExists, removeGroup, updateGroupMeta } from '@/platform/tabs';
 import { autoGroupsRepository } from '@/platform/storage/repositories';
 import { AUTO_GROUPS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
@@ -30,13 +30,11 @@ import { logDegraded } from '@/platform/diagnostics';
  * 的「错误」面板看到一屏报错）。串行化之后，后到的过期计划会在
  * filterStalePlans 处被真实状态过滤掉。
  */
-let opChain: Promise<unknown> = Promise.resolve();
+const opChain = createSerialChain();
 
 /** 把操作追加到串行链：前序失败不阻断后续（各自内部已有错误处理）。 */
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
-  const run = opChain.then(operation, operation);
-  opChain = chainTail(run);
-  return run;
+  return opChain.enqueue(operation);
 }
 
 /**

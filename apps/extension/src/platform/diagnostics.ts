@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
-import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { DIAG_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { DIAGNOSTICS_KEY } from '@/platform/storage/keys';
 import {
   DIAGNOSTIC_MAX_ENTRIES,
   clearDiagnosticBuffer,
@@ -35,9 +36,7 @@ export type { DiagnosticEntry };
 // 随时可能被产品代码误当成正式 API 去用。
 export { logDegraded, logFailure, readDiagnostics };
 
-/** 共享环形缓冲的存储键与 RMW 锁名。 */
-const STORAGE_KEY = 'tabs.diagnostics.v1';
-const DIAG_RMW_LOCK = 'tabs.diagnostics-rmw';
+/** 环形缓冲的落盘去抖：留痕调用点密集，逐条写盘会放大 storage 写放大。 */
 const PERSIST_DEBOUNCE_MS = 500;
 
 const StoredEntriesSchema = z.array(
@@ -88,10 +87,10 @@ async function flushDiagnostics(): Promise<void> {
       // 清空竞态：本批次在「清空」之后才拿到锁，写回会让清空前的旧记录复活。
       // 批次的 clearEpoch 落后于当前值时直接丢弃（清空语义优先）。
       if (epoch !== clearEpoch) return;
-      const raw = (await area.get(STORAGE_KEY))[STORAGE_KEY];
+      const raw = (await area.get(DIAGNOSTICS_KEY))[DIAGNOSTICS_KEY];
       const existing = StoredEntriesSchema.safeParse(raw);
       const merged = [...(existing.success ? existing.data : []), ...batch];
-      await area.set({ [STORAGE_KEY]: merged.slice(-DIAGNOSTIC_MAX_ENTRIES) });
+      await area.set({ [DIAGNOSTICS_KEY]: merged.slice(-DIAGNOSTIC_MAX_ENTRIES) });
     });
   } catch {
     // 落盘失败回填待写队列（有界），下一条日志会触发下一轮 flush。
@@ -171,7 +170,7 @@ export async function readAllDiagnostics(): Promise<DiagnosticEntry[]> {
   const area = browser.storage?.local;
   if (!area) return readDiagnostics();
   try {
-    const raw = (await area.get(STORAGE_KEY))[STORAGE_KEY];
+    const raw = (await area.get(DIAGNOSTICS_KEY))[DIAGNOSTICS_KEY];
     const parsed = StoredEntriesSchema.safeParse(raw);
     return parsed.success ? parsed.data : [];
   } catch {
@@ -193,7 +192,7 @@ export async function clearDiagnostics(): Promise<void> {
   const area = browser.storage?.local;
   if (!area) return;
   try {
-    await area.remove(STORAGE_KEY);
+    await area.remove(DIAGNOSTICS_KEY);
   } catch {
     // 尽力而为：导出后清理失败只意味着记录多留一轮，不影响正确性。
   }

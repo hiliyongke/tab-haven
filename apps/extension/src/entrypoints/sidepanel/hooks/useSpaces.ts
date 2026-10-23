@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 import { queryCurrentWindowTabs } from '@/platform/tabs';
 import { logDegraded } from '@/platform/diagnostics';
 import { useDataStore } from '@/stores/dataStore';
@@ -9,9 +10,9 @@ import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * 工作空间编排（C1）：把「空间」从快照的一个 origin 升格为面板一级切换入口。
+ * 工作区编排（C1）：把「工作区」从快照的一个 origin 升格为面板一级切换入口。
  *
- * 空间 = 一份 origin=space 的快照。切换语义（与用户确认过的原型一致）：
+ * 工作区 = 一份 origin=space 的快照。切换语义（与用户确认过的原型一致）：
  *  1. 当前激活空间存在 → 把当前窗口现场**原地写回**该空间（不新增快照条目）；
  *  2. 关闭当前窗口的非固定、非隐身标签（走撤销批次，误切可一键找回）；
  *  3. 恢复目标空间的标签到**同一个窗口**（显式 windowId，避免焦点漂移错窗口）；
@@ -28,7 +29,7 @@ const SPACE_SWITCH_CONFIRM_THRESHOLD = 3;
 
 /** 切换时会被关掉的标签：非固定、非隐身、且是 http(s)（与 performSwitch 同一口径）。 */
 function isSwitchClosable(tab: { pinned?: boolean; incognito?: boolean; url?: string }): boolean {
-  return !tab.pinned && !tab.incognito && /^https?:\/\//i.test(tab.url ?? '');
+  return !tab.pinned && !tab.incognito && isHttpUrl(tab.url);
 }
 
 interface PendingSwitch {

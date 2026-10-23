@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { AllowanceLedger, type AllowanceSnapshot } from '@/platform/reuse/AllowanceLedger';
 import { logDegraded } from '@/platform/diagnostics';
+import { ALLOWANCE_KEY } from '@/platform/storage/keys';
 
 /**
  * 镜像内容的校验 schema。
@@ -27,10 +28,9 @@ const AllowanceSnapshotSchema = z.record(
  * 降级：storage.session 不可用（异常/测试环境）时退化为纯内存行为，与原实现一致。
  */
 
-/** storage.session 镜像键（storage key 唯一出处原则：仓库键见 repositories.ts，SW 专用键沿用 tabs. 前缀）。 */
-const ALLOWANCE_KEY = 'tabs.allowance.v1';
+// 键名见 @/platform/storage/keys（全仓存储键的唯一声明处）。
 
-export interface PersistedAllowanceLedger {
+interface PersistedAllowanceLedger {
   ledger: AllowanceLedger;
   /** SW 启动恢复完成信号；调用方（ReuseCoordinator）应在首次消费前 await。 */
   ready: Promise<void>;

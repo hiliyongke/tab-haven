@@ -60,7 +60,7 @@ export function UndoHistoryPanel({
    *
    * 重做只有「撤销成功后 toast 上的一次性按钮」这一个出口时，toast 默认 7 秒
    * 后消失（settings.toastDurationSec）—— 功能建成却几乎触达不到。这里补常驻出口：
-   * redoing 期间禁用，与撤销共用执行互斥（store 内 undoInFlight 串行化）。
+   * redoing 期间禁用，与撤销共用执行互斥（store 内以 undoing / redoing 判定）。
    */
   const redoBatches = useUndoStore((state) => state.redoBatches);
   const redo = useUndoStore((state) => state.redo);

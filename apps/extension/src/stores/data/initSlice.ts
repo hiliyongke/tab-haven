@@ -19,7 +19,17 @@ import {
 import type { DataContext, DataSlice } from './types';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 
-/** 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。 */
+/**
+ * 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。
+ *
+ * 与 store 的 `ready` **不是同一件事，不要合并**：本标志在 `initialize` 开头
+ * （await 之前）置起，表达的是「已经开始」；`ready` 在全部分区加载完成后置起，
+ * 表达的是「已经完成」。加载在途期间二者是 `true / false` —— 若改用 `ready`
+ * 当入口守卫，在途期间的重入会再发起一轮并发加载。
+ *
+ * 复位不变量：失败分支必须把二者一并复位（`initialized = false` + `ready: false`），
+ * 否则面板永久停在 Loading 骨架屏。
+ */
 let initialized = false;
 
 /**

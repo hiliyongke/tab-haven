@@ -7,9 +7,10 @@ import { tabGroups } from '@/platform/tabGroups';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { buildSnapshot, collectSnapshotTabs, persistSnapshot } from '@/platform/snapshot/snapshots';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
+import { createSerialChain } from '@/core/util/concurrency';
 import { logDegraded } from '@/platform/diagnostics';
+import { SKIP_AUTO_SAVE_KEY, WINDOW_TABS_KEY } from '@/platform/storage/keys';
 
-const WINDOW_TABS_KEY = 'tabs.window-tabs.v1';
 type WindowTabsCache = Record<string, SnapshotTab[]>;
 /** 缓存内容 schema：session 中的脏条目（异常写入）必须被隔离丢弃，
  * 否则整条关窗快照在 persistSnapshot 的 zod 校验处整体写盘失败。 */
@@ -54,34 +55,29 @@ function parseSkipMarkers(raw: unknown, now: number): SkipMarkerRecord[] {
  * 纯内存标记在「归档 sendMessage → 实际关窗」之间若 SW 被回收即丢失，
  * 关窗会重复写入一条同内容 auto 快照；镜像到 session 后 SW 重启也能命中。
  */
-const SKIP_AUTO_SAVE_KEY = 'tabs.skip-auto-save-once';
 /** 跳过标记 read-modify-write 串行链（多窗口连续归档时防交错丢标记）。 */
-let skipMarkerChain: Promise<void> = Promise.resolve();
+const skipMarkerChain = createSerialChain();
 
 /** 标记「下一次关闭该窗口时跳过自动保存」（内存 + session 镜像双写，带 TTL）。 */
 export function markSkipAutoSave(windowId: number): Promise<void> {
-  const step = skipMarkerChain.then(async () => {
-    const now = Date.now();
-    skipAutoSaveWindowIds.set(windowId, now);
-    const sessionArea = browser.storage?.session;
-    if (!sessionArea) return;
-    try {
+  // 链尾统一兜底：任何一次 reject 都会让此后每个 markSkipAutoSave 不再 resolve，
+  // 而归档流程正等着它的 sendResponse —— 表现为每次归档都挂满 ack 超时才降级。
+  // 失败一律经诊断留痕（内存标记此刻已置位，SW 不回收则语义不变，但 session
+  // 镜像丢失必须可观测，否则「关窗重复写一条 auto 快照」无从定位）。
+  return skipMarkerChain.enqueueSettled(
+    async () => {
+      const now = Date.now();
+      skipAutoSaveWindowIds.set(windowId, now);
+      const sessionArea = browser.storage?.session;
+      if (!sessionArea) return;
       const rec = await sessionArea.get(SKIP_AUTO_SAVE_KEY);
       // 读写时随手清理过期项（不在 TTL 内的记录一律丢弃，自然淘汰）。
       const list = parseSkipMarkers(rec[SKIP_AUTO_SAVE_KEY], now);
       if (!list.some((m) => m.id === windowId)) list.push({ id: windowId, at: now });
       await sessionArea.set({ [SKIP_AUTO_SAVE_KEY]: list });
-    } catch {
-      // session 不可用时内存标记仍在：SW 不回收则语义不变
-    }
-  });
-  // 双保险：链上任何一次 reject 都会让此后每个 markSkipAutoSave 不再 resolve，
-  // 而归档流程正等着它的 sendResponse —— 表现为每次归档都挂满 ack 超时才降级。
-  // 与 platform/storage/session.ts 的串行链同口径。
-  skipMarkerChain = step.catch((error: unknown) => {
-    logDegraded('window-cache', '跳过自动保存标记写入失败', error);
-  });
-  return skipMarkerChain;
+    },
+    (error) => logDegraded('window-cache', '跳过自动保存标记写入失败', error)
+  );
 }
 
 /** 消费「跳过自动保存」标记（内存优先，session 镜像兜底）；仅未过期才命中。 */

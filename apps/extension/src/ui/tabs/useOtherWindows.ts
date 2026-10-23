@@ -25,6 +25,9 @@ export interface OtherWindow {
 /** 其他窗口查询的展示态：loading=首帧在途、ready=已拿到快照、error=最近一次查询失败。 */
 export type OtherWindowsStatus = 'loading' | 'ready' | 'error';
 
+/** 节流窗口：onUpdated 每标签导航触发多次，直接重查会放大成事件风暴。 */
+const OTHER_WINDOWS_THROTTLE_MS = 500;
+
 export function useOtherWindows(enabled: boolean): {
   otherWindows: OtherWindow[];
   status: OtherWindowsStatus;
@@ -67,14 +70,13 @@ export function useOtherWindows(enabled: boolean): {
         });
     };
     refreshSafely();
-    // 500ms 节流：onUpdated 每标签导航触发多次，直接重查会放大成事件风暴。
     let timer: number | undefined;
     const schedule = () => {
       if (timer !== undefined) return;
       timer = window.setTimeout(() => {
         timer = undefined;
         refreshSafely();
-      }, 500);
+      }, OTHER_WINDOWS_THROTTLE_MS);
     };
     const detach = onAllTabsChanged(schedule);
     return () => {

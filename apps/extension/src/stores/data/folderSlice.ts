@@ -1,5 +1,3 @@
-import { createFolder as createFolderModel, createFolderItem } from '@/core/fixed/FolderOps';
-import { FOLDERS_LIMIT, type FixedFolder } from '@/core/schema/models';
 import {
   computeAddTabsToFolder,
   computeMoveFolder,
@@ -8,8 +6,11 @@ import {
   computeReorderFolderItems,
   computeRenameFolder,
   computeToggleFolderCollapsed,
+  createFolder as createFolderModel,
+  createFolderItem,
   fixedItemKey
-} from '@/core/commands/folderCommands';
+} from '@/core/fixed/FolderOps';
+import { FOLDERS_LIMIT, type FixedFolder } from '@/core/schema/models';
 import { reconcileBindings, reconcilePendingItems } from '@/core/fixed/Reconcile';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import { NO_GROUP } from '@/core/tab-types';

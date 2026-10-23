@@ -4,8 +4,7 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useDataStore } from '@/stores/dataStore';
-import { buildPartialSnapshot, snapshotDiff } from '@/core/snapshot/snapshotDiff';
-import type { Snapshot } from '@/core/schema/models';
+import { snapshotDiff } from '@/core/snapshot/snapshotDiff';
 import { Button } from '@/ui/common/Button';
 import { computeInsights } from '@/core/insights/tabInsights';
 import { webComparisonKey } from '@/core/url/UrlInspector';
@@ -16,6 +15,8 @@ import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
 import { SnapshotRow } from '@/ui/common/SnapshotRow';
+import { useSnapshotImport } from '@/ui/common/useSnapshotImport';
+import { useSnapshotRestore } from '@/ui/common/useSnapshotRestore';
 
 /** 习惯洞察区块的锚点 id：底栏洞察入口直达后滚动定位到这里。 */
 const INSIGHTS_ANCHOR_ID = 'snapshots-insights';
@@ -95,7 +96,7 @@ function ImportSourceChip({
  * 把当前窗口存为命名快照/工作区，归档（关闭并保存），从 OneTab / Workona 导入，
  * 查看本地周报（统计 + 习惯洞察）；恢复走 platform/restoreSnapshot，提示走 undoStore。
  */
-export interface SnapshotsPanelProps {
+interface SnapshotsPanelProps {
   onClose: () => void;
   /**
    * 初始视图：默认 'list'（快照列表）。
@@ -122,12 +123,8 @@ export function SnapshotsPanel({
   const snapshots = useSnapshotStore((state) => state.snapshots);
   const saveCurrentWindow = useSnapshotStore((state) => state.saveCurrentWindow);
   const saveSpace = useSnapshotStore((state) => state.saveSpace);
-  const importOneTab = useSnapshotStore((state) => state.importOneTab);
-  const importWorkona = useSnapshotStore((state) => state.importWorkona);
   const deleteSnapshot = useSnapshotStore((state) => state.deleteSnapshot);
   const renameSnapshot = useSnapshotStore((state) => state.renameSnapshot);
-  const restore = useSnapshotStore((state) => state.restore);
-  const restoreSelected = useSnapshotStore((state) => state.restoreSelected);
   const notify = useUndoStore((state) => state.notify);
   const notifyError = useUndoStore((state) => state.notifyError);
   const notifyFailure = useUndoStore((state) => state.notifyFailure);
@@ -138,30 +135,54 @@ export function SnapshotsPanel({
   const [editingName, setEditingName] = useState('');
   /** 视图切换：initialView 由入口指定（洞察直达为 'report'，见 Props 注释）。 */
   const [view, setView] = useState<'list' | 'import' | 'report'>(initialView);
-  /** 导入源切换：OneTab 文本 / Workona JSON。 */
-  const [importSource, setImportSource] = useState<'onetab' | 'workona'>('onetab');
-  const [importText, setImportText] = useState('');
-  const [importName, setImportName] = useState('');
+  /** 导入子流程（表单态 + 失败分流）抽在 useSnapshotImport，面板只装配。 */
+  const {
+    source: importSource,
+    text: importText,
+    name: importName,
+    setSource: setImportSource,
+    setText: setImportText,
+    setName: setImportName,
+    runImport: handleImport
+  } = useSnapshotImport({
+    t,
+    notify,
+    notifyFailure,
+    onDone: () => setView('list')
+  });
   /** 当前展开查看标签清单的快照 id（再次点击收起）。 */
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  /** 待恢复确认的快照 id：恢复会一次性新建整批标签，决策前必须看到影响面摘要。 */
-  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
-  /**
-   * 待确认的**选择性恢复**：勾选集在点击那一刻固化为「部分快照」。
-   * 勾选恢复与整份恢复是同一类破坏性动作（一次新建整批标签），不能绕过
-   * 影响面闸门直接执行 —— 否则同一产品里同一动作出现两档安全级别。
-   */
-  const [confirmRestoreSelected, setConfirmRestoreSelected] = useState<Snapshot | null>(null);
-  /** 正在恢复的快照 id：恢复会新建大量标签（耗时数百 ms），期间禁用该行按钮防双击并发。 */
-  const [restoringId, setRestoringId] = useState<string | null>(null);
   /**
    * 勾选集：键为 `${index}-${tab.url}`（与 SnapshotRow 行键一致）。
    * 勾选是「从完整恢复里剔除若干条」，语义上必须**默认全选**——用户展开详情
    * 是为了取消某几条，而不是从零挑起。detailId 切换时重置为新快照的全选集。
    */
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+
+  /**
+   * 恢复链路（在途互斥 + 两道影响面确认 + 执行体）抽在 useSnapshotRestore。
+   * 它依赖勾选集，故必须在 selectedKeys 之后调用。
+   */
+  const {
+    restoringId,
+    confirmRestoreId,
+    setConfirmRestoreId,
+    confirmRestoreSelected,
+    setConfirmRestoreSelected,
+    requestRestore,
+    runRestore: handleRestore,
+    requestRestoreSelected: handleRestoreSelected,
+    runRestoreSelected: performRestoreSelected
+  } = useSnapshotRestore({
+    t,
+    snapshots,
+    selectedKeys,
+    notify,
+    notifyFailure,
+    onClose
+  });
 
   const ordered = useMemo(
     () => [...snapshots].sort((a, b) => b.createdAt - a.createdAt),
@@ -258,7 +279,6 @@ export function SnapshotsPanel({
    * 同一份快照被开两批标签，或同 id 的删除并发双写。
    * restoringId 只保留为展示态（哪一行在进行中）。
    */
-  const restoreInFlight = useRef(false);
   const deleteInFlight = useRef(false);
 
   const handleSave = async () => {
@@ -289,172 +309,6 @@ export function SnapshotsPanel({
       // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
       // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
       notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
-    }
-  };
-
-  const handleImport = async () => {
-    try {
-      if (importSource === 'workona') {
-        const result = await importWorkona(importText);
-        // 失败按原因分流（与备份导入 version-mismatch / invalid 同口径）：
-        // 「文件拿错了」「文件不是 JSON」「JSON 不是 Workona 导出」三种失败
-        // 统一表现为「导入 0 条」时，用户无从判断下一步该做什么。
-        if (result.reason === 'too-large') {
-          notify(t('文件太大（超过 1MB），请分成几份分别导入'));
-          return;
-        }
-        if (result.reason === 'invalid-json') {
-          notify(t('这不是合法的 JSON：文件可能被截断或损坏，请重新导出一次'));
-          return;
-        }
-        if (result.reason === 'unrecognized') {
-          notify(
-            t('这段 JSON 不是 Workona 导出：顶层需要有 "Workspaces" 或 "Archived Workspaces" 字段')
-          );
-          return;
-        }
-        if (result.snapshots === 0) {
-          // 结构合法但没产出快照：区分「没粘贴内容」与「识别到了但条目全不可恢复」。
-          notify(
-            importText.trim()
-              ? result.skipped > 0
-                ? t('识别到 {{count}} 个工作区，但其中没有可打开的网页地址', {
-                    count: result.skipped
-                  })
-                : t('没找到网址：请粘贴 OneTab 导出的文本（每行一个网址），内容不超过 1MB')
-              : t('该快照没有可恢复的标签')
-          );
-          return;
-        }
-        // `tabs` 是**落盘**标签数（parseWorkona 的 totalTabs 按最终保留的份重算），
-        // 与下面「未导入」里的 truncatedTabs 不是一个分母：两句分别是「进了多少」
-        // 和「丢了多少」，不能相加也不能互相折算。
-        notify(
-          t('已导入 {{snapshots}} 份快照（共 {{tabs}} 个标签）', {
-            snapshots: result.snapshots,
-            tabs: result.tabs
-          })
-        );
-        // 截断必须显式告知：导入成功但静默少了一批标签/快照，是最难自查的一类问题。
-        if (result.truncatedTabs > 0 || result.truncatedSnapshots > 0) {
-          notify(
-            t(
-              '部分内容未导入：{{tabs}} 个标签、{{snapshots}} 份快照（超出存储上限，或不是 http/https 网址）',
-              {
-                tabs: result.truncatedTabs,
-                snapshots: result.truncatedSnapshots
-              }
-            )
-          );
-        }
-        setImportText('');
-        setImportName('');
-        setView('list');
-        return;
-      }
-      const count = await importOneTab(importText, importName.trim() || undefined);
-      if (count === 0) {
-        // 区分「用户没粘贴内容」与「粘贴了但解析不出条目」：后者可能是因为
-        // 超 1MB 被直接拒收，或整段都不是 http(s) 网址。笼统提示「快照为空」
-        // 会让用户以为导入成功却得到一个空快照，无从排查。
-        notify(
-          importText.trim()
-            ? t(
-                '没能解析出网址：请确认粘贴的是 OneTab 导出的文本（每行一个 http/https 网址），且内容不超过 1MB'
-              )
-            : t('该快照没有可恢复的标签')
-        );
-        return;
-      }
-      notify(t('已导入 {{count}} 个标签', { count }));
-      setImportText('');
-      setImportName('');
-      setView('list');
-    } catch (error) {
-      // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
-      // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
-      notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
-    }
-  };
-
-  /** 行内「恢复」入口：先弹影响面确认（N 标签 + M 组），确认后才真正恢复。 */
-  const requestRestore = (id: string, tabCount: number) => {
-    if (tabCount === 0) {
-      notify(t('该快照没有可恢复的标签'));
-      return;
-    }
-    setConfirmRestoreId(id);
-  };
-
-  const handleRestore = async (id: string, tabCount: number) => {
-    if (tabCount === 0) {
-      notify(t('该快照没有可恢复的标签'));
-      return;
-    }
-    // 互斥：恢复期间再点会基于同一窗口现状并发 create，可能把同一批标签开两份
-    // （快照恢复没有 undo 栈式的 undoInFlight 互斥，这里在组件层补上）。
-    if (restoreInFlight.current) return;
-    restoreInFlight.current = true;
-    setRestoringId(id);
-    try {
-      const { count, degraded } = await restore(id);
-      notify(
-        degraded
-          ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', { count })
-          : t('已恢复 {{count}} 个标签', { count })
-      );
-      onClose();
-    } catch (error) {
-      // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
-      // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
-      notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
-    } finally {
-      restoreInFlight.current = false;
-      setRestoringId(null);
-    }
-  };
-
-  /**
-   * 选择性恢复：按当前勾选集恢复，但**先弹影响面确认**（与整份恢复
-   * 同一闸门）。勾选集为空提示用户先勾选；恢复互斥与 handleRestore 共用
-   * restoringId（同一时刻只允许一个恢复在途）。
-   */
-  const handleRestoreSelected = (id: string, tabCount: number) => {
-    if (tabCount === 0) {
-      notify(t('请先勾选要恢复的条目'));
-      return;
-    }
-    const snap = snapshots.find((entry) => entry.id === id);
-    if (!snap) return;
-    const selectedTabs = snap.tabs.filter((tab, index) => selectedKeys.has(`${index}-${tab.url}`));
-    if (selectedTabs.length === 0) {
-      notify(t('请先勾选要恢复的条目'));
-      return;
-    }
-    setConfirmRestoreSelected(buildPartialSnapshot(snap, selectedTabs));
-  };
-
-  /** 确认后的选择性恢复执行体（勾选集已固化为传入的部分快照）。 */
-  const performRestoreSelected = async (partial: Snapshot) => {
-    setConfirmRestoreSelected(null);
-    if (restoreInFlight.current) return;
-    restoreInFlight.current = true;
-    setRestoringId(partial.id);
-    try {
-      const { count, degraded } = await restoreSelected(partial.id, partial.tabs);
-      notify(
-        degraded
-          ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', { count })
-          : t('已恢复 {{count}} 个标签', { count })
-      );
-      onClose();
-    } catch (error) {
-      // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
-      // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
-      notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
-    } finally {
-      restoreInFlight.current = false;
-      setRestoringId(null);
     }
   };
 
@@ -834,7 +688,7 @@ export function SnapshotsPanel({
               snapshot={snap}
               onConfirm={() => {
                 setConfirmRestoreId(null);
-                void handleRestore(snap.id, snap.tabCount);
+                void handleRestore(snap.id);
               }}
               onCancel={() => setConfirmRestoreId(null)}
             />

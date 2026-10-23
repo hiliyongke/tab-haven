@@ -15,6 +15,8 @@
  *  3. 域名 + 路径 `example.com/app` → urlFilter `||example.com/app`。
  */
 
+import { isHttpUrl } from '@/core/url/UrlInspector';
+
 /** patterns 条数上限（防 DNR 动态规则配额膨胀）。 */
 export const NO_CACHE_PATTERNS_LIMIT = 50;
 
@@ -45,7 +47,7 @@ export function normalizeNoCachePattern(input: string): string | null {
 
   // 形态 1：完整 URL 前缀（必须显式 http/https）。
   if (trimmed.includes('://')) {
-    if (!/^https?:\/\//i.test(trimmed)) return null;
+    if (!isHttpUrl(trimmed)) return null;
     try {
       const url = new URL(trimmed);
       // 带 userinfo 的 URL 直接拒绝：`url.host` 不含凭据，照原逻辑归一化会把

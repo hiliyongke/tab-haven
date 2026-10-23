@@ -1,5 +1,6 @@
 import { DuplicateIndex, KeeperPolicy } from '@/core/dup/DuplicateIndex';
 import { canSafelyDiscardTab, type TabRecord } from '@/core/tab-types';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 
 /**
  * 从当前标签集中选出某类目标的纯函数集合。
@@ -54,7 +55,5 @@ export function selectSleepableTabs(
  * 仅 http(s) 页面可入档，chrome:// 等内部页保留在原窗口）。
  */
 export function selectArchivableTabs(tabs: readonly TabRecord[]): TabRecord[] {
-  return tabs.filter(
-    (tab) => typeof tab.id === 'number' && Boolean(tab.url) && /^https?:\/\//i.test(tab.url ?? '')
-  );
+  return tabs.filter((tab) => typeof tab.id === 'number' && isHttpUrl(tab.url));
 }

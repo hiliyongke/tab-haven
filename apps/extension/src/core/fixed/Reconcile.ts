@@ -9,7 +9,7 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
  *  - 会话绑定维护：清理失效绑定，为未绑定条目寻找精确 URL 匹配的未占用标签。
  */
 
-export interface ReconcileResult {
+interface ReconcileResult {
   folders: FixedFolder[];
   changed: boolean;
 }

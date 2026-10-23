@@ -7,11 +7,11 @@ import {
 } from '@/core/schema/models';
 import { toGroupColor } from '@/core/group/groupColors';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
-import { webComparisonKey } from '@/core/url/UrlInspector';
+import { isHttpUrl, webComparisonKey } from '@/core/url/UrlInspector';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { newId } from '@/core/util/id';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
-import { withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
 import { tabGroups } from '@/platform/tabGroups';
@@ -23,15 +23,13 @@ import { tabGroups } from '@/platform/tabGroups';
  * 裸 read → trim → write 在两个写入方交错时是 last-writer-wins（静默丢一条快照）；
  * 删除/重命名同理。所有快照库 RMW 必须经本锁串行化。
  */
-export const SNAPSHOTS_RMW_LOCK = 'tabs.snapshots-rmw';
-
 /** 生成快照 id（SW / 面板统一走 core 的 id 口径，含非安全上下文的退化路径）。 */
 function newSnapshotId(): string {
   return newId('snap');
 }
 
 /** 由窗口标签构建一条快照的输入。 */
-export interface BuildSnapshotInput {
+interface BuildSnapshotInput {
   name: string;
   /** 名称为空时的回退名（由调用方按 i18n 解析传入，保持本函数纯净无文案依赖）。 */
   fallbackName: string;
@@ -109,9 +107,9 @@ export function parseOneTab(text: string): SnapshotTab[] {
       url = bracket[1]!.trim();
       title = bracket[2]?.trim() ?? '';
     } else if (line.includes(' - ')) {
-      const idx = line.indexOf(' - ');
-      url = line.slice(0, idx).trim();
-      title = line.slice(idx + 3).trim();
+      const separatorIndex = line.indexOf(' - ');
+      url = line.slice(0, separatorIndex).trim();
+      title = line.slice(separatorIndex + 3).trim();
     } else {
       url = line;
     }
@@ -211,7 +209,7 @@ export function collectSnapshotTabs(
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const out: SnapshotTab[] = [];
   for (const tab of tabs) {
-    if (!tab.url || !/^https?:\/\//i.test(tab.url)) continue;
+    if (!isHttpUrl(tab.url)) continue;
     const group = tab.groupId !== NO_GROUP ? groupById.get(tab.groupId) : undefined;
     out.push({
       url: tab.url,
@@ -233,7 +231,7 @@ function missingTabsOf(snapshot: Snapshot, existingKeys: ReadonlySet<string>): S
   for (const tab of snapshot.tabs) {
     // 仅 http(s) 条目可恢复（chrome:// 等内部页浏览器不允许以 URL 创建，采集端已过滤，
     // 此处兜底导入数据）。
-    if (!/^https?:\/\//i.test(tab.url)) continue;
+    if (!isHttpUrl(tab.url)) continue;
     const key = webComparisonKey(tab.url, undefined) ?? tab.url;
     if (existingKeys.has(key) || seen.has(key)) continue;
     seen.add(key);

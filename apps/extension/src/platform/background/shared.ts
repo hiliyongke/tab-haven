@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { hostnameOf as coreHostnameOf, inspectUrl } from '@/core/url/UrlInspector';
+import { createSerialChain } from '@/core/util/concurrency';
 import { normalizeWhitelistHost } from '@/core/url/hostname';
 import {
   PENDING_ACTIONS_KEY,
@@ -21,7 +22,22 @@ import { openSidePanel } from '@/platform/sidePanel';
  * 打开侧边栏属 platform/sidePanel，不在此处另写一份。
  */
 
-/** SW 侧设置缓存：SW 每次启动重新读取（模块级变量在回收后重置），变更经 watch 实时更新。 */
+/**
+ * SW 侧设置缓存：SW 每次启动重新读取（模块级变量在回收后重置），变更经 watch 实时更新。
+ *
+ * 与「直接 `settingsRepository.read()`」是两条并存的读取口径，**这是刻意的**，
+ * 不是遗漏的统一点：
+ *  - 缓存：SW 已唤醒、watch 已生效后的高频路径（休眠扫描、角标、右键菜单），
+ *    读一次磁盘换一轮 IPC 是不可接受的；
+ *  - 仓库直读：SW 刚被唤醒、watch 尚未生效的窗口期（见 background.ts 中
+ *    「读实时设置而非共享缓存」的两处注释），此时缓存仍是 DEFAULT_SETTINGS，
+ *    用它判开关会把功能整轮跳过。
+ *
+ * 选哪条只取决于「此刻 watch 是否已生效」，不取决于个人偏好——新增读取点按此判断。
+ *
+ * `export let` 不会造成外部可写：ESM 的导入绑定对导入方是只读的，只有本模块能
+ * 重新赋值，因此「缓存被别处改坏」这条路径不存在。
+ */
 export let cachedSettings: Settings = DEFAULT_SETTINGS;
 export const syncCachedSettings = async (): Promise<void> => {
   try {
@@ -94,7 +110,7 @@ type PendingActionInput =
 
 /** 挂起队列 read-modify-write 串行链：连续两个动作（快捷键连按）的 get→set
  *  交错会静默丢掉先入队的那一条。 */
-let queueActionChain: Promise<void> = Promise.resolve();
+const queueActionChain = createSerialChain();
 
 /**
  * 把待面板执行的动作存入 storage.session（面板未开时挂起），并即时广播。
@@ -108,30 +124,24 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
   // 且面板消费后清除 session 列表，不会重放历史动作。
   const at = Date.now();
   const stamped = { ...action, at } as PendingAction;
-  const step = queueActionChain.then(async () => {
-    try {
+  // 链尾统一兜底：任何一次漏网 reject 都会让此后每个 queueAction 永不 resolve，
+  // 快捷键路径表现为「按了没反应」且无任何报错（同 windowCache / storage/session）。
+  await queueActionChain.enqueueSettled(
+    async () => {
       const sessionArea = browser.storage?.session;
-      if (sessionArea) {
-        const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
-        // 存的是外部数据，必须经 schema 校验：手写的 `as PendingAction[]` 断言
-        // 会把任何形状的垃圾都当成合法队列。
-        const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
-        const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
-        list.push(stamped);
-        await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
-      }
-    } catch (error) {
+      if (!sessionArea) return;
+      const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
+      // 存的是外部数据，必须经 schema 校验：手写的 `as PendingAction[]` 断言
+      // 会把任何形状的垃圾都当成合法队列。
+      const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
+      const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
+      list.push(stamped);
+      await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
+    },
+    (error) =>
       // 文案须与函数名对应：此处是「挂起动作入队」，不是泛化的共享上下文操作。
-      logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error);
-    }
-  });
-  // 双保险：与 windowCache.skipMarkerChain / storage/session 的串行链同口径 ——
-  // 链上任何一次漏网 reject 都会让此后每个 queueAction 永不 resolve，快捷键路径
-  // 表现为「按了没反应」且无任何报错。
-  queueActionChain = step.catch((error: unknown) => {
-    logDegraded('background', '挂起动作入队失败', error);
-  });
-  await queueActionChain;
+      logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error)
+  );
   sendMessage(stamped as Message);
 }
 

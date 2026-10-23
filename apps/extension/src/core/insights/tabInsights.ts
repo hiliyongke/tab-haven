@@ -20,14 +20,14 @@ import { DAY_MS } from '@/core/util/time';
 const DUPLICATE_THRESHOLD = 2;
 
 /** 滞留预警阈值：7 天未激活（ms）。 */
-export const STALE_TAB_DAYS = 7;
+const STALE_TAB_DAYS = 7;
 export const STALE_TAB_MS = STALE_TAB_DAYS * DAY_MS;
 
 /** 每类洞察的 Top N 上限（防面板溢出，计算保持 O(n log n)）。 */
 export const INSIGHT_TOP_N = 5;
 
 /** 重复重灾区条目。 */
-export interface DuplicateHotspot {
+interface DuplicateHotspot {
   /** 站点域名（归一化：小写、去 www、去尾点）。 */
   host: string;
   /** 冗余标签数（该页面的全部份数）。 */
@@ -35,7 +35,7 @@ export interface DuplicateHotspot {
 }
 
 /** 滞留标签条目。 */
-export interface StaleTab {
+interface StaleTab {
   id: number;
   /** 标题（空则回退 URL）。 */
   label: string;
@@ -44,7 +44,7 @@ export interface StaleTab {
 }
 
 /** 窗口洞察汇总。 */
-export interface InsightsResult {
+interface InsightsResult {
   /** 重复重灾区（按冗余份数降序、域名稳定序，Top N）。 */
   duplicateHotspots: DuplicateHotspot[];
   /** 可安全休眠标签数（未激活、未固定、未播放、非绑定）。 */

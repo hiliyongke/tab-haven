@@ -11,7 +11,7 @@ import { logDegraded } from '@/platform/diagnostics';
  */
 
 /** 书签栏顶层文件夹 + 直接书签的读取结果。 */
-export interface BookmarkBarData {
+interface BookmarkBarData {
   folders: { name: string; leaves: { url: string; title: string }[] }[];
   looseLeaves: { url: string; title: string }[];
 }

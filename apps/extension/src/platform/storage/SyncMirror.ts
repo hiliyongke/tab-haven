@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
-import { chainTail } from '@/core/util/concurrency';
+import { createSerialChain } from '@/core/util/concurrency';
 import { logDegraded } from '@/platform/diagnostics';
 import { t } from '@/i18n/headless';
 
@@ -50,6 +50,8 @@ const MIRROR_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 镜像 30 天无更新视为�
  * 立刻重试只会持续撞墙，因此第 1 次就等 30s，其后按 ×2 递增。
  */
 const RETRY_BASE_DELAY_MS = 30_000;
+/** 镜像去抖窗口：本地数据高频落盘时合并为一次 sync 写（sync 有分钟级写配额）。 */
+const MIRROR_DEBOUNCE_MS = 500;
 
 /** 镜像内容 schema（不校验设置细节，交给 SettingsSchema 在读取端校验）。 */
 const MirrorPayloadSchema = z.object({
@@ -60,7 +62,7 @@ const MirrorPayloadSchema = z.object({
 });
 type MirrorPayload = z.infer<typeof MirrorPayloadSchema>;
 
-export interface MirrorData {
+interface MirrorData {
   folders: unknown[];
   pins: unknown[];
   settings: Record<string, unknown>;
@@ -98,7 +100,7 @@ class SyncMirror {
    * 两个写各自 get 后交错落盘会让旧 payload 覆盖新 payload（镜像整体回滚）。
    * 全部 write 收口到本链后，同一时刻至多一个写在途，顺序确定。
    */
-  private writeChain: Promise<void> = Promise.resolve();
+  private writeChain = createSerialChain();
   /**
    * 镜像写结果的回执。
    *
@@ -150,7 +152,7 @@ class SyncMirror {
       const latest = this.pendingPayload;
       this.pendingPayload = undefined;
       if (latest) void this.write(latest);
-    }, 500);
+    }, MIRROR_DEBOUNCE_MS);
   }
 
   /**
@@ -184,9 +186,7 @@ class SyncMirror {
 
   /** 立即写入镜像（分块 + 清理过期块）。经写串行链执行，防并发写交错回滚。 */
   write(payload: MirrorData): Promise<void> {
-    const run = this.writeChain.then(() => this.performWrite(payload));
-    this.writeChain = run.catch(() => {});
-    return run;
+    return this.writeChain.enqueue(() => this.performWrite(payload));
   }
 
   /** write 的实际执行体（串行链内运行）。 */
@@ -289,9 +289,7 @@ class SyncMirror {
     this.cancelPending();
     // 挂到写串行链尾部：在途 performWrite 是 get→remove→set 非原子三步，clearAll
     // 若与之并发，在途写的 set 会落在清除之后，让刚删掉的镜像复活。
-    const run = this.writeChain.then(() => this.performClear());
-    this.writeChain = run.catch(() => {});
-    return run;
+    return this.writeChain.enqueue(() => this.performClear());
   }
 
   /** clearAll 的实际执行体（串行链内运行）。 */
@@ -320,9 +318,7 @@ class SyncMirror {
    * 开启同步时跑一次，这一次误判会粘住整个会话（表现为「同步未生效」）。
    */
   async pull(): Promise<MirrorData | null> {
-    const run = this.writeChain.then(() => this.performPull());
-    this.writeChain = chainTail(run);
-    return run;
+    return this.writeChain.enqueue(() => this.performPull());
   }
 
   /** pull 的实际执行体（串行链内运行）。 */

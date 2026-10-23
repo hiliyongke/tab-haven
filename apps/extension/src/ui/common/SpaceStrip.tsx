@@ -5,7 +5,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 
 /**
- * 工作空间切换条（C1）：搜索栏下方的横向 chip 列表。
+ * 工作区切换条（C1）：搜索栏下方的横向 chip 列表。
  *
  * 无任何空间快照时整条隐藏（不占位、不打扰既有布局）；第一个空间由
  * 命令面板的「保存为空间」或本条目的「存为空间」创建。

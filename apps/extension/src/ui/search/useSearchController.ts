@@ -34,7 +34,15 @@ import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
  */
 const EMPTY_NO_CACHE_SET: ReadonlySet<number> = new Set();
 
-export interface SearchControllerOptions {
+/**
+ * 历史（快照/归档）命中返回条数上限。
+ *
+ * 刻意与 SearchEngine 的 DEFAULT_SEARCH_LIMIT 分开：标签区靠滚动承载全部结果，
+ * 历史区是「补充入口」，只给一屏的量，多了反而把标签区挤出视野。
+ */
+const HISTORY_HITS_LIMIT = 20;
+
+interface SearchControllerOptions {
   /** 当前窗口标签（不含其他窗口）。 */
   tabs: readonly TabRecord[];
   /** 翻译函数（分区/标签标题回退用）；切换语言时引用变化会触发重建。 */
@@ -54,7 +62,7 @@ export interface HistorySearchHit extends HistoryHitInfo {
   titleSegments: Array<{ text: string; hit: boolean }>;
 }
 
-export interface SearchController {
+interface SearchController {
   query: string;
   setQuery: (query: string) => void;
   clearQuery: () => void;
@@ -178,7 +186,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
    */
   const historyHits = useMemo(() => {
     if (!historyEngine || !isFiltering) return [];
-    const raw = historyEngine.search(query, 20);
+    const raw = historyEngine.search(query, HISTORY_HITS_LIMIT);
     const decoded: HistorySearchHit[] = [];
     for (const hit of raw) {
       const info = decodeHistoryId(hit.tabId, snapshots, HISTORY_SNAPSHOT_LIMIT);

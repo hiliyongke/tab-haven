@@ -42,6 +42,11 @@ const VIRTUAL_THRESHOLD = 60;
  */
 const FORCE_VIRTUAL_THRESHOLD = 80;
 
+/** 虚拟列表高度：取视口的一半，夹在 [240, 480] 之间（注释见文件头的推导）。 */
+const VIRTUAL_MIN_HEIGHT_PX = 240;
+const VIRTUAL_MAX_HEIGHT_PX = 480;
+const VIRTUAL_VIEWPORT_RATIO = 0.5;
+
 /** 跟踪视口高度：虚拟列表高度随面板可用高度自适应，渲染期直读 window.innerHeight 不会在面板尺寸变化后更新。 */
 function useViewportHeight(): number {
   const [height, setHeight] = useState(() => window.innerHeight);
@@ -146,7 +151,10 @@ function RowList({
     // 虚拟列表高度随面板可用高度自适应（上限 50vh / 480px）：注释的既定目标是
     // 「避免列表里套列表」，但 720px 上限在 1000px 高的窗口下仍产出 660px 的独立
     // 滚动区 —— 它就是第三层。收紧到视口一半，让分区与外层主列表的比例稳定。
-    const virtualMaxHeight = Math.max(240, Math.min(480, viewportHeight * 0.5));
+    const virtualMaxHeight = Math.max(
+      VIRTUAL_MIN_HEIGHT_PX,
+      Math.min(VIRTUAL_MAX_HEIGHT_PX, viewportHeight * VIRTUAL_VIEWPORT_RATIO)
+    );
     return (
       <>
         {sortPaused && (
@@ -379,11 +387,15 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
 
   // 原生组编辑对话框状态（改名 / 换色 / 删除），统一走 DialogShell 保证焦点与键盘行为。
   const [editOpen, setEditOpen] = useState(false);
-  // 从折叠分组的播放提示进入后，临时只展示播放中的标签。
+  /**
+   * 从折叠分组的播放提示进入后，临时只展示播放中的标签。
+   *
+   * 「是否生效」是渲染期直接算出来的（下面 `visibleTabs` 里的 `!isCollapsed`），
+   * 不再用 effect 把 `isCollapsed` 的变化回写进 state —— 那是一次「渲染 → 副作用
+   * → 再渲染」的额外往返，且让 `playingOnly` 与 `isCollapsed` 成了两份需要人肉
+   * 保持同步的状态。
+   */
   const [playingOnly, setPlayingOnly] = useState(false);
-  useEffect(() => {
-    if (isCollapsed) setPlayingOnly(false);
-  }, [isCollapsed]);
 
   const accent = useSectionAccent(section);
   const chevron = (
@@ -394,7 +406,8 @@ const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
   );
 
   const playingTab = section.tabs.find((tab) => tab.audible && !tab.muted);
-  const visibleTabs = playingOnly && playingTab ? [playingTab] : section.tabs;
+  // 折叠态不渲染 body，故「播放中筛选」只在展开时成立；展开即生效，无需回写 state。
+  const visibleTabs = playingOnly && !isCollapsed && playingTab ? [playingTab] : section.tabs;
   // 播放提示只在折叠时显示；展开后通过单独的标签行状态识别，避免标题区重复提示。
   const mediaIndicator =
     isCollapsed && playingTab ? (

@@ -15,7 +15,7 @@ import { browser, type Browser } from 'wxt/browser';
  */
 
 /** 组的可写属性（wxt 类型未覆盖 title/color 字面量）。 */
-export interface TabGroupMutableProps {
+interface TabGroupMutableProps {
   title?: string;
   color?: string;
   collapsed?: boolean;

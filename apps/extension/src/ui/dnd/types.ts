@@ -13,7 +13,7 @@ export const DragType = {
   FolderItem: 'folder-item'
 } as const;
 
-interface TabDragData {
+export interface TabDragData {
   type: (typeof DragType)['Tab'];
   tabId: number;
   /** 所属容器 key（section key），用于判断同容器排序。 */
@@ -38,7 +38,7 @@ export interface SectionDragData {
   tabIds: number[];
 }
 
-interface PinDragData {
+export interface PinDragData {
   type: (typeof DragType)['Pin'];
   /** 持久化 pin id（PinnedStrip 场景）。 */
   pinId?: string;
@@ -49,13 +49,13 @@ interface PinDragData {
   url?: string;
 }
 
-interface FolderDragData {
+export interface FolderDragData {
   type: (typeof DragType)['Folder'];
   folderId: string;
   name: string;
 }
 
-interface FolderItemDragData {
+export interface FolderItemDragData {
   type: (typeof DragType)['FolderItem'];
   folderId: string;
   itemId: string;
@@ -76,7 +76,7 @@ export const PINNED_STRIP_DROPPABLE = 'pinned-strip';
  * 纯落点数据：这类 droppable 不接受「被拖起来」，只作为投放区存在。
  * `type` 与上面的 DOM id 常量同值（两套语义本就一一对应）。
  */
-export interface DropZoneData {
+interface DropZoneData {
   type: typeof FIXED_AREA_DROPPABLE | typeof PINNED_STRIP_DROPPABLE;
 }
 

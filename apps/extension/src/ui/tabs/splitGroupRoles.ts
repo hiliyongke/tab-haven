@@ -7,7 +7,7 @@ import type { TabRecord } from '@/core/tab-types';
  *  - 段长 1：给 first，单标签也可能是分屏成员，仍应有指示；
  *  - 被 recency 排序打散（不连续）时不画线。
  */
-export type SplitGroupRole = 'first' | 'middle' | 'last';
+type SplitGroupRole = 'first' | 'middle' | 'last';
 
 export function computeSplitGroupRoles(tabs: readonly TabRecord[]): Map<number, SplitGroupRole> {
   const roles = new Map<number, SplitGroupRole>();

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { hash31 } from '@/core/util/hash';
 import { logDegraded } from '@/platform/diagnostics';
 
 /** 原生标签组：直接用 Chrome 组色 CSS 变量（与组圆点同源）。 */
@@ -11,10 +12,7 @@ export function groupAccentVar(color?: string): string {
  * 不刺眼的区间，保证「不同组不同色」又不破坏侧边栏的低干扰基调。
  */
 function domainAccent(domain: string): string {
-  let hash = 0;
-  for (let i = 0; i < domain.length; i++) {
-    hash = (hash * 31 + domain.charCodeAt(i)) | 0;
-  }
+  const hash = hash31(domain);
   const hue = ((hash % 360) + 360) % 360;
   const sat = 58 + (Math.abs(hash >> 3) % 14); // 58–71%
   const light = 54 + (Math.abs(hash >> 7) % 8); // 54–61%

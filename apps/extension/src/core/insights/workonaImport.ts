@@ -78,10 +78,10 @@ type WorkonaWorkspace = z.infer<typeof WorkonaWorkspaceSchema>;
  * 共用同一个空结果时，用户只看到「导入 0 条」，无法区分「文件拿错了」与
  * 「文件对但内容全是内部页」。
  */
-export type WorkonaImportFailure = 'too-large' | 'invalid-json' | 'unrecognized';
+type WorkonaImportFailure = 'too-large' | 'invalid-json' | 'unrecognized';
 
 /** 解析结果。 */
-export interface WorkonaImportResult {
+interface WorkonaImportResult {
   /** 转换出的快照（待调用方命名后经 persistSnapshot 落盘）。 */
   snapshots: Snapshot[];
   /** 识别出但无可恢复 http(s) 标签的 workspace 数（用于结果反馈）。 */

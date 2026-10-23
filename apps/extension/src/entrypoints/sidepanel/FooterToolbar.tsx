@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, type ComponentProps, type ReactNode } from 'react';
 import { useDndMonitor } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -7,6 +7,12 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { useTranslation } from '@/i18n';
+import {
+  FOOTER_ID_PREFIX,
+  footerButtonId,
+  normalizeFooterOrder,
+  type FooterButtonKey
+} from '@/core/layout/footerOrder';
 import { IconButton } from '@/ui/common/IconButton';
 import { Icons } from '@/ui/common/Icon';
 
@@ -18,48 +24,11 @@ import { Icons } from '@/ui/common/Icon';
  * 上抛，本组件不直接碰存储。
  */
 
-/** 底栏按钮 id 前缀：与全局其它 sortable（tab: / folder: / pin:）隔离，避免 id 撞车。 */
-const FOOTER_ID_PREFIX = 'footer:';
-
-/**
- * 按钮 key 的默认顺序（= 按使用频率排列的推荐顺序）。
- *
- * 顺序原则：常驻的高频按钮固定在最左，条件出现的按钮（唤醒 / 清理重复 /
- * 洞察 / 关闭选中）集中在中段 —— 否则它们一出现就会把命令面板挤走，
- * 左端的肌肉记忆全废。低频项（重排 / 关于）与系统项（设置）靠右。
- */
-const FOOTER_BUTTON_KEYS = [
-  'palette',
-  'locate',
-  'collapseAll',
-  'discard',
-  'wake',
-  'snapshot',
-  'history',
-  'cleanDuplicates',
-  'insights',
-  'closeHighlighted',
-  'regroup',
-  'about',
-  'settings'
-] as const;
-type FooterButtonKey = (typeof FOOTER_BUTTON_KEYS)[number];
-const footerButtonId = (key: FooterButtonKey): string => `${FOOTER_ID_PREFIX}${key}`;
-
-/**
- * 把持久化的顺序补全成完整列表：过滤未知 id，缺失的按钮按其**默认相对顺序**
- * 追加到末尾。这样版本升级新增按钮时，老用户的自定义顺序不会让新按钮消失。
- */
-function normalizeFooterOrder(saved: readonly string[]): FooterButtonKey[] {
-  const kept: FooterButtonKey[] = [];
-  // 按 saved 的顺序取（不能按默认顺序 filter —— 那样用户的自定义顺序会被默认顺序覆盖）
-  for (const id of saved) {
-    const key = FOOTER_BUTTON_KEYS.find((candidate) => footerButtonId(candidate) === id);
-    if (key && !kept.includes(key)) kept.push(key);
-  }
-  const missing = FOOTER_BUTTON_KEYS.filter((key) => !kept.includes(key));
-  return [...kept, ...missing];
-}
+/** 底栏按钮的配置项（与 IconButton 的 props 同构，渲染处统一补 label）。 */
+type FooterButtonSpec = Pick<
+  ComponentProps<typeof IconButton>,
+  'icon' | 'title' | 'label' | 'badge' | 'disabled' | 'tone' | 'onClick'
+>;
 
 /**
  * 可拖拽的按钮外壳。
@@ -90,7 +59,7 @@ function SortableFooterButton({ id, children }: { id: string; children: ReactNod
     </span>
   );
 }
-export interface FooterToolbarProps {
+interface FooterToolbarProps {
   tabCount: number;
   /** 可折叠分区数（原生组 + 站点组），为 0 时折叠按钮禁用。 */
   collapsibleCount: number;
@@ -205,162 +174,142 @@ export function FooterToolbar(props: FooterToolbarProps) {
   });
 
   /**
-   * 按 key 渲染按钮；条件不满足时返回 null（不可见的按钮不参与拖拽序列，
-   * 但它的位置仍保留在顺序里，下次条件满足时回到原位）。
+   * 底栏按钮配置表（原为 14 分支的 switch）。
+   *
+   * 为什么换成表：switch 里每个 case 自己 return 一段 JSX，新增按钮要在两处
+   * （`FOOTER_BUTTON_KEYS` 顺序表 + 分支）登记，漏一处就变成「顺序里有、界面上没有」；
+   * 表的键与顺序表同构，漏登记由编译器兜住（Record 必须穷尽）。
+   * 另：`footerLabels ? t(...) : undefined` 原先 14 处各写一遍，现在统一在渲染处判一次。
+   *
+   * `null` = 条件不满足，本次不渲染（位置仍留在顺序里，条件恢复后回到原位）。
    */
-  const renderFooterButton = (key: FooterButtonKey): ReactNode => {
-    switch (key) {
-      case 'palette':
-        return (
-          <IconButton
-            icon={Icons.shortcuts}
-            title={t('打开命令面板')}
-            label={footerLabels ? t('命令') : undefined}
-            onClick={onOpenPalette}
-          />
-        );
-      case 'locate':
-        return (
-          <IconButton
-            icon={Icons.locate}
-            title={t('定位当前标签')}
-            label={footerLabels ? t('定位') : undefined}
-            disabled={activeTabId === undefined}
-            onClick={onLocateActive}
-          />
-        );
-      case 'collapseAll':
-        return (
-          <IconButton
-            icon={allCollapsed ? Icons.expandAll : Icons.collapseAll}
-            title={t(allCollapsed ? '展开所有分组' : '收起所有分组')}
-            label={footerLabels ? t(allCollapsed ? '展开' : '折叠') : undefined}
-            disabled={collapsibleCount === 0}
-            onClick={onToggleAllSections}
-          />
-        );
-      case 'discard':
-        return (
-          <IconButton
-            icon={Icons.snowflake}
-            title={
-              sleepableCount > 0
-                ? t('休眠 {{count}} 个后台标签（释放内存）', { count: sleepableCount })
-                : t('休眠全部后台标签（释放内存）')
-            }
-            label={footerLabels ? t('休眠') : undefined}
-            disabled={batchBusy !== 'idle'}
-            onClick={onDiscardInactive}
-          />
-        );
-      case 'wake':
-        return discardedCount > 0 ? (
-          <IconButton
-            icon={Icons.wakeAll}
+  const buttonSpecs: Record<FooterButtonKey, FooterButtonSpec | null> = {
+    palette: {
+      icon: Icons.shortcuts,
+      title: t('打开命令面板'),
+      label: t('命令'),
+      onClick: onOpenPalette
+    },
+    locate: {
+      icon: Icons.locate,
+      title: t('定位当前标签'),
+      label: t('定位'),
+      disabled: activeTabId === undefined,
+      onClick: onLocateActive
+    },
+    collapseAll: {
+      icon: allCollapsed ? Icons.expandAll : Icons.collapseAll,
+      title: t(allCollapsed ? '展开所有分组' : '收起所有分组'),
+      label: t(allCollapsed ? '展开' : '折叠'),
+      disabled: collapsibleCount === 0,
+      onClick: onToggleAllSections
+    },
+    discard: {
+      icon: Icons.snowflake,
+      title:
+        sleepableCount > 0
+          ? t('休眠 {{count}} 个后台标签（释放内存）', { count: sleepableCount })
+          : t('休眠全部后台标签（释放内存）'),
+      label: t('休眠'),
+      disabled: batchBusy !== 'idle',
+      onClick: onDiscardInactive
+    },
+    wake:
+      discardedCount > 0
+        ? {
+            icon: Icons.wakeAll,
             // 口径明示：这里只唤醒**当前窗口**的休眠标签（自动休眠的「全部唤醒」
             // 按台账 tabIds，可能跨窗口）。不写明会让用户以为一次唤醒所有窗口。
-            title={t('唤醒当前窗口的 {{count}} 个休眠标签', { count: discardedCount })}
-            label={footerLabels ? t('唤醒') : undefined}
-            disabled={batchBusy !== 'idle'}
-            onClick={onWakeAll}
-          />
-        ) : null;
-      case 'snapshot':
-        return (
-          <IconButton
-            icon={Icons.snapshot}
-            title={t('快照')}
-            label={footerLabels ? t('快照') : undefined}
-            badge={snapshotCount > 0 ? snapshotCount : undefined}
-            onClick={onOpenSnapshots}
-          />
-        );
-      case 'history':
-        return (
-          <IconButton
-            icon={Icons.history}
-            title={
-              undoBatchCount > 0
-                ? t('本会话已可撤销 {{count}} 次：所有关闭操作都能撤销', {
-                    count: undoBatchCount
-                  })
-                : t('撤销历史')
-            }
-            label={footerLabels ? t('历史') : undefined}
-            badge={undoBatchCount > 0 ? undoBatchCount : undefined}
-            onClick={onOpenHistory}
-          />
-        );
-      case 'cleanDuplicates':
-        return duplicateCount > 0 ? (
-          <IconButton
-            icon={Icons.copyX}
-            title={t('关闭重复标签：每个网址只留最近访问的一个；常驻磁贴与收藏夹条目豁免，可撤销')}
-            label={footerLabels ? t('清理重复') : undefined}
-            badge={duplicateCount}
-            disabled={batchBusy !== 'idle'}
-            onClick={onCleanDuplicates}
-          />
-        ) : null;
-      case 'insights':
-        return insightCount > 0 ? (
-          <IconButton
-            icon={Icons.sparkles}
-            title={t('查看 {{count}} 条习惯洞察（重复 / 休眠候选 / 滞留）', {
+            title: t('唤醒当前窗口的 {{count}} 个休眠标签', { count: discardedCount }),
+            label: t('唤醒'),
+            disabled: batchBusy !== 'idle',
+            onClick: onWakeAll
+          }
+        : null,
+    snapshot: {
+      icon: Icons.snapshot,
+      title: t('快照'),
+      label: t('快照'),
+      badge: snapshotCount > 0 ? snapshotCount : undefined,
+      onClick: onOpenSnapshots
+    },
+    history: {
+      icon: Icons.history,
+      title:
+        undoBatchCount > 0
+          ? t('本会话已可撤销 {{count}} 次：所有关闭操作都能撤销', { count: undoBatchCount })
+          : t('撤销历史'),
+      label: t('历史'),
+      badge: undoBatchCount > 0 ? undoBatchCount : undefined,
+      onClick: onOpenHistory
+    },
+    cleanDuplicates:
+      duplicateCount > 0
+        ? {
+            icon: Icons.copyX,
+            title: t('关闭重复标签：每个网址只留最近访问的一个；常驻磁贴与收藏夹条目豁免，可撤销'),
+            label: t('清理重复'),
+            badge: duplicateCount,
+            disabled: batchBusy !== 'idle',
+            onClick: onCleanDuplicates
+          }
+        : null,
+    insights:
+      insightCount > 0
+        ? {
+            icon: Icons.sparkles,
+            title: t('查看 {{count}} 条习惯洞察（重复 / 休眠候选 / 滞留）', {
               count: insightCount
-            })}
-            label={footerLabels ? t('洞察') : undefined}
-            badge={insightCount}
-            onClick={onOpenInsights}
-          />
-        ) : null;
-      case 'closeHighlighted':
-        // 多选不能只有视觉高亮而没有操作出口。
-        return highlightedCount >= 2 ? (
-          <IconButton
-            icon={Icons.close}
-            title={t('关闭选中的 {{count}} 个标签', { count: highlightedCount })}
-            label={footerLabels ? t('关闭选中') : undefined}
-            badge={highlightedCount}
-            onClick={onCloseHighlighted}
-          />
-        ) : null;
-      case 'regroup':
-        return (
-          <IconButton
-            icon={Icons.quickRegroup}
-            /* 原生 title 无换行、约 1s 才出现：38 字的整段会横向拖出极长一条，
-               窄面板下溢出屏幕且没人读完。提示收敛到 8 字，完整说明在设置页。 */
-            title={t('重排分组（自动存快照可回退）')}
-            label={footerLabels ? t('重排') : undefined}
-            disabled={quickRegrouping}
-            onClick={onQuickRegroup}
-          />
-        );
-      case 'about':
-        // 信任面板：权限 → 用途映射与「自行验证零网络」教程。直达入口，
-        // 不必走「设置页 → 关于页」三步。
-        return (
-          <IconButton
-            icon={Icons.shield}
-            title={t('查看能力总览')}
-            label={footerLabels ? t('关于') : undefined}
-            onClick={onOpenAbout}
-          />
-        );
-      case 'settings':
-        // 不传 box="md"：底栏同排按钮均为 24px，唯独设置用 28/32px 会把整条底栏
-        // 行高撑高、其余按钮上下各空 2px，视觉重心右偏。强调语义交给 tone="accent"。
-        return (
-          <IconButton
-            icon={Icons.settings}
-            title={t('设置')}
-            label={footerLabels ? t('设置') : undefined}
-            tone="accent"
-            onClick={onOpenSettings}
-          />
-        );
+            }),
+            label: t('洞察'),
+            badge: insightCount,
+            onClick: onOpenInsights
+          }
+        : null,
+    // 多选不能只有视觉高亮而没有操作出口。
+    closeHighlighted:
+      highlightedCount >= 2
+        ? {
+            icon: Icons.close,
+            title: t('关闭选中的 {{count}} 个标签', { count: highlightedCount }),
+            label: t('关闭选中'),
+            badge: highlightedCount,
+            onClick: onCloseHighlighted
+          }
+        : null,
+    regroup: {
+      icon: Icons.quickRegroup,
+      /* 原生 title 无换行、约 1s 才出现：38 字的整段会横向拖出极长一条，
+         窄面板下溢出屏幕且没人读完。提示收敛到 8 字，完整说明在设置页。 */
+      title: t('重排分组（自动存快照可回退）'),
+      label: t('重排'),
+      disabled: quickRegrouping,
+      onClick: onQuickRegroup
+    },
+    // 信任面板：权限 → 用途映射与「自行验证零网络」教程。直达入口，
+    // 不必走「设置页 → 关于页」三步。
+    about: {
+      icon: Icons.shield,
+      title: t('查看能力总览'),
+      label: t('关于'),
+      onClick: onOpenAbout
+    },
+    // 不传 box="md"：底栏同排按钮均为 24px，唯独设置用 28/32px 会把整条底栏
+    // 行高撑高、其余按钮上下各空 2px，视觉重心右偏。强调语义交给 tone="accent"。
+    settings: {
+      icon: Icons.settings,
+      title: t('设置'),
+      label: t('设置'),
+      tone: 'accent',
+      onClick: onOpenSettings
     }
+  };
+
+  /** 按 key 渲染按钮；条件不满足时返回 null。 */
+  const renderFooterButton = (key: FooterButtonKey): ReactNode => {
+    const spec = buttonSpecs[key];
+    if (!spec) return null;
+    return <IconButton {...spec} label={footerLabels ? spec.label : undefined} />;
   };
 
   return (

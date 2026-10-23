@@ -8,6 +8,7 @@ import { COLOR_THEME_IDS } from '@/core/theme/colorThemes';
 import { toGroupColor } from '@/core/group/groupColors';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
@@ -36,7 +37,7 @@ export const PINS_LIMIT = 200;
 /** 折叠站点记录条数上限。 */
 export const SITE_COLLAPSE_LIMIT = 2_000;
 /** 休眠白名单条目上限。 */
-export const DISCARD_WHITELIST_LIMIT = 500;
+const DISCARD_WHITELIST_LIMIT = 500;
 /** hostname / 域名字符串长度上限（DNS 标签总长上限 253）。 */
 export const HOST_MAX_LENGTH = 253;
 /**
@@ -45,7 +46,7 @@ export const HOST_MAX_LENGTH = 253;
  * 基础 schema 不加此上限：运行时 Chrome 给出的 favIconUrl 可能是体积较大的
  * `data:image/...`，在读盘路径上封顶会把本机已写入的合法数据判成坏数据而丢条目。
  */
-export const FAVICON_URL_MAX_LENGTH = 2_048;
+const FAVICON_URL_MAX_LENGTH = 2_048;
 /** 单个撤销批次的标签条目上限。 */
 export const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
 /** 撤销栈默认深度（schema 与 core 共用同一来源，避免上限双定义）。 */
@@ -74,6 +75,13 @@ export const FixedFolderSchema = z.object({
 });
 export type FixedFolder = z.infer<typeof FixedFolderSchema>;
 
+/**
+ * 常驻磁贴（顶部固定区里的一枚磁贴）。
+ *
+ * 术语警告：`TabRecord.pinned`（浏览器原生「固定标签」）与本类型是**两回事** ——
+ * 磁贴是本产品持久化的资产，浏览器固定标签是浏览器标签条上的状态。两者共用
+ * `pin` 词根，读代码时勿互相替代；`ui/fixed/` 目录下两类组件同时存在。
+ */
 export const PersistentPinSchema = z.object({
   id: z.string(),
   /**
@@ -273,8 +281,11 @@ export const SettingsSchema = z.object({
    */
   syncMirrorEnabled: z.boolean().default(false),
   /**
-   * 当前激活的工作空间（origin=space 快照的 id；缺省 = 未激活，面板为「全部标签」态）。
-   * 仅是 id 引用：空间被删除后该值失效，消费方须按「找不到即视为未激活」容错。
+   * 当前激活的工作区（origin=space 快照的 id；缺省 = 未激活，面板为「全部标签」态）。
+   * 仅是 id 引用：工作区被删除后该值失效，消费方须按「找不到即视为未激活」容错。
+   *
+   * 术语：本文件与全仓统一称「工作区」（UI 文案同词）。「固定空间」是另一个概念
+   * （FixedArea，装常驻文件夹与磁贴的固定区），二者不要混用。
    */
   activeSpaceId: z.string().optional(),
   /**
@@ -300,7 +311,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
  */
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
 
-/** 撤销栈条目（Phase 5 使用，先行定义以固定数据形态）。 */
+/** 撤销栈条目：恢复标签所需的最小五元组。 */
 export const UndoTabRecordSchema = z.object({
   url: z.string(),
   index: z.number(),
@@ -471,12 +482,11 @@ export const ImportFaviconUrlSchema = z
  *
  * 只作用于导入专用 schema：运行时读盘走原 schema，不会误伤本机已写入的数据。
  */
-const IMPORT_URL_SCHEME = /^https?:\/\//i;
 /** 网址被判为不安全时的占位值：不可执行脚本、不指向内部页。 */
 const UNSAFE_URL_PLACEHOLDER = 'about:blank';
 export const ImportUrlSchema = z
   .string()
-  .transform((value) => (IMPORT_URL_SCHEME.test(value) ? value : UNSAFE_URL_PLACEHOLDER));
+  .transform((value) => (isHttpUrl(value) ? value : UNSAFE_URL_PLACEHOLDER));
 
 /** 导入专用条目 schema：收紧 favIconUrl 与 url，其余字段与运行时同口径。 */
 // 文件夹条目的 url 在运行时本就可选（挂起条目没有 url），导入侧必须保持可选，

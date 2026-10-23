@@ -8,7 +8,7 @@
  */
 
 /** 排序被阻断的原因。 */
-export type ReorderBlockedReason =
+type ReorderBlockedReason =
   /** 标签顺序双向同步已关闭：写不回浏览器，排序无从持久化。 */
   | 'sync-off'
   /**
@@ -17,7 +17,7 @@ export type ReorderBlockedReason =
    */
   | 'recency';
 
-export interface ReorderBlockedInput {
+interface ReorderBlockedInput {
   /** 标签顺序双向同步开关。 */
   tabOrderSync: boolean;
   /** 临时区排序方式：browser 浏览器原生顺序 / recency 最近访问。 */

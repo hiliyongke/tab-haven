@@ -7,6 +7,7 @@ import {
 } from '@/platform/storage/crossPageLock';
 import { applyTheme } from '@/platform/theme/ThemeApplier';
 import { DEFAULT_SETTINGS, SITE_COLLAPSE_LIMIT, SettingsSchema } from '@/core/schema/models';
+import { createSerialChain } from '@/core/util/concurrency';
 import { restoreFromMirrorOnEnable } from './mirrorRestore';
 import type { DataContext, DataSlice } from './types';
 
@@ -29,12 +30,8 @@ export function createSettingsSlice(
    * 两次写盘完成顺序也不受控 —— 内存/磁盘终态都可能丢其中一项。
    * 全部写操作收口到本链串行执行后，后一次必读到前一次的内存终态，顺序确定。
    */
-  let writeChain: Promise<unknown> = Promise.resolve();
-  const serialize = <T>(op: () => Promise<T>): Promise<T> => {
-    const run = writeChain.then(op);
-    writeChain = run.catch(() => {});
-    return run;
-  };
+  const writeChain = createSerialChain();
+  const serialize = <T>(op: () => Promise<T>): Promise<T> => writeChain.enqueue(op);
 
   return {
     // 折叠是尽力而为的展示态（丢了只影响分组展开与否），且 UI 侧是 `void` 调用

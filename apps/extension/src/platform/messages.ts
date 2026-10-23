@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { UndoTabRecordSchema } from '@/core/schema/models';
+import { PENDING_ACTIONS_KEY } from '@/platform/storage/keys';
 
 /**
  * 类型安全消息协议（background ↔ UI）。
@@ -26,15 +27,19 @@ import { UndoTabRecordSchema } from '@/core/schema/models';
 const MESSAGE_URL_MAX = 8192;
 const MESSAGE_QUERY_MAX = 512;
 
+/* 以下逐类型的 schema 只在**本文件内**被 MessageSchema / PendingActionSchema
+ * 聚合使用，故不对外导出：协议的公开入口只有 MessageSchema、PendingActionSchema
+ * 与 Message / PendingAction 两个类型。新增消息类型照下面的同款登记即可。 */
+
 /** UI → SW：为下一次同 URL 创建申请复用豁免（显式复制/撤销恢复场景）。 */
-export const AllowDuplicateOnceMessageSchema = z.object({
+const AllowDuplicateOnceMessageSchema = z.object({
   type: z.literal('allow-duplicate-once'),
   windowId: z.number().int(),
   url: z.string().max(MESSAGE_URL_MAX)
 });
 
 /** SW → UI：发生了一次重复标签复用（通知 UI 显示状态提示）。 */
-export const DuplicateReusedMessageSchema = z.object({
+const DuplicateReusedMessageSchema = z.object({
   type: z.literal('duplicate-reused')
 });
 
@@ -53,7 +58,7 @@ export const REUSE_CLOSED_LIMIT = 50;
  * 的一条不可逆关闭路径。关闭前由 SW 侧构造 UndoTabRecord（带组名，供按名重建
  * 原组），UI 侧只负责入撤销栈。
  */
-export const ReuseClosedMessageSchema = z.object({
+const ReuseClosedMessageSchema = z.object({
   type: z.literal('reuse-closed'),
   /** 关闭发生的窗口（撤销要回到同一个窗口）。 */
   windowId: z.number().int(),
@@ -62,14 +67,14 @@ export const ReuseClosedMessageSchema = z.object({
 });
 
 /** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
-export const SearchFocusMessageSchema = z.object({
+const SearchFocusMessageSchema = z.object({
   type: z.literal('focus-search'),
   /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
   at: z.number().optional()
 });
 
 /** SW → UI：请求按关键词搜索（右键菜单「搜索此域名」触发，面板未开时先开面板）。 */
-export const SearchDomainMessageSchema = z.object({
+const SearchDomainMessageSchema = z.object({
   type: z.literal('search-domain'),
   query: z.string().max(MESSAGE_QUERY_MAX),
   /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
@@ -77,7 +82,7 @@ export const SearchDomainMessageSchema = z.object({
 });
 
 /** SW → UI：自动休眠执行完成（通知 UI 显示可撤销提示）。 */
-export const AutoDiscardedMessageSchema = z.object({
+const AutoDiscardedMessageSchema = z.object({
   type: z.literal('auto-discarded'),
   tabIds: z.array(z.number().int()),
   count: z.number().int(),
@@ -85,23 +90,23 @@ export const AutoDiscardedMessageSchema = z.object({
 });
 
 /** SW → UI：请求定位当前激活标签（浏览器级快捷键触发）。 */
-export const LocateActiveMessageSchema = z.object({
+const LocateActiveMessageSchema = z.object({
   type: z.literal('locate-active'),
   /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
   at: z.number().optional()
 });
 
 /** UI → SW：下一次该窗口关闭时跳过关窗自动快照（归档流程已自行保存，防重复保存）。 */
-export const SkipAutoSaveOnceMessageSchema = z.object({
+const SkipAutoSaveOnceMessageSchema = z.object({
   type: z.literal('skip-auto-save-once'),
   windowId: z.number().int()
 });
 
 /** SW → UI 待面板执行动作的挂起队列（面板未开时存储于 storage.session）。 */
-export const PENDING_ACTIONS_KEY = 'tabs.pending-actions';
+export { PENDING_ACTIONS_KEY };
 
 /** 设置已落盘的通知（storage.onChanged 之外的显式同步兜底通道）。 */
-export const SettingsSyncedMessageSchema = z.object({
+const SettingsSyncedMessageSchema = z.object({
   type: z.literal('settings-synced')
 });
 

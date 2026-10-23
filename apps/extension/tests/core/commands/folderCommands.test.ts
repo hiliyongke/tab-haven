@@ -6,7 +6,7 @@ import {
   computeRenameFolder,
   computeToggleFolderCollapsed,
   fixedItemKey
-} from '@/core/commands/folderCommands';
+} from '@/core/fixed/FolderOps';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 
 function item(id: string, url: string): FixedFolderItem {

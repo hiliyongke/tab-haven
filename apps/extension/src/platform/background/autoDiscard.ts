@@ -18,11 +18,12 @@ import { logDegraded } from '@/platform/diagnostics';
 /**
  * 自动休眠闹钟名。
  *
- * 与 `AUTO_SNAPSHOT_ALARM`（autoSnapshot.ts）同口径：闹钟名必须集中为导出常量，
+ * 与 `AUTO_SNAPSHOT_ALARM` 同处 `@/platform/storage/keys`：闹钟名必须集中声明，
  * 否则创建处与 `alarms.onAlarm` 的分发处各写一份字面量，改名必漏一处（漏的那侧
  * 表现为「闹钟照响但功能不执行」，无任何报错）。
  */
-export const AUTO_DISCARD_ALARM = 'tabs-auto-discard';
+import { AUTO_DISCARD_ALARM } from '@/platform/storage/keys';
+export { AUTO_DISCARD_ALARM };
 
 /**
  * 单个标签休眠：成功 true / 失败 false（不抛）。

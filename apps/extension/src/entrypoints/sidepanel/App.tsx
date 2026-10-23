@@ -44,13 +44,16 @@ import { SpaceStrip } from '@/ui/common/SpaceStrip';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { DndRoot } from '@/ui/dnd/DndRoot';
 import { useScrollFade } from '@/ui/common/useScrollFade';
+import { findActivatableRows, ROW_ACTIVATABLE_ATTR } from '@/ui/domContract';
+import { useBatchTabActions } from '@/entrypoints/sidepanel/hooks/useBatchTabActions';
+import { usePanelLayers } from '@/entrypoints/sidepanel/hooks/usePanelLayers';
 import { useLatestRef } from '@/ui/hooks/useLatestRef';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
-import { pulseTabRows, useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
+import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
 import { useSearchController } from '@/ui/search/useSearchController';
 import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
@@ -117,35 +120,25 @@ export default function App() {
 
   const [quickRegrouping, setQuickRegrouping] = useState(false);
   /**
-   * 批量操作（休眠全部 / 唤醒全部 / 清理重复）的在途互斥。
-   *
-   * 连点会并发执行同一批操作（重复 IPC、叠加多条 toast），故必须在途互斥。
-   *
-   * 用 state 而非 ref：ref 不触发重渲染，在途期间按钮既不禁用也没有进行中态，
-   * 而「唤醒全部」是 reloadTabs(N 个标签)、耗时远超注释里假设的百毫秒级 ——
-   * 用户连点第二下完全静默，表现为「点了没反应」。在途必须可感知。
+   * 批量动作（休眠全部 / 唤醒全部 / 清理重复）：状态 + 执行 + 反馈闭环整块在
+   * `useBatchTabActions`，App 只把三个回调接到底栏与命令面板。
    */
-  const [batchBusy, setBatchBusy] = useState<'idle' | 'discard' | 'wake' | 'clean'>('idle');
-  const runBatch = useCallback(
-    (kind: 'discard' | 'wake' | 'clean', action: () => void | Promise<void>) => {
-      if (batchBusy !== 'idle') return;
-      setBatchBusy(kind);
-      void Promise.resolve(action()).finally(() => {
-        setBatchBusy('idle');
-      });
-    },
-    [batchBusy]
-  );
-  const [showHistory, setShowHistory] = useState(false);
-  const [showPalette, setShowPalette] = useState(false);
-  const [showSnapshots, setShowSnapshots] = useState(false);
+  const { batchBusy, discardInactive, wakeAll, closeDuplicates } = useBatchTabActions({
+    t,
+    boundTabIds,
+    discardTab,
+    closeWithUndo
+  });
   /**
-   * 快照面板的初始视图（习惯洞察直达）：
-   * 'list' = 常规打开（快照列表）；'report' = 从底栏洞察入口打开，直接落在周报 /
-   * 洞察区块，省掉「打开面板 → 切页签」这一步。
+   * 弹层互斥收在 usePanelLayers：历史 / 命令面板 / 快照面板是同一时刻只开一层的
+   * 三个覆盖层，快照面板的初始视图随「打开」一起指定（不再单独存一份）。
    */
-  const [snapshotView, setSnapshotView] = useState<'list' | 'report'>('list');
-  // 工作空间切换（C1）：编排逻辑抽在 hook，App 只消费结果。
+  const { layer, openHistory, openPalette, openSnapshots, closeLayer } = usePanelLayers();
+  const showHistory = layer.kind === 'history';
+  const showPalette = layer.kind === 'palette';
+  const showSnapshots = layer.kind === 'snapshots';
+  const snapshotView = layer.kind === 'snapshots' ? layer.view : 'list';
+  // 工作区切换（C1）：编排逻辑抽在 hook，App 只消费结果。
   const {
     spaces,
     activeSpaceId,
@@ -297,9 +290,9 @@ export default function App() {
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     const container = listScrollRef.current;
     if (!container) return;
-    const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-row-activate]'));
+    const rows = findActivatableRows(container);
     if (rows.length === 0) return;
-    const current = target.closest<HTMLElement>('[data-row-activate]');
+    const current = target.closest<HTMLElement>(`[${ROW_ACTIVATABLE_ATTR}]`);
     const index = current ? rows.indexOf(current) : -1;
     const next =
       event.key === 'Home'
@@ -400,7 +393,6 @@ export default function App() {
     () => notify(translate('已切到已打开的标签，并关掉重复的那个')),
     [notify]
   );
-  const openPalette = useCallback(() => setShowPalette(true), []);
 
   // 挂起动作（面板未开时）与 runtime 消息消费：双通道按 at 去重、回调经 ref 取值，
   // 使 runtime 监听与 session 挂起队列监听只在挂载时注册一次（细则见该 hook 注释）。
@@ -417,7 +409,7 @@ export default function App() {
     openPalette,
     locateActive: locateActiveViaRef,
     focusSearch: focusSearchInput,
-    // undo 内部有 undoInFlight 互斥与空栈静默，键盘连按安全。
+    // undo 内部有执行互斥与空栈静默，键盘连按安全。
     undoLast: () => void useUndoStore.getState().undo(),
     // redo 内部与 undo 共用执行互斥；空重做栈时由 store 自行 notify(undo.redoNone)，
     // 不会出现「按了没反应」。
@@ -751,30 +743,6 @@ export default function App() {
    *   ② 执行后：`closeWithUndo` 的回执（已关闭数）与保留项脉冲。
    * 清理本身进撤销栈、可一键反悔，因此不需要阻断式确认。
    */
-  const handleCloseDuplicates = useCallback(() => {
-    runBatch('clean', () => {
-      const liveTabs = useTabStore.getState().tabs;
-      const plan = planDuplicateCleanup(
-        DuplicateIndex.build(liveTabs),
-        useDataStore.getState().boundTabIds
-      );
-      if (plan.removable.length === 0) {
-        // 入口条件出现（>0 才显示），但命令面板常驻：无候选时不能静默。
-        notify(t('没有可清理的重复标签'));
-        return;
-      }
-      // 保留项全程留在 DOM 里（关闭只作用于 removable），因此脉冲不需要
-      // 「等 80ms 猜 DOM 已更新」这种拍脑袋的时间窗口 —— 改为等关闭动作
-      // **完成后**再脉冲，用确定性信号取代猜测的延迟。
-      return closeWithUndo(
-        liveTabs,
-        plan.removable.map((tab) => tab.id)
-      ).then((result) => {
-        pulseTabRows(plan.keepIds);
-        return result;
-      });
-    });
-  }, [runBatch, closeWithUndo, notify, t]);
   /**
    * 固定/取消固定带 toast 反馈。
    *
@@ -815,58 +783,6 @@ export default function App() {
     },
     [discardTab, notify, notifyError, t]
   );
-  // 一键休眠全部后台标签、未固定的标签（释放内存）。
-  const handleDiscardInactive = useCallback(() => {
-    runBatch('discard', async () => {
-      const allInactive = useTabStore
-        .getState()
-        .tabs.filter((tab) => !tab.active && !tab.discarded);
-      // 与底栏入口提示同一口径（selectSleepableTabs）：避免「提示 N 个、实际休眠 M 个」。
-      const targets = selectSleepableTabs(allInactive, boundTabIds);
-      // 无任何候选时必须给反馈（FooterToolbar / 命令面板按钮恒可用）：
-      // 静默空跑会被当成「按钮坏了」。
-      if (targets.length === 0 && allInactive.length === 0) {
-        notify(t('没有可休眠的后台标签'));
-        return;
-      }
-      const results = await Promise.all(targets.map((tab) => discardTab(tab.id)));
-      const discardedCount = results.filter(Boolean).length;
-      // 跳过数只统计「真正尝试过」的候选（targets 已排除绑定标签与不可安全休眠者）：
-      // 用 allInactive 作基数会把固定标签也计入「跳过 N 个」，而它们本就不该参与休眠。
-      const skippedCount = targets.length - discardedCount;
-      if (discardedCount > 0) {
-        notify(
-          skippedCount === 0
-            ? t('已休眠 {{count}} 个标签', { count: discardedCount })
-            : t('已休眠 {{count}} 个标签，另有 {{skipped}} 个正在使用中已跳过', {
-                count: discardedCount,
-                skipped: skippedCount
-              })
-        );
-      } else if (targets.length > 0) {
-        notify(t('{{count}} 个标签正在使用中，已跳过', { count: targets.length }));
-      } else {
-        notify(t('没有可休眠的后台标签'));
-      }
-    });
-  }, [runBatch, boundTabIds, discardTab, notify, t]);
-  // 一键唤醒全部休眠标签（与批量休眠成对）。
-  const handleWakeAll = useCallback(() => {
-    runBatch('wake', () => {
-      const discardedIds = useTabStore
-        .getState()
-        .tabs.filter((tab) => tab.discarded)
-        .map((tab) => tab.id);
-      if (discardedIds.length === 0) {
-        // 命令面板/底栏入口恒可用：无休眠标签时点按不能静默。
-        notify(t('当前没有休眠中的标签'));
-        return;
-      }
-      return reloadTabs(discardedIds).then((woken) =>
-        notify(t('已唤醒 {{count}} 个标签', { count: woken.length }))
-      );
-    });
-  }, [runBatch, notify, t]);
   /**
    * 归档当前窗口：先给影响面确认（将关闭 N 个标签），确认后才真正执行。
    *
@@ -1115,19 +1031,19 @@ export default function App() {
   // scrollIntoView effect 反复执行。
   const paletteActions: PaletteActions = useMemo(
     () => ({
-      onDiscardInactive: handleDiscardInactive,
-      onWakeAll: handleWakeAll,
+      onDiscardInactive: discardInactive,
+      onWakeAll: wakeAll,
       onQuickRegroup: handleQuickRegroup,
-      onCleanDuplicates: handleCloseDuplicates,
+      onCleanDuplicates: closeDuplicates,
       onLocateActive: locateActiveViaRef,
-      onOpenHistory: () => setShowHistory(true),
+      onOpenHistory: openHistory,
       onOpenSettings: openOptionsPage,
       onExportData: handleExportBackup,
       // 命令面板一次直达关于页，省掉「底栏设置 → 设置页 → 关于页」的三步路径。
       onOpenAbout: openAboutPage,
       onToggleAllSections: handleToggleAllSections,
       onSwitchTab: (tabId: number) => void smartActivate(tabId),
-      onOpenSnapshots: () => setShowSnapshots(true),
+      onOpenSnapshots: () => openSnapshots('list'),
       onSaveSnapshot: () =>
         void useSnapshotStore
           .getState()
@@ -1179,10 +1095,10 @@ export default function App() {
       }
     }),
     [
-      handleDiscardInactive,
-      handleWakeAll,
+      discardInactive,
+      wakeAll,
       handleQuickRegroup,
-      handleCloseDuplicates,
+      closeDuplicates,
       locateActiveViaRef,
       handleExportBackup,
       handleToggleAllSections,
@@ -1191,6 +1107,8 @@ export default function App() {
       smartActivate,
       activeTabId,
       switchSpace,
+      openHistory,
+      openSnapshots,
       notify,
       notifyError,
       t
@@ -1310,7 +1228,7 @@ export default function App() {
             </button>
           </div>
         )}
-        {/* 工作空间切换条（C1）：无空间快照时整条隐藏。 */}
+        {/* 工作区切换条（C1）：无工作区快照时整条隐藏。 */}
         <SpaceStrip
           spaces={spaces}
           activeSpaceId={activeSpaceId}
@@ -1392,8 +1310,7 @@ export default function App() {
               // 此时「从快照恢复」比「新建标签」更贴合意图（与 UndoHistoryPanel 同一引导语义）。
               hasSnapshots={snapshotCount > 0}
               onOpenSnapshots={() => {
-                setSnapshotView('list');
-                setShowSnapshots(true);
+                openSnapshots('list');
               }}
             />
           ) : isFiltering && filteredTabs.length === 0 ? (
@@ -1485,42 +1402,39 @@ export default function App() {
           duplicateCount={duplicateRemovableCount}
           insightCount={insightCount}
           onOpenInsights={() => {
-            setSnapshotView('report');
-            setShowSnapshots(true);
+            openSnapshots('report');
           }}
           highlightedCount={highlightedIds.size}
           quickRegrouping={quickRegrouping}
           onToggleAllSections={handleToggleAllSections}
           // 在途态下传：对应入口在批量操作期间禁用，避免「点了没反应」
           batchBusy={batchBusy}
-          onDiscardInactive={handleDiscardInactive}
-          onWakeAll={handleWakeAll}
+          onDiscardInactive={discardInactive}
+          onWakeAll={wakeAll}
           onQuickRegroup={handleQuickRegroup}
-          onCleanDuplicates={handleCloseDuplicates}
+          onCleanDuplicates={closeDuplicates}
           onCloseHighlighted={handleCloseHighlighted}
           onLocateActive={locateActiveViaRef}
-          onOpenHistory={() => setShowHistory(true)}
+          onOpenHistory={openHistory}
           onOpenSettings={openOptionsPage}
           footerOrder={settings.footerOrder}
           onReorderFooter={handleReorderFooter}
           // 信任面板：底栏一次直达，与设置页「关于」同一入口。
           onOpenAbout={openAboutPage}
           onOpenSnapshots={() => {
-            setSnapshotView('list');
-            setShowSnapshots(true);
+            openSnapshots('list');
           }}
           undoBatchCount={undoBatchCount}
           snapshotCount={snapshotCount}
-          onOpenPalette={() => setShowPalette(true)}
+          onOpenPalette={openPalette}
         />
         {showHistory && (
           <UndoHistoryPanel
             hasSnapshots={snapshotCount > 0}
             onOpenSnapshots={() => {
-              setShowHistory(false);
-              setShowSnapshots(true);
+              openSnapshots('list');
             }}
-            onClose={() => setShowHistory(false)}
+            onClose={closeLayer}
           />
         )}
         {pendingHistoryRestore !== null && (
@@ -1553,9 +1467,9 @@ export default function App() {
         {showSnapshots && (
           <SnapshotsPanel
             initialView={snapshotView}
-            onClose={() => setShowSnapshots(false)}
-            onCleanDuplicates={handleCloseDuplicates}
-            onDiscardInactive={handleDiscardInactive}
+            onClose={closeLayer}
+            onCleanDuplicates={closeDuplicates}
+            onDiscardInactive={discardInactive}
             onArchiveWindow={requestArchive}
           />
         )}
@@ -1605,7 +1519,7 @@ export default function App() {
             tabs={tabs}
             folders={folders}
             actions={paletteActions}
-            onClose={() => setShowPalette(false)}
+            onClose={closeLayer}
           />
         )}
       </DndRoot>

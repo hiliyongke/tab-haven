@@ -3,6 +3,7 @@ import { translate } from '@/i18n';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
+import { findFolderItemRow, findTabRow } from '@/ui/domContract';
 
 /**
  * 高亮持续时间：必须与 `.is-located` 的 CSS 动画时长保持一致 ——
@@ -61,7 +62,7 @@ function playLocatePulse(row: HTMLElement, timers?: Set<number>): void {
  */
 export function pulseTabRows(tabIds: readonly number[]): void {
   for (const tabId of tabIds) {
-    const target = document.querySelector<HTMLElement>(`[data-tabs-tab-id="${tabId}"]`);
+    const target = findTabRow(tabId);
     if (!target) continue;
     playLocatePulse(visualRowOf(target));
   }
@@ -126,9 +127,7 @@ export function useLocateActive(params: {
       // 它在固定区条目的 DOM 表示是唯一可见的定位目标。
       // 两条路径必须分开：共用属性会让 querySelector 因 DOM 顺序
       // （固定区在列表之前）永远先命中条目，列表中的激活行反而滚不到。
-      const target =
-        document.querySelector<HTMLElement>(`[data-tabs-tab-id="${activeTabId}"]`) ??
-        document.querySelector<HTMLElement>(`[data-folder-tab-id="${activeTabId}"]`);
+      const target = findTabRow(activeTabId) ?? findFolderItemRow(activeTabId);
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });

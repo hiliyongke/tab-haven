@@ -9,6 +9,7 @@ import {
 } from '@/core/undo/UndoStack';
 import type { UndoBatch, UndoTabRecord } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
+import { createSerialChain, type SerialChain } from '@/core/util/concurrency';
 import { translate } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import {
@@ -33,7 +34,7 @@ import { useTabStore } from '@/stores/tabStore';
  */
 
 /** toast 上的自定义动作（如「唤醒全部休眠标签」）。 */
-export interface ToastAction {
+interface ToastAction {
   label: string;
   run: () => void | Promise<void>;
 }
@@ -177,16 +178,6 @@ let undoPersistFailed = false;
  * 锁在 `await` 之前同步置起，因此出栈是否提前都安全；出栈刻意**不**提前到恢复之前：
  * 「恢复成功才出栈」是本 store 的核心不变量，失败项要能重新入栈供用户重试。
  */
-let undoInFlight = false;
-
-/**
- * 撤销执行跨页互斥锁名（锁名声明在同层的 crossPageLock：存储键不散落到 store）。
- *
- * undoInFlight 只拦本页面：两个侧边栏窗口（各自独立上下文）可同时撤销同一批次，
- * 同一批标签被恢复两次。执行体经 withCrossPageLock(UNDO_EXEC_LOCK) 串行化，
- * 且锁内先按磁盘栈复核批次仍存在（他页可能已撤销），双重恢复由此根治。
- */
-
 /**
  * 在途 load 的共享 promise：并发/重入（StrictMode 双挂载、ready 前入栈等待）
  * 共享同一次读取，避免两条 load 链各自读盘再以旧值覆盖新值。
@@ -202,15 +193,24 @@ let redoWatcherStarted = false;
  * undoRepository 写盘串行链（追加顺序）。
  *
  * 撤销恢复耗时数百 ms，期间新批次仍可入栈（closeWithUndo 刻意不受
- * undoInFlight 拦截）。appendBatch 与撤销出栈若各自基于自己的快照写盘，
+ * 执行互斥拦截）。appendBatch 与撤销出栈若各自基于自己的快照写盘，
  * 两条异步链的 `chrome.storage.set` 完成先后无保证 —— 磁盘终态可能是
  * 被「旧栈+新批」覆盖（已撤销批次重启后复活，可被再次撤销、重复恢复标签）。
  * 统一收口到本链，且写盘内容一律在链内以「磁盘基线 + 本页意图」计算（apply），
  * 既消除读-写窗口，也避免跨页整表覆盖。
  */
-let undoPersistChain: Promise<void> = Promise.resolve();
+const undoPersistChain = createSerialChain();
 /**
- * 入队一次撤销库写盘，返回该步骤完成的 promise（调用方按需等待）。
+ * redoRepository 写盘串行链（与撤销栈同构，独立一条链：两个栈的写入互不阻塞，
+ * 各自整表写 + 串行即可保证终态正确）。
+ *
+ * 跨页锁复用 UNDO_PERSIST_LOCK：重做栈的写入与撤销栈同源（都由撤销/重做动作
+ * 驱动），共用一把锁即可串行化，不新增锁名以免锁清单漂移。
+ */
+const redoPersistChain = createSerialChain();
+
+/**
+ * 入队一次撤销/重做库写盘，返回已兜底的 promise（调用方按需等待）。
  *
  * `apply` 接收锁内重读到的磁盘栈，返回本次要落盘的栈：撤销栈是整表写，
  * 两个侧边栏窗口并发入栈/出栈时「写本页内存栈」会互相覆盖（已撤销批次复活 /
@@ -219,71 +219,90 @@ let undoPersistChain: Promise<void> = Promise.resolve();
  * 常规写入（入栈/撤销出栈）遵循 persistUndo 开关（关闭时不写库）；
  * 清库类写入（load 清历史库 / clearBatches 兜底）必须无条件执行：
  * 它们防的是「上一轮开启时留下的批次复活」，与开关无关。
+ *
+ * 必须返回「已兜底的 promise」而非裸 step：只把 step 接进链而返回 step，调用方
+ * 拿到的是会 reject 的那一个（锁请求在上下文销毁时以 AbortError reject，撤销恢复
+ * 期间关闭面板即触发）。后果是 load() 的 `ready` 永远停在 false，此后每次
+ * appendBatch 都重跑一次必然失败的 load —— 撤销栈整体失效。
  */
+function enqueuePersist(
+  chain: SerialChain,
+  repo: typeof undoRepository,
+  apply: (disk: UndoBatch[]) => UndoBatch[],
+  opts: { alwaysWrite?: boolean } | undefined,
+  notPersistedMessage: string,
+  exceptionMessage: string
+): Promise<void> {
+  return chain.enqueueSettled(
+    async () => {
+      if (!opts?.alwaysWrite) {
+        const settings = await settingsRepository.read();
+        // 撤销栈与重做栈同开关：关闭「撤销记录跨重启持久化」时，重做也仅会话内有效。
+        if (!settings.persistUndo) return;
+      }
+      await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
+        const disk = await repo.read();
+        const ok = await repo.write(apply(disk));
+        if (!ok) {
+          logFailure('undoStore', notPersistedMessage);
+          // 置起可见标记：回执说「可撤销」而磁盘上其实没有这条记录，重启后撤销
+          // 入口凭空消失 —— 只进诊断日志等于用户完全不知情（诊断要主动导出才看得到）。
+          undoPersistFailed = true;
+        }
+      });
+    },
+    (error) => logFailure('undoStore', exceptionMessage, error)
+  );
+}
+
+/* @i18n-ignore-start
+ * 以下中文全部是诊断文案（最终只作为 logFailure 的实参进诊断日志，不进界面），
+ * 只是经 enqueuePersist 转了一手 —— zh-linter 只认「直接传给 logFailure 等诊断
+ * 通道」的字面量，故在此声明块级豁免。 */
+/** 撤销栈写盘（见 enqueuePersist）。 */
 function enqueueUndoPersist(
   apply: (disk: UndoBatch[]) => UndoBatch[],
   opts?: { alwaysWrite?: boolean }
 ): Promise<void> {
-  const step = undoPersistChain.then(async () => {
-    if (!opts?.alwaysWrite) {
-      const settings = await settingsRepository.read();
-      if (!settings.persistUndo) return;
-    }
-    await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
-      const disk = await undoRepository.read();
-      const ok = await undoRepository.write(apply(disk));
-      if (!ok) {
-        logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
-        // 置起可见标记：回执说「可撤销」而磁盘上其实没有这条记录，重启后撤销
-        // 入口凭空消失 —— 只进诊断日志等于用户完全不知情（诊断要主动导出才看得到）。
-        undoPersistFailed = true;
-      }
-    });
-  });
-  // 必须把「已兜底的 promise」同时作为链与返回值：只把 step 接进链而返回 step，
-  // 调用方拿到的是会 reject 的那一个（锁请求在上下文销毁时以 AbortError reject，
-  // 撤销恢复期间关闭面板即触发）。后果是 load() 的 `ready` 永远停在 false，
-  // 此后每次 appendBatch 都重跑一次必然失败的 load —— 撤销栈整体失效。
-  const guarded = step.catch((error) => logFailure('undoStore', '撤销历史写入失败', error));
-  undoPersistChain = guarded;
-  return guarded;
+  return enqueuePersist(
+    undoPersistChain,
+    undoRepository,
+    apply,
+    opts,
+    '撤销历史写入失败，本次撤销状态可能未持久化',
+    '撤销历史写入失败'
+  );
 }
 
-/**
- * redoRepository 写盘串行链（与撤销栈同构，独立一条链：两个栈的写入互不阻塞，
- * 各自整表写 + 串行即可保证终态正确）。
- *
- * 跨页锁复用 UNDO_PERSIST_LOCK：重做栈的写入与撤销栈同源（都由撤销/重做动作
- * 驱动），共用一把锁即可串行化，不新增锁名以免锁清单漂移。
- */
-let redoPersistChain: Promise<void> = Promise.resolve();
-
+/** 重做栈写盘（见 enqueuePersist）。 */
 function enqueueRedoPersist(
   apply: (disk: UndoBatch[]) => UndoBatch[],
   opts?: { alwaysWrite?: boolean }
 ): Promise<void> {
-  const step = redoPersistChain.then(async () => {
-    if (!opts?.alwaysWrite) {
-      const settings = await settingsRepository.read();
-      // 与撤销栈同开关：关闭「撤销记录跨重启持久化」时，重做也仅会话内有效。
-      if (!settings.persistUndo) return;
-    }
-    await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
-      const disk = await redoRepository.read();
-      const ok = await redoRepository.write(apply(disk));
-      if (!ok) {
-        logFailure('undoStore', '重做栈写入失败，本次重做状态可能未持久化');
-        undoPersistFailed = true;
-      }
-    });
-  });
-  // 同 enqueueUndoPersist：返回已兜底的 promise，写盘失败不阻断调用方业务链。
-  const guarded = step.catch((error) => logFailure('undoStore', '重做栈写入失败', error));
-  redoPersistChain = guarded;
-  return guarded;
+  return enqueuePersist(
+    redoPersistChain,
+    redoRepository,
+    apply,
+    opts,
+    '重做栈写入失败，本次重做状态可能未持久化',
+    '重做栈写入失败'
+  );
 }
+/* @i18n-ignore-end */
 
 export const useUndoStore = create<UndoState>()((set, get) => {
+  /**
+   * 撤销/重做执行互斥的唯一判据（页内）。
+   *
+   * 此前另有一个模块级 `undoInFlight` 与 store 的 `undoing` 成对置位，表达同一件事：
+   * 两份状态必须靠人肉保持同步，漏一处就出现「UI 显示执行中但实际可再次触发」。
+   * 现在只认 store 状态 —— zustand 的 `set` 同步生效，置位后立即可读。
+   *
+   * 只拦本页面：两个侧边栏窗口是各自独立的 JS 上下文，可同时撤销同一批次，
+   * 跨页面那一层由 `UNDO_EXEC_LOCK` 兜（见 runGuardedUndo）。
+   */
+  const isExecuting = (): boolean => get().undoing || get().redoing;
+
   const scheduleToastClear = (): void => {
     clearTimeout(toastTimer);
     // 提示条显示时长来自设置（默认 7 秒），不再硬编码。
@@ -543,9 +562,10 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     batch: UndoBatch,
     onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void
   ): Promise<void> => {
-    undoInFlight = true;
     set({ undoing: true });
     try {
+      // 跨页互斥：锁名声明在同层的 crossPageLock（存储键不散落到 store）。
+      // 锁内先按磁盘栈复核批次仍存在（他页可能已撤销），双重恢复由此根治。
       await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
         // 跨页复核：另一窗口可能已撤销同一批次（内存栈经 watch 收敛存在延迟窗口）。
         // persistUndo 开启时磁盘是跨页权威；关闭时各页内存互不可见，退化为页内语义。
@@ -571,7 +591,6 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         await runUndo(batch, onCommitted);
       });
     } finally {
-      undoInFlight = false;
       set({ undoing: false });
     }
   };
@@ -746,7 +765,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     },
 
     undo: async () => {
-      if (undoInFlight) return;
+      if (isExecuting()) return;
       // 与 appendBatch 同口径：load 在途期间内存栈尚未就绪，此时取栈顶会取到空栈
       // 或残缺栈，表现为「点了撤销没反应」（面板秒开后立即按 ⌘Z 可复现）。
       if (!get().ready) await get().load();
@@ -773,7 +792,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     },
 
     undoBatch: async (batchId) => {
-      if (undoInFlight) return;
+      if (isExecuting()) return;
       const batch = get().batches.find((entry) => entry.id === batchId);
       if (!batch) {
         // 按 id 找不到批次（已被另一页面/上一次撤销消费）。撤销历史面板里的
@@ -805,7 +824,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
      * URL 反查——固定标签豁免，与关闭路径同口径。
      */
     redo: async () => {
-      if (undoInFlight) return;
+      if (isExecuting()) return;
       // 同上：重做栈同样要等 load 完成，否则取到的是未加载的空栈。
       if (!get().ready) await get().load();
       const [latest] = popBatch(get().redoBatches);
@@ -821,7 +840,6 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         scheduleToastClear();
         return;
       }
-      undoInFlight = true;
       set({ redoing: true });
       try {
         await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
@@ -907,7 +925,6 @@ export const useUndoStore = create<UndoState>()((set, get) => {
           });
         });
       } finally {
-        undoInFlight = false;
         set({ redoing: false });
       }
     },

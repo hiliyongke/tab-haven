@@ -30,11 +30,20 @@ import type {
 export const AUTO_DISCARD_BATCHES_LIMIT = 5;
 
 /**
+ * 自动组 id 记录上限。500 远超真实规模（组数 ≤ 标签数），
+ * 与全项目集合的既定原则一致：无界数组是唯一不受限的存储放大面。
+ */
+const AUTO_GROUPS_LIMIT = 500;
+
+/**
  * 平台依赖组合根（composition root）。
  *
- * 所有持久化仓库在此集中实例化，对外只暴露 `getRepositories()` 访问器，
- * 不直接导出可变单例。测试时用 `setRepositoriesForTest()` 注入内存假实现，
- * 使 stores 可脱离浏览器 API 单测。
+ * 所有持久化仓库在此集中实例化，对外只暴露 `getRepositories()` 访问器。
+ *
+ * 刻意**不提供**注入 setter：`platform/storage/repositories.ts` 在模块加载期就把
+ * 实例冻结成具名常量导出，任何 import 具名常量的消费方都会绕开运行时替换，
+ * 注入只对走 `getRepositories()` 的那一侧生效 —— 半边生效比不提供更容易骗人。
+ * 需要脱离浏览器 API 的测试直接对纯函数 / fake browser 下手（见 tests/）。
  */
 
 export interface Repositories {
@@ -80,7 +89,7 @@ function createRepositories(): Repositories {
     // 无界数组是唯一不受限的存储放大面。500 远超真实规模（组数 ≤ 标签数）。
     autoGroups: new DataRepository<number[]>(
       'tabs.auto-groups.v1',
-      z.array(z.number()).max(500),
+      z.array(z.number()).max(AUTO_GROUPS_LIMIT),
       []
     ),
     autoDiscard: new DataRepository<AutoDiscardBatch[]>(
@@ -95,14 +104,14 @@ function createRepositories(): Repositories {
   };
 }
 
-let current: Repositories = createRepositories();
+const current: Repositories = createRepositories();
 
-/** 取用当前仓库集合（默认实现，或测试注入的假实现）。 */
+/**
+ * 取用当前仓库集合。
+ *
+ * 只经本访问器对外暴露：`current` 是模块私有绑定，消费方拿不到可写引用，
+ * 无法在运行时把仓库偷偷换掉。
+ */
 export function getRepositories(): Repositories {
   return current;
-}
-
-/** 测试/注入用：整体替换为自定义仓库实现。 */
-export function setRepositoriesForTest(next: Repositories): void {
-  current = next;
 }

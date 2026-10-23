@@ -10,6 +10,7 @@ import {
 import { useTranslation } from '@/i18n';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { activatableRowProps } from '@/ui/domContract';
 
 /** 拖拽容器接入点：listeners / style / className 会合并到 RowItem 内部 div，
  *  ref 转发到该 div。供 dnd-kit useSortable 接入。
@@ -175,7 +176,7 @@ export const RowItem = memo(
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           /* 列表级键盘漫游（↑↓ / Home / End）的定位锚点：容器靠此属性把焦点
              在相邻行之间移动，避免 100 个标签就有上百个 Tab 停靠点。 */
-          data-row-activate=""
+          {...activatableRowProps}
           /* 激活挂在真按钮上而不是外层 div：div 承载 onClick 时它既不可聚焦
              也无角色（可访问树里是普通容器），且点击行内空白/徽章区也会激活
              —— 鼠标的可执行区域比键盘大一圈。 */

@@ -34,7 +34,7 @@ import type { DataContext } from './types';
  * 仅非 'failed' 时才允许 scheduleMirror——失败路径下本地仍是空态，
  * 推镜像会把空数据推上云、覆盖旧设备的镜像（本函数要防的数据丢失）。
  */
-export type MirrorRestoreOutcome =
+type MirrorRestoreOutcome =
   /** 老设备（已 seeded）：无需恢复，直接镜像本地即可。 */
   | 'already-seeded'
   /** 通道无镜像（损坏/过期/从未同步）：本地即首份镜像。 */

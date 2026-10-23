@@ -22,7 +22,7 @@ import { useLatestRef } from '@/ui/hooks/useLatestRef';
  *    多个在途读取可能在队列清除前重复读到同一条动作。
  */
 
-export interface PendingActionHandlers {
+interface PendingActionHandlers {
   /** 聚焦搜索框并全选内容（focus-search）。 */
   focusSearch: () => void;
   /** 把域名填入搜索框并聚焦（search-domain）。 */

@@ -4,6 +4,7 @@ import { deriveSections } from '@/core/site/Sections';
 import { siteLabelOf } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
 import { AUTO_GROUP_COLOR_NAMES } from '@/core/group/groupColors';
+import { hash31 } from '@/core/util/hash';
 import { NO_GROUP } from '@/core/tab-types';
 import type { TabRecord } from '@/core/tab-types';
 
@@ -37,14 +38,11 @@ export interface AutoGroupPlan {
 
 /** 标签 → 稳定的 8 色枚举（同一标题永远同色，且避开灰色）。 */
 export function groupColorForLabel(label: string): string {
-  let hash = 0;
-  for (let i = 0; i < label.length; i++) {
-    hash = (hash * 31 + label.charCodeAt(i)) | 0;
-  }
-  const idx =
+  const hash = hash31(label);
+  const index =
     ((Math.abs(hash) % AUTO_GROUP_COLOR_NAMES.length) + AUTO_GROUP_COLOR_NAMES.length) %
     AUTO_GROUP_COLOR_NAMES.length;
-  return AUTO_GROUP_COLOR_NAMES[idx]!;
+  return AUTO_GROUP_COLOR_NAMES[index]!;
 }
 
 /**
@@ -126,7 +124,7 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
 }
 
 /** 自动组内「域名漂移」成员校正：需要移出组的标签。 */
-export interface AutoGroupDomainCorrection {
+interface AutoGroupDomainCorrection {
   /** 自动组 id（只可能是 autoGroupsRepository 记录在案、由本功能创建的组）。 */
   groupId: number;
   /** 组标题（域名展示标签），供调用方留痕与排查。 */
@@ -181,7 +179,7 @@ export function planAutoGroupDomainCorrections(
 }
 
 /** 快速整理的执行方案：先打散哪些组，再按什么方案重建。 */
-export interface RegroupPlan {
+interface RegroupPlan {
   /** 需要移出现有原生组的标签（打散临时区旧分组；opener 模式仅打散不建组）。 */
   ungroupTabIds: number[];
   /** 重新聚合后的目标分组方案（site/language 模式非空，opener 模式为空）。 */

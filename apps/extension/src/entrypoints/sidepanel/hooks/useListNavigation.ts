@@ -12,7 +12,7 @@ import { useLatestRef } from '@/ui/hooks/useLatestRef';
  *  - 序列由调用方按当前态提供（搜索态 = 命中顺序，空态 = 可见列表顺序）；
  *  - 索引钳制、循环语义、Enter 激活只有一套实现，两态行为必然一致。
  */
-export interface ListNavigation {
+interface ListNavigation {
   /** 当前选中的标签 id（供列表高亮）。 */
   selectedTabId: number | undefined;
   /** 处理 ↑↓ / Enter；返回 true 表示按键已被消费（调用方可据此短路后续处理）。 */

@@ -9,12 +9,8 @@ import { useUndoStore } from '@/stores/undoStore';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 import { classifyDrop } from '@/ui/dnd/dropPolicy';
 import { PINNED_STRIP_DROPPABLE, type DragData } from '@/ui/dnd/types';
-import {
-  SortablePinnedTile,
-  makePinMiddleClickHandler,
-  buildPinRuntimeIndex,
-  CLOSED_PIN_RUNTIME
-} from '@/ui/tabs/SortablePinnedTile';
+import { SortablePinnedTile, makePinMiddleClickHandler } from '@/ui/tabs/SortablePinnedTile';
+import { buildPinRuntimeIndex, CLOSED_PIN_RUNTIME } from '@/ui/tabs/pinRuntime';
 
 /**
  * 顶部常驻磁贴区：

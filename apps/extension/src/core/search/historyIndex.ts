@@ -21,7 +21,7 @@ export const HISTORY_SNAPSHOT_LIMIT = 20;
 export const HISTORY_TABS_PER_SNAPSHOT = SNAPSHOT_TABS_LIMIT;
 
 /** 可注入 SearchEngine 的目标形态（与 SearchableTab 结构一致，字段见 SearchEngine.ts）。 */
-export interface HistorySearchTarget {
+interface HistorySearchTarget {
   id: number;
   title: string;
   url: string;

@@ -402,11 +402,15 @@ export async function groupTabs(
  *
  * best-effort：超时未收敛不抛错（标签中途被关闭等情况），由事件驱动最终兜底。
  */
+/** 收敛轮询次数与间隔（合计约 1.2s）：再长就盖不住「切一下 tab 才显示」的观感。 */
+const GROUP_ASSIGN_MAX_ATTEMPTS = 6;
+const GROUP_ASSIGN_POLL_MS = 200;
+
 export async function waitForTabGroupAssignment(
   tabIds: readonly number[],
   groupId: number,
-  maxAttempts = 6,
-  intervalMs = 200
+  maxAttempts = GROUP_ASSIGN_MAX_ATTEMPTS,
+  intervalMs = GROUP_ASSIGN_POLL_MS
 ): Promise<void> {
   const target = new Set(tabIds);
   let lastError: unknown;

@@ -19,12 +19,15 @@ export interface RecentClosedEntry {
   tabCount?: number;
 }
 
-/** 读取最近关闭的标签/窗口（最多 20 条）。 */
+/** 最近关闭的读取条数：sessions 是「刚关错了想找回」的入口，一屏足够。 */
+const RECENTLY_CLOSED_LIMIT = 20;
+
+/** 读取最近关闭的标签/窗口（最多 RECENTLY_CLOSED_LIMIT 条）。 */
 export async function getRecentlyClosed(): Promise<RecentClosedEntry[]> {
   const sessions = browser.sessions;
   if (!sessions?.getRecentlyClosed) return [];
   try {
-    const items = await sessions.getRecentlyClosed({ maxResults: 20 });
+    const items = await sessions.getRecentlyClosed({ maxResults: RECENTLY_CLOSED_LIMIT });
     const entries: RecentClosedEntry[] = [];
     let skipped = 0;
     for (const item of items) {

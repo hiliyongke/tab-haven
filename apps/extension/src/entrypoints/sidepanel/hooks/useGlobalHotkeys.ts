@@ -13,7 +13,7 @@ import { useLatestRef } from '@/ui/hooks/useLatestRef';
  * 回调经 ref 读取最新值，因此调用方**不需要**用 useCallback 稳定它们。
  */
 
-export interface GlobalHotkeyHandlers {
+interface GlobalHotkeyHandlers {
   /** ⌘P：打开命令面板。 */
   openPalette: () => void;
   /** ⌘J：定位当前激活标签。 */

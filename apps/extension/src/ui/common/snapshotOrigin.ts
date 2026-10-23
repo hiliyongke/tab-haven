@@ -12,7 +12,7 @@ import type { Snapshot } from '@/core/schema/models';
  * 收口到本模块后，新增来源类型或调整配色只有一处可改。
  */
 
-export interface SnapshotOriginBadge {
+interface SnapshotOriginBadge {
   /** 徽标文案的**中文原文**（属性名以 Key 结尾，是扫描器的抽取约定，见 i18n 工具包）。 */
   labelKey: string;
   /** 徽标配色（前景/背景组合须满足 WCAG AA）。 */

@@ -19,7 +19,7 @@ export const GROUP_COLOR_NAMES = [
   'orange'
 ] as const;
 
-export type GroupColorName = (typeof GROUP_COLOR_NAMES)[number];
+type GroupColorName = (typeof GROUP_COLOR_NAMES)[number];
 
 /** 是否为浏览器合法组色（快照落盘前的收窄：非法值降级为缺省，而非让整条数据校验失败）。 */
 export function toGroupColor(raw: string | undefined): GroupColorName | undefined {

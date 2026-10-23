@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useId, useRef, useState } from 'react';
+import { Children, isValidElement, useEffect, useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Settings } from '@/core/schema/models';
@@ -24,7 +24,7 @@ import { Toggle } from '@/ui/common/Toggle';
 /** 禁缓存能力所需的全站 host 权限（optional_host_permissions 申请单元）。 */
 const SITE_ACCESS: PermissionQuery = { origins: ['<all_urls>'] };
 
-export function SectionCount({ count }: { count?: number }) {
+function SectionCount({ count }: { count?: number }) {
   const { t } = useTranslation();
   if (count === undefined) return null;
   return (
@@ -235,23 +235,28 @@ export function NoCachePatternEditor({
   onChange: (next: string[]) => void;
 }) {
   const { t } = useTranslation();
-  const [text, setText] = useState(() => value.join('\n'));
+  /**
+   * 文本框的草稿态：当前文本 + 最近一次与设置对齐的文本。
+   *
+   * 二者刻意合成**一个** state 而不是「state + ref」：它们是同一份草稿的两个
+   * 字段，分开存放时任何一处漏更新都会让「保存 → settings 回流 → 重置光标」
+   * 的回灌判定失准。
+   */
+  const [draft, setDraft] = useState(() => {
+    const joined = value.join('\n');
+    return { text: joined, synced: joined };
+  });
   const [invalidCount, setInvalidCount] = useState(0);
-  /** 最近一次与设置对齐的文本（防「保存 → settings 回流 → 重置光标」循环）。 */
-  const lastSyncedRef = useRef(value.join('\n'));
   const full = value.length >= NO_CACHE_PATTERNS_LIMIT;
 
   // 外部变更（重置设置 / 导入备份）同步进文本框；内容一致时跳过。
   useEffect(() => {
     const joined = value.join('\n');
-    if (joined !== lastSyncedRef.current) {
-      lastSyncedRef.current = joined;
-      setText(joined);
-    }
+    setDraft((prev) => (joined === prev.synced ? prev : { text: joined, synced: joined }));
   }, [value]);
 
   const commit = () => {
-    const lines = text
+    const lines = draft.text
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
@@ -270,12 +275,13 @@ export function NoCachePatternEditor({
     }
     setInvalidCount(invalid);
     const joined = next.join('\n');
-    if (joined !== lastSyncedRef.current) {
-      lastSyncedRef.current = joined;
-      onChange(next);
-    }
     // 文本框规整为归一化后的权威列表（无效行移除、空行压缩）。
-    if (text !== joined) setText(joined);
+    if (joined !== draft.synced) {
+      setDraft({ text: joined, synced: joined });
+      onChange(next);
+    } else if (draft.text !== joined) {
+      setDraft((prev) => ({ ...prev, text: joined }));
+    }
   };
 
   return (
@@ -288,9 +294,9 @@ export function NoCachePatternEditor({
         placeholder={t('每行一条，例：\nexample.com\nexample.com/app\nhttps://example.com/app')}
         ariaLabel={t('禁缓存站点列表')}
         inputProps={{ spellCheck: false }}
-        value={text}
+        value={draft.text}
         onChange={(next) => {
-          setText(next);
+          setDraft((prev) => ({ ...prev, text: next }));
           if (invalidCount > 0) setInvalidCount(0);
         }}
         onBlur={commit}
