@@ -9,7 +9,11 @@ import { rankForKeep } from './DedupeByUrl';
  * 索引只回答"哪些标签共享同一个网址"，策略回答"保留哪一个"。
  */
 
-interface DuplicateGroup {
+/**
+ * 重复组（导出：`KeeperPolicy.select` 的公开签名以此类型为参数，不导出时
+ * 调用方无法具名引用该形状，只能在调用点内联匿名对象）。
+ */
+export interface DuplicateGroup {
   /** 比较键（与检视结果的 comparisonKey 一致）。 */
   key: string;
   /** 共享该网址的全部标签（按传入顺序）。 */
@@ -74,7 +78,8 @@ export class DuplicateIndex {
  * 保留策略：从重复组中选出保留者（keeper）与可清理者。
  *
  * keeper 口径与「同网址唯一化」（settings.uniqueUrlTabs / 复用引擎）**完全一致**，
- * 均委托 dup/DedupeByUrl.ts 的 rankForKeep：最近访问 > 激活 > 固定 > 位置靠前 > id 大。
+ * 均委托 dup/DedupeByUrl.ts 的 rankForKeep：最近激活（lastActivatedAt）> 激活 >
+ * 固定 > 位置靠前 > id 大。
  * 统一理由（缺陷 IA-3）：两者都是「同一网址留一个」，用户预期是「留最近用过的
  * 那个」；两套口径会对同一组标签给出不同的保留项，且清理弹窗只能描述其中一种，
  * 必然有一处文案说谎。故收敛为单一事实来源，UI 文案按其口径描述。
@@ -102,7 +107,7 @@ export class KeeperPolicy {
    * 可空类型逼调用方显式处理，空组返回空结果而非假 keeper。
    */
   select(group: DuplicateGroup): { keeper: TabRecord | undefined; removable: TabRecord[] } {
-    // 口径直接委托单一事实来源：最近访问 > 激活 > 固定 > 位置靠前 > id 大，
+    // 口径直接委托单一事实来源：最近激活 > 激活 > 固定 > 位置靠前 > id 大，
     // 与复用引擎的「同网址唯一化」逐位一致（缺陷 IA-3：曾各自实现一套排序）。
     // 「位置靠前 / id 大」兜底按字段判定，不依赖传入顺序。
     const keeper = rankForKeep(group.tabs) ?? group.tabs[0];

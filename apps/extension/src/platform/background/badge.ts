@@ -3,6 +3,7 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 import { t } from '@/i18n/headless';
 import { cachedSettings } from './shared';
 import { logDegraded } from '@/platform/diagnostics';
+import { createSerialChain } from '@/core/util/concurrency';
 
 let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -28,8 +29,17 @@ export function showBadgeOverride(text: string, color: string, holdMs: number): 
   void refreshBadge();
 }
 
-/** 刷新角标：按 badgeMode 计算当前窗口重复标签数。 */
-async function refreshBadge(): Promise<void> {
+/**
+ * 角标写入串行链（多源并发刷新时防交错）。
+ *
+ * 与 `contextMenus` / `windowCache` 同口径：角标刷新有多个并发来源（标签事件回调、
+ * 覆盖态到期回调、冷启动补刷），`setBadgeText` / `setTitle` 若交错执行，最终角标
+ * 会停留在「先发起但后落地」的那次结果上，而不是最后一次输入的计算结果。
+ */
+const badgeChain = createSerialChain();
+
+/** 单次角标刷新的执行体（串行链内执行，不自行并发）。 */
+async function runRefreshBadge(): Promise<void> {
   if (!browser.action) return;
   if (badgeOverride && Date.now() >= badgeOverride.until) badgeOverride = undefined;
   if (badgeOverride) {
@@ -93,6 +103,14 @@ async function refreshBadge(): Promise<void> {
     logDegraded('badge', '工具栏角标更新失败', error);
     // badge 不可用时静默（不阻塞其他功能）
   }
+}
+
+/** 刷新角标：按 badgeMode 计算当前窗口重复标签数（并发调用串行执行）。 */
+function refreshBadge(): Promise<void> {
+  // 链尾统一兜底：调用方均以 `void refreshBadge()` 触发，无人接 rejection。
+  return badgeChain.enqueueSettled(runRefreshBadge, (error) => {
+    logDegraded('badge', '工具栏角标更新失败', error);
+  });
 }
 
 /** 防抖窗口：标签事件连续触发时合并为一次全量查询。 */

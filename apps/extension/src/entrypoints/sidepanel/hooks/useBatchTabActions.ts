@@ -6,7 +6,7 @@ import { reloadTabs } from '@/platform/tabs';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
-import { pulseTabRows } from '@/entrypoints/sidepanel/useLocateActive';
+import { pulseTabRows } from '@/ui/domContract';
 
 /**
  * 底栏/命令面板的三个批量动作：休眠全部、唤醒全部、清理重复。

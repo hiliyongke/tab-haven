@@ -9,7 +9,7 @@ import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 /**
  * 快照恢复 diff 行为规格。
  *
- * 口径契约：snapshotDiff 与 platform/snapshot/snapshots.ts 的私有
+ * 口径契约：snapshotDiff 与 core/snapshot/missingTabs.ts 的
  * missingTabsOf 必须永远一致——预览说「将新建 N」，恢复就真的新建 N。
  * 本文件锁住这一契约：分类、去重、authority 归一化、部分快照约束。
  */

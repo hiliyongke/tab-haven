@@ -1,4 +1,4 @@
-import type { ChangeEvent, KeyboardEvent, RefObject } from 'react';
+import type { ChangeEvent, HTMLAttributes, KeyboardEvent, RefObject } from 'react';
 import { useControlId } from '@/ui/common/controlId';
 
 /** 单行与多行共用的元素类型（textarea 没有 type/min/max）。 */
@@ -65,10 +65,24 @@ export function TextField({
   ariaLabel?: string;
   /** 供外层 <label for> 关联；不传则取 ControlIdContext（设置页 Row 下发）。 */
   id?: string;
-  /** 额外的原生属性透传（如搜索框的 role/aria-activedescendant）。 */
-  inputProps?: Record<string, unknown>;
+  /**
+   * 额外的原生属性透传（如搜索框的 role/aria-activedescendant、规则输入框的
+   * spellCheck）。
+   *
+   * 类型收紧到原生属性：`Record<string, unknown>` 是逃逸口 —— 拼错的键
+   * （如 `spellcheck` 小写、或 `ariaLabel`）不会被类型系统发现，而展开在
+   * 最后还会**静默覆盖**上面的 aria-label / id / onChange。
+   *
+   * 取 `HTMLAttributes<FieldElement>`（input 与 textarea 的公共部分）而非
+   * `InputHTMLAttributes`：后者把事件处理器绑定到 HTMLInputElement，展开进
+   * `<textarea>` 会因 onCopy / onPaste 等不兼容而编译失败。
+   */
+  inputProps?: Omit<HTMLAttributes<FieldElement>, 'onChange' | 'id'>;
 }) {
   const shared = {
+    // 展开必须在前：本控件自己下发的 aria-label / id / onChange 是收口的一部分，
+    // 放在后面会被透传的同名键覆盖掉（且没有任何报错）。
+    ...inputProps,
     ref: inputRef as RefObject<HTMLInputElement & HTMLTextAreaElement> | undefined,
     value,
     defaultValue,
@@ -79,8 +93,7 @@ export function TextField({
       ? (event: ChangeEvent<FieldElement>) => onChange(event.target.value)
       : undefined,
     onKeyDown,
-    onBlur,
-    ...inputProps
+    onBlur
   } as const;
 
   /* 三档高度下限与 Button 同刻度（sm/xs 24px、md 32px、lg 36px）。

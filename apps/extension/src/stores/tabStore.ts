@@ -207,6 +207,8 @@ export const useTabStore = create<TabState>()((set, get) => ({
         // lastAccessed 对既有标签冻结——浏览器每次激活都会刷新该时间戳，照单全收
         // 会让「最近访问」排序随每次切换标签全量重排。冻结后排序只在「新页面打开」
         // （新 id 首次出现）时一次性纳入，其余操作零重排。
+        // 只有 lastAccessed 被冻结：lastActivatedAt 保持实时，供滞留预警与
+        // keeper 判定这类「真实最近激活时刻」的口径消费（见 core/tab-types）。
         const tabs = mergeSnapshotTabs(state.tabs, snapshot.tabs);
         // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
         // mergeSnapshotTabs 对未变化标签保持原引用，此处 O(n) 指针比较即可——

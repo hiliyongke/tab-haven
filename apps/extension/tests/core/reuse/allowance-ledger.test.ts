@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AllowanceLedger } from '@/platform/reuse/AllowanceLedger';
+import { AllowanceLedger } from '@/core/reuse/AllowanceLedger';
 
 /**
  * 行为规格：显式复制 / 撤销恢复获得豁免授权，授权有

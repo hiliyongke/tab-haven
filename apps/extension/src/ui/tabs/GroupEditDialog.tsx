@@ -88,8 +88,8 @@ export function GroupEditDialog({
           视觉 16px / 命中 24px（::after 扩区，见 .swatch 样式）。 */}
       {/* gap-2（节距 24px）：gap-1 时相邻色块的 24px 命中区（.swatch::after inset:-4px）
           会互相重叠 4px。末元素不再带 mb —— 内容区上下留白应保持 12/12 对称。 */}
-      /* 原生 radio 已按 name 成组，外面再套 role="radiogroup" 会让部分读屏 把组名重复播报一遍。改用
-      fieldset + sr-only legend：语义等价且不重复。 */
+      {/* 原生 radio 已按 name 成组，外面再套 role="radiogroup" 会让部分读屏
+          把组名重复播报一遍。改用 fieldset + sr-only legend：语义等价且不重复。 */}
       <fieldset className="flex flex-wrap gap-2 border-0 p-0">
         <legend className="sr-only">{t('编辑标签组')}</legend>
         {GROUP_COLOR_NAMES.map((c) => (

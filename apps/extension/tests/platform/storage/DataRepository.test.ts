@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { z } from 'zod';
-import { DataRepository } from '@/platform/storage/DataRepository';
+import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
+import { clearAllStoredData, DataRepository } from '@/platform/storage/DataRepository';
 
 /**
  * 数据仓库：坏数据隔离是「不扩散」承诺的落点。
@@ -27,8 +28,16 @@ function repo(onUnavailable?: () => void) {
   );
 }
 
+/** 带 RMW 锁名的仓库（锁名在本测试里不参与真实互斥，只驱动「锁内重读」这条分支）。 */
+function repoWithLock() {
+  return new DataRepository<Array<{ id: string; n: number }>>(KEY, ListSchema, [], {
+    rmwLock: 'test.repo-rmw'
+  });
+}
+
 afterEach(() => {
   fakeBrowser.reset();
+  clearDiagnostics();
   vi.restoreAllMocks();
 });
 
@@ -112,6 +121,29 @@ describe('DataRepository', () => {
       expect(stored[KEY]).toEqual([{ id: 'ok', n: 1 }]);
     });
 
+    it('被丢弃的坏元素进隔离区并留痕（逐元素恢复不得静默删数据）', async () => {
+      await fakeBrowser.storage.local.set({
+        [KEY]: [
+          { id: 'ok', n: 1 },
+          { id: 'bad', n: 'x' },
+          { id: 'ok2', n: 2 }
+        ]
+      });
+
+      const value = await repo().read();
+
+      expect(value).toEqual([
+        { id: 'ok', n: 1 },
+        { id: 'ok2', n: 2 }
+      ]);
+      const quarantine = await fakeBrowser.storage.local.get('tabs.quarantine');
+      const list = quarantine['tabs.quarantine'] as Array<{ key: string; raw: unknown }>;
+      expect(list).toHaveLength(1);
+      expect(list[0]!.key).toBe(KEY);
+      expect(list[0]!.raw).toEqual([{ id: 'bad', n: 'x' }]);
+      expect(readDiagnostics().some((e) => e.message.includes('丢弃 1 条'))).toBe(true);
+    });
+
     it('隔离区只保留最近 20 条（防止坏数据无限堆积）', async () => {
       await fakeBrowser.storage.local.set({
         'tabs.quarantine': Array.from({ length: 20 }, (_, i) => ({ key: `old-${i}` }))
@@ -125,6 +157,81 @@ describe('DataRepository', () => {
       expect(list).toHaveLength(20);
       expect(list[19]!.key).toBe(KEY);
       expect(list[0]!.key).toBe('old-1');
+    });
+  });
+
+  describe('逐元素恢复的 element 取值（zod 升级守卫）', () => {
+    /**
+     * `zodArrayElement` 靠 `as unknown as { element }` 绕开 ZodArray 的泛型不变性。
+     * zod 升级若改名或移除该内部字段，**编译期不会报错**（断言把它兜住了），
+     * 运行时则退化为「整块隔离 → 返回默认值」，干净元素全部陪葬。
+     * 下面用「元素级 default」当探针：只有真的取到 element schema 逐条 parse，
+     * 缺省字段才会被补上；取不到时 read() 返回默认值 []。
+     */
+    it('元素级 default 在恢复中生效（证明取到的是 element 而非整表 schema）', async () => {
+      const elemKey = 'test.elem.v1';
+      const elemSchema = z.object({ id: z.string(), tags: z.array(z.string()).default([]) });
+      const r = new DataRepository<Array<{ id: string; tags: string[] }>>(
+        elemKey,
+        z.array(elemSchema),
+        []
+      );
+      await fakeBrowser.storage.local.set({
+        [elemKey]: [{ id: 'a' }, { id: 'b', tags: ['x'] }]
+      });
+
+      expect(await r.read()).toEqual([
+        { id: 'a', tags: [] },
+        { id: 'b', tags: ['x'] }
+      ]);
+    });
+  });
+
+  describe('恢复回写的 RMW 锁（read 语义只读，不得覆盖他页新值）', () => {
+    it('恢复期间他页写入的合法新值不被回写覆盖（锁内重读）', async () => {
+      const bad = [
+        { id: 'ok', n: 1 },
+        { id: 'bad', n: 'x' }
+      ];
+      await fakeBrowser.storage.local.set({ [KEY]: bad });
+      const r = repoWithLock();
+      const area = fakeBrowser.storage.local as unknown as {
+        get: (key: unknown) => Promise<Record<string, unknown>>;
+        set: (record: Record<string, unknown>) => Promise<void>;
+      };
+      const originalGet = area.get;
+      const fresh = [{ id: 'new', n: 9 }];
+      let gets = 0;
+      // 第一次取数是 read() 的快照；第二次起模拟「另一页面已写入合法新值」
+      // （真实落盘 + 返回新值，否则断言会因磁盘上根本没有新值而假绿）。
+      area.get = vi.fn(async () => {
+        gets += 1;
+        if (gets === 1) return { [KEY]: bad };
+        await area.set({ [KEY]: fresh });
+        return { [KEY]: fresh };
+      }) as never;
+
+      const value = await r.read();
+      area.get = originalGet;
+
+      // 交回的是他页写入的新值，且磁盘上仍是新值（恢复回写整表覆盖 ⇒ 静默丢数据）
+      expect(value).toEqual([{ id: 'new', n: 9 }]);
+      const stored = await fakeBrowser.storage.local.get(KEY);
+      expect(stored[KEY]).toEqual([{ id: 'new', n: 9 }]);
+    });
+
+    it('未配锁时维持原行为：按读到的快照恢复并回写', async () => {
+      await fakeBrowser.storage.local.set({
+        [KEY]: [
+          { id: 'ok', n: 1 },
+          { id: 'bad', n: 'x' }
+        ]
+      });
+
+      expect(await repo().read()).toEqual([{ id: 'ok', n: 1 }]);
+      await flush();
+      const stored = await fakeBrowser.storage.local.get(KEY);
+      expect(stored[KEY]).toEqual([{ id: 'ok', n: 1 }]);
     });
   });
 
@@ -153,6 +260,53 @@ describe('DataRepository', () => {
       expect(ok).toBe(false);
       expect(onUnavailable).toHaveBeenCalled();
       area.local = original;
+    });
+  });
+
+  describe('clearAllStoredData', () => {
+    /**
+     * 本环境的 jsdom 未挂 `window.localStorage`（真实扩展页一定有），注入最小实现。
+     * 用 defineProperty 而非赋值：未配置为 configurable 的重复注入会抛错。
+     */
+    function installLocalStorage(): void {
+      const store = new Map<string, string>();
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        value: {
+          getItem: (k: string) => store.get(k) ?? null,
+          setItem: (k: string, v: string) => void store.set(k, String(v)),
+          removeItem: (k: string) => void store.delete(k)
+        }
+      });
+    }
+
+    it('一并清掉扩展页 localStorage 的主题镜像（PRIVACY.md §3.1-d「随扩展数据一并清除」）', async () => {
+      installLocalStorage();
+      window.localStorage.setItem('tabs:theme', 'dark');
+      window.localStorage.setItem('tabs:theme-hue', 'ocean');
+      await fakeBrowser.storage.local.set({ [KEY]: [{ id: 'a', n: 1 }] });
+
+      await clearAllStoredData(async () => undefined);
+
+      expect(window.localStorage.getItem('tabs:theme')).toBeNull();
+      expect(window.localStorage.getItem('tabs:theme-hue')).toBeNull();
+      expect((await fakeBrowser.storage.local.get(KEY))[KEY]).toBeUndefined();
+      Reflect.deleteProperty(window, 'localStorage');
+    });
+
+    it('SW 上下文（无 window）跳过 localStorage 清理且不抛错（clearAllStoredData 也从 background 调用）', async () => {
+      await fakeBrowser.storage.local.set({ [KEY]: [{ id: 'a', n: 1 }] });
+      // SW 里没有 window：裸读 localStorage 即 ReferenceError，会让「清除所有数据」
+      // 在 background 侧整体失败（local / session 已清、后续步骤中断）。
+      vi.stubGlobal('window', undefined);
+      try {
+        // 自校验：桩没生效的话下面的断言就是假绿（window 仍在，只是恰好没抛错）。
+        expect(typeof window).toBe('undefined');
+        await expect(clearAllStoredData(async () => undefined)).resolves.toBeUndefined();
+        expect((await fakeBrowser.storage.local.get(KEY))[KEY]).toBeUndefined();
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 

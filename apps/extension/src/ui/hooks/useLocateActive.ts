@@ -3,13 +3,8 @@ import { translate } from '@/i18n';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
-import { findFolderItemRow, findTabRow } from '@/ui/domContract';
+import { findFolderItemRow, findTabRow, pulseRow } from '@/ui/domContract';
 
-/**
- * 高亮持续时间：必须与 `.is-located` 的 CSS 动画时长保持一致 ——
- * 改动画不改这里，高亮会提前消失；改这里不改动画，class 已摘而动画还在跑。
- */
-const LOCATE_HIGHLIGHT_MS = 1200;
 /** 虚拟列表下目标行可能尚未挂载（滚动事件刚发出），重试间隔。 */
 const LOCATE_RETRY_INTERVAL_MS = 50;
 /**
@@ -19,54 +14,6 @@ const LOCATE_RETRY_INTERVAL_MS = 50;
  * 注释里写的「约 600ms」就成了假话，实际等待窗口被悄悄改变。
  */
 const LOCATE_MAX_WAIT_MS = 600;
-
-/**
- * 视觉行元素：滚动锚点是 `<li>`，动画定义在内部 `.row-item` 上。
- * 取不到 `.row-item`（结构变了）时退回锚点本身，至少让高亮可见。
- */
-function visualRowOf(target: HTMLElement): HTMLElement {
-  return target.querySelector<HTMLElement>('.row-item') ?? target;
-}
-
-/**
- * 重播一次定位脉冲。
- *
- * 「先摘 class → 读一次 `offsetWidth` 强制同步布局 → 再挂回 class」是让同一个 CSS
- * 动画重新播放的唯一可靠手段：同一帧内 remove+add 会被浏览器合并，动画不会重启。
- * 这个强制重排的技巧在本仓只有这一份实现（`pulseTabRows` 与 `useLocateActive`
- * 共用），此前两处各写一遍，改一处必漏另一处。
- *
- * `timers` 用于把清理定时器交给调用方的生命周期管理（组件卸载时一并清掉）；
- * 不传表示无需跟踪（如一次性批量脉冲，元素上再挂一次 class 也无害）。
- */
-function playLocatePulse(row: HTMLElement, timers?: Set<number>): void {
-  row.classList.remove('is-located');
-  void row.offsetWidth;
-  row.classList.add('is-located');
-  const id = window.setTimeout(() => {
-    row.classList.remove('is-located');
-    timers?.delete(id);
-  }, LOCATE_HIGHLIGHT_MS);
-  timers?.add(id);
-}
-
-/**
- * 给指定标签行播放一次定位脉冲（复用 `.is-located` 的既有动画）。
- *
- * 与 useLocateActive 共用同一套 DOM 约定（`data-tabs-tab-id` → 内部 `.row-item`），
- * 因此放在同文件：两处一旦分家，选择器改动就会漏掉另一处。
- * 用途：批量操作后高亮「被保留的项」（如清理重复后让用户看到每个域名留下了哪一个）。
- *
- * 只查临时区（data-tabs-tab-id）：清理重复的保留项一定是临时区标签，
- * 固定区条目（data-folder-tab-id）不参与，避免同 id 命中到固定区去。
- */
-export function pulseTabRows(tabIds: readonly number[]): void {
-  for (const tabId of tabIds) {
-    const target = findTabRow(tabId);
-    if (!target) continue;
-    playLocatePulse(visualRowOf(target));
-  }
-}
 
 /**
  * 「定位激活标签」hook：滚动到当前激活标签所在行并高亮。
@@ -131,7 +78,7 @@ export function useLocateActive(params: {
       if (!target) return false;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
-      playLocatePulse(visualRowOf(target), timersRef.current);
+      pulseRow(target, timersRef.current);
       return true;
     };
 

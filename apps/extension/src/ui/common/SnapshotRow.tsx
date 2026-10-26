@@ -33,6 +33,16 @@ interface SnapshotRowProps {
   onRestoreSelected?: (id: string, tabCount: number) => void;
 }
 
+/**
+ * diff 条目的匹配键（与原先 map 内 `find` 的比较条件一致：url 与 title 同时相等）。
+ *
+ * 分隔符用 `\u0000`：URL 与标题都可含任意可见字符，用可见分隔符会出现
+ * 「a + bc」与「ab + c」撞键，把不存在的条目判成已存在。
+ */
+function diffEntryKey(tab: { url: string; title?: string }): string {
+  return `${tab.url}\u0000${tab.title ?? ''}`;
+}
+
 /** 单条快照：命名 / 徽标 / 展开标签清单 / 恢复·改名·删除。 */
 export function SnapshotRow({
   snap,
@@ -56,6 +66,23 @@ export function SnapshotRow({
   const detailScrollRef = useRef<HTMLUListElement>(null);
   // 详情列表是条件渲染的，必须把开关作为依赖传入，否则容器出现后不会补挂监听
   useScrollFade(detailScrollRef, isDetailOpen);
+  /**
+   * 展开清单的 diff 查表：把 willCreate / existing 预建成 Set，行内查表 O(1)。
+   *
+   * 原实现在 `snap.tabs.map` 内对两个数组各做一次线性 find —— 复杂度
+   * O(条目数 × diff 条目数)：快照上限 30 份、单份数百条标签时，展开一份即数万次
+   * 比较，连点展开/收起会明显掉帧。预建 Set 后与 diff 规模无关。
+   * 键用 diffEntryKey（url + title），与原先 find 的判定完全等价。
+   */
+  const diffIndex = useMemo(() => {
+    if (!diff) return undefined;
+    const willCreate = new Set<string>();
+    for (const item of diff.willCreate) willCreate.add(diffEntryKey(item.tab));
+    const existing = new Set<string>();
+    for (const item of diff.existing) existing.add(diffEntryKey(item.tab));
+    return { willCreate, existing };
+  }, [diff]);
+
   /* 右键菜单：快照的删除不可恢复，而行尾只有一排无文字图标（与恢复、重命名相邻），
      误触代价高。右键给出带文字的明确操作列表。 */
   const { menu, open: openMenu, close: closeMenu } = useRowContextMenu();
@@ -88,7 +115,8 @@ export function SnapshotRow({
     ]
   );
   return (
-    <li key={snap.id} className="px-3 py-2" onContextMenu={openMenu}>
+    // key 由父级（SnapshotsPanel 的 group.items.map）下发，根节点自带的 key 是死值
+    <li className="px-3 py-2" onContextMenu={openMenu}>
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           {isEditing ? (
@@ -166,8 +194,11 @@ export function SnapshotRow({
             aria-label={t('删除')}
             /* 删除与「查看详情」「重命名」静默态完全同色同形，无 hover 设备上
                不可分；改为静默中性、hover/focus 转红（与 .row-action.is-danger
-               同口径），并扩到 28px 命中区。 */
-            className="row-action text-gray-400 hover:bg-red-50 hover:text-red-600 focus-visible:text-red-600"
+               同口径），并扩到 28px 命中区。
+               危险态走 .row-action.is-danger 统一入口：手写 hover:bg-red-50 /
+               hover:text-red-600 是同一语义的第二份实现，改一处漏一处；且此前
+               另加的 text-gray-400 把静默态压到 2.68:1（低于非文本的 3:1）。 */
+            className="row-action is-danger"
             onClick={() => void onDelete(snap.id)}
           >
             <Icon d={Icons.trash} className="h-4 w-4" />
@@ -213,17 +244,11 @@ export function SnapshotRow({
               >
                 {snap.tabs.map((tab, index) => {
                   const key = `${index}-${tab.url}`;
-                  const entry = diff?.willCreate.find(
-                    (item) => item.tab.url === tab.url && item.tab.title === tab.title
-                  );
-                  const isExisting = diff
-                    ? Boolean(
-                        diff.existing.find(
-                          (item) => item.tab.url === tab.url && item.tab.title === tab.title
-                        )
-                      )
+                  const entryKey = diffEntryKey(tab);
+                  const isExisting = diffIndex ? diffIndex.existing.has(entryKey) : false;
+                  const isSkipped = diffIndex
+                    ? !diffIndex.willCreate.has(entryKey) && !isExisting
                     : false;
-                  const isSkipped = diff ? !entry && !isExisting : false;
                   const checked = selectedKeys ? selectedKeys.has(key) : undefined;
                   return (
                     <li key={key} className="flex min-w-0 items-center gap-1.5 py-1">

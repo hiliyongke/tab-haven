@@ -1,8 +1,8 @@
 /**
  * 合并写入器：把高频连续写入收敛为「末值落盘」。
  *
- * 通用存储工具，与具体业务无关。放在平台层是因为它操作的是 DataRepository 的
- * write 通道，属于存储关注点；放在 store 文件里会让人误以为它依赖 store 状态。
+ * 通用工具，与具体业务无关：只吃「一个 write 通道」，不认识 DataRepository，
+ * 也不认识 store 状态（入参是最小接口 `{ write }`），故归 core/util 而非 platform。
  *
  * 消除拖拽重排等连续操作时的 chrome.storage 全量写入放大。
  * 语义：调用方 await 的 Promise 在「本批最终值已落盘」后 resolve。

@@ -139,7 +139,10 @@ export function OtherWindowsSection({
             >
               <p className="flex items-center gap-1 px-2 pb-0.5 pt-1.5 text-3xs font-medium text-gray-500">
                 {host}
-                <span className="text-gray-400">·</span>
+                {/* 纯装饰分隔符：读屏会把「·」念成「间隔号」，此处无语义 */}
+                <span className="text-gray-400" aria-hidden="true">
+                  ·
+                </span>
                 <span>{tabs.length}</span>
               </p>
               {tabs.map((tab) => (
@@ -173,9 +176,10 @@ export function OtherWindowsSection({
                   )}
                   <button
                     type="button"
-                    /* 中性底 + 红字的预警强度只有标准 .row-action.is-danger 的一半，
-                       且命中区仅 18px（低于 24px 下限）。 */
-                    className="row-action shrink-0 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                    /* 危险态统一走 .row-action.is-danger（见 main.css）：此前手写的
+                       text-gray-400 + hover 红是同一语义的第二份实现，静默态 2.68:1
+                       低于非文本的 3:1，命中区也只有 18px。 */
+                    className="row-action is-danger shrink-0"
                     title={t('关闭该标签')}
                     aria-label={t('关闭该标签')}
                     onClick={() => onCloseTab(tab)}

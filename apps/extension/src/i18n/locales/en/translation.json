@@ -614,7 +614,6 @@
   "i18n_17vccg1": "Local aggregate stats over snapshots and archived tabs — computed on device only, no network or account involved.",
   "i18n_0mod12c": "Manually one tab, hibernate all background tabs in bulk, or hibernate on a timer; automatic hibernation can be undone and supports a domain allowlist.",
   "i18n_1x7la04": "Optional system notification when automatic hibernation finishes; either way you can always undo from the sidebar.",
-  "i18n_1eotisz": "Hibernate background tabs",
   "i18n_1o18e95": "Sync sidebar groups to native browser tab groups (optional), or rebuild groups when restoring a snapshot.",
   "i18n_0dj1619": "sidePanel — Sidebar",
   "i18n_1ip4d6p": "Tabs' main surface is the browser sidebar, declared in the extension configuration.",
@@ -798,5 +797,7 @@
   "i18n_17qq1ml": "This action no longer exists. It may have already been undone",
   "i18n_0gwmb9c": "Nothing to redo",
   "i18n_0md0xsk": "Snapshot name can't be empty",
-  "i18n_02eflt2": "This workspace no longer exists — refresh and try again"
+  "i18n_02eflt2": "This workspace no longer exists — refresh and try again",
+  "i18n_13w717u": "Collapsed sites",
+  "i18n_1o3vqtk": "Save recent degradations as a local report (time and error descriptions only — no page titles or URLs) to attach when reporting an issue. {{count}} quarantined bad-data records will be exported along with it"
 }

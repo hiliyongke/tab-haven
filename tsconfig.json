@@ -1,0 +1,17 @@
+{
+  "//": "工作区根 tsconfig：只覆盖根级跨包守卫 tests/**。apps/* 与 packages/* 各自带 tsconfig（随包走，由 pnpm typecheck 分别转发），根不重复收编。",
+  "//why": "此前 tests/config/*.ts 不参与任何类型检查：改守卫时写错类型、拼错字段都能静默通过，而守卫本身正是最后一道门禁——它自己不该是唯一没有类型保障的代码。",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["tests/**/*.ts"]
+}

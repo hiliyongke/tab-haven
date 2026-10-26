@@ -150,6 +150,19 @@ describe('restoreSnapshot（加法恢复）', () => {
     expect(groupMock).not.toHaveBeenCalled();
   });
 
+  it('复用豁免未获确认时计入 degraded（与 RestoreEngine 同口径）', async () => {
+    stubTabsApi();
+    await ensureWindow();
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((() =>
+      Promise.resolve({ ok: false })) as never);
+
+    const snap = snapshotOf([snapTab({ url: 'https://a.com/' })]);
+    const { count, degraded } = await restoreSnapshot(snap, WINDOW_ID);
+
+    expect(count).toBe(1);
+    expect(degraded).toBe(true);
+  });
+
   it('窗口已有同名组时并入既有组', async () => {
     const { groupMock, updateMock } = stubTabsApi();
     await ensureWindow();

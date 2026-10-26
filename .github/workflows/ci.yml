@@ -41,8 +41,9 @@ jobs:
           pnpm -v
           pnpm install --frozen-lockfile
 
-      # 与本地 `pnpm check` 同源，另外补了两项本地不跑的：format:check 与依赖审计。
-      # 顺序：format:check → typecheck → lint → check:i18n → check:ui → test → audit → build → check:privacy
+      # 与本地 `pnpm check` 同源，另外补了三项本地不跑的：format:check、依赖审计、官网门禁。
+      # 顺序：format:check → typecheck → lint → check:i18n → check:ui → test → site:check
+      #       → audit → build → check:privacy
       - name: 格式一致性
         run: pnpm format:check
 
@@ -62,6 +63,12 @@ jobs:
 
       - name: 测试
         run: pnpm test
+
+      # 官网门禁（零外链自检在 apps/site/build.mjs 里）：刻意不并入 `pnpm check` ——
+      # 扩展的发布门禁不该被官网构建拖住。但不进 CI 就等于没建：官网是唯一对外
+      # 发布的页面，一条 CDN 外链就是一次真实出站请求，与产品宪法直接冲突。
+      - name: 官网门禁（零外链自检）
+        run: pnpm site:check
 
       # 供应链安全分两级：
       # 1) 生产依赖 —— 高危及以上阻断合并（这些包会真正打进扩展产物，必须干净）。

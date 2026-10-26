@@ -314,6 +314,51 @@ describe('首次启动的镜像恢复', () => {
     expect(applied.mirrorIssue).toBe('unreadable');
   });
 
+  /**
+   * 回归（M4 / S2）：initSlice 的镜像恢复走的是同一批外部输入，必须与备份导入
+   * 同款收紧 url / favicon。此前两处都只用基础 schema，备份入口的收紧形同虚设
+   * （同一份数据在镜像通道里原样落盘）。
+   */
+  it('镜像条目 url 为脚本 / 本地文件时归一为 about:blank（与备份入口同口径）', async () => {
+    mocks.pull.mockResolvedValueOnce({
+      folders: [
+        {
+          id: 'f1',
+          name: '镜像文件夹',
+          collapsed: false,
+          createdAt: 1,
+          items: [
+            { id: 'i1', url: 'javascript:alert(1)', title: 'XSS', createdAt: 1 },
+            { id: 'i2', url: 'file:///etc/passwd', title: '本地文件', createdAt: 1 },
+            {
+              id: 'i3',
+              url: 'https://ok.com/',
+              title: '正常',
+              favIconUrl: 'https://tracker.example/pixel.png',
+              createdAt: 1
+            }
+          ]
+        }
+      ],
+      pins: [],
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+    const h = await harness({
+      seeded: false,
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+
+    await h.initialized();
+
+    const written = (h.ctx.repos.folders.write as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as Array<{ items: Array<Record<string, unknown>> }>;
+    expect(written[0]!.items[0]!.url).toBe('about:blank');
+    expect(written[0]!.items[1]!.url).toBe('about:blank');
+    // 正常条目保留；非白名单 favicon 归一为 undefined（渲染图标会发起外链请求）
+    expect(written[0]!.items[2]!.url).toBe('https://ok.com/');
+    expect(written[0]!.items[2]!.favIconUrl).toBeUndefined();
+  });
+
   it('镜像恢复成功后才置 seeded（顺序：写盘 → 置位）', async () => {
     mocks.pull.mockResolvedValueOnce(mirror);
     const h = await harness({

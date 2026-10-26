@@ -11,9 +11,9 @@ import { dedupePins } from '@/core/fixed/FolderOps';
 import { structuralSignature } from '@/core/util/signature';
 import {
   FOLDERS_LIMIT,
-  FixedFolderSchema,
+  InboundFixedFolderSchema,
+  InboundPersistentPinSchema,
   PINS_LIMIT,
-  PersistentPinSchema,
   SettingsSchema
 } from '@/core/schema/models';
 import type { DataContext, DataSlice } from './types';
@@ -98,10 +98,17 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
             // 带体积上限，否则一份异常镜像就能把本地库撑到远超正常使用规模。
             // 注意口径：上限只加在「外部输入」侧，不加进 registry 的仓库 schema ——
             // 后者一旦收紧，存量超限用户的真实数据会在读盘时被判为坏数据而清空。
-            const parsedFolders = FixedFolderSchema.array()
+            //
+            // 同理用导入侧的 Inbound* schema：镜像与备份文件同属外部可控输入，
+            // url / favIconUrl 必须与备份入口同款收紧（javascript: / file: 归一为
+            // about:blank，favicon 只放行 data:image/chrome/chrome-extension），
+            // 否则「备份里被拒的内容经镜像落盘」这条绕行通道就一直开着。
+            const parsedFolders = InboundFixedFolderSchema.array()
               .max(FOLDERS_LIMIT)
               .safeParse(mirror.folders);
-            const parsedPins = PersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
+            const parsedPins = InboundPersistentPinSchema.array()
+              .max(PINS_LIMIT)
+              .safeParse(mirror.pins);
             const parsedSettings = SettingsSchema.safeParse(mirror.settings);
             /**
              * 只取镜像**显式给出**的设置键。

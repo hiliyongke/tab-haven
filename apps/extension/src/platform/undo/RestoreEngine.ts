@@ -88,6 +88,10 @@ export async function restoreTabRecordsDetailed(
   // 已打开去重：与快照恢复（snapshots.restoreSnapshot）同口径。
   // 不做这一步的话，用户手动重开某页后再撤销，必定收获一个重复标签。
   const { keys: openKeys, degraded } = await openKeysInWindow(windowId);
+  // 豁免发放未获确认的聚合标志：并发任务内改不到外层的 `degraded`，先记账后合并。
+  // 不发这个标志的话，豁免没发下去（新标签会被复用引擎合并掉）而界面仍报
+  // 「已恢复 N 个」——与契约（reuseAllowance 注释「由调用方决定要不要计入 degraded」）不符。
+  let allowanceDegraded = false;
 
   // 有限并发而非严格串行：每条记录都要走「发放豁免（一次 runtime 往返）→
   // tabs.create → 静音/分组」三段 await，严格串行下 100 条就是 300 次串行往返，
@@ -110,8 +114,11 @@ export async function restoreTabRecordsDetailed(
       }
 
       try {
-        // 豁免复用：新恢复的标签不允许被重复复用引擎合并掉
-        await grantReuseAllowance(windowId, record.url);
+        // 豁免复用：新恢复的标签不允许被重复复用引擎合并掉。
+        // 返回值 = 是否获确认：未获确认时新标签可能被复用引擎合并，本次「已恢复」
+        // 是假的，必须计入 degraded 由调用方降级提示（不能只报「已恢复 N 个」）。
+        const granted = await grantReuseAllowance(windowId, record.url);
+        if (!granted) allowanceDegraded = true;
 
         const created = await browser.tabs.create({
           windowId,
@@ -190,5 +197,5 @@ export async function restoreTabRecordsDetailed(
     if (outcome !== 'failed') count += 1;
   }
 
-  return { count, failed, skippedAlreadyOpen, degraded };
+  return { count, failed, skippedAlreadyOpen, degraded: degraded || allowanceDegraded };
 }

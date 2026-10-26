@@ -4,7 +4,7 @@ import { isHttpUrl, webComparisonKey } from '@/core/url/UrlInspector';
 /**
  * 快照恢复 diff：把「恢复会发生什么」变成决策前可见的纯函数。
  *
- * 口径严格镜像 `platform/snapshot/snapshots.ts` 的私有 `missingTabsOf`：
+ * 口径严格镜像 `core/snapshot/missingTabs.ts` 的 `missingTabsOf`：
  *  - 仅 http(s) 条目参与恢复（chrome:// 等内部页浏览器不允许以 URL 创建）；
  *  - 快照条目比较键：`webComparisonKey(url, undefined) ?? url`；
  *  - 窗口侧比较键：`webComparisonKey(url, pendingUrl)`；

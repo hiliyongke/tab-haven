@@ -22,7 +22,9 @@ interface FakeTab {
 
 /** 安装 action API 与标签夹具，返回各 spy。 */
 function installBadgeApi(tabs: FakeTab[] = []) {
-  const setBadgeText = vi.fn(async () => undefined);
+  // 显式给出入参签名：裸 vi.fn(async () => …) 的 mock.calls 会被推断为 []，
+  // 断言「调用序列」时取不到 args[0]（见 installMenusApi 的同款处理）。
+  const setBadgeText = vi.fn<(args: { text: string }) => Promise<void>>(async () => undefined);
   const setBadgeBackgroundColor = vi.fn(async () => undefined);
   const setTitle = vi.fn(async () => undefined);
   (fakeBrowser as unknown as { action?: unknown }).action = {
@@ -163,6 +165,38 @@ describe('refreshBadge', () => {
     await refreshBadge();
 
     expect(readDiagnostics().some((e) => e.message.includes('工具栏角标更新失败'))).toBe(true);
+  });
+
+  it('并发刷新串行执行：最终角标等于**最后一次输入**的计算结果', async () => {
+    await applyBadgeMode('count');
+    // 三次刷新的查询耗时刻意排成「慢—快—中」：并行时最后落地的是最慢的第 1 次，
+    // 角标于是停在过期结果上；串行时落地顺序 = 发起顺序，末值即第 3 次的计算结果。
+    const batches = [
+      {
+        delay: 30,
+        tabs: [{ url: 'https://a.com/' }, { url: 'https://b.com/' }, { url: 'https://c.com/' }]
+      },
+      { delay: 0, tabs: [{ url: 'https://a.com/' }] },
+      { delay: 10, tabs: [{ url: 'https://a.com/' }, { url: 'https://b.com/' }] }
+    ];
+    let call = 0;
+    const query = vi.fn(async () => {
+      const batch = batches[Math.min(call, batches.length - 1)]!;
+      call += 1;
+      await new Promise((resolve) => setTimeout(resolve, batch.delay));
+      return batch.tabs;
+    });
+    const { setBadgeText } = installBadgeApi([]);
+    (fakeBrowser.tabs as unknown as { query: unknown }).query = query;
+
+    void refreshBadge();
+    void refreshBadge();
+    void refreshBadge();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(setBadgeText.mock.calls.map((args) => args[0].text)).toEqual(['3', '1', '2']);
+    expect(setBadgeText).toHaveBeenLastCalledWith({ text: '2' });
   });
 });
 

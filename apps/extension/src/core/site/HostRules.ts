@@ -43,7 +43,13 @@ export function isLocalHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname.endsWith('.localhost');
 }
 
-/** 纯 IP 主机：IPv4 或含冒号的 IPv6（含方括号形式）。 */
+/**
+ * 纯 IP 主机：IPv4 或含冒号的 IPv6（含方括号形式）。
+ *
+ * 入参必须是 **hostname（不含端口）**：`host:port` 形态里的冒号会被当成 IPv6
+ * 判据而误判为 ip（进而被 `SiteResolver` 整体当作带端口的站点键）。调用方一律
+ * 传 `url.hostname`；要判带端口的串请先用 `normalizeWhitelistHost` 之类的口径拆分。
+ */
 export function isIpHost(hostname: string): boolean {
   return isValidIpv4(hostname) || hostname.includes(':');
 }

@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { DIAG_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { DIAGNOSTICS_KEY } from '@/platform/storage/keys';
+import type { QuarantineEntry } from '@/platform/storage/DataRepository';
 import {
   DIAGNOSTIC_MAX_ENTRIES,
   clearDiagnosticBuffer,
@@ -204,12 +205,18 @@ export async function clearDiagnostics(): Promise<void> {
  * 刻意只含技术上下文（时间戳/域/描述/错误），不含标签标题与 URL——
  * 保证「导出诊断」这一用户主动行为仍然不泄露浏览内容。
  */
-export function exportDiagnostics(entries: DiagnosticEntry[]): string {
+export function exportDiagnostics(
+  entries: DiagnosticEntry[],
+  quarantine: QuarantineEntry[] = []
+): string {
   const payload = {
     product: 'Tabs',
     exportedAt: new Date().toISOString(),
     userAgent: navigator.userAgent,
-    entries
+    entries,
+    // 坏数据留档：只有用户主动导出时才离开本机，且不写入诊断环形缓冲
+    // （它是环形缓冲，会被真正的故障挤出）。
+    quarantine
   };
   return JSON.stringify(payload, null, 2);
 }

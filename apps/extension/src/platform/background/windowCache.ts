@@ -10,6 +10,7 @@ import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { createSerialChain } from '@/core/util/concurrency';
 import { logDegraded } from '@/platform/diagnostics';
 import { SKIP_AUTO_SAVE_KEY, WINDOW_TABS_KEY } from '@/platform/storage/keys';
+import { listNormalWindowIds } from '@/platform/windows';
 
 type WindowTabsCache = Record<string, SnapshotTab[]>;
 /** 缓存内容 schema：session 中的脏条目（异常写入）必须被隔离丢弃，
@@ -213,6 +214,10 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
     logDegraded('window-cache', `窗口 ${windowId} 标签查询失败，跳过本次缓存更新`, error);
     return;
   }
+  // 无痕窗口不得进缓存：缓存的唯一用途是「关窗时生成可恢复快照」，而无痕标签的
+  // URL 与标题一旦落进快照就与定时自动快照的刻意排除（listNormalWindowIds）相反。
+  // 窗口类型无法从标签事件里拿到，但标签自带 incognito —— 这是零额外 IPC 的判定点。
+  if (rawTabs.some((raw) => raw.incognito === true)) return;
   const groups = await queryWindowGroups(windowId);
   // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会
   // 以空数组/残余数据复活已清理的键（驻留到浏览器重启）。丢弃即可。
@@ -275,11 +280,11 @@ async function initWindowTabsCache(): Promise<void> {
         logDegraded('window-cache', 'session 窗口缓存数据损坏，已丢弃并从空态重建');
       }
     }
-    // 窗口列表查询失败不能退化成空数组：那样「每个窗口都没有缓存」和
-    // 「查询失败」无法区分，关窗自动快照会静默少存若干窗口且零痕迹。
-    const wins = await browser.windows.getAll({ populate: false });
-    for (const win of wins) {
-      if (typeof win.id === 'number') await refreshWindowTabs(win.id);
+    // 窗口类型/无痕口径与定时自动快照、自动分组共用 `listNormalWindowIds`：
+    // 三条快照路径此前各自一份判定，无痕窗口只会在「关窗」这条路上被写进持久快照。
+    const windowIds = await listNormalWindowIds();
+    for (const windowId of windowIds) {
+      await refreshWindowTabs(windowId);
     }
   } catch (error) {
     logDegraded('window-cache', '窗口缓存写入失败', error);

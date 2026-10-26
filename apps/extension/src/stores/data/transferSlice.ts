@@ -46,6 +46,29 @@ function mergeFolderByName(
   return { next: [...current, { ...createFolderModel(name), items: [...items] }], created: true };
 }
 
+/**
+ * 单分区回滚：吞掉异常，只回报是否还原成功。
+ *
+ * 回滚本身是 `withCrossPageLock` 内的整表写，锁请求在上下文销毁（面板在回滚途中
+ * 关闭）时以 AbortError reject 并向外透传。若让这个异常冒出回滚循环，后续分区
+ * 一个都不会回滚 —— 存储里留下「一半导入值 + 一半旧值」的半套数据，与
+ * `PRIVACY.md` 承诺的「整体回滚，不会留下半套数据」相反，且用户拿到的是锁错误
+ * 而非可解释的导入失败。失败分区名由调用方收集后统一上报。
+ */
+async function safeRollback(step: {
+  name: string;
+  rollback: () => Promise<boolean>;
+}): Promise<boolean> {
+  try {
+    return await step.rollback();
+  } catch (error) {
+    // 仅进诊断日志（logFailure），不进界面，故不翻译
+    // @i18n-ignore
+    logFailure('dataStore', `导入回滚失败：分区 ${step.name} 未还原`, error);
+    return false;
+  }
+}
+
 /** 备份切片：完整导出 / 事务化导入 / 书签栏导入。 */
 export function createTransferSlice(
   ctx: DataContext
@@ -135,12 +158,21 @@ export function createTransferSlice(
             return true;
           })
         }));
-        // 同步开关不随备份迁移：备份文件可被任意构造，若其中 syncMirrorEnabled 为 true，
-        // 导入即会在 500ms 后把全部固定 URL 推上浏览器账号通道，用户完全无感知。
-        // 保留用户当下的选择——要开同步必须是一次显式操作。
+        // 会「替用户做出授权动作」的开关一律不随备份迁移：备份文件可被任意构造，
+        // 保留用户当下的选择——要开必须是一次显式操作。
+        //  - syncMirrorEnabled：为 true 时导入即会在 500ms 后把全部固定 URL 推上
+        //    浏览器账号通道，用户完全无感知；
+        //  - noCacheEnabled：为 true 时导入即会让 noCachePatterns 编译出的 DNR
+        //    规则立即生效（platform/background/noCache）。用户此前授予的
+        //    <all_urls> optional 权限是给**自己点开的那个开关**用的，备份里的
+        //    true 等于绕过这次授权动作，与同步开关同性质。
+        // 而 noCachePatterns 列表照常导入：它在 schema 层已归一化（DNR 通配/锚定
+        // 这类非法语法在解析时被丢弃），开关关闭时这份列表完全无副作用，是纯配置
+        // 数据——排除它会让用户「攒了很久的站点清单」在换机后凭空消失。
         const importedSettings: Settings = {
           ...data.settings,
-          syncMirrorEnabled: before.settings.syncMirrorEnabled
+          syncMirrorEnabled: before.settings.syncMirrorEnabled,
+          noCacheEnabled: before.settings.noCacheEnabled
         };
 
         const steps: {
@@ -209,7 +241,12 @@ export function createTransferSlice(
           // 回滚已写入的分区；回滚本身失败仅告警（尽力而为），但必须在错误信息中如实告知。
           const rollbackFailures: string[] = [];
           for (const written of done) {
-            const restored = await written.rollback();
+            // 每个 rollback 都必须包异常保护：其内部是 withCrossPageLock，锁请求在
+            // 上下文销毁（回滚途中关闭面板）时以 AbortError reject，且该错误会向外
+            // 透传。不接住它，循环就在第一个分区处中断——剩余分区不再回滚（留下半套
+            // 数据，与「整体回滚」的承诺相反），抛出的也变成不可解释的锁错误而非
+            // 下面的 import-write-failed。
+            const restored = await safeRollback(written);
             if (!restored) rollbackFailures.push(written.name);
           }
           // 仅进诊断日志（logFailure），不进界面，故不翻译
@@ -223,7 +260,12 @@ export function createTransferSlice(
           folders: importedFolders,
           pins: importedPins,
           collapsedSites: data.siteCollapse,
-          settings: importedSettings
+          settings: importedSettings,
+          // 整表替换后旧结论不再成立：mirrorIssue 是「上一次镜像拉取」的分类
+          // （已生效 / 未生效 / 超出容量…），导入换了整份数据，继续显示它会把
+          // 导入前的状态挂到导入后的数据上。与 settingsSlice 清空数据时的
+          // 复位口径一致（清空即无结论，等下一次拉取重新给出）。
+          mirrorIssue: null
         });
         // 绑定整表失效：备份整表替换了 folders，而会话绑定（item id → tab id）的
         // 有效性只校验「item 与 tab 都还存在」，不校验 URL 是否仍匹配（见

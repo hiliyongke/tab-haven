@@ -315,13 +315,14 @@ function buildSitePlan({
     // 仍归并成站点分区。否则浏览器里已存在同站点原生组时，新打开的同站点标签会
     // 一直滞留「未分组」——只有「重排分组」（planRegroup 把临时区标签全部视为
     // 未分组重聚合）才能修好，两条路径的判定口径必须一致。
+    // 与分支 1（isSameSiteKey）和 aggregateBySite 共用同一谓词 siteBucketId：
+    // 本地/IP 站点的 registrableDomain 不含端口，只比 (注册域, 子域) 会把
+    // localhost:3000 的候选与 localhost:8080 的未分组标签判成同站，
+    // 于是 8080 的唯一标签被塞进 3000 的分区、从「未分组」平空消失。
+    const candidateBucket = siteBucketId(candidate.key);
     const sameSiteSingles = singles.filter((tab) => {
       const site = tab.url ? siteResolver.resolve(tab.url) : null;
-      return (
-        site !== null &&
-        site.registrableDomain === candidate.registrableDomain &&
-        site.subdomain === candidate.subdomain
-      );
+      return site !== null && siteBucketId(site) === candidateBucket;
     });
     if (sameSiteSingles.length === 0) continue;
     if (sameSiteSingles.length + candidate.memberTabs.length < effectiveThreshold) continue;
@@ -448,6 +449,8 @@ export function deriveSections({
   // groupId 不在 groups 里的标签同样按未分组处理：跨窗口搜索时 filteredTabs 含
   // 其他窗口标签，而 groups 只含当前窗口 —— 若按「已入组」排除，这些标签既不在
   // 原生区也不在未分组，会从列表里凭空消失（与搜索命中数自相矛盾）。
+  // 代价：下游 core/group/AutoGrouping 必须区分「确实未分组」与「分组信息不可知」，
+  // 后者不得参与新建原生组（否则会覆盖浏览器侧既有归属），见 planAutoGroups 注释。
   const eligible = tabs
     .filter(
       (tab) =>

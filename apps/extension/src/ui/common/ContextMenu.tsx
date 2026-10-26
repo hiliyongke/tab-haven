@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '@/i18n';
+import { useModalA11y } from '@/ui/dialog/Dialog';
 
 /**
  * 轻量上下文菜单。
@@ -17,9 +18,12 @@ import { useTranslation } from '@/i18n';
  * 只作用于标签栏/页面/链接，不作用于侧边栏内的行）。
  *
  * 行为契约与 DialogShell 对齐：Esc 关闭、焦点恢复到触发元素、点击外部关闭、
- * 菜单项可键盘导航（↑/↓ 循环、Home/End 跳首尾）。背景 inert 由 DialogShell 的
- * 机制统一处理（本组件不入 modalStack，因为它不拦截 Tab 陷阱 —— 菜单是短暂浮层，
- * 抢陷焦点反而干扰；Tab 按「离开菜单」处理：关闭并把焦点归还触发元素）。
+ * 菜单项可键盘导航（↑/↓ 循环、Home/End 跳首尾）。
+ *
+ * 以 `trapFocus: false` 入 modalStack：借用「isModalOpen() 为真 → 全局快捷键
+ * （⌘K/⌘P/⌘J）不再叠加第二层浮层」与「背景惰性化」两件事，但仍不抢 Tab 陷阱
+ * —— 菜单是短暂浮层，Tab 按「离开菜单」处理（关闭并把焦点归还触发元素）。
+ * Esc / Tab 由本组件自己处理，避免同一次按键被弹窗栈与菜单各关一次。
  */
 
 export interface ContextMenuItem {
@@ -72,6 +76,10 @@ export function ContextMenu({
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
+  // 必须在「打开即聚焦首项」的 effect 之前调用：那个 effect 靠挂载时的
+  // activeElement 记住触发元素，焦点若先被移走，弹窗栈的焦点恢复会指向菜单项
+  // （而它马上就要被卸载）。trapFocus=false：不抢 Tab 陷阱、不接管 Esc。
+  useModalA11y(ref, onClose, false);
   /** 锚点打开时的位置：滚动/尺寸变化后按位移量平移菜单。 */
   const anchorOrigin = useRef<{ left: number; top: number } | null>(null);
   const [shift, setShift] = useState({ dx: 0, dy: 0 });

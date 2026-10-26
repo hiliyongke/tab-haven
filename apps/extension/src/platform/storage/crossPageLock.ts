@@ -80,3 +80,12 @@ export const SNAPSHOTS_RMW_LOCK = 'tabs.snapshots-rmw';
  * 锁外交替会让缓冲区在截断边界上互相截断。
  */
 export const DIAG_RMW_LOCK = 'tabs.diagnostics-rmw';
+/**
+ * 坏数据隔离区（`tabs.quarantine`）：写入方是**所有**持久化键的读取降级，
+ * 「get → push → 截断 → set」在锁外并发时两个上下文会各自基于旧列表追加并互相
+ * 截断对方的条目。隔离区是坏数据的唯一现场，它自己丢数据等于承诺落空。
+ *
+ * 与分区锁（如 FOLDERS_RMW_LOCK）是**不同**的锁名：隔离发生在分区锁内
+ * （逐元素恢复要「先隔离再回写」），两者不存在反向嵌套，故无死锁面。
+ */
+export const QUARANTINE_RMW_LOCK = 'tabs.quarantine-rmw';

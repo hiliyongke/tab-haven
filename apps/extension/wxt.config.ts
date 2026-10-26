@@ -3,12 +3,79 @@ import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
+/**
+ * dev server 端口：`vite().server` 与下面 dev 态 CSP 共用同一份（strictPort，
+ * 不漂移）。dev 必须显式放行它 —— WXT 的 dev CSP 补丁只往 `script-src` 追加 dev
+ * origin（wxt 内部 addDevModeCsp），style / img / connect 这几条得自己放。
+ */
+const DEV_SERVER_PORT = 3000;
+const DEV_ORIGIN = `http://localhost:${DEV_SERVER_PORT}`;
+const DEV_WS_ORIGIN = `ws://localhost:${DEV_SERVER_PORT}`;
+
+/**
+ * 扩展页 CSP：sidepanel / options / about / 卸载备份页，以及后台 Service Worker
+ * 都由 `content_security_policy.extension_pages` 管。
+ *
+ * MV3 的默认 CSP 只锁 `script-src 'self'; object-src 'self'`，`img-src` / `font-src` /
+ * `style-src` / `connect-src` 全是敞开的。本项目「零出站网络请求」当前唯一的拦截点
+ * 是构建后扫产物的 `scripts/privacy-check.mjs`，补一条显式 CSP 是运行时的第二道闸：
+ * 将来若有代码想发请求，浏览器会先把它拦下来（且 DevTools 直接给出违规指令）。
+ *
+ * 逐条用途与放开原因（动任何一条都会影响全部扩展页）：
+ * - `default-src 'self'`：兜底。未单列的指令（worker-src / media-src / frame-src 等）
+ *   一律只认扩展自身来源。
+ * - `script-src 'self'`：MV3 硬要求（只允许扩展本地脚本）。dev 下 WXT 自动追加 dev
+ *   server origin，此处无需处理。
+ * - `object-src 'self'`：同上，MV3 硬要求。
+ * - `style-src 'self' 'unsafe-inline'`：**'unsafe-inline' 不能省** ——
+ *   ① `public/uninstall-backup.html` 的样式是整段内联 `<style>`（该页不得引外部
+ *   资源）；② React 的 `style={{ }}` 属性属 style-src-attr，同样归这条管。
+ *   不放开这两处会直接掉样式 / 掉行内尺寸。
+ * - `img-src 'self' data: chrome-extension:`：站点图标走浏览器自己的 favicon 通道
+ *   `chrome-extension://<id>/_favicon/`（见 `platform/favicon.ts`），必须放行
+ *   chrome-extension: 否则图标全灭（会静默回退成首字母方块，不易察觉）；
+ *   data: 留给内联占位图（当前代码未使用，去掉不影响现状，保留以免将来内联
+ *   SVG / 占位图被静默拦截）。
+ * - `font-src 'self'`：项目无 @font-face、全用系统字体，这里只是把默认敞开收掉。
+ * - `connect-src 'none'`：产品宪法是零出站 —— fetch / XHR / WebSocket / sendBeacon
+ *   一律封死。**dev 必须放行 dev server**：Vite HMR 与 WXT 的页面重载都走
+ *   `ws://localhost:3000`，封掉即热重载失效（功能不受影响，但开发体验归零）。
+ * - `form-action 'none'` / `base-uri 'none'`：扩展页不提交表单、不写 `<base>`，
+ *   顺手堵掉这两条注入面。
+ *
+ * ⚠️ CSP 写错的表现是**整个扩展白屏**（脚本 / 样式被拦），且只在真正加载扩展时
+ * 才暴露，typecheck 与单测都发现不了。改这里之后必须：
+ *   1. `pnpm build`；
+ *   2. 加载 `.output/chrome-mv3`（chrome://extensions 开发者模式）；
+ *   3. 手动冒烟：侧边栏能开、站点图标能显示、主题切换正常、DevTools Console
+ *      无 CSP 违规报错；
+ *   4. 再分别打开设置页、关于页与
+ *      `chrome-extension://<id>/uninstall-backup.html`，确认内联样式生效；
+ *   5. 另跑一次 `pnpm dev`，确认 HMR 仍生效（dev 态走上面那条放行分支）。
+ */
+function extensionPagesCsp(isDev: boolean): string {
+  // dev 下需要放行 dev server 的指令统一追加（script-src 由 WXT 自己补）。
+  const devOrigin = isDev ? ` ${DEV_ORIGIN}` : '';
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "object-src 'self'",
+    `style-src 'self' 'unsafe-inline'${devOrigin}`,
+    `img-src 'self' data: chrome-extension:${devOrigin}`,
+    `font-src 'self'${devOrigin}`,
+    isDev ? `connect-src 'self' ${DEV_ORIGIN} ${DEV_WS_ORIGIN}` : "connect-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'"
+  ].join('; ');
+}
+
 export default defineConfig({
   // 源码目录：分层结构（core/platform/stores/ui/entrypoints）位于 src/ 下
   srcDir: 'src',
   // 显式导入，关闭 auto-imports（保持代码可读性与 ESLint 完整性）
   imports: false,
-  manifest: () => ({
+  // command 由 WXT 传入（'serve' = dev / 'build' = 生产），CSP 的 dev 放行分支靠它。
+  manifest: ({ command }) => ({
     name: '__MSG_extName__',
     description: '__MSG_extDescription__',
     default_locale: 'en',
@@ -40,6 +107,14 @@ export default defineConfig({
       'favicon'
     ],
     optional_host_permissions: ['<all_urls>'],
+    // 显式 CSP（逐条理由见上面 extensionPagesCsp 的注释）：MV3 默认只锁
+    // script-src / object-src，这里把 img / font / style / connect 一并收紧，
+    // 作为「零出站网络请求」的运行时兜底。生产态 connect-src 为 'none'；
+    // dev 态放行 dev server 以保住 HMR（WXT 只在 dev 时改写 extension_pages，
+    // 生产构建原样输出本字符串）。
+    content_security_policy: {
+      extension_pages: extensionPagesCsp(command === 'serve')
+    },
     commands: {
       'focus-search': {
         suggested_key: { default: 'Ctrl+Shift+F' },
@@ -88,7 +163,8 @@ export default defineConfig({
     // 固定 dev server 端口并启用 strictPort：避免 Vite 在 3000 被占用时自增到 3001，
     // 否则 HTML 引用的脚本源（localhost:3000）与 WXT 自动生成进 manifest 的 CSP
     // （允许 localhost:3001）不一致，导致 sidepanel 脚本被内容安全策略拦截。
-    server: { port: 3000, strictPort: true },
+    // 端口与 DEV_SERVER_PORT 同源：dev 态 CSP 也按它放行。
+    server: { port: DEV_SERVER_PORT, strictPort: true },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

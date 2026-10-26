@@ -1,4 +1,4 @@
-import { createCoalescedWriter } from '@/platform/storage/coalescedWriter';
+import { createCoalescedWriter } from '@/core/util/coalescedWriter';
 import {
   FOLDERS_RMW_LOCK,
   PINS_RMW_LOCK,
@@ -26,6 +26,23 @@ let importing = false;
 let watchersSuspended = false;
 /** 清空事务进行中：与导入事务互斥（导入进行中点清空会把已清空的存储回填）。 */
 let clearing = false;
+/**
+ * 导入期间「写入被丢弃」已留痕的分区（本会话内只留一次）。
+ *
+ * 导入事务持续数百 ms，期间拖拽/排序会连续触发 writeFolders —— 每条都打一次降级
+ * 日志会在环形缓冲里堆出上百条同文案记录，把真正的故障挤出缓冲（诊断导出是本项目
+ * 唯一的排障通道）。先例见 crossPageLock 的 degradeWarned 与 undoStore 的
+ * notifiedEvictions：这类「同一原因重复发生」的告知按原因合并一次即可。
+ */
+const importDropLogged = new Set<string>();
+/**
+ * 已注册 watcher 的退订函数。
+ *
+ * 运行时刻意不退订：本 store 的生命周期 = 上下文生命周期，watcher 即跨页同步通道。
+ * 只在 HMR 重载时统一执行——模块级守卫（settingsWatcherStarted 等）随重载重置，
+ * 旧模块实例的监听器却仍挂着并把旧值写回新实例的内存态。
+ */
+const watcherUnsubscribers: Array<() => void> = [];
 
 /**
  * 有「写入成功」路径的分区各自的降级记账 scope。
@@ -71,15 +88,22 @@ export function buildDataContext(
    * 可见」的纪律（只是 scope 独立，不会被其它分区的写成功连坐清除）。
    */
   syncMirror.setMirrorResultHandlers({
-    onFailure: (message) => {
+    onFailure: (message, reason) => {
       reportPersistenceFailure(SYNC_MIRROR_SCOPE, message);
       // 同步状态行必须反映写结果：配额超限等故障下云端仍留着旧镜像，
       // pull 分类保持 'ok'，只靠它会显示「已生效」，而本次改动其实没上传。
       if (!get().mirrorWriteFailed) set({ mirrorWriteFailed: true });
+      // 配额超限与「普通写失败」必须可区分：前者是确定性的（重试只会反复撞配额
+      // 并消耗分钟级写配额），UI 要显示「未生效（超出同步容量上限）」而不是
+      // 一句「本次改动未上传」。容量是可由用户处理的事（删掉一些固定条目），
+      // 把两种成因压成一档等于让用户无从下手。
+      const quotaExceeded = reason === 'quota';
+      if (get().mirrorQuotaExceeded !== quotaExceeded) set({ mirrorQuotaExceeded: quotaExceeded });
     },
     onSuccess: () => {
       clearDegraded(SYNC_MIRROR_SCOPE);
       if (get().mirrorWriteFailed) set({ mirrorWriteFailed: false });
+      if (get().mirrorQuotaExceeded) set({ mirrorQuotaExceeded: false });
     }
   });
 
@@ -137,6 +161,7 @@ export function buildDataContext(
   function resetMirrorFailure(): void {
     clearDegraded(SYNC_MIRROR_SCOPE);
     if (get().mirrorWriteFailed) set({ mirrorWriteFailed: false });
+    if (get().mirrorQuotaExceeded) set({ mirrorQuotaExceeded: false });
   }
 
   async function writeFolders(
@@ -146,7 +171,12 @@ export function buildDataContext(
     // 内存态由 importData 统一提交，此处直接放弃落盘与镜像。
     if (importing) {
       // 丢弃必须可观测：否则表现为「拖了没反应」，且诊断里查不到原因。
-      logDegraded('dataStore', '导入事务进行中，本次固定空间写入已丢弃（内存态不更新）');
+      // 但同一原因本会话内只留一次（见 importDropLogged）：导入期间拖拽是连续的，
+      // 逐次留痕会用同一句文案刷满诊断环形缓冲，把真故障挤出去。
+      if (!importDropLogged.has(FOLDERS_SCOPE)) {
+        importDropLogged.add(FOLDERS_SCOPE);
+        logDegraded('dataStore', '导入事务进行中，本次固定空间写入已丢弃（内存态不更新）');
+      }
       return;
     }
     // updater 形态在执行这一刻取最新基线重算：get→算→set 无 await 间隙（单线程），
@@ -182,7 +212,11 @@ export function buildDataContext(
   ): Promise<void> {
     // 导入事务进行中：挂起落盘与镜像，内存态由 importData 统一提交。
     if (importing) {
-      logDegraded('dataStore', '导入事务进行中，本次固定图标写入已丢弃（内存态不更新）');
+      // 同 writeFolders：同一原因本会话内只留一次（见 importDropLogged）。
+      if (!importDropLogged.has(PINS_SCOPE)) {
+        importDropLogged.add(PINS_SCOPE);
+        logDegraded('dataStore', '导入事务进行中，本次固定图标写入已丢弃（内存态不更新）');
+      }
       return;
     }
     const pins = typeof arg === 'function' ? arg(get().pins) : arg;
@@ -222,7 +256,7 @@ export function buildDataContext(
   const startSettingsWatcher = (): void => {
     if (settingsWatcherStarted) return;
     settingsWatcherStarted = true;
-    repos.settings.watch(() => void syncSettingsFromStorage());
+    watcherUnsubscribers.push(repos.settings.watch(() => void syncSettingsFromStorage()));
   };
 
   /**
@@ -235,22 +269,24 @@ export function buildDataContext(
     if (valueWatchersStarted) return;
     valueWatchersStarted = true;
     // 回显守卫：本页面自身写入触发的 watch 回放内容相同，直接跳过，避免双倍渲染。
-    repos.folders.watch((value) => {
-      if (watchersSuspended) return;
-      if (structuralSignature(value) === structuralSignature(get().folders)) return;
-      set({ folders: value });
-    });
-    repos.pins.watch((value) => {
-      if (watchersSuspended) return;
-      const next = dedupePins(value);
-      if (structuralSignature(next) === structuralSignature(get().pins)) return;
-      set({ pins: next });
-    });
-    repos.collapse.watch((value) => {
-      if (watchersSuspended) return;
-      if (structuralSignature(value) === structuralSignature(get().collapsedSites)) return;
-      set({ collapsedSites: value });
-    });
+    watcherUnsubscribers.push(
+      repos.folders.watch((value) => {
+        if (watchersSuspended) return;
+        if (structuralSignature(value) === structuralSignature(get().folders)) return;
+        set({ folders: value });
+      }),
+      repos.pins.watch((value) => {
+        if (watchersSuspended) return;
+        const next = dedupePins(value);
+        if (structuralSignature(next) === structuralSignature(get().pins)) return;
+        set({ pins: next });
+      }),
+      repos.collapse.watch((value) => {
+        if (watchersSuspended) return;
+        if (structuralSignature(value) === structuralSignature(get().collapsedSites)) return;
+        set({ collapsedSites: value });
+      })
+    );
     // 设置变更由 startSettingsWatcher 统一处理（重读 + 主题应用），不再重复 watch。
   };
 
@@ -292,3 +328,11 @@ export function buildDataContext(
     }
   };
 }
+
+// HMR 重载时退订 watcher（见 watcherUnsubscribers 的注释）：模块级守卫（模块被
+// 替换后新实例自带全新副本，故此处不必复位）会随重载重置，旧监听器却仍挂在
+// storage.onChanged 上并把旧值写回新实例。
+import.meta.hot?.dispose(() => {
+  for (const unsubscribe of watcherUnsubscribers) unsubscribe();
+  watcherUnsubscribers.length = 0;
+});

@@ -1,12 +1,12 @@
-import '../../theme-init';
+import '@/theme-init';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AboutPage } from '@/entrypoints/about/AboutPage';
 import { ErrorBoundary } from '@/ui/common/ErrorBoundary';
 import { EntryRoot } from '@/ui/common/EntryRoot';
 import { installGlobalErrorHandlers } from '@/platform/diagnostics';
-import '../../i18n';
-import '../../styles/main.css';
+import '@/i18n';
+import '@/styles/main.css';
 
 // 全局异常兜底（与 options / sidepanel 同口径）
 installGlobalErrorHandlers();

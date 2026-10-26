@@ -189,6 +189,9 @@ function RowList({
                  行级 scrollIntoView 必须关闭，否则激活行落在 overscan 缓冲区
                  （已挂载但不可见）时两路 smooth 滚动并发、目标口径不同而抖动。 */
               autoScrollActive={false}
+              /* 同理：搜索命中行的滚动也由 VirtualRowList 按 index 承担
+                 （命中行可能尚未挂载）。isSearchActive 只留作高亮样式。 */
+              autoScrollOnSearch={false}
               closeOnMiddleClick={closeOnMiddleClick}
               density={density}
               showSplitBadges={showSplitBadges}

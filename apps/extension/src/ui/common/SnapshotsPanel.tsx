@@ -15,6 +15,7 @@ import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { TextField } from '@/ui/common/TextField';
 import { SnapshotRow } from '@/ui/common/SnapshotRow';
+import { SegmentedChip } from '@/ui/common/SegmentedChip';
 import { useSnapshotImport } from '@/ui/common/useSnapshotImport';
 import { useSnapshotRestore } from '@/ui/common/useSnapshotRestore';
 
@@ -26,7 +27,7 @@ const INSIGHTS_ANCHOR_ID = 'snapshots-insights';
  *
  * 命中下限与视觉此前在四处各写一遍同样的 class 串：改一处（如 WCAG 2.5.8 的
  * 24px 下限从 py-1 抬到 min-h-6）要同步改四处，漏一处就留下一个 20px 的按钮，
- * 而这类缺陷只在无障碍审计里才暴露。
+ * 而这类缺陷只在无障碍审计里才暴露。现统一走 `Button variant="ghost" size="xs"`。
  */
 function TextButton({
   onClick,
@@ -38,56 +39,28 @@ function TextButton({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      className={
-        'rounded min-h-6 px-2 py-1 text-2xs text-gray-500 transition-base hover:bg-gray-100 ' +
-        className
-      }
-      onClick={onClick}
-    >
+    <Button variant="ghost" size="xs" className={className} onClick={onClick}>
       {children}
-    </button>
+    </Button>
   );
 }
 
-/** 洞察行动按钮（「清理重复 / 一键休眠 / 归档当前窗口」同款，见 TextButton 的收口理由）。 */
+/**
+ * 洞察行动按钮（「清理重复 / 一键休眠 / 归档当前窗口」同款，见 TextButton 的收口理由）。
+ *
+ * `chip chip--cjk` 保留在调用侧：徽角字号由 `.chip` 统一（且它不在 Tailwind 的
+ * utilities 层，不受 Button 的 text-2xs 影响），Button 只提供盒子与强调色。
+ */
 function InsightActionButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      /* min-h-6：py-0.5 + 11px 字仅约 20.5px，低于 24px 命中下限 */
-      className="chip chip--cjk min-h-6 self-start rounded px-2 py-1 font-medium text-accent-700 transition-base hover:bg-accent-100"
+    <Button
+      variant="accent-ghost"
+      size="xs"
+      className="chip chip--cjk self-start"
       onClick={onClick}
     >
       {children}
-    </button>
-  );
-}
-
-/** 导入源切换 chip（OneTab / Workona 二选一，`aria-pressed` 是原生分段控件语义）。 */
-function ImportSourceChip({
-  selected,
-  onSelect,
-  children
-}: {
-  selected: boolean;
-  onSelect: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      // py-1.5：py-1 + 10px 字仅 23px，低于 24px 命中下限
-      className={
-        'chip chip--cjk rounded px-2 py-1.5 font-medium transition-base ' +
-        (selected ? 'bg-surface text-gray-800 elev-1' : 'text-gray-500 hover:text-gray-700')
-      }
-      onClick={onSelect}
-    >
-      {children}
-    </button>
+    </Button>
   );
 }
 
@@ -280,12 +253,23 @@ export function SnapshotsPanel({
    * restoringId 只保留为展示态（哪一行在进行中）。
    */
   const deleteInFlight = useRef(false);
+  /**
+   * 保存工作区在途标尺（与 saveInFlight 同款）：`saveSpace` 是唯一没有互斥的写
+   * 路径，双击会并发创建两份工作区快照（每次保存都新增一条，不覆盖）。
+   * `savingSpace` 只承担按钮禁用态（渲染期可读），同 tick 内的连点靠 ref 拦。
+   */
+  const saveSpaceInFlight = useRef(false);
+  const [savingSpace, setSavingSpace] = useState(false);
 
   const handleSave = async () => {
     if (saveInFlight.current) return;
     saveInFlight.current = true;
     try {
-      await saveCurrentWindow(name.trim() || undefined);
+      // saveCurrentWindow 返回 false 表示「现场没有可保存的标签」（如只剩
+      // chrome:// 页），此时 store 已给出可见回执，这里不能再补一条「已保存快照」
+      // ——两条互相矛盾的提示同时出现，用户无法判断到底存没存。
+      const saved = await saveCurrentWindow(name.trim() || undefined);
+      if (!saved) return;
       setName('');
       notify(t('已保存快照'));
     } catch (error) {
@@ -299,16 +283,23 @@ export function SnapshotsPanel({
   };
 
   const handleSaveSpace = async () => {
+    if (saveSpaceInFlight.current) return;
+    saveSpaceInFlight.current = true;
+    setSavingSpace(true);
     try {
       // 不传名字：默认名由 store 统一持有（`DEFAULT_SNAPSHOT_NAMES.space`），
       // 与 useSpaces / App 的保存入口同口径。名字是落盘数据，不按界面语言生成，
       // 否则换语言后新旧工作区记录会变成两种名字。
-      await saveSpace();
+      const saved = await saveSpace();
+      if (!saved) return;
       notify(t('已保存快照'));
     } catch (error) {
       // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
       // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
       notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
+    } finally {
+      saveSpaceInFlight.current = false;
+      setSavingSpace(false);
     }
   };
 
@@ -404,18 +395,18 @@ export function SnapshotsPanel({
             aria-label={t('选择导入源')}
             className="flex gap-1 self-start rounded-lg border border-gray-200 bg-gray-50 p-0.5"
           >
-            <ImportSourceChip
+            <SegmentedChip
               selected={importSource === 'onetab'}
               onSelect={() => setImportSource('onetab')}
             >
               {t('从 OneTab 导入')}
-            </ImportSourceChip>
-            <ImportSourceChip
+            </SegmentedChip>
+            <SegmentedChip
               selected={importSource === 'workona'}
               onSelect={() => setImportSource('workona')}
             >
               {t('从 Workona 导入')}
-            </ImportSourceChip>
+            </SegmentedChip>
           </div>
           <p className="text-3xs text-gray-500">
             {importSource === 'onetab'
@@ -565,6 +556,7 @@ export function SnapshotsPanel({
                 title={t(
                   '把当前窗口存为一份「工作区」快照，可在顶部切换条一键切换；切走前会先保存当前窗口。每次保存都新增一条，不覆盖旧版'
                 )}
+                disabled={savingSpace}
                 onClick={() => void handleSaveSpace()}
               >
                 <Icon d={Icons.layers} className="h-4 w-4" />

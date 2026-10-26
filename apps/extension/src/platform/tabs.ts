@@ -59,6 +59,11 @@ export function mapTab(tab: ChromeTab): TabRecord {
     groupId: tab.groupId ?? NO_GROUP,
     splitViewId,
     lastAccessed: tab.lastAccessed,
+    // 与 lastAccessed 同源（chrome 的 tabs.Tab.lastAccessed 语义就是「最近一次
+    // 成为活动标签」），但两者在面板侧命运不同：lastAccessed 会被 mergeSnapshotTabs
+    // 冻结成排序键，lastActivatedAt 保持实时，供滞留预警 / keeper 判定等
+    // 时间口径消费。只透传一个会让「排序稳定」与「时间准确」互相打架。
+    lastActivatedAt: tab.lastAccessed,
     autoDiscardable: tab.autoDiscardable,
     openerTabId: tab.openerTabId,
     attention: extras.attention,

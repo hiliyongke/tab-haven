@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
-import { AllowanceLedger, type AllowanceSnapshot } from '@/platform/reuse/AllowanceLedger';
+import { AllowanceLedger, type AllowanceSnapshot } from '@/core/reuse/AllowanceLedger';
 import { logDegraded } from '@/platform/diagnostics';
 import { ALLOWANCE_KEY } from '@/platform/storage/keys';
 

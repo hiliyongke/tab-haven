@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { translate } from '@/i18n';
-import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
+import { useLocateActive } from '@/ui/hooks/useLocateActive';
 import { LOCATE_SECTION_EVENT } from '@/ui/tabs/SectionList';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
@@ -18,6 +18,8 @@ beforeAll(() => {
  * 这是从 App.tsx 抽出的第一个可独立测试的主控制器单元。
  * 虚拟列表下目标行可能不在渲染窗口内，链路必须靠「发事件 → 重试」兜底；
  * 这段逻辑埋在 900 行的组件里时，任何改动都无法验证。
+ *
+ * 测试随包走：hook 现居 `ui/hooks/useLocateActive.ts`（通用 UI 层，非侧边栏编排）。
  */
 
 const EVENT_TYPES = [LOCATE_SECTION_EVENT, LOCATE_TAB_EVENT, LOCATE_SCROLL_EVENT];

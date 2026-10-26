@@ -186,7 +186,10 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
    */
   const historyHits = useMemo(() => {
     if (!historyEngine || !isFiltering) return [];
-    const raw = historyEngine.search(query, HISTORY_HITS_LIMIT);
+    // 与主引擎同走 deferredQuery：历史引擎同样要过 fuzzysort（+拼音索引），
+    // 用即时 query 会让它抢在输入框回显之前跑，把「结果晚一帧」的延迟策略
+    // （上面的 useDeferredValue 说明）只对一半的输入生效。
+    const raw = historyEngine.search(deferredQuery, HISTORY_HITS_LIMIT);
     const decoded: HistorySearchHit[] = [];
     for (const hit of raw) {
       const info = decodeHistoryId(hit.tabId, snapshots, HISTORY_SNAPSHOT_LIMIT);
@@ -194,7 +197,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
       decoded.push({ ...info, titleSegments: hit.titleSegments });
     }
     return decoded;
-  }, [historyEngine, query, isFiltering, snapshots]);
+  }, [historyEngine, deferredQuery, isFiltering, snapshots]);
 
   const filteredTabs = useMemo(() => {
     if (!query.trim()) return effectiveTabs;

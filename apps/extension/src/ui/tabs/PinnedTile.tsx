@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
+import type { DraggableAttributes, DraggableSyntheticListeners } from '@dnd-kit/core';
 import { useTranslation } from '@/i18n';
 import { hostnameOf } from '@/core/url/UrlInspector';
 import { Favicon } from '@/ui/common/Favicon';
@@ -10,8 +11,13 @@ import { useDomainAccent } from '@/ui/tabs/accent';
 /** dnd-kit 排序接入点（顶部永久固定区 PinnedStrip 传入；无排序的场景不传）。 */
 interface PinnedTileSortable {
   setNodeRef: (node: HTMLElement | null) => void;
-  attributes: object;
-  listeners: object | undefined;
+  /**
+   * 用 dnd-kit 的具名类型而非 `object`：宽类型会让 props 拼写错误（如把
+   * `listeners` 写成 `listener`）在接入点静默通过 —— 而拖拽监听丢失的表现
+   * 只是「这块拖不动」，没人会想到是类型没接住。
+   */
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
   style: CSSProperties;
   isDragging: boolean;
   /**

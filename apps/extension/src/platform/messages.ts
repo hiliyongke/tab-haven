@@ -81,10 +81,20 @@ const SearchDomainMessageSchema = z.object({
   at: z.number().optional()
 });
 
+/**
+ * 自动休眠回执携带的标签 id 数上限。
+ *
+ * 与 `REUSE_CLOSED_LIMIT` 同量级：runtime 通道同样是无界的传输面，整批 id 超限会让
+ * 消息被 schema 拒绝并**静默丢弃** —— 那一轮的「一键唤醒」入口就此消失，
+ * 而标签确实已经被休眠了。发送侧按此上限截断并留痕。
+ */
+export const AUTO_DISCARDED_IDS_LIMIT = 50;
+
 /** SW → UI：自动休眠执行完成（通知 UI 显示可撤销提示）。 */
 const AutoDiscardedMessageSchema = z.object({
   type: z.literal('auto-discarded'),
-  tabIds: z.array(z.number().int()),
+  tabIds: z.array(z.number().int()).max(AUTO_DISCARDED_IDS_LIMIT),
+  /** 本轮真实休眠的标签数（可能大于 tabIds 的长度：超限时 tabIds 被截断）。 */
   count: z.number().int(),
   at: z.number()
 });

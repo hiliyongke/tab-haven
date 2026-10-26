@@ -9,6 +9,11 @@ import { toGroupColor } from '@/core/group/groupColors';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
 import { isHttpUrl } from '@/core/url/UrlInspector';
+import {
+  FOOTER_BUTTON_KEYS,
+  footerButtonId,
+  normalizeFooterOrder
+} from '@/core/layout/footerOrder';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
@@ -26,6 +31,26 @@ import { isHttpUrl } from '@/core/url/UrlInspector';
  * schema 一旦收严，存量超限用户的真实数据会在读盘时被判为坏数据而清空
  * （与 initSlice 注释同口径——上限只加在「外部输入」侧的集合层）。自由文本的
  * 实际体积由 storage 配额（local 10MB / sync 8KB 每项）天然封顶。
+ *
+ * **「所有集合都有上限」的准确口径**（上一句容易被读成「每个 `.array()` 都有
+ * `.max()`」，实现并非如此，此处补明）：集合上限加在**外部输入侧**——导出文件
+ * （`ExportFileSchema` / `ExportFileImportSchema`）、导入、同步镜像入口。
+ * 落盘侧仓库 schema（`platform/registry.ts` 里 `XxxSchema.array()`）刻意**不带**
+ * `.max()`：读盘路径一旦收严，存量超限用户的真实数据会被判为坏数据而整表清空，
+ * 那是一次读操作导致的数据丢失。落盘侧的收敛由 store 裁剪完成
+ * （理由见 `stores/data/initSlice.ts` 的注释），不在校验层做第二遍。
+ *
+ * **本文件不是「全仓 schema」**，落盘 schema 另有若干处在 platform 侧
+ * （只做登记、不迁移——它们各自绑定具体的存储键与读写口径，迁进来反而割裂）：
+ *   - `platform/registry.ts:117` 自动建组 id 列表、`:123` 自动休眠批次（带上限）；
+ *   - `platform/storage/session.ts:20` 会话态（绑定关系 / 独立标签 id）；
+ *   - `platform/storage/SyncMirror.ts:57` 同步镜像信封（只校验信封，内容交给
+ *     各自的 schema 在读取端校验）；
+ *   - `platform/diagnostics.ts:42` 诊断日志条目；
+ *   - `platform/reuse/persistedLedger.ts:14` 复用额度台账；
+ *   - `platform/background/windowCache.ts:17` 关窗快照缓存。
+ * 新增持久化数据时先问「它会不会进导出备份」：会 → 落本文件；不会 → 就近定义
+ * 并在此登记。
  */
 
 /** 单文件夹条目数上限。 */
@@ -56,10 +81,23 @@ export const SNAPSHOT_TABS_LIMIT = 1_000;
 /** 快照族总条数上限（含归档与自动快照）。 */
 export const SNAPSHOTS_LIMIT = 200;
 
+/**
+ * 条目标题的长度上限（超出部分截断，不是判坏）。
+ *
+ * 口径必须落在 schema 层：右键「加入文件夹」的标题取自
+ * `info.selectionText || info.linkUrl`，是**网页可控**的任意长字符串，不限长就构成
+ * 一条由网页内容驱动的存储放大面。
+ *
+ * 刻意用「截断」而非 `.max()` 拒绝：标题不是身份字段，超长不该把整个条目（进而整个
+ * 文件夹数组）判成坏数据——那会触发逐元素恢复、把用户真正在意的条目丢进隔离区。
+ * 截断与 `identity` 的归一化同属「写前收敛」这一档处理。
+ */
+export const FOLDER_ITEM_TITLE_MAX = 512;
+
 export const FixedFolderItemSchema = z.object({
   id: z.string(),
   url: z.string().optional(),
-  title: z.string(),
+  title: z.string().transform((value) => value.slice(0, FOLDER_ITEM_TITLE_MAX)),
   favIconUrl: z.string().optional(),
   /** 挂起条目：组内新建后等待真实导航的标签 id。 */
   pendingTabId: z.number().int().optional(),
@@ -157,8 +195,18 @@ export const SettingsSchema = z.object({
    * 空数组 = 用内置默认顺序。渲染时未知 id 忽略、不在列表里的按钮按默认顺序
    * 追加到末尾 —— 这样版本升级新增按钮时，老用户的自定义顺序不会让新按钮消失。
    * 用 `z.string()` 而非 enum：顺序里残留已删除的 id 时不该让整份设置解析失败。
+   *
+   * 归一化（过滤未知 id → 去重 → 按默认顺序补全）落在 schema 层，与
+   * `discardWhitelist` 同口径：备份与同步镜像都不经过设置页，只在渲染侧
+   * 补全时，落盘值仍是外部可控的原始数组（可注入任意长）。
+   * 过滤而非拒绝，保留「旧版本残留 id 不炸」的语义；补全后长度恒为
+   * `FOOTER_BUTTON_KEYS.length`，后面的 `.max()` 是这一不变量的兜底断言。
    */
-  footerOrder: z.array(z.string()).default([]),
+  footerOrder: z
+    .array(z.string())
+    .default([])
+    .transform((ids) => normalizeFooterOrder(ids).map(footerButtonId))
+    .pipe(z.array(z.string()).max(FOOTER_BUTTON_KEYS.length)),
   /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
   showSplitBadges: z.boolean().default(true),
   /** 站点组强调色：auto 按域名/favicon 自动配色 / mono 统一中性色。 */
@@ -261,11 +309,18 @@ export const SettingsSchema = z.object({
    */
   noCachePatterns: z
     .array(z.string().min(1).max(NO_CACHE_PATTERN_MAX_LENGTH))
-    .max(NO_CACHE_PATTERNS_LIMIT)
     .default([])
-    .transform((patterns) =>
-      patterns.map(normalizeNoCachePattern).filter((pattern): pattern is string => pattern !== null)
-    ),
+    // 与 SiteCollapseSchema / discardWhitelist 同口径：先归一化 + 去重，上限与
+    // 去重都作用于归一化**之后**的值。写在 transform 之前时，`a.com` 与 `A.COM`
+    // 各占一份额度、归一化后重复，既浪费额度又编译出重复的 DNR 规则。
+    .transform((patterns) => [
+      ...new Set(
+        patterns
+          .map(normalizeNoCachePattern)
+          .filter((pattern): pattern is string => pattern !== null)
+      )
+    ])
+    .pipe(z.array(z.string()).max(NO_CACHE_PATTERNS_LIMIT)),
   /** 首启引导是否已看过（仅首次展示交互式引导）。 */
   onboarded: z.boolean().default(false),
   /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
@@ -314,10 +369,12 @@ export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
 /** 撤销栈条目：恢复标签所需的最小五元组。 */
 export const UndoTabRecordSchema = z.object({
   url: z.string(),
-  index: z.number(),
+  // index / groupId 必须是整数：它们是浏览器 API 的位置与组 id，小数只会让
+  // 恢复动作以静默失败告终（与 UndoBatch.windowId 同口径）。
+  index: z.number().int(),
   pinned: z.boolean(),
   muted: z.boolean(),
-  groupId: z.number(),
+  groupId: z.number().int(),
   /** 原组名（组已删除时按名重建）。 */
   groupName: z.string().optional()
 });
@@ -325,7 +382,13 @@ export type UndoTabRecord = z.infer<typeof UndoTabRecordSchema>;
 
 export const UndoBatchSchema = z.object({
   id: z.string(),
-  kind: z.string(),
+  /**
+   * 批次类别（'restore' 等）。
+   *
+   * 刻意保持 `z.string()` 而非 enum：新类别随时可加，枚举会让旧备份里的未知
+   * 类别把整条记录判坏。只做长度封顶——备份可注入任意长字符串。
+   */
+  kind: z.string().min(1).max(32),
   createdAt: z.number(),
   /**
    * 关闭发生时的窗口 id（缺省即未记录来源窗口）。
@@ -495,16 +558,26 @@ const ImportFixedFolderItemSchema = FixedFolderItemSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema.optional()
 });
-const ImportFixedFolderSchema = FixedFolderSchema.safeExtend({
+/**
+ * 外部输入专用的固定文件夹 schema（备份导入 + 同步镜像共用）。
+ *
+ * 命名 `Inbound*` 而非 `Import*` 的理由：收紧的适用面是「一切外部可控输入」，
+ * 不止备份文件——同步镜像经浏览器账号通道回来，同样不在本机信任边界内。
+ * 两处共用这一个 schema，避免「备份入口降级、镜像入口原样落盘」的口径分叉。
+ *
+ * 基础 `FixedFolderSchema` 保持宽松（运行时读盘用它），收紧绝不并入基础 schema：
+ * 见 `IMPORT_FAVICON_SCHEME` 上方注释里「位置选择」一节。
+ */
+export const InboundFixedFolderSchema = FixedFolderSchema.safeExtend({
   items: z.array(ImportFixedFolderItemSchema).max(FOLDER_ITEMS_LIMIT)
 });
 /**
- * 导入专用磁贴 schema：图标与网址受上述约束，且 identity 由**归一化后的 url**
- * 重算——备份里的 identity 是外部数据，若与 url 不一致（如 url 已被降级为
+ * 外部输入专用的常驻磁贴 schema：图标与网址受上述约束，且 identity 由**归一化后的 url**
+ * 重算——外部输入里的 identity 是外来数据，若与 url 不一致（如 url 已被降级为
  * `about:blank` 而 identity 仍指向原站），`dedupePins` 会按这个失真身份判重，
  * 产出点开是新标签页的磁贴。
  */
-const ImportPersistentPinSchema = PersistentPinSchema.safeExtend({
+export const InboundPersistentPinSchema = PersistentPinSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema
 }).transform((pin) => {
@@ -528,8 +601,8 @@ const ImportSnapshotSchema = SnapshotSchema.safeExtend({
  * 保证「导出 → 导入」不丢失运行时图标之外的信息）。
  */
 const ExportFileImportSchema = ExportFileSchema.safeExtend({
-  fixedFolders: z.array(ImportFixedFolderSchema).max(FOLDERS_LIMIT),
-  persistentPins: z.array(ImportPersistentPinSchema).max(PINS_LIMIT),
+  fixedFolders: z.array(InboundFixedFolderSchema).max(FOLDERS_LIMIT),
+  persistentPins: z.array(InboundPersistentPinSchema).max(PINS_LIMIT),
   snapshots: z.array(ImportSnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
 });
 

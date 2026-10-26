@@ -85,6 +85,16 @@ interface MirrorData {
  */
 export type MirrorSyncIssue = 'ok' | 'none' | 'chunk-limit' | 'unreadable' | 'local';
 
+/**
+ * 镜像写失败的成因。
+ *
+ * `quota` 是**确定性**的（数据本身就超过浏览器同步配额，重试无意义），
+ * `write` 是暂时性的（配额/通道瞬时不可用，退避重试有机会成功）。
+ * PRIVACY.md §4 要求配额超限显示「未生效（超出同步容量上限）」，与「本次改动未上传」
+ * 是两档不同的呈现 —— 走通用失败回调时用户看到的是后者，与文档口径不符。
+ */
+export type MirrorWriteFailureReason = 'quota' | 'write';
+
 class SyncMirror {
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** 去抖窗口内最新的待写数据（后写覆盖先写，保证最终落盘的是最新状态）。 */
@@ -94,6 +104,8 @@ class SyncMirror {
   private retryAttempts = 0;
   private static readonly MAX_RETRY_ATTEMPTS = 5;
   private unloadFlushBound = false;
+  /** `pagehide` 监听器的引用（`dispose()` 解绑用；匿名函数无法 remove）。 */
+  private unloadFlushHandler?: () => void;
   /**
    * 写操作串行链：write 是「get 全部 → remove 过期块 → set 新块」的非原子三步，
    * pagehide 立即 flush 与 500ms 去抖定时器（或重试定时器）的写可能在途并发，
@@ -108,14 +120,14 @@ class SyncMirror {
    * 悄悄失效」对用户完全不可见（用户以为开着同步，实际上其他设备收不到改动）。
    * platform 层不做 UI 反馈，只把结果交出去，由组合根（dataStore）转成可见提示。
    */
-  private onFailure: ((message: string) => void) | undefined;
+  private onFailure: ((message: string, reason: MirrorWriteFailureReason) => void) | undefined;
   private onSuccess: (() => void) | undefined;
   /** 最近一次 `pull()` 的结果分类：让「镜像不可用」可被 UI 呈现。 */
   private lastPullIssue: MirrorSyncIssue = 'none';
 
   /** 注册镜像写结果的回执回调（幂等覆盖：最后注册者生效）。 */
   setMirrorResultHandlers(handlers: {
-    onFailure: (message: string) => void;
+    onFailure: (message: string, reason: MirrorWriteFailureReason) => void;
     onSuccess: () => void;
   }): void {
     this.onFailure = handlers.onFailure;
@@ -162,12 +174,32 @@ class SyncMirror {
   private bindUnloadFlush(): void {
     if (this.unloadFlushBound || typeof window === 'undefined') return;
     this.unloadFlushBound = true;
-    window.addEventListener('pagehide', () => {
+    // 具名保存监听器引用：匿名函数无法 removeEventListener，实例被丢弃后监听仍常驻。
+    this.unloadFlushHandler = () => {
       const latest = this.pendingPayload;
       if (!latest) return;
       this.cancelPending();
       void this.write(latest);
-    });
+    };
+    window.addEventListener('pagehide', this.unloadFlushHandler);
+  }
+
+  /**
+   * 释放本实例持有的全局资源（`pagehide` 监听 + 待写/重试定时器）。
+   *
+   * 监听器此前从不解绑：单例与页面同生命周期时无感，但测试与「实例被替换」的
+   * 场景下旧实例的监听会继续触发 `write()`，把已作废的 payload 写回浏览器账号
+   * 通道——正是 `cancelPending()` 想防的那类「旧数据复活」。
+   *
+   * 解绑后允许重新绑定（`unloadFlushBound` 复位），使 dispose 之后实例仍可用。
+   */
+  dispose(): void {
+    this.cancelPending();
+    if (this.unloadFlushHandler && typeof window !== 'undefined') {
+      window.removeEventListener('pagehide', this.unloadFlushHandler);
+    }
+    this.unloadFlushHandler = undefined;
+    this.unloadFlushBound = false;
   }
 
   /** 失败后指数退避重试（30s 起，×2 递增，上限 5 次）：立即重试只会持续撞分钟级写配额。 */
@@ -220,7 +252,12 @@ class SyncMirror {
           'sync-mirror',
           `镜像超出同步配额（${totalBytes}/${QUOTA_BYTES} 字节，${chunkCount}/${MAX_CHUNKS} 块），已跳过本次镜像`
         );
-        this.onFailure?.(t('跨设备同步镜像写入失败：本地数据不受影响，但其它设备不会收到本次改动'));
+        // reason='quota'：与「暂时写不上去」区分开，让设置页能按 PRIVACY.md §4
+        // 显示「未生效（超出同步容量上限）」，而不是「本次改动未上传」。
+        this.onFailure?.(
+          t('跨设备同步镜像写入失败：本地数据不受影响，但其它设备不会收到本次改动'),
+          'quota'
+        );
         // 容量超限是确定性的：重试只会反复撞配额并消耗分钟级写配额（120 次/分）。
         return;
       }
@@ -254,8 +291,17 @@ class SyncMirror {
       const staleKeys = Object.keys(all).filter(
         (key) => key.startsWith(CHUNK_PREFIX) && !(key in record)
       );
-      if (staleKeys.length > 0) await area.remove(staleKeys);
+      // 先 set 后 remove：顺序颠倒时 set 失败会留下半截镜像（旧尾部块已删、新块未写），
+      // 他设备 pull() 读到「meta 声明 N 块而块不全」会被判 unreadable —— 明明只是
+      // 一次写失败，却被显示成「镜像损坏」。旧块在 set 之后残留只是多占配额，
+      // 不影响按 meta 声明的块数读取。
       await area.set(record);
+      if (staleKeys.length > 0) {
+        // remove 失败单独留痕：它是清理动作，不能把一次成功的镜像写报成失败。
+        await area.remove(staleKeys).catch((error) => {
+          logDegraded('sync-mirror', '镜像过期块清理失败（不影响本次镜像读取）', error);
+        });
+      }
       // 成功后复位重试计数并撤销待重试任务：否则旧 payload 的重试定时器
       // 会在本次新数据落盘后再次触发，把镜像回滚为旧数据。
       this.retryAttempts = 0;
@@ -268,7 +314,10 @@ class SyncMirror {
       // 超出同步配额或同步不可用：降级（仅丢失镜像，本地数据不受影响）。
       // 但必须可观测——否则「跨设备同步悄悄失效」对用户完全不可见。
       logDegraded('sync-mirror', '镜像写入失败，跨设备同步已降级（本地数据不受影响）', error);
-      this.onFailure?.(t('跨设备同步镜像写入失败：本地数据不受影响，但其它设备不会收到本次改动'));
+      this.onFailure?.(
+        t('跨设备同步镜像写入失败：本地数据不受影响，但其它设备不会收到本次改动'),
+        'write'
+      );
       this.scheduleRetry(payload);
     }
   }

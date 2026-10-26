@@ -18,9 +18,14 @@ import type { DataContext, DataState } from '@/stores/data/types';
  *    而此时本地数据完好、用户也已经关掉了同步 —— 提示既过时又错配。
  */
 
+/**
+ * 写失败的**成因**必须可区分（M20 / S11）：`reason === 'quota'`（超出同步容量上限）
+ * 是确定性故障，用户可以自己处理（删掉一些固定条目），UI 要显示
+ * 「未生效（超出同步容量上限）」；普通写失败只需「本次改动未上传」。
+ */
 const mocks = vi.hoisted(() => ({
   handlers: {} as {
-    onFailure?: (message: string) => void;
+    onFailure?: (message: string, reason?: 'quota' | 'write') => void;
     onSuccess?: () => void;
   },
   schedule: vi.fn()
@@ -30,7 +35,7 @@ vi.mock('@/platform/storage/SyncMirror', () => ({
   syncMirror: {
     // 捕获回执：镜像写结果由 platform 交回组合根，测试据此驱动置位/复位。
     setMirrorResultHandlers: (handlers: {
-      onFailure: (message: string) => void;
+      onFailure: (message: string, reason?: 'quota' | 'write') => void;
       onSuccess: () => void;
     }) => {
       mocks.handlers = handlers;
@@ -53,7 +58,8 @@ function build(): { ctx: DataContext; state: Partial<DataState> } {
     boundTabIds: [],
     storageDegraded: false,
     mirrorIssue: null,
-    mirrorWriteFailed: false
+    mirrorWriteFailed: false,
+    mirrorQuotaExceeded: false
   };
   const repos = {
     folders: repo([]),
@@ -120,5 +126,35 @@ describe('镜像写失败态', () => {
     // Then 失败态必须显式复位，否则横幅永久粘住且与实际状态相反
     expect(state.mirrorWriteFailed).toBe(false);
     expect(state.storageDegraded).toBe(false);
+  });
+});
+
+describe('镜像写失败的成因区分', () => {
+  it('reason=quota 与 reason=write 给出不同状态（容量超限可被用户处理）', () => {
+    // Given 一次普通写失败
+    const write = build();
+    mocks.handlers.onFailure?.('同步镜像写入失败', 'write');
+    expect(write.state.mirrorWriteFailed).toBe(true);
+    expect(write.state.mirrorQuotaExceeded).toBe(false);
+
+    // When 一次容量超限导致的写失败
+    const quota = build();
+    mocks.handlers.onFailure?.('同步镜像写入失败：超出同步容量上限', 'quota');
+
+    // Then 两者都可识别为「写失败」，但只有后者标记容量超限
+    expect(quota.state.mirrorWriteFailed).toBe(true);
+    expect(quota.state.mirrorQuotaExceeded).toBe(true);
+    expect(quota.state.mirrorQuotaExceeded).not.toBe(write.state.mirrorQuotaExceeded);
+  });
+
+  it('写成功后容量标记一并复位（腾出容量后提示要消失）', () => {
+    const { state } = build();
+    mocks.handlers.onFailure?.('同步镜像写入失败：超出同步容量上限', 'quota');
+    expect(state.mirrorQuotaExceeded).toBe(true);
+
+    mocks.handlers.onSuccess?.();
+
+    expect(state.mirrorQuotaExceeded).toBe(false);
+    expect(state.mirrorWriteFailed).toBe(false);
   });
 });

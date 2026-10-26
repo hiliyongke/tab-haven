@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { DEFAULT_SETTINGS, type Snapshot } from '@/core/schema/models';
+import { DEFAULT_SETTINGS, type Settings, type Snapshot } from '@/core/schema/models';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
 import { runAutoSnapshot, syncAutoSnapshotAlarm } from '@/platform/background/autoSnapshot';
 
@@ -91,5 +91,126 @@ describe('定时自动快照', () => {
 
     await syncAutoSnapshotAlarm({ ...DEFAULT_SETTINGS, autoSaveSnapshots: false });
     expect(await fakeBrowser.alarms.get('tabs-auto-snapshot')).toBeUndefined();
+  });
+});
+
+/**
+ * 设置变更与闹钟重建。
+ *
+ * 同名 `alarms.create` 会**重置**触发时间，故「任意设置写入都重建闹钟」等于把
+ * 「每 N 分钟一次」的自动快照无限期推后 —— 而设置写入远比开关变更频繁（切空间写
+ * `activeSpaceId`、引导标记 `tipSeen` / `onboarded` 都会触发 watch）。
+ * 这里锁的是入口的编排：只有开关 / 周期真的变了才重建。
+ */
+describe('设置变更时的闹钟重建（无关设置不得推后自动快照）', () => {
+  const ALARMS_ON: Partial<Settings> = {
+    autoSaveSnapshots: true,
+    autoSnapshotIntervalMin: 30,
+    autoDiscardEnabled: true
+  };
+
+  /** 启动 SW 入口所需的最小浏览器桩（与 background-entry.test.ts 同口径）。 */
+  function stubBrowserApis(): void {
+    Object.assign(fakeBrowser.sidePanel, {
+      open: vi.fn(async () => undefined),
+      setPanelBehavior: vi.fn(async () => undefined)
+    });
+    Object.assign(fakeBrowser.i18n, { getMessage: vi.fn(() => '') });
+    Object.assign(fakeBrowser.notifications, { create: vi.fn(async () => 'id') });
+    Object.assign(fakeBrowser.runtime, {
+      getURL: vi.fn((path: string) => `chrome-extension://fake-id${path}`),
+      setUninstallURL: vi.fn(async () => undefined)
+    });
+    Object.assign(fakeBrowser.action, {
+      setBadgeText: vi.fn(async () => undefined),
+      setBadgeBackgroundColor: vi.fn(async () => undefined),
+      setTitle: vi.fn(async () => undefined)
+    });
+    // 入口启动期注册的其余事件：fake-browser 未实现它们的 addListener，
+    // 不打桩会在 `main()` 内抛错（清单与 background-entry.test.ts 同源）。
+    const noop = () => undefined;
+    for (const event of [
+      fakeBrowser.tabs.onCreated,
+      fakeBrowser.tabs.onActivated,
+      fakeBrowser.tabs.onUpdated,
+      fakeBrowser.tabs.onRemoved,
+      fakeBrowser.tabs.onAttached,
+      fakeBrowser.tabs.onDetached,
+      fakeBrowser.tabs.onReplaced,
+      fakeBrowser.windows.onCreated,
+      fakeBrowser.windows.onRemoved,
+      fakeBrowser.runtime.onMessage,
+      fakeBrowser.runtime.onInstalled,
+      fakeBrowser.runtime.onStartup,
+      fakeBrowser.commands.onCommand,
+      fakeBrowser.contextMenus.onClicked,
+      fakeBrowser.omnibox.onInputChanged,
+      fakeBrowser.omnibox.onInputEntered,
+      fakeBrowser.omnibox.onInputStarted,
+      fakeBrowser.action.onClicked,
+      fakeBrowser.alarms.onAlarm,
+      fakeBrowser.permissions.onAdded,
+      fakeBrowser.permissions.onRemoved
+    ]) {
+      vi.spyOn(event, 'addListener').mockImplementation(noop as never);
+    }
+  }
+
+  /**
+   * 启动入口并等启动期的闹钟对齐落定。
+   *
+   * `vi.resetModules()` 是必需的：入口模块会被缓存，重复 `main()` 会注册**第二份**
+   * `settingsRepository.watch`，而上一份闭包里的闹钟签名仍是旧值 —— 随后的写入会让
+   * 两份闭包各自判定，「重建一次」的断言因此失去意义（也会让前一条用例的结果串味）。
+   */
+  async function bootEntry(settings: Partial<Settings>): Promise<void> {
+    vi.resetModules();
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, ...settings });
+    stubBrowserApis();
+    const mod = await import('@/entrypoints/background');
+    (mod.default as unknown as { main: () => void }).main();
+    await vi.advanceTimersByTimeAsync(0);
+    // 等到启动对齐真的建出闹钟：不等就 spy 的话，下面「未调用」的断言会因为
+    // 「启动期那次 create 还没发生」而假绿。
+    await vi.waitFor(async () => {
+      expect(await fakeBrowser.alarms.get('tabs-auto-snapshot')).toBeDefined();
+    });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('写入与闹钟无关的设置（sortMode）不重建闹钟', async () => {
+    await bootEntry(ALARMS_ON);
+    const create = vi.spyOn(fakeBrowser.alarms, 'create');
+
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, ...ALARMS_ON, sortMode: 'recency' });
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('间隔 30 → 60 时才重建一次（周期变化必须生效）', async () => {
+    await bootEntry(ALARMS_ON);
+    const create = vi.spyOn(fakeBrowser.alarms, 'create');
+
+    await settingsRepository.write({
+      ...DEFAULT_SETTINGS,
+      ...ALARMS_ON,
+      autoSnapshotIntervalMin: 60
+    });
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith('tabs-auto-snapshot', {
+      periodInMinutes: 60,
+      delayInMinutes: 60
+    });
   });
 });

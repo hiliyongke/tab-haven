@@ -43,7 +43,6 @@ function SortableFooterButton({ id, children }: { id: string; children: ReactNod
   return (
     <span
       ref={setNodeRef}
-      title={undefined}
       className={'footer-button' + (isDragging ? ' is-dragging' : '')}
       style={{
         transform: transform

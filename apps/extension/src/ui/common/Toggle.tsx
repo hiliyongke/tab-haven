@@ -14,7 +14,8 @@ export function Toggle({
   onChange,
   ariaLabel,
   id,
-  size = 'md'
+  size = 'md',
+  disabled
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
@@ -23,6 +24,8 @@ export function Toggle({
   id?: string;
   /** sm = 32×18（密集表单）；md = 36×20（设置页默认）。 */
   size?: 'sm' | 'md';
+  /** 禁用态（与 Button / IconButton 同口径：50% 透明度 + 非手型光标）。 */
+  disabled?: boolean;
 }) {
   const resolvedId = useControlId(id);
   return (
@@ -32,8 +35,11 @@ export function Toggle({
       aria-checked={checked}
       aria-label={ariaLabel}
       id={resolvedId}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={'switch' + (size === 'sm' ? ' switch--sm' : '')}
+      className={
+        'switch disabled:cursor-default disabled:opacity-50' + (size === 'sm' ? ' switch--sm' : '')
+      }
     >
       <span className="switch-knob" aria-hidden="true" />
     </button>

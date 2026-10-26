@@ -61,7 +61,7 @@ export function createFolder(name: string): FixedFolder {
  * 调用方不得原地修改返回值（zustand set 语义下满足）。
  */
 function moveElement<T>(options: {
-  items: readonly T[];
+  items: T[];
   sourceId: string;
   targetId: string;
   placeAfter: boolean;
@@ -70,7 +70,7 @@ function moveElement<T>(options: {
   const { items, sourceId, targetId, placeAfter, idOf } = options;
   const sourceIndex = items.findIndex((item) => idOf(item) === sourceId);
   const targetIndex = items.findIndex((item) => idOf(item) === targetId);
-  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return items as T[];
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return items;
 
   const next = [...items];
   // sourceIndex 有效，splice 必返回一个元素。

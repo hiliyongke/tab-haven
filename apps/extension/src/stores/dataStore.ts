@@ -33,6 +33,7 @@ export const useDataStore = create<DataState>()((set, get) => {
     // null = 本次会话还没拉取过镜像（已 seeded 的设备不拉取，状态行不渲染）
     mirrorIssue: null,
     mirrorWriteFailed: false,
+    mirrorQuotaExceeded: false,
     importing: false,
     ready: false,
 

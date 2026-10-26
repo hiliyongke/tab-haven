@@ -3,7 +3,7 @@ import type { TabRecord } from '@/core/tab-types';
 /**
  * 同 URL 保留者排序 —— **全应用唯一的 keeper 口径**（单一事实来源）。
  *
- * 每组保留「最近访问」的一个（lastAccessed 最新；平局：激活 > 固定 > 位置靠前 > id 大）。
+ * 每组保留「最近激活」的一个（lastActivatedAt 最新；平局：激活 > 固定 > 位置靠前 > id 大）。
  *
  * 消费方（两处必须同口径，UI 文案亦按此描述）：
  *  - 复用引擎（platform/reuse）：「同一网址只保留一个标签」开启时，新建标签导航到
@@ -18,12 +18,17 @@ import type { TabRecord } from '@/core/tab-types';
 
 /**
  * 从一组同 URL 标签中选出保留者。
- * 「最新的一个」：lastAccessed 最大；平局依次比激活 / 固定 / 位置靠前 / id 大。
+ * 「最新的一个」：lastActivatedAt 最大；平局依次比激活 / 固定 / 位置靠前 / id 大。
+ *
+ * 取 `lastActivatedAt` 而非 `lastAccessed`：后者在面板侧被 mergeSnapshotTabs
+ * **冻结**在标签首次出现的时刻，用它排序会让本函数与后台复用引擎（直查浏览器实时值）
+ * 对同一组标签选出不同的保留者，正是本模块存在的理由要消灭的分叉（IA-3）。
+ * 仅当 `lastActivatedAt` 缺失时回退 `lastAccessed`（合成记录），真实路径两者都在。
  */
 export function rankForKeep(tabs: readonly TabRecord[]): TabRecord | undefined {
   return [...tabs].sort((a, b) => {
-    const la = a.lastAccessed ?? 0;
-    const lb = b.lastAccessed ?? 0;
+    const la = a.lastActivatedAt ?? a.lastAccessed ?? 0;
+    const lb = b.lastActivatedAt ?? b.lastAccessed ?? 0;
     if (la !== lb) return lb - la;
     if (a.active !== b.active) return a.active ? -1 : 1;
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;

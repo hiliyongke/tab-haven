@@ -41,6 +41,13 @@ describe('logDegraded / logFailure', () => {
     expect(entries.at(-1)?.detail).not.toContain('example.com');
   });
 
+  it('logFailure 的 console 输出同样脱敏（控制台内容常被直接贴进 issue）', () => {
+    logFailure('tabs', '创建失败', new Error('Invalid URL: https://example.com/secret?token=1'));
+    const call = vi.mocked(console.error).mock.calls.at(-1);
+    expect(call?.[1]).toBe('Invalid URL: <url>');
+    expect(JSON.stringify(call?.[1])).not.toContain('example.com');
+  });
+
   it('logDegraded 的 detail 同样脱敏（两条入口同口径）', () => {
     logDegraded('snapshots', '恢复失败', new Error('Cannot open https://a.com/x'));
     expect(readDiagnostics().at(-1)?.detail).toBe('Cannot open <url>');

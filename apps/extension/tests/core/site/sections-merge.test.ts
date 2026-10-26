@@ -177,6 +177,47 @@ describe('deriveSections 同站点归并', () => {
     expect(site8080?.kind === 'site' ? site8080.tabs.map((tab) => tab.id) : []).toEqual([3, 4]);
   });
 
+  it('异端口的未分组标签不并入 localhost:3000 归并分区（端口是本地站点身份的一部分）', () => {
+    // 分支 2 的 sameSiteSingles 只比 (registrableDomain, subdomain) 时，本地站点的
+    // registrableDomain 不含端口 → localhost:8080 的唯一标签被判为与 localhost:3000
+    // 同站，一并塞进 3000 分区，从「未分组」里平空消失（与分支 1 的端口口径分叉）。
+    const tabs = [
+      makeTab(1, 'http://localhost:3000/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'http://localhost:3000/b', { index: 2 }),
+      makeTab(3, 'http://localhost:8080/c', { index: 3 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'localhost:3000' }];
+    const sections = deriveSections({ tabs, groups, threshold: 2 });
+
+    const site3000 = sections.find((s) => s.kind === 'site' && s.siteKey === 'localhost:3000');
+    expect(site3000?.kind === 'site' ? site3000.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    // 异端口分区不存在
+    expect(sections.some((s) => s.kind === 'site' && s.siteKey === 'localhost:8080')).toBe(false);
+    // id3 留在未分组
+    const ungrouped = sections.find((s) => s.kind === 'ungrouped');
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([3]);
+  });
+
+  it('IP 站点同样按端口区分：127.0.0.1:8080 的唯一标签不被 3000 归并吞掉', () => {
+    // 与 localhost 同因：IP 主机的 registrableDomain 也不含端口。
+    const tabs = [
+      makeTab(1, 'http://127.0.0.1:3000/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'http://127.0.0.1:3000/b', { index: 2 }),
+      makeTab(3, 'http://127.0.0.1:8080/c', { index: 3 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: '127.0.0.1:3000' }];
+    const sections = deriveSections({ tabs, groups, threshold: 2 });
+
+    const site3000 = sections.find((s) => s.kind === 'site' && s.siteKey === '127.0.0.1:3000');
+    expect(site3000?.kind === 'site' ? site3000.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    const ungrouped = sections.find((s) => s.kind === 'ungrouped');
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([3]);
+    // 下游自动分组同样按端口隔离：异端口标签不进吸收计划
+    expect(planAutoGroups(sections)).toMatchObject([
+      { title: '127.0.0.1:3000', tabIds: [2], absorbIntoGroupId: 7 }
+    ]);
+  });
+
   it('全部未分组时与原聚合行为一致（无归并）', () => {
     const tabs = [
       makeTab(1, 'https://alpha.example.com/a', { index: 1 }),
@@ -241,6 +282,25 @@ describe('planAutoGroups 同站点吸收', () => {
     const site = sections.find((s) => s.kind === 'site');
     expect(site?.kind === 'site' ? site.mergedGroupIds : []).toEqual([7, 8]);
     expect(planAutoGroups(sections)).toHaveLength(0);
+  });
+
+  it('跨窗口搜索（groups 不含该标签的 groupId）：兜底进站点分区，但不产出新建组计划', () => {
+    // 跨窗口搜索时 tabs 含其它窗口标签、而 groups 只含当前窗口：标签 1/2 属于
+    // 其它窗口的原生组 9，此处「分组信息不可知」。
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { windowId: 2, groupId: 9, index: 1 }),
+      makeTab(2, 'https://alpha.example.com/b', { windowId: 2, groupId: 9, index: 2 })
+    ];
+    const sections = deriveSections({ tabs, groups: [], threshold: 2 });
+
+    // 兜底生效：标签不会从列表里消失（进站点分区）
+    const site = sections.find((s) => s.kind === 'site');
+    expect(site?.kind === 'site' ? site.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    expect(sections.filter((s) => s.kind === 'ungrouped')).toHaveLength(0);
+    // 但自动分组不为它们新建原生组（会覆盖浏览器侧既有归属）
+    expect(planAutoGroups(sections).filter((plan) => plan.absorbIntoGroupId === undefined)).toEqual(
+      []
+    );
   });
 
   it('非归并分区中已入组的标签仍整组跳过（原保守规则不变）', () => {

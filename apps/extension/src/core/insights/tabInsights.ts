@@ -63,6 +63,10 @@ interface InsightsResult {
  * 展示，用户认知里「带不带 www」不是两个页面。严格口径服务于自动清理的
  * 误杀防线（宁漏勿杀），宽松口径服务于「重灾区」的完整呈现，两者刻意不同。
  * pendingUrl 优先与复用引擎同序（导航中的标签以目标页身份参与统计）。
+ *
+ * 端口必须参与身份：`localhost:3000/a` 与 `localhost:8080/a` 是两个不同的
+ * 服务（本地开发最常见），只用 hostname 拼键会把它们判成同一页面 —— 洞察
+ * 报「有冗余」而 planDuplicateCleanup（严格口径）报 0，两条结论自相矛盾。
  */
 function pageKeyOf(tab: TabRecord): { key: string; host: string } | null {
   const candidates = tab.pendingUrl ? [tab.pendingUrl, tab.url] : [tab.url];
@@ -73,7 +77,9 @@ function pageKeyOf(tab: TabRecord): { key: string; host: string } | null {
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
       const host = normalizeHostname(parsed.hostname);
       if (!host) continue;
-      return { key: `${host}${parsed.pathname}${parsed.search}${parsed.hash}`, host };
+      // parsed.port 在端口等于协议默认端口时为空串（WHATWG 口径），故无需另判默认值。
+      const authority = parsed.port === '' ? host : `${host}:${parsed.port}`;
+      return { key: `${authority}${parsed.pathname}${parsed.search}${parsed.hash}`, host };
     } catch {
       // 不可解析（内部页 / 空串）：尝试下一候选
     }
@@ -134,8 +140,12 @@ export function computeInsights(
     // 固定空间绑定标签与 pinned 同属「用户主动长期保留」，不该被建议归档
     // （与上方 discardableCount 的绑定排除同口径：只排除 pinned 会漏掉绑定标签）。
     if (tab.active || tab.pinned || tab.discarded || boundTabIds.has(tab.id)) continue;
-    if (typeof tab.lastAccessed !== 'number' || !Number.isFinite(tab.lastAccessed)) continue;
-    const idleMs = now - tab.lastAccessed;
+    // 判定用**实时**激活时刻 lastActivatedAt，不用 lastAccessed：后者在面板侧被
+    // mergeSnapshotTabs 冻结在「标签首次出现」的时刻，拿它算滞留会把「8 天前打开、
+    // 刚刚才切过的标签」判成「8 天没动过」——本洞察的口径（7 天未激活）随之失效。
+    const activatedAt = tab.lastActivatedAt ?? tab.lastAccessed;
+    if (typeof activatedAt !== 'number' || !Number.isFinite(activatedAt)) continue;
+    const idleMs = now - activatedAt;
     if (idleMs < STALE_TAB_MS) continue;
     staleTabs.push({
       id: tab.id,

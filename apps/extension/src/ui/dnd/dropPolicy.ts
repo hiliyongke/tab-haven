@@ -236,6 +236,11 @@ export function classifyDrop(active: DragData, target: DropTarget): DropOutcome 
       return classifyFolderDrop(active, over);
     case DragType.Pin:
       return classifyPinDrop(active, over);
+    // 未登记的拖拽类型：返回类型是不可空的 DropOutcome，漏了 default 分支会
+    // 隐式返回 undefined —— 落点视觉与松手执行两侧都按「没有结果」处理，
+    // 表现为拖过去既不亮也不动，且没有任何一处能看出原因。
+    default:
+      return reject('unsupported');
   }
 }
 

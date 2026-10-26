@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18n, { translate } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
@@ -171,5 +171,32 @@ describe('SnapshotsPanel 习惯洞察直达', () => {
     renderPanel('report');
 
     expect(document.getElementById('snapshots-insights')).not.toBeNull();
+  });
+});
+
+describe('SnapshotsPanel 保存工作区在途互斥', () => {
+  /**
+   * 「保存为工作区」每次都新增一条、不覆盖旧版：双击会并发创建两份内容相同
+   * 的工作区快照，而列表里看不出哪份是新的。故与其它写路径同款加在途标尺。
+   */
+  it('连点两次只创建一份（await 期间按钮禁用 + ref 标尺）', async () => {
+    let release: ((saved: boolean) => void) | undefined;
+    const saveSpace = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve;
+        })
+    );
+    useSnapshotStore.setState({ snapshots: [], ready: true, saveSpace });
+    renderPanel();
+
+    const button = screen.getByRole('button', { name: translate('保存为工作区') });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(saveSpace).toHaveBeenCalledTimes(1);
+
+    release?.(true);
+    await waitFor(() => expect(button).not.toBeDisabled());
   });
 });

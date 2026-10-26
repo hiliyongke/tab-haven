@@ -25,8 +25,30 @@ export interface TabRecord {
   groupId: number;
   /** Chrome 140+ 拆分视图 id（无拆分时为 undefined）。 */
   splitViewId?: number;
-  /** 最后访问时间戳（ms），用于「最近访问」排序。 */
+  /**
+   * 最后访问时间戳（ms），用于「最近访问」**排序**。
+   *
+   * 面板侧该值被 `mergeSnapshotTabs` **冻结**在「标签首次出现」的时刻（见下方
+   * 合并注释），语义是「排序键」，不是「真实最近激活时刻」。
+   */
   lastAccessed?: number;
+  /**
+   * 浏览器**实时**的最近激活时间戳（ms），不冻结（`mergeSnapshotTabs` 不保留旧值）。
+   *
+   * 两个时间戳并存的理由：它们回答的是两个不同的问题，任何一侧被另一侧顶替
+   * 都会产生缺陷 ——
+   *  - `lastAccessed` 冻结是**排序稳定性**的要求：浏览器每次激活/导航都刷新它，
+   *    照单全收会让「最近访问」分区与行随每次切换标签全量重排；
+   *  - 但冻结值对**时间判定**是错的：滞留预警（7 天未激活）与 keeper 判定
+   *    （留最近用过的）问的是「真实最近一次激活在什么时候」。用冻结值会把
+   *    「8 天前打开、刚刚才切过的标签」判成「8 天没动过」，并与后台复用引擎
+   *    （直查浏览器实时值）口径分叉 —— 两处对同一组标签选出不同的保留者。
+   *
+   * 因此分工固定：**排序消费 `lastAccessed`（冻结），时间判定消费
+   * `lastActivatedAt`（实时）**。回退到 `lastAccessed` 只在 `lastActivatedAt`
+   * 缺失时发生（非 chrome 来源的合成记录），不影响任何真实路径。
+   */
+  lastActivatedAt?: number;
   /** 是否允许被浏览器自动休眠（chrome.tabs.autoDiscardable）。 */
   autoDiscardable?: boolean;
   /** 来源标签 id（tabs.Tab.openerTabId），用于「来源树」分组。 */
@@ -94,6 +116,7 @@ const TAB_FIELDS = [
   'groupId',
   'splitViewId',
   'lastAccessed',
+  'lastActivatedAt',
   'autoDiscardable',
   'openerTabId',
   'attention',
@@ -129,6 +152,9 @@ const sameTabFields: Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> exten
  *
  * 背景侧（自动休眠 / 复用合并）不经过此函数：它们直接查询浏览器拿实时
  * lastAccessed，不受冻结影响。
+ *
+ * `lastActivatedAt` 刻意**不冻结**（没有 `prev.lastActivatedAt` 的保留分支）：
+ * 它是给时间判定用的实时值，冻结它就退化成第二个 `lastAccessed`。
  */
 export function mergeSnapshotTabs(
   prevTabs: readonly TabRecord[],

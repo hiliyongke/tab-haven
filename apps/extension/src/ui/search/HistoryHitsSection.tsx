@@ -115,8 +115,9 @@ export function HistoryHitsSection({
                 type="button"
                 title={t('打开该页面')}
                 aria-label={t('打开该页面')}
-                // min-h-6/min-w-6（24px）：p-1 + 14px 图标仅 22px，低于 WCAG 2.5.8 下限
-                className="grid min-h-6 min-w-6 shrink-0 place-items-center rounded text-gray-500 transition-base hover:bg-accent-50 hover:text-accent-600"
+                /* 复用 .row-action（20px 视觉 + ::after 扩到 24px 命中、统一的
+                   hover/focus 与危险态），不再手写同款原子类串。 */
+                className="row-action shrink-0"
                 onClick={() => onOpenUrl(hit.tab.url)}
               >
                 <Icon d={Icons.search} className="h-3.5 w-3.5" />
@@ -125,8 +126,7 @@ export function HistoryHitsSection({
                 type="button"
                 title={t('恢复该快照')}
                 aria-label={t('恢复该快照')}
-                // min-h-6/min-w-6（24px）：p-1 + 14px 图标仅 22px，低于 WCAG 2.5.8 下限
-                className="grid min-h-6 min-w-6 shrink-0 place-items-center rounded text-gray-500 transition-base hover:bg-accent-50 hover:text-accent-600"
+                className="row-action shrink-0"
                 onClick={() => onRestoreSnapshot(hit.snapshotId, hit.snapshotTabCount)}
               >
                 <Icon d={Icons.openAll} className="h-3.5 w-3.5" />

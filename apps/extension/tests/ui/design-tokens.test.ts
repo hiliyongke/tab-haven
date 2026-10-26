@@ -242,6 +242,65 @@ describe('对比度矩阵（2 主题 × 6 色相，WCAG 2.1 AA）', () => {
   }
 });
 
+/**
+ * 去掉块注释但**保留行号**（注释内容替换为等长空白）。
+ *
+ * 只按「行首是否 * 或 //」过滤会把块注释的续行算成代码：注释里提到
+ * `text-gray-400`（解释为什么不用它）就会把自己变成一条失败项。
+ */
+function withoutBlockComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '));
+}
+
+/**
+ * 判断一行 `text-gray-400` 用法是否属于装饰性豁免。
+ *
+ * 豁免只有两类、且都能在这一行内自证：**纯图标**（`<Icon …/>`，WCAG 口径里是
+ * 非文本）与 **aria-hidden 的装饰符号**（如分隔点「·」，不进入可访问树）。
+ * 承载信息的文字一律走 gray-500。
+ */
+function isDecorativeGray400(line: string): boolean {
+  return /<Icon\b/.test(line) || /aria-hidden/.test(line);
+}
+
+/**
+ * 弱对比度令牌的使用面守卫。
+ *
+ * 为什么**不**做成 `TEXT_PAIRS` 的一条：那组断言的语义是「这组前景/背景应当达标」，
+ * 而 `--c-gray-400` 无论怎么用都只有 2.4–2.8:1 —— 加进去只会得到一条恒红、
+ * 且没人能修好的用例（要修的是用法，不是令牌）。
+ */
+describe('弱对比度令牌不得承载信息', () => {
+  it('TSX 不得用 text-gray-400 承载文字（装饰性元素除外）', () => {
+    const failures: string[] = [];
+    for (const file of tsxFiles) {
+      const src = withoutBlockComments(readFileSync(file, 'utf8'));
+      src.split('\n').forEach((line, i) => {
+        // 行注释同样不算用法。
+        if (/^\s*(\*|\/\/)/.test(line)) return;
+        if (!/\btext-gray-400\b/.test(line)) return;
+        if (isDecorativeGray400(line)) return;
+        failures.push(
+          `${relative(ROOT, file)}:${i + 1} text-gray-400 对比度不足（<4.5:1），请改用 text-gray-500`
+        );
+      });
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('判据本身必须命中（正则写错 / 扫描目录为空时上一条会恒绿）', () => {
+    // 与「CSS 变量定义完整性」同因：命中集合为空时，上一条用例退化成永远通过。
+    expect(tsxFiles.length).toBeGreaterThan(0);
+    expect(isDecorativeGray400('<span className="text-gray-400">共 3 项</span>')).toBe(false);
+    expect(
+      isDecorativeGray400('<Icon d={Icons.infoAlert} className="h-3.5 w-3.5 text-gray-400" />')
+    ).toBe(true);
+    expect(isDecorativeGray400('<span className="text-gray-400" aria-hidden="true">·</span>')).toBe(
+      true
+    );
+  });
+});
+
 describe('CSS 变量定义完整性', () => {
   it('var() 引用的变量必须已声明（否则整条声明静默失效）', () => {
     const declared = new Set([...cssNoComments.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]!));

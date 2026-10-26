@@ -6,18 +6,13 @@ import { installGlobalErrorHandlers, logDegraded } from '@/platform/diagnostics'
 import { openOptionsPage } from '@/platform/navigation';
 import { openSidePanel, setActionClickBehavior } from '@/platform/sidePanel';
 import { setSnapshotEvictionListener } from '@/platform/snapshot/snapshots';
-import { dedupePins, pinFromTab } from '@/core/fixed/FolderOps';
 import { toUndoTabRecord } from '@/core/undo/UndoStack';
 import { normalizeHostname } from '@/core/url/hostname';
-import {
-  foldersRepository,
-  pinsRepository,
-  settingsRepository
-} from '@/platform/storage/repositories';
+import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
 import { initHeadlessI18n, t } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 import { MessageSchema, REUSE_CLOSED_LIMIT, sendMessage } from '@/platform/messages';
-import { PINS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import type { Settings } from '@/core/schema/models';
 import {
   cachedSettings,
   syncCachedSettings,
@@ -31,6 +26,7 @@ import {
   rebuildContextMenus,
   clearContextMenus,
   addEntryToFolder,
+  addPinFromTab,
   discardTabSafely,
   setupMenus,
   type AddEntryResult
@@ -46,7 +42,7 @@ import {
   runAutoSnapshot,
   syncAutoSnapshotAlarm
 } from '@/platform/background/autoSnapshot';
-import { refreshBadgeSoon, showBadgeOverride } from '@/platform/background/badge';
+import { refreshBadge, refreshBadgeSoon, showBadgeOverride } from '@/platform/background/badge';
 import { runActionClickRegroup } from '@/platform/background/actionRegroup';
 import { applyAutoGroupSetting, scheduleAutoGroupReconcile } from '@/platform/background/autoGroup';
 import { setupNoCache } from '@/platform/background/noCache';
@@ -167,10 +163,38 @@ export default defineBackground(() => {
     }
   };
   void syncCoordinatorEnabled();
+  /**
+   * 闹钟签名（上一次真正重建闹钟时的设置摘要）。
+   *
+   * 同名 `alarms.create` 会**重置**触发时间：无条件重建等于把「每 N 分钟一次」的
+   * 自动快照无限期推后（实测会永远触发不了）。而设置写入远比开关变更频繁——切空间
+   * 写 `activeSpaceId`、引导标记 `tipSeen` / `onboarded` 都走 settingsRepository.watch。
+   * 故两个闹钟各自只在其输入变化时才重建：自动休眠只看开关，自动快照只看
+   * 「开关 + 周期」——其余设置（排序、空间、引导标记、角标模式等）一概不触碰闹钟。
+   */
+  let discardAlarmEnabled: boolean | undefined;
+  let snapshotAlarmSignature: string | undefined;
+
+  /** 按设置对齐两个周期闹钟；各自的输入未变则跳过重建（见上）。 */
+  const syncAlarms = async (settings: Settings): Promise<void> => {
+    if (settings.autoDiscardEnabled !== discardAlarmEnabled) {
+      discardAlarmEnabled = settings.autoDiscardEnabled;
+      await syncAutoDiscardAlarm(settings);
+    }
+    const next = `${settings.autoSaveSnapshots}|${settings.autoSnapshotIntervalMin}`;
+    if (next !== snapshotAlarmSignature) {
+      snapshotAlarmSignature = next;
+      await syncAutoSnapshotAlarm(settings);
+    }
+  };
+
   // 设置缓存：SW 启动读一次（badge/通知/菜单/omnibox 共用；变更经 watch 更新）。
   // 读回后补刷一次角标：冷启动 500ms 定时器先触发时 cachedSettings 仍是默认值，
   // 角标会按默认模式渲染且无自愈路径（要等下一次标签事件/设置变更才纠正）。
-  void syncCachedSettings().then(() => refreshBadgeSoon());
+  // 补刷走**直刷**而非防抖版：防抖版在 500ms 定时器仍在途时会被
+  // `if (badgeTimer) return` 直接吞掉，冷启动这次纠正就此丢失（角标会一直停在
+  // 默认模式渲染的结果上，要等下一次标签事件才碰巧恢复）。
+  void syncCachedSettings().then(() => refreshBadge());
 
   /**
    * 自动分组的启动对账。
@@ -457,9 +481,9 @@ export default defineBackground(() => {
     coordinator.setEnabled(settings.uniqueUrlTabs);
     if (settings.contextMenusEnabled) void setupMenus();
     else clearContextMenus();
-    void syncAutoDiscardAlarm(settings);
-    // 自动保存开关/间隔变更即时对齐闹钟（周期变化也需重建，alarms 无法就地改周期）。
-    void syncAutoSnapshotAlarm(settings);
+    // 自动休眠 / 自动保存的开关与间隔变更即时对齐闹钟（周期变化也需重建，
+    // alarms 无法就地改周期）。与闹钟无关的设置写入不重建（见 alarmSignature）。
+    void syncAlarms(settings);
     void syncActionClickBehavior();
     // 开启即补齐存量标签；关闭即解散本功能创建的组。聚合模式 / 阈值变化同样
     // 经此重新对账 —— 三者是「自动组内同站点」这条不变量的全部输入。
@@ -519,36 +543,28 @@ export default defineBackground(() => {
       case MENU_IDS.tabPin:
       case MENU_IDS.pagePin: {
         if (targetTab?.url && targetTab.id !== undefined) {
-          const pin = pinFromTab({
-            url: targetTab.url,
-            title: targetTab.title || '',
-            favIconUrl: targetTab.favIconUrl
-          });
-          if (pin) {
-            void (async () => {
-              // 跨页锁内重读再合并：与面板 coalesced 写共用 PINS_RMW_LOCK，
-              // 避免末值落盘覆盖右键新增的固定图标。
-              let pinned = false;
-              await withCrossPageLock(PINS_RMW_LOCK, async () => {
-                const pins = await pinsRepository.read();
-                pinned = await pinsRepository.write(
-                  dedupePins([...pins.filter((p) => p.identity !== pin.identity), pin])
-                );
-              });
-              if (pinned && !targetTab.pinned && targetTab.id !== undefined) {
-                await setPinned(targetTab.id, true);
-              }
-              // 成功也要有反馈：只在失败时通知，用户点「固定」后无法确认是否生效。
-              // 与 addEntryToFolder 同口径：按 write 的真实结果反馈，不假设成功。
-              notifyUser('Tabs', t(pinned ? '已加入常驻磁贴。' : '加入常驻磁贴失败，请重试。'));
-            })().catch((error: unknown) => {
-              // 锁请求被中止（AbortError）、仓库读失败都会走到这里。不接住的话：
-              // ① 变成一次 unhandled rejection（SW 侧无 UI 可承载）；
-              // ② 用户点了「固定」却一条通知都收不到，与「点了没反应」无法区分。
-              logDegraded('background', '加入常驻磁贴失败', error);
-              notifyUser('Tabs', t('加入常驻磁贴失败，请重试。'));
+          // 写路径只此一处：`addPinFromTab` 内含上限预检（PINS_LIMIT）与失败留痕，
+          // 与面板的 addPin 同口径。此前这里另写了一份「读 → 合并 → 写」，绕过上限
+          // 预检：超限仍能写成功，而导出的备份在导入时被 `.max(PINS_LIMIT)` 整批拒绝，
+          // 用户只看到「备份文件无效」且诊断查不到原因。
+          void (async () => {
+            const pinned = await addPinFromTab({
+              url: targetTab.url,
+              title: targetTab.title
             });
-          }
+            if (pinned && !targetTab.pinned && targetTab.id !== undefined) {
+              await setPinned(targetTab.id, true);
+            }
+            // 成功也要有反馈：只在失败时通知，用户点「固定」后无法确认是否生效。
+            // 与 addEntryToFolder 同口径：按真实结果反馈，不假设成功。
+            notifyUser('Tabs', t(pinned ? '已加入常驻磁贴。' : '加入常驻磁贴失败，请重试。'));
+          })().catch((error: unknown) => {
+            // 锁请求被中止（AbortError）、仓库读失败都会走到这里。不接住的话：
+            // ① 变成一次 unhandled rejection（SW 侧无 UI 可承载）；
+            // ② 用户点了「固定」却一条通知都收不到，与「点了没反应」无法区分。
+            logDegraded('background', '加入常驻磁贴失败', error);
+            notifyUser('Tabs', t('加入常驻磁贴失败，请重试。'));
+          });
         }
         break;
       }
@@ -661,10 +677,7 @@ export default defineBackground(() => {
   // 仅在开启时创建闹钟（关闭时不让 SW 空跑）；SW 启动按当前设置对齐一次。
   void settingsRepository
     .read()
-    .then(async (settings) => {
-      await syncAutoDiscardAlarm(settings);
-      await syncAutoSnapshotAlarm(settings);
-    })
+    .then((settings) => syncAlarms(settings))
     // 与同文件其它启动路径同口径：静默吞错会让「闹钟没对齐」完全无从排查。
     .catch((error: unknown) => {
       logDegraded('background', '启动时闹钟对齐失败（自动休眠/自动快照本轮不生效）', error);

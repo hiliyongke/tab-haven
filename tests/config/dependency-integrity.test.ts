@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -22,11 +22,58 @@ const workspacePackage = `${projectRoot}packages/i18n-kit`;
 const extensionPackage = `${projectRoot}apps/extension`;
 const sitePackage = `${projectRoot}apps/site`;
 
-/** 会被 React 渲染链路共享、因此绝不能出现第二份的包。 */
-const SHARED_PACKAGES = ['react', 'react-dom', 'react-i18next', 'i18next'] as const;
+/**
+ * 会被 React 渲染链路共享、因此绝不能出现第二份的包 —— **从 overrides 解析**，
+ * 不手写清单。
+ *
+ * 手写清单的失效形态：往 `pnpm-workspace.yaml` 的 overrides 里新钉一个包（比如
+ * 将来共享 `@tanstack/react-query`），而这里没同步，于是「两个 importer 各解析出
+ * 一份」这种分叉被整条守卫漏掉，且漏得毫无征兆。
+ */
+const SHARED_PACKAGES = parseOverrides();
 
-/** 会渲染（或会注册 i18n 实例）的三个 importer：副本分叉只会在这三者之间出事。 */
-const IMPORTERS = [extensionPackage, sitePackage, workspacePackage] as const;
+/**
+ * 会渲染（或会注册 i18n 实例）的 importer：副本分叉只会在这几者之间出事。
+ * 同样**动态枚举**（`pnpm-workspace.yaml` 的 `packages:` + 目录探测），
+ * 新增 workspace 包时自动进入比对。
+ */
+const IMPORTERS = parseWorkspacePackages();
+
+/** 从 pnpm-workspace.yaml 的 `overrides:` 块取出被钉住的包名。 */
+function parseOverrides(): string[] {
+  const yaml = readFileSync(`${projectRoot}pnpm-workspace.yaml`, 'utf8');
+  const overrides = yaml.slice(yaml.indexOf('overrides:'));
+  // 不引入 YAML 解析器：这里只认「两个空格缩进 + 键 + 版本范围」这一形态，
+  // overrides 块被挪走/改名时解析结果为空，由下面的自检用例挡住（而不是静默失效）。
+  return [...overrides.matchAll(/^ {2}([^ #][^:]*):\s*[<^~]?\d/gm)].map((match) => match[1]!);
+}
+
+/** 从 pnpm-workspace.yaml 的 `packages:` 块枚举出实际存在的包目录。 */
+function parseWorkspacePackages(): string[] {
+  const lines = readFileSync(`${projectRoot}pnpm-workspace.yaml`, 'utf8').split('\n');
+  const start = lines.findIndex((line) => /^packages:/.test(line));
+  if (start === -1) throw new Error('pnpm-workspace.yaml 未声明 packages');
+  const dirs: string[] = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    // 顶层键（缩进回到 0）即 packages 块结束
+    if (/^\S/.test(line)) break;
+    const entry = line.match(/^\s*-\s*([^\s#]+)/);
+    if (!entry) continue; // 空行 / 纯注释
+    const pattern = entry[1]!;
+    if (pattern.endsWith('/*')) {
+      const parent = pattern.slice(0, -2);
+      for (const child of readdirSync(`${projectRoot}${parent}`, { withFileTypes: true })) {
+        if (!child.isDirectory()) continue;
+        const dir = `${projectRoot}${parent}/${child.name}`;
+        if (existsSync(`${dir}/package.json`)) dirs.push(dir);
+      }
+      continue;
+    }
+    if (existsSync(`${projectRoot}${pattern}/package.json`)) dirs.push(`${projectRoot}${pattern}`);
+  }
+  return dirs;
+}
 
 /**
  * 各 importer 声明的依赖（含 dev/peer：库包把宿主包声明在 peer 上，
@@ -76,17 +123,13 @@ function versionFrom(from: string, id: string): string {
 }
 
 describe('依赖单副本（跨 workspace 包）', () => {
-  it('workspace 配置里钉住了这几个共享包（否则库包会按自己的范围解析出第二份）', () => {
-    const yaml = readFileSync(`${projectRoot}pnpm-workspace.yaml`, 'utf8');
-    const overrides = yaml.slice(yaml.indexOf('overrides:'));
-
-    // 不解析 YAML、只认键：配置被挪走/改名时这里会红，而不是静默失效。
-    for (const id of SHARED_PACKAGES) {
-      // 允许精确版本或范围（^/~ 等），只要键在：配置被删/改名时这里会红。
-      expect(overrides, `${id} 未被 overrides 钉住，可能出现两份副本`).toMatch(
-        new RegExp(`^\\s*${id}:\\s*[<^~]?\\d`, 'm')
-      );
-    }
+  it('共享包清单与 importer 清单都解析自配置（空清单会让逐包比对恒绿）', () => {
+    // 两份清单都是动态解析的：解析失败（配置改名/挪走）会退化成空数组，
+    // 而「0 个待比对项」正是这条守卫最危险的失效形态 —— 必须显式挡住。
+    expect(SHARED_PACKAGES.length).toBeGreaterThanOrEqual(2);
+    expect(IMPORTERS).toContain(extensionPackage);
+    expect(IMPORTERS).toContain(sitePackage);
+    expect(IMPORTERS).toContain(workspacePackage);
   });
 
   it.each(SHARED_PACKAGES)('%s 在所有依赖它的 importer 里解析出同一份', (id) => {

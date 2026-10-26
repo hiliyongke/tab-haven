@@ -126,6 +126,22 @@ describe('notifyUser', () => {
       expect.objectContaining({ type: 'basic', title: 'Tabs', message: '已休眠', priority: 1 })
     );
   });
+
+  it('不同用途使用不同通知 id（固定 id 会让连续通知互相顶掉）', async () => {
+    // 显式签名：裸 vi.fn(async () => 'id') 的 mock.calls 元素类型为 `[]`，取 call[0] 会报错。
+    const create = vi.fn<(id?: string, options?: unknown) => Promise<string>>(async () => 'id');
+    (fakeBrowser as unknown as { notifications?: unknown }).notifications = { create };
+
+    notifyUser('Tabs', '已休眠 3 个标签（可在侧边栏一键唤醒）', 'auto-discard');
+    notifyUser('Tabs', '保存失败，请重试');
+
+    const ids = create.mock.calls.map((call) => call[0] as string);
+    expect(ids[0]).not.toBe(ids[1]);
+    // Chrome 对同名 id 是替换而非排队：自动休眠那条带着唯一的撤销入口，
+    // 被后一条顶掉即「入口消失」。
+    expect(ids).toContain('tabs-auto-discard');
+    expect(ids).toContain('tabs-action');
+  });
 });
 
 describe('queueAction 挂起队列', () => {

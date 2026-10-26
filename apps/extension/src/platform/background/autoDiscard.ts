@@ -9,7 +9,7 @@ import {
   mutateAutoDiscardLedger,
   readAutoDiscardBatches
 } from '@/platform/storage/autoDiscardLedger';
-import { sendMessage } from '@/platform/messages';
+import { AUTO_DISCARDED_IDS_LIMIT, sendMessage } from '@/platform/messages';
 import { t } from '@/i18n/headless';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { buildWhitelistMatcher, cachedSettings, hostnameOf, notifyUser } from './shared';
@@ -58,9 +58,12 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   const persisted = await appendAutoDiscardBatch(tabIds, at);
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道（语言决策链与 UI 一致）。
+    // 用途 id 为 auto-discard：与「保存失败」这类单次动作通知分开槽位，
+    // 否则这条带着唯一撤销入口的通知会被后一条直接顶掉。
     notifyUser(
       'Tabs',
-      t('已休眠 {{count}} 个标签（可在侧边栏一键唤醒）', { count: tabIds.length })
+      t('已休眠 {{count}} 个标签（可在侧边栏一键唤醒）', { count: tabIds.length }),
+      'auto-discard'
     );
   }
   if (!persisted) {
@@ -69,7 +72,19 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
     logDegraded('auto-discard', '自动休眠台账写入失败，本次批次不支持撤销');
     return;
   }
-  sendMessage({ type: 'auto-discarded', tabIds, count: tabIds.length, at });
+  // 协议层对单条消息的 id 数有上限（防无界传输面）。原样发送超限数据会让整条消息
+  // 被 schema 拒绝并静默丢弃 —— 这一轮的「一键唤醒」入口就此消失，而标签确实已经
+  // 被休眠。按上限截断并留痕：宁可少记几条（完整台账已在磁盘上，「全部唤醒」不受
+  // 影响），也不能让整批失去撤销出口。
+  const carried = tabIds.slice(0, AUTO_DISCARDED_IDS_LIMIT);
+  if (carried.length < tabIds.length) {
+    logDegraded(
+      'auto-discard',
+      `自动休眠 ${tabIds.length} 个标签，超出单条回执上限，已截断为 ${carried.length} 个`
+    );
+  }
+  // count 保持真实休眠数（截断只影响本条回执携带的 id 数）。
+  sendMessage({ type: 'auto-discarded', tabIds: carried, count: tabIds.length, at });
 }
 
 /** 清理已失效的自动休眠台账（批次标签全部不存在或已唤醒）。 */

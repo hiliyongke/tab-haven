@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { deriveSections } from '@/core/site/Sections';
+import type { Translate } from '@/i18n';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 
 /**
@@ -32,7 +33,7 @@ interface SectionDerivationOptions {
   groupMode: 'site' | 'opener' | 'language';
   aggregationThreshold: number;
   /** 翻译函数：切换语言时引用变化 → 分区标题重算。 */
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: Translate;
   collapsedSites: readonly string[];
   setGroupCollapsed: (groupId: number, collapsed: boolean) => Promise<void> | void;
   toggleSiteCollapsed: (siteKey: string, collapsed: boolean) => Promise<void> | void;

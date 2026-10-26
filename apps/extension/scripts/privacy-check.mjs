@@ -52,6 +52,17 @@ const ALLOWED_PERMISSIONS = new Set([
 const ALLOWED_OPTIONAL_HOST_PERMISSIONS = new Set(['<all_urls>']);
 
 /**
+ * 可选权限（`optional_permissions`）冻结清单。
+ *
+ * 这项此前完全游离在门禁之外：脚本只比 `manifest.permissions` 与 host 权限，
+ * 而 `optional_permissions` 既不在前者也不在后者里 —— 往 `wxt.config.ts` 加一项
+ * 而不同步 `PRIVACY.md`，门禁一条都不查。当前合法集合为空（产品没有按需权限，
+ * 唯一的按需能力是走 `optional_host_permissions` 的主机权限），新增必须先改
+ * `PRIVACY.md` §2 并走 PRD 变更。
+ */
+const ALLOWED_OPTIONAL_PERMISSIONS = new Set();
+
+/**
  * 禁止出现的网络通道调用。
  * 覆盖直接调用与常见间接形式（EventSource / 远程 import / 图片打点 / 外部连接）。
  */
@@ -105,27 +116,40 @@ const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
 /** 非存储用途的 `tabs.` 字面量：导出文件格式标识。 */
 const NON_STORAGE_KEYS = new Set(['tabs.export']);
 /**
- * 存储键的声明范围：**只允许 platform 层**（唯一触碰 `chrome.*` 的层）。
+ * 非存储用途的 `tabs:` 字面量：**DOM 自定义事件名**（`src/ui/**` 的
+ * `LOCATE_TAB_EVENT` 等）。
  *
- * 这样限定不只是洁癖：`tabs:` 族里还混着 ui 层的 DOM 自定义事件名
- * （`tabs:locate-tab` 等，见 `src/ui/**`），它们从不落盘。若全量扫 `src/`，
- * 事件名会被当成存储键去和 PRIVACY.md §3 比对，门禁要么恒红、要么得靠一份
- * 越加越长的白名单打补丁。按层限定后，两类字面量天然分离，无需例外清单。
+ * 扫描范围放宽到整个 `src/` 后必须显式排除这一类：它们与存储键同用 `tabs:` 前缀
+ * （见 `PRIVACY.md` §3.1-d 的口径说明），但从不落盘。判据刻意取**声明形态**
+ * （常量名以 `_EVENT` 结尾）而非「在 ui 目录下」——后者会让「把事件名常量搬到
+ * 别的目录」成为一条静默绕过门禁的路径，而命名约定是跨目录稳定的。
  */
-const STORAGE_KEY_SCOPE = join(SRC, 'platform');
+const DOM_EVENT_LITERAL = /\b[A-Z][A-Z0-9_]*_EVENT\s*=\s*['"]tabs:/;
+/**
+ * 存储键的声明范围：**整个 `src/`**。
+ *
+ * 早先限定为 `src/platform`（唯一触碰 `chrome.*` 的层），代价是主题镜像键
+ * （`tabs:theme` / `tabs:theme-hue`，写在 `src/theme-init.ts`）根本不在扫描范围内，
+ * 只能靠文档手工登记 —— 新增第三个同类键时门禁完全看不见。放宽到 `src/` 后
+ * 由上面的 `DOM_EVENT_LITERAL` 精确排除 ui 层的事件名，其余 `tabs[.:]` 字面量
+ * 一律进双向比对。
+ */
+const STORAGE_KEY_SCOPE = SRC;
 
 /**
  * 源码里的注释行（`//` / `/*` / `* `）：示例与说明中的 URL 不是真实调用，放行。
  *
- * **只对源码生效**：`public/*.html` 是被保护对象本身（它们随包分发、由浏览器
- * 直接打开），若连 `<!--` 注释也一并放行，注释里写一句 `<link href="https://…">`
- * 就能永久豁免 —— 对 HTML 必须连注释一起扫。
+ * **只对源码生效**：`public/*.html` 与 CSS 是被保护对象本身（它们随包分发、
+ * 由浏览器直接解析），若连 HTML / CSS 的注释也一并放行，注释里写一句
+ * `<link href="https://…">` 或 `@import url(https://…)` 就能永久豁免 —— 对它们
+ * 必须连注释一起扫（`NETWORK_PATTERNS` 里那两条 CSS 规则只有在 CSS 文件真正
+ * 进入扫描范围时才可能命中，再给 CSS 开注释豁免会让它们再次形同虚设）。
  */
 const NETWORK_EXEMPT_CODE = /^\s*(?:\/\/|\*|\/\*)/;
-/** 静态页（HTML）：不豁免注释行，见上。空行与纯空白行仍跳过。 */
+/** 静态页（HTML）与样式（CSS）：不豁免注释行，见上。空行与纯空白行仍跳过。 */
 const NETWORK_EXEMPT_HTML = /^\s*$/;
 
-const SCANNABLE = new Set(['.ts', '.tsx', '.html', '.js']);
+const SCANNABLE = new Set(['.ts', '.tsx', '.html', '.js', '.css']);
 
 function walk(dir) {
   const out = [];
@@ -172,7 +196,7 @@ function readSourceStorageKeys() {
     if (!/\.(ts|tsx)$/.test(file)) continue;
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, i) => {
-      if (COMMENT_LINE.test(line) || I18N_CALL.test(line)) return;
+      if (COMMENT_LINE.test(line) || I18N_CALL.test(line) || DOM_EVENT_LITERAL.test(line)) return;
       for (const match of line.matchAll(STORAGE_KEY_LITERAL)) {
         const key = match[1];
         if (NON_STORAGE_KEYS.has(key)) continue;
@@ -246,6 +270,15 @@ function checkFaviconGuard() {
   }
 }
 
+/** 权限表行的机读口径：首列是反引号包裹的权限名，其后为用途列。 */
+const PERMISSION_ROW = /^\|\s*`([^`]+)`\s*\|(.*)$/;
+/** 按需权限的机读标记：写在用途列里（与主机权限行同款）。 */
+const OPTIONAL_MARK = /\boptional\b/i;
+/** 主机权限的形态：` <all_urls>` 或 ` *://…` 或 ` http(s)://…`。 */
+function isHostPermissionName(name) {
+  return name === '<all_urls>' || name.includes('*://') || /^https?:\/\//.test(name);
+}
+
 /**
  * PRIVACY.md 第 2 节的权限表是本检查的**第二事实源**。
  *
@@ -253,19 +286,54 @@ function checkFaviconGuard() {
  * PRIVACY.md 三处宣称的「新增权限须同步 PRIVACY.md，否则门禁失败」并不成立——
  * 改了 wxt.config.ts 而不动文档，门禁依然全绿。把文档解析为真实比对源，
  * 让「承诺」与「强制」对齐：源码清单与文档清单必须逐项一致。
+ *
+ * 解析结果按三类分桶（普通权限 / 可选权限 / 主机权限），三者各自与 manifest
+ * 对应字段双向比对 —— 混在一个集合里会让「主机权限被整段删除」这类漂移
+ * 被普通权限的集合掩盖。
  */
 function readDocumentedPermissions() {
   if (!existsSync(PRIVACY_DOC)) return null;
   const text = readFileSync(PRIVACY_DOC, 'utf8');
-  const found = new Set();
-  for (const line of text.split('\n')) {
-    const row = line.match(/^\|\s*`([a-zA-Z]+)`\s*\|/);
-    if (row) found.add(row[1]);
+  const lines = text.split('\n');
+  const start = lines.findIndex((line) => /^##\s*2\./.test(line));
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^##\s/.test(lines[i])) {
+      end = i;
+      break;
+    }
   }
-  return found;
+  const result = {
+    permissions: new Set(),
+    optionalPermissions: new Set(),
+    hostPermissions: new Set()
+  };
+  for (const line of lines.slice(start, end)) {
+    const row = line.match(PERMISSION_ROW);
+    if (!row) continue;
+    const name = row[1].trim();
+    const rest = row[2];
+    if (isHostPermissionName(name)) result.hostPermissions.add(name);
+    else if (OPTIONAL_MARK.test(rest)) result.optionalPermissions.add(name);
+    else result.permissions.add(name);
+  }
+  return result;
 }
 
 const issues = [];
+
+/** 与文档集合的双向比对：两个方向的漂移都会失败。 */
+function compareWithDocument(label, actual, documentedSet) {
+  const undocumented = [...actual].filter((p) => !documentedSet.has(p));
+  const staleDoc = [...documentedSet].filter((p) => !actual.has(p));
+  if (undocumented.length > 0) {
+    issues.push(`${label}已声明但未在 PRIVACY.md 记录: ${undocumented.sort().join(', ')}`);
+  }
+  if (staleDoc.length > 0) {
+    issues.push(`PRIVACY.md 记录了 manifest 中已不存在的${label}: ${staleDoc.sort().join(', ')}`);
+  }
+}
 
 if (!existsSync(MANIFEST)) {
   console.error('未找到构建产物，请先运行 pnpm build');
@@ -277,19 +345,23 @@ const permissions = new Set(manifest.permissions ?? []);
 const unexpected = [...permissions].filter((p) => !ALLOWED_PERMISSIONS.has(p));
 if (unexpected.length > 0) issues.push(`未授权权限: ${unexpected.sort().join(', ')}`);
 
+// 可选权限同样进冻结清单：它既不在 `permissions` 也不在 host 权限里，
+// 不单独比对就完全游离在守卫之外。
+const optionalPermissions = new Set(manifest.optional_permissions ?? []);
+const unexpectedOptional = [...optionalPermissions].filter(
+  (p) => !ALLOWED_OPTIONAL_PERMISSIONS.has(p)
+);
+if (unexpectedOptional.length > 0) {
+  issues.push(`未授权可选权限: ${unexpectedOptional.sort().join(', ')}`);
+}
+
 // 权限清单 ↔ PRIVACY.md 双向比对（任一方向漏改都失败）。
 const documented = readDocumentedPermissions();
 if (documented === null) {
-  issues.push('未找到 PRIVACY.md，无法校验权限清单与文档是否一致');
+  issues.push('未找到 PRIVACY.md 第 2 节，无法校验权限清单与文档是否一致');
 } else {
-  const undocumented = [...permissions].filter((p) => !documented.has(p));
-  const staleDoc = [...documented].filter((p) => !permissions.has(p));
-  if (undocumented.length > 0) {
-    issues.push(`权限已声明但未在 PRIVACY.md 记录: ${undocumented.sort().join(', ')}`);
-  }
-  if (staleDoc.length > 0) {
-    issues.push(`PRIVACY.md 记录了 manifest 中已不存在的权限: ${staleDoc.sort().join(', ')}`);
-  }
+  compareWithDocument('权限', permissions, documented.permissions);
+  compareWithDocument('可选权限', optionalPermissions, documented.optionalPermissions);
 }
 
 // 主机权限同样进冻结清单：`<all_urls>` 是本项目最敏感的一项声明，
@@ -303,6 +375,11 @@ const unexpectedHosts = [...hostPermissions].filter(
 );
 if (unexpectedHosts.length > 0) {
   issues.push(`未授权主机权限: ${unexpectedHosts.sort().join(', ')}`);
+}
+// 主机权限同样做双向比对：只与冻结清单单向比对时，整段删掉
+// `optional_host_permissions` 门禁一绿到底（文档侧无人校验）。
+if (documented !== null) {
+  compareWithDocument('主机权限', hostPermissions, documented.hostPermissions);
 }
 
 // 存储键 ↔ PRIVACY.md 第 3 节双向比对（任一方向漏改都失败）。
@@ -334,7 +411,9 @@ function scanFiles(files, label) {
   let hits = 0;
   for (const file of files) {
     const lines = readFileSync(file, 'utf8').split('\n');
-    const exempt = file.endsWith('.html') ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
+    // HTML 与 CSS 是被浏览器直接解析的受保护对象，不豁免注释行；源码才豁免。
+    const literalTarget = file.endsWith('.html') || file.endsWith('.css');
+    const exempt = literalTarget ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
     let fileHits = 0;
     lines.forEach((line, i) => {
       if (fileHits >= MAX_HITS_PER_FILE) return;
@@ -361,7 +440,7 @@ scanFiles(walk(SRC), '源码');
 // 的承诺——用户安装的是 .output，不是 src。
 if (existsSync(OUT)) {
   scanFiles(
-    walk(OUT).filter((f) => f.endsWith('.js') || f.endsWith('.html')),
+    walk(OUT).filter((f) => f.endsWith('.js') || f.endsWith('.html') || f.endsWith('.css')),
     '构建产物'
   );
 }
@@ -396,6 +475,11 @@ const bundleCount = existsSync(OUT) ? walk(OUT).filter((f) => f.endsWith('.js'))
 const htmlCount =
   (existsSync(OUT) ? walk(OUT).filter((f) => f.endsWith('.html')).length : 0) +
   (existsSync(PUBLIC_DIR) ? walk(PUBLIC_DIR).filter((f) => f.endsWith('.html')).length : 0);
+// CSS 与 HTML 同属「浏览器直接解析」的受保护对象，计数要出现在通过回执里：
+// 它是「零出站网络请求」承诺覆盖的面，不显示就等于没人知道它被扫了。
+const cssCount =
+  (existsSync(SRC) ? walk(SRC).filter((f) => f.endsWith('.css')).length : 0) +
+  (existsSync(OUT) ? walk(OUT).filter((f) => f.endsWith('.css')).length : 0);
 const packageCount = existsSync(PACKAGES)
   ? walk(PACKAGES).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')).length
   : 0;
@@ -403,7 +487,7 @@ console.log(
   `隐私回归检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
     `主机权限 ${[...hostPermissions].sort().join(', ')}，` +
     `网络通道调用 0（源码 ${sourceCount} 个 + 工作区包 ${packageCount} 个 + ` +
-    `产物 ${bundleCount} 个 JS / ${htmlCount} 个 HTML），` +
+    `产物 ${bundleCount} 个 JS / ${htmlCount} 个 HTML / ${cssCount} 个 CSS），` +
     `权限清单与 PRIVACY.md 一致，` +
     `存储键 ${sourceKeys.size} 个与 PRIVACY.md 第 3 节一致，图标渲染闸门在位`
 );

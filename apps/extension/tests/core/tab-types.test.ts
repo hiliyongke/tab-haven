@@ -65,6 +65,21 @@ describe('mergeSnapshotTabs', () => {
     // recency 排序键不变：tab 2（200）仍新于 tab 1（100），列表顺序稳定
   });
 
+  it('lastActivatedAt 不冻结：合并后取快照的实时值（时间判定据此，排序仍看 lastAccessed）', () => {
+    const prev = [
+      makeTab(1, { lastAccessed: 100, lastActivatedAt: 100 }),
+      makeTab(2, { lastAccessed: 200, lastActivatedAt: 200 })
+    ];
+    // 用户切回 tab 1：浏览器刷新其激活时刻
+    const merged = mergeSnapshotTabs(prev, [
+      makeTab(1, { active: true, lastAccessed: 300, lastActivatedAt: 300 }),
+      makeTab(2, { lastAccessed: 200, lastActivatedAt: 200 })
+    ]);
+    // 排序键冻结（100 不变），实时值透传（300）
+    expect(merged[0]?.lastAccessed).toBe(100);
+    expect(merged[0]?.lastActivatedAt).toBe(300);
+  });
+
   it('URL 未变时保留面板探测的语言', () => {
     const merged = mergeSnapshotTabs(
       [makeTab(1, { url: 'https://a.com/', language: 'zh-CN' })],

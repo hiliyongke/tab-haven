@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { type Settings } from '@/core/schema/models';
 import { buildNoCacheDnrRules, type NoCacheDnrRule } from '@/platform/nocache/noCacheRules';
 import { settingsRepository } from '@/platform/storage/repositories';
-import { hasPermissions } from '@/platform/permissions';
+import { checkPermissions, type PermissionState } from '@/platform/permissions';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**
@@ -22,9 +22,15 @@ type DnrApiRule = NonNullable<
 
 const ALL_URLS_PERMISSION = { origins: ['<all_urls>'] };
 
-/** 是否已持有 optional 的全站 host 权限（未授权时 DNR modifyHeaders 不生效）。 */
-function hasSiteAccessPermission(): Promise<boolean> {
-  return hasPermissions(ALL_URLS_PERMISSION);
+/**
+ * 是否已持有 optional 的全站 host 权限（三态：未授权时 DNR modifyHeaders 不生效）。
+ *
+ * 必须三态：`contains` 抛错与「确实没授权」若都塌缩成 false，一次瞬时异常就会让
+ * 本函数撤掉**已经生效**的 DNR 规则 —— 用户什么都没做，禁缓存自己失效了，
+ * 且诊断里只剩一句「权限查询失败」，看不出规则被清过。
+ */
+function siteAccessPermission(): Promise<PermissionState> {
+  return checkPermissions(ALL_URLS_PERMISSION);
 }
 
 /** 纯逻辑规则 → DNR API 规则（resourceTypes 为字符串字面量集合，是 ResourceType 枚举值的子集）。 */
@@ -42,9 +48,15 @@ function toApiRule(rule: NoCacheDnrRule): DnrApiRule {
 export async function syncNoCacheRules(settings: Settings): Promise<void> {
   const dnr = browser.declarativeNetRequest;
   try {
-    const permitted = await hasSiteAccessPermission();
+    const permitted = await siteAccessPermission();
+    if (permitted === 'unknown') {
+      // 保留现状：撤掉已生效的规则是「把故障放大成功能失效」，而什么都不做的最坏
+      // 结果只是本轮没对齐（下一次设置变更 / 权限变化 / SW 启动会重试）。
+      logDegraded('no-cache', '权限查询结果未知，本轮保留现有禁缓存规则不做改动');
+      return;
+    }
     const addRules =
-      settings.noCacheEnabled && permitted && settings.noCachePatterns.length > 0
+      settings.noCacheEnabled && permitted === 'granted' && settings.noCachePatterns.length > 0
         ? buildNoCacheDnrRules(settings.noCachePatterns).map(toApiRule)
         : [];
     const removeRuleIds = (await dnr.getDynamicRules()).map((rule) => rule.id);

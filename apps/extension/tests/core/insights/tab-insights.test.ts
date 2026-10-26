@@ -40,6 +40,26 @@ describe('computeInsights', () => {
     expect(result.duplicateHotspots).toEqual([{ host: 'github.com', count: 2 }]);
   });
 
+  it('端口参与页面身份：localhost:3000 与 localhost:8080 的同路径不算重复', () => {
+    // 只用 hostname 拼键时这两个（不同服务）被判为同一页面 → 洞察报冗余而
+    // planDuplicateCleanup（严格口径）报 0，两条结论自相矛盾。
+    const tabs = [
+      tabOf({ id: 1, url: 'http://localhost:3000/a' }),
+      tabOf({ id: 2, url: 'http://localhost:8080/a' })
+    ];
+    const result = computeInsights(tabs, new Set());
+    expect(result.duplicateHotspots).toEqual([]);
+  });
+
+  it('默认端口不参与键：显式写默认端口与省略端口视为同一页面', () => {
+    const tabs = [
+      tabOf({ id: 1, url: 'http://localhost:80/a' }),
+      tabOf({ id: 2, url: 'http://localhost/a' })
+    ];
+    const result = computeInsights(tabs, new Set());
+    expect(result.duplicateHotspots).toEqual([{ host: 'localhost', count: 2 }]);
+  });
+
   it('重复热点上限 Top N 截断', () => {
     const tabs: TabRecord[] = [];
     let id = 0;
@@ -113,6 +133,37 @@ describe('computeInsights', () => {
     const result = computeInsights(tabs, new Set([1]), NOW);
     // 绑定标签是用户显式保存的资产，不该被建议归档（不能只排除 pinned）
     expect(result.staleTabs.map((tab) => tab.id)).toEqual([2]);
+  });
+
+  it('冻结的 lastAccessed 不参与滞留判定：刚切过的老标签不算滞留', () => {
+    // 面板侧 lastAccessed 恒为「标签首次出现时」的值（mergeSnapshotTabs 冻结，
+    // 供排序稳定用）。若滞留判定沿用冻结值，这个 8 天前打开、刚刚才切过的标签
+    // 会被误报成「8 天没动过」——「打开超过 7 天未激活」的口径随之失效。
+    const tabs = [
+      tabOf({
+        id: 1,
+        url: 'https://old.com',
+        title: '8 天前打开、刚刚切过',
+        lastAccessed: NOW - 8 * 24 * 3600 * 1000,
+        lastActivatedAt: NOW - 1000
+      })
+    ];
+    const result = computeInsights(tabs, new Set(), NOW);
+    expect(result.staleTabs).toEqual([]);
+  });
+
+  it('实时激活时刻确实超过 7 天时照常预警（冻结值与实时值同时陈旧）', () => {
+    const tabs = [
+      tabOf({
+        id: 1,
+        url: 'https://old.com',
+        title: '真的 30 天没动',
+        lastAccessed: NOW - 30 * 24 * 3600 * 1000,
+        lastActivatedAt: NOW - 30 * 24 * 3600 * 1000
+      })
+    ];
+    const result = computeInsights(tabs, new Set(), NOW);
+    expect(result.staleTabs.map((tab) => tab.id)).toEqual([1]);
   });
 
   it('无 lastAccessed 的标签不参与滞留判定（旧浏览器兼容）', () => {

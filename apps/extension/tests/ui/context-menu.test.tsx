@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
+import { isModalOpen } from '@/ui/dialog/Dialog';
 
 /**
  * 行内上下文菜单的行为规格：打开、键盘可达性、关闭与焦点归还。
@@ -223,7 +224,7 @@ describe('ContextMenu 键盘导航', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('Tab 视为离开菜单：关闭并归还焦点（本组件不入 modalStack，不抢 Tab 陷阱）', () => {
+  it('Tab 视为离开菜单：关闭并归还焦点（入 modalStack 但 trapFocus=false，不抢 Tab 陷阱）', () => {
     const onClose = vi.fn();
     openMenu([{ id: 'close', label: '关闭标签', onSelect: vi.fn() }], onClose);
 
@@ -231,5 +232,31 @@ describe('ContextMenu 键盘导航', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '打开菜单' }));
+  });
+});
+
+describe('ContextMenu 与弹窗栈', () => {
+  /**
+   * 菜单必须以 `trapFocus: false` 入栈：`isModalOpen()` 只被全局快捷键
+   * （⌘K / ⌘P / ⌘J）用来短路，菜单不入栈时按 ⌘P 会在菜单之上再叠一层命令面板
+   * —— 两层浮层并存，且菜单背后的内容仍可交互。
+   *
+   * 键盘事件本身（⌘P 由 ui/hooks 的 useGlobalHotkeys 承接）不在 ui 测试范围内，
+   * 这里锁的是它依赖的那个判定。
+   */
+  it('菜单打开期间 isModalOpen() 为真（全局快捷键不再叠加第二层浮层）', () => {
+    openMenu([{ id: 'close', label: '关闭标签', onSelect: vi.fn() }], vi.fn());
+
+    expect(isModalOpen()).toBe(true);
+  });
+
+  it('菜单关闭后 isModalOpen() 复位（否则快捷键被永久短路）', () => {
+    const onClose = vi.fn();
+    openMenu([{ id: 'close', label: '关闭标签', onSelect: vi.fn() }], onClose);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(isModalOpen()).toBe(false);
   });
 });

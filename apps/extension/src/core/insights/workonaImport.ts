@@ -5,6 +5,7 @@ import {
   type Snapshot,
   type SnapshotTab
 } from '@/core/schema/models';
+import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 
 /**
  * Workona 迁移器：Workona 导出 JSON → Tabs 快照族。
@@ -111,7 +112,7 @@ const failure = (reason: WorkonaImportFailure): WorkonaImportResult => ({
   reason
 });
 
-/** 输入体积上限（1MB，与 parseOneTab 的 ONE_TAB_INPUT_LIMIT 同口径）。 */
+/** 输入体积上限（1MB，与 core/snapshot/oneTabImport 的 ONE_TAB_INPUT_LIMIT 同口径）。 */
 export const WORKONA_INPUT_LIMIT = 1024 * 1024;
 
 /**
@@ -203,7 +204,9 @@ export function parseWorkona(
     }
     snapshots.push({
       id: newSnapshotId(),
-      name: workspace.title?.trim() || 'Workona import',
+      // 落盘默认名走常量（不按界面语言生成）：与 OneTab 导入侧的
+      // DEFAULT_SNAPSHOT_NAMES.oneTab 同口径，避免中英文界面产出两套名字。
+      name: workspace.title?.trim() || DEFAULT_SNAPSHOT_NAMES.workona,
       origin,
       createdAt: fallbackTime,
       windowId: undefined,

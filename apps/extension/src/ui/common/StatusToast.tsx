@@ -3,6 +3,7 @@ import { useUndoStore } from '@/stores/undoStore';
 import { logDegraded } from '@/platform/diagnostics';
 import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { IconButton } from '@/ui/common/IconButton';
 
 /** 状态提示条：消息 + 可选撤销按钮。 */
 export function StatusToast() {
@@ -58,14 +59,9 @@ export function StatusToast() {
           {toast.action.label}
         </Button>
       )}
-      <button
-        type="button"
-        className="rounded p-0.5 text-gray-500 transition-base hover:text-gray-700"
-        aria-label={t('关闭提示')}
-        onClick={clearToast}
-      >
-        <Icon d={Icons.close} className="h-3.5 w-3.5" />
-      </button>
+      {/* 复用 IconButton：手写的关闭按钮只有 18px 命中区（p-0.5 + 14px 图标），
+          低于项目自定的 24px 下限；IconButton 自带 min-h-6 min-w-6 与禁用/悬停口径。 */}
+      <IconButton icon={Icons.close} title={t('关闭提示')} box="sm" onClick={clearToast} />
     </div>
   );
 }

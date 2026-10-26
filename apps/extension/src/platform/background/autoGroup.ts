@@ -1,4 +1,3 @@
-import { browser } from 'wxt/browser';
 import { planAutoGroups } from '@/core/group/AutoGrouping';
 import { deriveSections } from '@/core/site/Sections';
 import { t } from '@/i18n/headless';
@@ -11,6 +10,7 @@ import { queryWindowGroups, queryWindowTabs } from '@/platform/tabs';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { logDegraded } from '@/platform/diagnostics';
 import { readFixedExcludedTabIds } from '@/platform/background/actionRegroup';
+import { listNormalWindowIds } from '@/platform/windows';
 
 /**
  * 自动原生分组的唯一执行者（background SW）。
@@ -85,8 +85,12 @@ export function scheduleAutoGroupReconcile(windowId: number | undefined): void {
 /** 对所有普通窗口调度一次对账（启动 / 开关重新打开时补齐存量标签）。 */
 async function reconcileAllWindows(): Promise<void> {
   try {
-    const windows = await browser.windows.getAll({ windowTypes: ['normal'] });
-    for (const win of windows) scheduleAutoGroupReconcile(win.id);
+    // 与 windowCache / autoSnapshot 共用 `listNormalWindowIds`：自动分组此前只按
+    // `windowTypes:['normal']` 判定（不管无痕），关窗快照此前完全不判 ——
+    // 同一批窗口在三条路径里被当成不同集合。
+    for (const windowId of await listNormalWindowIds()) {
+      scheduleAutoGroupReconcile(windowId);
+    }
   } catch (error) {
     logDegraded('auto-group', '枚举窗口失败，跳过本轮自动分组', error);
   }

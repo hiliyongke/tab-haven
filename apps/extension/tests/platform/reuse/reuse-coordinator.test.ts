@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ReuseCoordinator } from '@/platform/reuse/ReuseCoordinator';
-import { AllowanceLedger } from '@/platform/reuse/AllowanceLedger';
+import { AllowanceLedger } from '@/core/reuse/AllowanceLedger';
 import type { TabRecord } from '@/core/tab-types';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {

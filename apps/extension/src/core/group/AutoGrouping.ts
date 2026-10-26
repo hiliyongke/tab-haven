@@ -78,6 +78,18 @@ function siteLabelOfTab(tab: TabRecord): string | null {
  *    同站点的未分组标签吸收进该组，收敛为"每站点一个原生组"——否则会为同一站点
  *    另建一个重复域名组（碎片化）；
  *  - 除此之外任一标签已入原生组则整组跳过（绝不并入用户手动分组）。
+ *
+ * 「确实未分组」与「分组信息不可知」的区分（跨窗口搜索 / 组查询降级的兜底）：
+ * deriveSections 会把 groupId 不在已知 groups 内的标签按未分组处理（否则这些标签
+ * 既不在原生区也不在未分组区，会从列表里凭空消失）。这类标签在浏览器侧**可能已
+ * 属于某个原生组**，为它新建原生组会覆盖既有归属。
+ *
+ * 裁决（评审待拍板项 C4，选 (a) 在 AutoGrouping 侧区分，不选 (b) 给 Sections 的
+ * view model 打标记）：
+ *  - (a) 只需 `groupId === NO_GROUP` 一个判定即可还原区分，且这个判定本来就是本
+ *    函数的前置条件；
+ *  - (b) 会把「是否参与自动建组」这一分组策略塞进渲染用的视图模型，UI 侧随之要
+ *    理解并透传一个与展示无关的标志位，改聚合逻辑时两处都要改。
  */
 export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroupPlan[] {
   const plans: AutoGroupPlan[] = [];
@@ -114,10 +126,18 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
       continue;
     }
 
+    // 新建组只收「确实未分组」的标签：走到这里说明分区内没有已入组标签
+    // （否则上面已走吸收分支），此处再显式过滤一次，把「分组信息不可知」的标签
+    // 挡在建组之外 —— 契约从「靠前置守卫的先后顺序」变成「建组口径本身」，
+    // 将来任一侧改动（如放宽吸收分支的跳过条件）都不会漏掉这条约束。
+    const ungroupedTabIds = section.tabs
+      .filter((tab) => tab.groupId === NO_GROUP)
+      .map((tab) => tab.id);
+    if (ungroupedTabIds.length === 0) continue;
     plans.push({
       title: section.title,
       color: groupColorForLabel(section.title),
-      tabIds: section.tabs.map((tab) => tab.id)
+      tabIds: ungroupedTabIds
     });
   }
   return plans;

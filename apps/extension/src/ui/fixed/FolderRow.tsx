@@ -17,7 +17,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
 import { DragType } from '@/ui/dnd/types';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
-import { FolderItemRow } from './FolderItemRow';
+import { FolderItemRow } from '@/ui/fixed/FolderItemRow';
 
 /**
  * 全量标签 → 条目匹配索引（按 tabs 数组引用做模块级缓存）。
@@ -34,10 +34,23 @@ interface TabRuntimeIndex {
   byRawUrl: Map<string, TabRecord>;
   byId: Map<number, TabRecord>;
 }
-let indexCacheTabs: readonly TabRecord[] | null = null;
-let indexCache: TabRuntimeIndex | null = null;
+/**
+ * 容量 2 的 LRU（队首 = 最近使用）。
+ *
+ * 单槽缓存不够：A/B 两个 tabs 引用**交替**命中时（如「本窗口」与「全窗口搜索」
+ * 两种快照轮流传给 FolderRow）每次都未命中，索引被反复重建 —— 这正是缓存想
+ * 消灭的开销。容量 2 覆盖交替场景，且不随窗口数增长。
+ */
+const INDEX_CACHE_SIZE = 2;
+const indexCache: Array<{ tabs: readonly TabRecord[]; index: TabRuntimeIndex }> = [];
 function getTabRuntimeIndex(tabs: readonly TabRecord[]): TabRuntimeIndex {
-  if (indexCache && tabs === indexCacheTabs) return indexCache;
+  const hitAt = indexCache.findIndex((entry) => entry.tabs === tabs);
+  if (hitAt !== -1) {
+    const hit = indexCache[hitAt]!;
+    indexCache.splice(hitAt, 1);
+    indexCache.unshift(hit);
+    return hit.index;
+  }
   const byKey = new Map<string, TabRecord>();
   const byRawUrl = new Map<string, TabRecord>();
   const byId = new Map<number, TabRecord>();
@@ -52,9 +65,10 @@ function getTabRuntimeIndex(tabs: readonly TabRecord[]): TabRuntimeIndex {
     }
     byId.set(tab.id, tab);
   }
-  indexCacheTabs = tabs;
-  indexCache = { byKey, byRawUrl, byId };
-  return indexCache;
+  const built: TabRuntimeIndex = { byKey, byRawUrl, byId };
+  indexCache.unshift({ tabs, index: built });
+  if (indexCache.length > INDEX_CACHE_SIZE) indexCache.pop();
+  return built;
 }
 
 /** 未打开条目的运行时状态单例：内联 `{ isOpen: false }` 每次渲染都是新引用，会击穿 FolderItemRow 的 memo。 */
@@ -99,7 +113,10 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
    *
    * 一次性 O(标签) 遍历建索引，供所有 FolderItemRow 复用，避免每行各自
    * `tabs.some` + `tabs.find` 的 O(条目×标签) 扫描。
-   * 匹配口径统一走 `itemUrlMatchesTab`（与 openSavedItem / 行内关闭同源）。
+   * 匹配口径与 `itemUrlMatchesTab` 同源（比较键优先，非 http(s) 回退原样比较），
+   * 但这里是**索引化**实现（预建 byKey / byRawUrl / byId 三张表后 O(1) 查表），
+   * 不是逐条目调用该函数 —— 差异仅在于 URL 索引排除隐身标签
+   * （与 handleOpenAll / openSavedItem 的 `!tab.incognito` 同口径）。
    * 索引随 tabs / folder.items 变化重算；FolderItemRow 改为纯 memo 叶子，仅自身运行时变化时才重渲染。
    */
   const runtimeByItem = useMemo(() => {

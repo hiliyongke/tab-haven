@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
@@ -8,7 +8,9 @@ import {
   selectSleepableTabs
 } from '@/core/tabSelectors';
 import type { TabRecord } from '@/core/tab-types';
+import { DEFAULT_FOLDER_NAMES } from '@/core/snapshot/defaultNames';
 import type { TemporarySection } from '@/core/site/Sections';
+import { buildRoamOrder } from '@/core/site/roamOrder';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import {
   activateTabAcrossWindows,
@@ -44,27 +46,27 @@ import { SpaceStrip } from '@/ui/common/SpaceStrip';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { DndRoot } from '@/ui/dnd/DndRoot';
 import { useScrollFade } from '@/ui/common/useScrollFade';
-import { findActivatableRows, ROW_ACTIVATABLE_ATTR } from '@/ui/domContract';
 import { useBatchTabActions } from '@/entrypoints/sidepanel/hooks/useBatchTabActions';
-import { usePanelLayers } from '@/entrypoints/sidepanel/hooks/usePanelLayers';
+import { usePanelLayers } from '@/ui/hooks/usePanelLayers';
 import { useLatestRef } from '@/ui/hooks/useLatestRef';
+import { useRowRoving } from '@/ui/hooks/useRowRoving';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { FixedArea } from '@/ui/fixed/FixedArea';
 import { PinnedStrip } from '@/ui/fixed/PinnedStrip';
 import { SearchBar } from '@/ui/search/SearchBar';
 import { SectionList, splitPartnerIds } from '@/ui/tabs/SectionList';
-import { useLocateActive } from '@/entrypoints/sidepanel/useLocateActive';
+import { useLocateActive } from '@/ui/hooks/useLocateActive';
 import { useSearchController } from '@/ui/search/useSearchController';
 import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import { useSectionDerivation } from '@/entrypoints/sidepanel/hooks/useSectionDerivation';
-import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
+import { useGlobalHotkeys } from '@/ui/hooks/useGlobalHotkeys';
 import { useSpaces } from '@/entrypoints/sidepanel/hooks/useSpaces';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { useOtherWindows } from '@/ui/tabs/useOtherWindows';
 import { OtherWindowsSection } from '@/ui/tabs/OtherWindowsSection';
 import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
 import type { Snapshot } from '@/core/schema/models';
-import { useListNavigation } from '@/entrypoints/sidepanel/hooks/useListNavigation';
+import { useListNavigation } from '@/ui/hooks/useListNavigation';
 import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
@@ -76,7 +78,17 @@ import {
   LoadingSkeleton,
   NoSearchResults
 } from '@/ui/common/ListStates';
-import { useTabDragHandlers } from '@/entrypoints/sidepanel/useTabDragHandlers';
+import { useTabDragHandlers } from '@/ui/dnd/useTabDragHandlers';
+
+/** 初始化失败后的自动重试延迟：给仓库读取一次喘息，避免在同一故障上立刻重试。 */
+const INIT_RETRY_DELAY_MS = 1000;
+/** 自动重试次数上限（含首次）。用尽即转错误态，交回用户手动重试。 */
+const INIT_MAX_ATTEMPTS = 2;
+/**
+ * 首启引导延迟弹出时长：数据就绪后先让用户看到真实列表，避免模态遮罩第一时间
+ * 盖住被介绍的对象。
+ */
+const TOUR_AUTO_OPEN_DELAY_MS = 900;
 
 export default function App() {
   const { t } = useTranslation();
@@ -267,49 +279,8 @@ export default function App() {
   // 用 tabs.length 而非 pinnedSection：后者在本行之后才定义，且固定区只在该
   // 分段存在时渲染 —— 传标签总数足以在「容器出现/内容变化」时重挂监听。
   useScrollFade(nativePinGridRef, tabs.length);
-  /**
-   * 列表级键盘漫游（↑↓ / Home / End）：一个 Tab 进入列表后即可在行之间移动焦点。
-   *
-   * 否则 100 个标签就有上百个 Tab 停靠点（每行还带若干操作按钮），仅键盘与读屏
-   * 用户几乎无法在列表里穿行。
-   *
-   * 刻意**不接管**带修饰键的按键：Alt+↑↓ 是键盘重排（改写浏览器 index），不能被
-   * 漫游吞掉。输入框内的 ↑↓ 归搜索漫游（useListNavigation）所有，这里一律放行。
-   */
-  const handleListKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
-    if (
-      event.key !== 'ArrowDown' &&
-      event.key !== 'ArrowUp' &&
-      event.key !== 'Home' &&
-      event.key !== 'End'
-    ) {
-      return;
-    }
-    const target = event.target as HTMLElement;
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-    const container = listScrollRef.current;
-    if (!container) return;
-    const rows = findActivatableRows(container);
-    if (rows.length === 0) return;
-    const current = target.closest<HTMLElement>(`[${ROW_ACTIVATABLE_ATTR}]`);
-    const index = current ? rows.indexOf(current) : -1;
-    const next =
-      event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-          ? rows.length - 1
-          : event.key === 'ArrowDown'
-            ? index < 0
-              ? 0
-              : Math.min(index + 1, rows.length - 1)
-            : index < 0
-              ? rows.length - 1
-              : Math.max(index - 1, 0);
-    rows[next]?.focus();
-    // 焦点移动时浏览器会自行滚动到该行，阻止方向键的默认滚动以免两者叠加
-    event.preventDefault();
-  }, []);
+  /** 列表级键盘漫游（↑↓ / Home / End）：算法与 DOM 约定同在 ui/hooks/useRowRoving。 */
+  const handleListKeyDown = useRowRoving(listScrollRef);
 
   const wasFilteringRef = useRef(isFiltering);
   useEffect(() => {
@@ -419,11 +390,6 @@ export default function App() {
   /** 初始化失败后的自动重试定时器句柄（跨 effect 实例共享，cleanup 才能清到）。 */
   const retryTimerRef = useRef<number | undefined>(undefined);
 
-  /** 初始化失败后的自动重试延迟：给仓库读取一次喘息，避免在同一故障上立刻重试。 */
-  const INIT_RETRY_DELAY_MS = 1000;
-  /** 自动重试次数上限（含首次）。用尽即转错误态，交回用户手动重试。 */
-  const INIT_MAX_ATTEMPTS = 2;
-
   // 同步服务：事件 → 快照 → store 订阅自动重渲染。
   // 依赖里刻意不含 `t`：语言切换会导致 t 引用变化，进而重放整个数据层初始化
   // （重读全部仓库 + 重新订阅标签事件），切换一次语言等于重启一次面板。
@@ -512,8 +478,6 @@ export default function App() {
   // 避免模态遮罩第一时间盖住被介绍的对象。引导完成（onboarded）后不再触发。
   // 延迟窗口内用户一旦开始操作（指针/键盘）即放弃本次自动弹出 ——
   // 用户已经上手了，再弹模态介绍只会打断他（可从设置页「重新观看引导」找回）。
-  const TOUR_AUTO_OPEN_DELAY_MS = 900;
-
   useEffect(() => {
     if (!dataReady || settings.onboarded) return;
     let cancelled = false;
@@ -581,33 +545,23 @@ export default function App() {
    * 常驻磁贴区在前，其后是各未折叠分区。折叠分区内的标签**不进序列**：
    * 它们在 DOM 里不存在，选中一个看不见的标签会让 Enter 变成「激活未知项」。
    */
-  const roamTabIds = useMemo(() => {
-    // displayCollapsedSites 是「Set 或数组」的联合类型（与 SectionList 的入参同源），
-    // 这里统一成 Set 再查询。
-    const collapsedSitesSet =
-      displayCollapsedSites instanceof Set ? displayCollapsedSites : new Set(displayCollapsedSites);
-    const ids: number[] = [];
-    if (settings.showPinnedStrip && pinnedSection) {
-      for (const tab of pinnedSection.tabs) ids.push(tab.id);
-    }
-    for (const section of restSections) {
-      const collapsed =
-        section.kind === 'native'
-          ? displayCollapsedGroups.has(section.groupId)
-          : section.kind === 'site'
-            ? collapsedSitesSet.has(section.siteKey)
-            : false;
-      if (collapsed) continue;
-      for (const tab of section.tabs) ids.push(tab.id);
-    }
-    return ids;
-  }, [
-    settings.showPinnedStrip,
-    pinnedSection,
-    restSections,
-    displayCollapsedGroups,
-    displayCollapsedSites
-  ]);
+  const roamTabIds = useMemo(
+    () =>
+      buildRoamOrder({
+        showPinnedStrip: settings.showPinnedStrip,
+        pinnedSection,
+        restSections,
+        collapsedGroups: displayCollapsedGroups,
+        collapsedSites: displayCollapsedSites
+      }),
+    [
+      settings.showPinnedStrip,
+      pinnedSection,
+      restSections,
+      displayCollapsedGroups,
+      displayCollapsedSites
+    ]
+  );
 
   /**
    * 键盘漫游：搜索态走命中序列（相关度），空态走可见列表顺序。
@@ -838,8 +792,11 @@ export default function App() {
   // 原生标签组 → 固定文件夹（桥接反向）。
   const handleSaveGroupAsFolder = useCallback(
     (groupId: number) => {
+      // 落盘名走常量而非 `t()`：按界面语言生成会让中英文界面产出两套名字，
+      // 与导入侧「同名合并」的语义打架（见 core/snapshot/defaultNames）。
       const name =
-        useTabStore.getState().groups.find((g) => g.id === groupId)?.title || t('未命名标签组');
+        useTabStore.getState().groups.find((g) => g.id === groupId)?.title ||
+        DEFAULT_FOLDER_NAMES.unnamedGroup;
       const groupTabs = useTabStore.getState().tabs.filter((tab) => tab.groupId === groupId);
       void createFolderFromNativeGroup(name, groupTabs).then((saved) =>
         // 组内无可收藏标签时不建空夹（返回 false），用区分文案而非“已保存”。

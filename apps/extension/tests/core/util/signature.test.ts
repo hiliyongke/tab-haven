@@ -25,6 +25,17 @@ describe('structuralSignature', () => {
     expect(structuralSignature(v)).toBe(JSON.stringify(v));
   });
 
+  it('undefined 输入仍返回字符串（返回类型不撒谎）', () => {
+    // JSON.stringify(undefined) 返回 undefined：声明 string 却返回 undefined 时，
+    // 判等会静默变成 true，进而跳过本该落盘的写入。
+    const sig = structuralSignature(undefined);
+    expect(typeof sig).toBe('string');
+    expect(sig).toBe('undefined');
+    // 且不与任何真实序列化结果相等（判等语义仍然成立）
+    expect(sig).not.toBe(structuralSignature({}));
+    expect(sig).not.toBe(structuralSignature(null));
+  });
+
   it('大体积 favicon 折叠成定长摘要，显著降低序列化开销', () => {
     const heavy = { id: '1', favIconUrl: 'x'.repeat(10_000) };
     const sig = structuralSignature(heavy);

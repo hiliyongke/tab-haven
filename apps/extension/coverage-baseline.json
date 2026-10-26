@@ -1,0 +1,27 @@
+{
+  "//": "覆盖率棘轮基线：每档阈值只许升、不许降。key 与 vitest.config.ts 的 coverage.thresholds 一一对应。",
+  "//baseline": "取自 vitest.config.ts 的初版取值（「实测值 − 约 8 点余量」）。要收紧某一档，改 vitest.config.ts；要放宽，必须连同本文件一起改并说明理由——这正是本文件存在的意义。",
+  "thresholds": {
+    "global": { "lines": 68, "statements": 67, "branches": 58, "functions": 62 },
+    "src/core/**": { "lines": 90, "statements": 87, "branches": 79, "functions": 91 },
+    "src/platform/*.ts": { "lines": 88, "statements": 86, "branches": 80, "functions": 85 },
+    "src/entrypoints/background.ts": {
+      "lines": 72,
+      "statements": 70,
+      "branches": 58,
+      "functions": 65
+    },
+    "src/platform/background/**": {
+      "lines": 82,
+      "statements": 81,
+      "branches": 78,
+      "functions": 73
+    },
+    "src/ui/fixed/**": { "lines": 84, "statements": 84, "branches": 70, "functions": 78 },
+    "src/ui/dnd/**": { "lines": 82, "statements": 80, "branches": 76, "functions": 73 },
+    "src/ui/common/**": { "lines": 66, "statements": 65, "branches": 56, "functions": 63 },
+    "src/stores/*.ts": { "lines": 63, "statements": 61, "branches": 64, "functions": 64 },
+    "src/stores/data/**": { "lines": 73, "statements": 70, "branches": 63, "functions": 70 },
+    "src/platform/**": { "lines": 81, "statements": 79, "branches": 74, "functions": 77 }
+  }
+}

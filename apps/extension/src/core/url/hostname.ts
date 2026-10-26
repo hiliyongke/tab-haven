@@ -45,6 +45,12 @@ function isBareIpv6(host: string): boolean {
  */
 function normalizeHostPart(hostname: string): string {
   const normalized = normalizeHostname(hostname);
+  // 含空白一律判空：`a b.com` 在 URL 解析处必然抛错，白名单永不命中它，
+  // 留着就是一条白占额度的垃圾条目（ASCII 分支此前直接 return，零校验放行）。
+  //
+  // 只拦空白，不校验 DNS 标签合法性，是刻意的：`a..com` / `-a.com` / `a_b.com`
+  // 实测都能原样回环（URL 解析能解析且与输入等形），收紧只会误伤合法条目。
+  if (/\s/.test(normalized)) return '';
   if (normalized === '' || /^[\x20-\x7E]+$/.test(normalized)) return normalized;
   try {
     return new URL(`http://${normalized}/`).hostname;

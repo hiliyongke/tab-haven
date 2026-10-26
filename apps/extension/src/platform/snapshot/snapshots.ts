@@ -1,13 +1,10 @@
 import { browser } from 'wxt/browser';
-import {
-  SNAPSHOT_TABS_LIMIT,
-  type Settings,
-  type Snapshot,
-  type SnapshotTab
-} from '@/core/schema/models';
+import { type Snapshot, type SnapshotTab } from '@/core/schema/models';
 import { toGroupColor } from '@/core/group/groupColors';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { isHttpUrl, webComparisonKey } from '@/core/url/UrlInspector';
+import { missingTabsOf } from '@/core/snapshot/missingTabs';
+import { trimSnapshotsWithEvicted } from '@/core/snapshot/trimSnapshots';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { newId } from '@/core/util/id';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
@@ -16,13 +13,9 @@ import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
 import { tabGroups } from '@/platform/tabGroups';
 
-/**
- * 快照库 read-modify-write 跨页锁名。
- *
- * 快照的写入方不止面板：background SW（关窗自动保存 / 定时自动快照）也直写同一仓库。
- * 裸 read → trim → write 在两个写入方交错时是 last-writer-wins（静默丢一条快照）；
- * 删除/重命名同理。所有快照库 RMW 必须经本锁串行化。
- */
+// 快照库 RMW 用 `@/platform/storage/crossPageLock` 的 SNAPSHOTS_RMW_LOCK（**全仓锁名
+// 的唯一声明处**）：快照的写入方不止面板，background SW（关窗自动保存 / 定时自动
+// 快照）也直写同一仓库，裸 read → trim → write 交错时是 last-writer-wins。
 /** 生成快照 id（SW / 面板统一走 core 的 id 口径，含非安全上下文的退化路径）。 */
 function newSnapshotId(): string {
   return newId('snap');
@@ -51,78 +44,6 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     tabCount: list.length,
     tabs: list
   };
-}
-
-/**
- * 快照裁剪：先保证自动快照不超过 maxAutoSnapshots（仅保留最新 N 条 auto），
- * 再保证总快照不超过 snapshotLimit（保留最新 N 条）。返回新数组（不修改入参），
- * 并附带被淘汰的快照。
- *
- * platform 层可以写日志，但「告知用户」属于 UI 反馈，应由 store/UI 完成；这里只
- * 负责把淘汰项精确交出去。
- */
-export function trimSnapshotsWithEvicted(
-  list: readonly Snapshot[],
-  settings: Settings
-): { kept: Snapshot[]; evicted: Snapshot[] } {
-  const sorted = [...list].sort((a, b) => b.createdAt - a.createdAt);
-  const maxAuto = Math.max(1, settings.maxAutoSnapshots);
-  const autoSorted = sorted.filter((s) => s.origin === 'auto');
-  const autoEvicted = autoSorted.slice(maxAuto);
-  const autoKept = autoSorted.slice(0, maxAuto);
-  // 上限只对「非自动」快照生效：snapshotLimit 的语义是「命名快照 / 归档 / 工作区的
-  // 保留上限」，auto 侧已由 maxAutoSnapshots 独立收敛。两族合流后再统一 slice，
-  // 会让手动快照占满额度时把旧 auto 一并挤掉 —— 而 auto 恰恰是崩溃兜底那一族，
-  // 被自己不该竞争的额度淘汰即「兜底快照凭空消失」。
-  const manualSorted = sorted.filter((s) => s.origin !== 'auto');
-  const limit = Math.max(1, settings.snapshotLimit);
-  const manualKept = manualSorted.slice(0, limit);
-  const manualEvicted = manualSorted.slice(limit);
-  const kept = [...autoKept, ...manualKept].sort((x, y) => y.createdAt - x.createdAt);
-  return { kept, evicted: [...autoEvicted, ...manualEvicted] };
-}
-
-/** OneTab 导入文本的体积上限（1MB，远超正常使用规模）。 */
-const ONE_TAB_INPUT_LIMIT = 1024 * 1024;
-
-/**
- * 解析 OneTab 导出文本为快照条目。
- * 兼容格式：每行一个条目，可为裸 URL、或 "URL - Title"、"[URL] Title"。
- * 仅抽取可恢复的 URL；非法行跳过。返回轻量 SnapshotTab 数组。
- */
-export function parseOneTab(text: string): SnapshotTab[] {
-  const out: SnapshotTab[] = [];
-  // 输入体积与输出条数都要设上限：粘贴内容是用户可控输入，
-  // 超大文本会先构造出巨大数组，超条数则只在写盘时才被 schema 拒绝 ——
-  // 用户只会看到一个泛化的「操作失败」。提前截断并给出确定性结果。
-  if (text.length > ONE_TAB_INPUT_LIMIT) return out;
-  for (const raw of text.split(/\r?\n/)) {
-    if (out.length >= SNAPSHOT_TABS_LIMIT) break;
-    const line = raw.trim();
-    if (!line || line.startsWith('//')) continue;
-    let url: string;
-    let title = '';
-    const bracket = line.match(/^\[([^\]]+)\]\s*(.*)$/);
-    if (bracket) {
-      url = bracket[1]!.trim();
-      title = bracket[2]?.trim() ?? '';
-    } else if (line.includes(' - ')) {
-      const separatorIndex = line.indexOf(' - ');
-      url = line.slice(0, separatorIndex).trim();
-      title = line.slice(separatorIndex + 3).trim();
-    } else {
-      url = line;
-    }
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        out.push({ url: parsed.href, title, pinned: false, muted: false });
-      }
-    } catch {
-      // 跳过非 URL 行
-    }
-  }
-  return out;
 }
 
 /**
@@ -224,22 +145,6 @@ export function collectSnapshotTabs(
   return out;
 }
 
-/** 恢复快照中「窗口内尚未打开」的条目（web 比较键去重；快照内自身重复也去重）。 */
-function missingTabsOf(snapshot: Snapshot, existingKeys: ReadonlySet<string>): SnapshotTab[] {
-  const seen = new Set<string>();
-  const missing: SnapshotTab[] = [];
-  for (const tab of snapshot.tabs) {
-    // 仅 http(s) 条目可恢复（chrome:// 等内部页浏览器不允许以 URL 创建，采集端已过滤，
-    // 此处兜底导入数据）。
-    if (!isHttpUrl(tab.url)) continue;
-    const key = webComparisonKey(tab.url, undefined) ?? tab.url;
-    if (existingKeys.has(key) || seen.has(key)) continue;
-    seen.add(key);
-    missing.push(tab);
-  }
-  return missing;
-}
-
 /** 恢复结果：新建标签数 + 是否按降级口径执行（查询目标窗口失败）。 */
 export interface RestoreSnapshotResult {
   /** 本次实际新建的标签数。 */
@@ -304,7 +209,11 @@ export async function restoreSnapshot(
   const created = (
     await mapWithConcurrency(missing, DEFAULT_CONCURRENCY, async (tab) => {
       try {
-        await grantReuseAllowance(target, tab.url);
+        // 返回值 = 是否获确认（契约见 reuseAllowance）：未获确认时恢复出来的标签
+        // 可能被复用引擎合并掉，必须传导为 degraded，否则界面报「已恢复」而标签
+        // 随即消失，且诊断里只有 reuse 侧一条留痕、快照侧看起来一切正常。
+        const granted = await grantReuseAllowance(target, tab.url);
+        if (!granted) degraded = true;
         const createdTab = await browser.tabs.create({
           windowId: target,
           url: tab.url,

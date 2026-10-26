@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, renderHook } from '@testing-library/react';
-import { useGlobalHotkeys } from '@/entrypoints/sidepanel/hooks/useGlobalHotkeys';
+import { useGlobalHotkeys } from '@/ui/hooks/useGlobalHotkeys';
 
 /**
- * 面板全局快捷键（`hooks/useGlobalHotkeys.ts`）。
+ * 面板全局快捷键（`ui/hooks/useGlobalHotkeys.ts`）。
  *
  * ⌘/Ctrl+Z 撤销的关键契约是**不抢文本编辑场景的原生撤销**——
  * 输入框里的 ⌘Z 必须撤文本而不是恢复标签批次。

@@ -225,6 +225,20 @@ describe('normalizeWhitelistHost', () => {
     expect(normalizeWhitelistHost('WWW.A.com.:080')).toBe('a.com:80');
   });
 
+  it('Given 含空白的 ASCII 主机名 When 归一化 Then 判空丢弃（URL 解析必然抛错，永不命中）', () => {
+    // ASCII 分支此前零校验直接放行，`a b.com` 原样落盘 → 白占一条额度。
+    expect(normalizeWhitelistHost('a b.com')).toBe('');
+    expect(normalizeWhitelistHost('a.com b')).toBe('');
+    expect(normalizeWhitelistHost('https://a b.com/x')).toBe('');
+  });
+
+  it('Given 形式可疑但可回环的 ASCII 主机名 When 归一化 Then 刻意保留（只拦空白）', () => {
+    // `a..com` / `-a.com` / `a_b.com` 实测都能原样回环，收紧即误伤合法条目。
+    expect(normalizeWhitelistHost('a..com')).toBe('a..com');
+    expect(normalizeWhitelistHost('-a.com')).toBe('-a.com');
+    expect(normalizeWhitelistHost('a_b.com')).toBe('a_b.com');
+  });
+
   it('Given 中文域名（IDN）When 归一化 Then 落盘为 punycode（匹配端拿到的是 punycode）', () => {
     // 标签 URL 的 hostname 由浏览器给出，已是 punycode；存中文原文永不命中。
     expect(normalizeWhitelistHost('中文.cn')).toBe('xn--fiq228c.cn');

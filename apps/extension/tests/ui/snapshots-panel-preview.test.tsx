@@ -166,6 +166,50 @@ describe('SnapshotsPanel 恢复预览', () => {
     });
   });
 
+  it('展开 300 条标签的详情：三分类逐条渲染正确（规模回归）', async () => {
+    // 规模用例（原实现的 perf 缺陷）：展开清单曾在 snap.tabs.map 内对 diff 的
+    // willCreate / existing 各做一次线性 find —— 复杂度 O(条目数 × diff 条目数)，
+    // 300 条标签一次展开即数万次比较。改为预建 Set 查表后与 diff 规模无关，
+    // 本用例锁住「规模下逐条分类仍然正确」这一行为等价性。
+    const count = 150;
+    const tabs = [
+      ...Array.from({ length: count }, (_, i) => snapTab(`https://new.com/${i}`, `新建 ${i}`)),
+      ...Array.from({ length: count }, (_, i) => snapTab(`https://exists.com/${i}`, `已有 ${i}`))
+    ];
+    useSnapshotStore.setState({
+      snapshots: [makeSnap({ id: 'bulk', tabCount: tabs.length, tabs })],
+      ready: true
+    });
+    // 窗口已开 exists.com 的全部条目 → 后半 150 条判为「已存在」
+    useTabStore.setState({
+      tabs: Array.from({ length: count }, (_, i) => ({
+        id: 1000 + i,
+        windowId: 1,
+        groupId: -1,
+        index: i,
+        title: `已开 ${i}`,
+        url: `https://exists.com/${i}`,
+        active: false,
+        pinned: false,
+        incognito: false,
+        muted: false,
+        discarded: false,
+        audible: false
+      })),
+      currentWindowId: 1
+    });
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'View tabs in this snapshot' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Preview:/)).toHaveTextContent('150 already open');
+    });
+    // 逐条徽标：150 条「已存在」，全部是 http(s) 故没有「不恢复」条目
+    expect(screen.getAllByText('Already open')).toHaveLength(count);
+    expect(screen.queryByText('Skipped')).toBeNull();
+  });
+
   it('取消勾选后按钮计数减少，且按勾选集恢复', async () => {
     const restoreSelected = vi.fn().mockResolvedValue({ count: 1, degraded: false });
     useSnapshotStore.setState({

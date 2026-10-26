@@ -191,6 +191,7 @@ export function createSettingsSlice(
             // 镜像已随 clearAllStoredData 一并删除：写失败态与拉取分类同样不再有
             // 对应数据（后者不清会带着清空前的结论，等用户重新开启同步时才显示）。
             mirrorWriteFailed: false,
+            mirrorQuotaExceeded: false,
             mirrorIssue: null,
             ready: true
           });

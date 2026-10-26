@@ -1,15 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { DEFAULT_SETTINGS } from '@/core/schema/models';
+import { DEFAULT_SETTINGS, PINS_LIMIT } from '@/core/schema/models';
 import { createFolder, createFolderItem } from '@/core/fixed/FolderOps';
-import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
+import {
+  foldersRepository,
+  pinsRepository,
+  settingsRepository
+} from '@/platform/storage/repositories';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import {
+  CONTEXT_MENU_TITLE_MAX,
   MENU_IDS,
   addEntryToFolder,
+  addPinFromTab,
   clearContextMenus,
   discardTabSafely,
   rebuildContextMenus,
+  resetContextMenuSignatureForTest,
   setupMenus
 } from '@/platform/background/contextMenus';
 
@@ -75,6 +82,9 @@ beforeEach(() => {
   (fakeBrowser as unknown as { notifications?: unknown }).notifications = {
     create: vi.fn(async () => 'id')
   };
+  // 菜单签名是模块级状态：不复位时「相同 folders 不重建」会让上一个用例的签名
+  // 漏到下一个用例，表现为「什么都没发生」的假绿（同 windowCache 的模块级状态陷阱）。
+  resetContextMenuSignatureForTest();
 });
 
 afterEach(() => {
@@ -156,6 +166,57 @@ describe('setupMenus / rebuildContextMenus', () => {
     expect(linkChild?.contexts).toEqual(['link']);
   });
 
+  it('签名未变（同样的文件夹列表）时不重建：连续两次不产生新的 create', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, contextMenusEnabled: true });
+    await seedFolders();
+    const { create } = installMenusApi();
+
+    await setupMenus();
+    await waitForCreates(create, 12);
+    const afterFirst = create.mock.calls.length;
+
+    // 再跑一次：folders 与开关都没变，不应再走 removeAll + 全量重建（10+N 次 IPC）
+    await setupMenus();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(create.mock.calls.length).toBe(afterFirst);
+  });
+
+  it('文件夹改名（签名变化）时仍重建', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, contextMenusEnabled: true });
+    await seedFolders();
+    const { create } = installMenusApi();
+
+    await setupMenus();
+    await waitForCreates(create, 12);
+    const afterFirst = create.mock.calls.length;
+
+    const folders = await foldersRepository.read();
+    await foldersRepository.write(folders.map((folder) => ({ ...folder, name: 'Renamed' })));
+    await setupMenus();
+    await waitForCreates(create, afterFirst + 12);
+
+    expect(create.mock.calls.length).toBeGreaterThan(afterFirst);
+  });
+
+  it('开关关掉再打开时重建（清空即视为签名失效）', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, contextMenusEnabled: true });
+    await seedFolders();
+    const { create } = installMenusApi();
+
+    await setupMenus();
+    await waitForCreates(create, 12);
+    const afterFirst = create.mock.calls.length;
+
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, contextMenusEnabled: false });
+    await setupMenus();
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, contextMenusEnabled: true });
+    await setupMenus();
+
+    await waitForCreates(create, afterFirst + 12);
+  });
+
   it('clearContextMenus 只清不建', async () => {
     const { create, removeAll } = installMenusApi();
 
@@ -229,6 +290,22 @@ describe('addEntryToFolder 安全与落盘真实性', () => {
     expect(folder.items.map((item) => item.url)).toEqual(['https://new.com/']);
   });
 
+  it('标题超长（页面可控的 selectionText）被截断后落库，写入不失败', async () => {
+    await foldersRepository.write([{ ...createFolder('Work'), items: [] }]);
+    const folderId = (await foldersRepository.read())[0]!.id;
+    // 网页选中文本是页面可控且无长度上限的字符串：不截断即是一条由网页内容
+    // 驱动的存储放大面（100KB × 每次右键）。
+    const hugeTitle = 'x'.repeat(100 * 1024);
+
+    await expect(
+      addEntryToFolder(folderId, { url: 'https://new.com/', title: hugeTitle })
+    ).resolves.toBe('added');
+
+    const folder = (await foldersRepository.read())[0]!;
+    expect(folder.items).toHaveLength(1);
+    expect(folder.items[0]!.title).toHaveLength(CONTEXT_MENU_TITLE_MAX);
+  });
+
   it('落盘失败（quota 超限）返回 failed 并提示，不谎报「已添加」', async () => {
     await seedFolders();
     const folderId = (await foldersRepository.read())[0]!.id;
@@ -242,6 +319,57 @@ describe('addEntryToFolder 安全与落盘真实性', () => {
       notifications: { create: ReturnType<typeof vi.fn> };
     };
     expect(notifications.notifications.create).toHaveBeenCalled();
+  });
+});
+
+describe('addPinFromTab（右键固定的唯一写路径）', () => {
+  /** 造满 PINS_LIMIT 条磁贴（真实身份各不相同，故 dedupePins 不会合并）。 */
+  async function seedFullPins(): Promise<void> {
+    await pinsRepository.write(
+      Array.from({ length: PINS_LIMIT }, (_, i) => ({
+        id: `pin-${i}`,
+        identity: `site-${i}.com`,
+        url: `https://site-${i}.com/`,
+        title: `Site ${i}`
+      }))
+    );
+  }
+
+  it('正常固定：落库并返回 true', async () => {
+    await expect(addPinFromTab({ url: 'https://a.com/', title: 'A' })).resolves.toBe(true);
+    expect((await pinsRepository.read()).map((pin) => pin.identity)).toEqual(['a.com']);
+  });
+
+  it('非 http(s) / 无 URL 时返回 false 并留痕（不落库）', async () => {
+    await expect(addPinFromTab({ url: undefined })).resolves.toBe(false);
+    await expect(addPinFromTab({ url: 'javascript:alert(1)' })).resolves.toBe(false);
+    expect(await pinsRepository.read()).toHaveLength(0);
+    expect(readDiagnostics().some((e) => e.message.includes('固定失败'))).toBe(true);
+  });
+
+  it('达到 PINS_LIMIT 时预检拦住：不写盘、返回 false 并留痕（超限数据会让整份备份被拒）', async () => {
+    await seedFullPins();
+
+    await expect(addPinFromTab({ url: 'https://new.com/', title: 'New' })).resolves.toBe(false);
+
+    expect(await pinsRepository.read()).toHaveLength(PINS_LIMIT);
+    expect(readDiagnostics().some((e) => e.message.includes('上限'))).toBe(true);
+  });
+
+  it('已存在的磁贴是原地替换，不受上限约束', async () => {
+    await seedFullPins();
+
+    // 第 0 条的身份即 site-0.com：替换它不会让数量增长
+    await expect(addPinFromTab({ url: 'https://site-0.com/', title: 'Zero' })).resolves.toBe(true);
+
+    const pins = await pinsRepository.read();
+    expect(pins).toHaveLength(PINS_LIMIT);
+    expect(pins.find((pin) => pin.identity === 'site-0.com')?.title).toBe('Zero');
+  });
+
+  it('落盘失败返回 false（不谎报成功）', async () => {
+    vi.spyOn(pinsRepository, 'write').mockResolvedValue(false);
+    await expect(addPinFromTab({ url: 'https://a.com/', title: 'A' })).resolves.toBe(false);
   });
 });
 

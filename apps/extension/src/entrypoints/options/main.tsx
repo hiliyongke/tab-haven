@@ -1,12 +1,12 @@
-import '../../theme-init';
+import '@/theme-init';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { SettingsPage } from '@/entrypoints/options/SettingsPage';
 import { ErrorBoundary } from '@/ui/common/ErrorBoundary';
 import { EntryRoot } from '@/ui/common/EntryRoot';
 import { installGlobalErrorHandlers } from '@/platform/diagnostics';
-import '../../i18n';
-import '../../styles/main.css';
+import '@/i18n';
+import '@/styles/main.css';
 
 // 全局异常兜底（同 sidepanel：ErrorBoundary 不覆盖事件处理器与异步回调）
 installGlobalErrorHandlers();

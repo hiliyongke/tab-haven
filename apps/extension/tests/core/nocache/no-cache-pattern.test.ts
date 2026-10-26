@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeNoCachePattern } from '@/core/nocache/noCachePattern';
+import { normalizeNoCachePattern, NO_CACHE_PATTERNS_LIMIT } from '@/core/nocache/noCachePattern';
 import { SettingsSchema } from '@/core/schema/models';
 
 /**
@@ -73,5 +73,25 @@ describe('SettingsSchema.noCachePatterns', () => {
 
   it('缺省为空数组', () => {
     expect(SettingsSchema.parse({}).noCachePatterns).toEqual([]);
+  });
+
+  it('归一化后去重：同一站点的多种写法只占一份额度', () => {
+    // 上限写在 transform 之前时，'a.com' 与 'A.COM' 各占一份额度且归一化后重复，
+    // 既浪费额度又编译出重复的 DNR 规则。
+    const parsed = SettingsSchema.safeParse({
+      noCachePatterns: ['a.com', 'A.COM', 'a.com/']
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.noCachePatterns).toEqual(['a.com', 'a.com/']);
+  });
+
+  it('超出上限的归一化结果被拒绝（上限作用于去重之后）', () => {
+    const patterns = Array.from({ length: NO_CACHE_PATTERNS_LIMIT + 1 }, (_, i) => `s${i}.com`);
+    expect(SettingsSchema.safeParse({ noCachePatterns: patterns }).success).toBe(false);
+    // 重复写法不额外占额度：同额度的数组里一半是重复项时仍然通过
+    const duplicated = Array.from({ length: NO_CACHE_PATTERNS_LIMIT }, (_, i) =>
+      i % 2 === 0 ? `s${i}.com` : `S${i - 1}.COM`
+    );
+    expect(SettingsSchema.safeParse({ noCachePatterns: duplicated }).success).toBe(true);
   });
 });

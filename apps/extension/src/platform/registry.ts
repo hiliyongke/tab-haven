@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { DataRepository } from '@/platform/storage/DataRepository';
 import {
+  AUTO_GROUPS_RMW_LOCK,
+  COLLAPSE_RMW_LOCK,
+  FOLDERS_RMW_LOCK,
+  PINS_RMW_LOCK,
+  SNAPSHOTS_RMW_LOCK,
+  UNDO_PERSIST_LOCK
+} from '@/platform/storage/crossPageLock';
+import {
   AutoDiscardBatchSchema,
   DEFAULT_SETTINGS,
   FixedFolderSchema,
@@ -64,33 +72,51 @@ export interface Repositories {
   snapshots: DataRepository<Snapshot[]>;
 }
 
+/**
+ * 各分区的 RMW 锁名传给仓库的原因：`read()` 的「逐元素恢复」会在读路径上做一次
+ * 整表回写，那次回写基于读到的旧快照，锁外执行会让期间另一上下文写入的合法数据被
+ * 整表覆盖。锁名与分区的对应关系在此处一一固定（锁名全集见 `crossPageLock.ts`）。
+ *
+ * 未配锁的分区（settings / autoDiscard / seeded）维持锁外回写：settings 与 seeded
+ * 不是数组，恢复分支根本不会触发；autoDiscard 由 `autoDiscardLedger` 自行串行化。
+ */
 function createRepositories(): Repositories {
   return {
     folders: new DataRepository<FixedFolder[]>(
       'tabs.fixed-folders.v1',
       FixedFolderSchema.array(),
-      []
+      [],
+      { rmwLock: FOLDERS_RMW_LOCK }
     ),
     pins: new DataRepository<PersistentPin[]>(
       'tabs.persistent-pins.v1',
       PersistentPinSchema.array(),
-      []
+      [],
+      { rmwLock: PINS_RMW_LOCK }
     ),
     collapse: new DataRepository<SiteCollapseState>(
       'tabs.site-collapse.v1',
       SiteCollapseSchema,
-      []
+      [],
+      { rmwLock: COLLAPSE_RMW_LOCK }
     ),
     settings: new DataRepository<Settings>('tabs.settings.v1', SettingsSchema, DEFAULT_SETTINGS),
-    undo: new DataRepository<UndoBatch[]>('tabs.undo-stack.v1', UndoBatchSchema.array(), []),
+    // 撤销栈与重做栈是同一条「整表写」串行链的两个键，共用 UNDO_PERSIST_LOCK
+    // （跨页并发入栈/出栈时后写覆盖先写会让已撤销批次复活）。
+    undo: new DataRepository<UndoBatch[]>('tabs.undo-stack.v1', UndoBatchSchema.array(), [], {
+      rmwLock: UNDO_PERSIST_LOCK
+    }),
     // 重做栈（与撤销栈同结构）；不参与备份导出，也不参与同步镜像。
-    redo: new DataRepository<UndoBatch[]>('tabs.redo-stack.v1', UndoBatchSchema.array(), []),
+    redo: new DataRepository<UndoBatch[]>('tabs.redo-stack.v1', UndoBatchSchema.array(), [], {
+      rmwLock: UNDO_PERSIST_LOCK
+    }),
     // 自动组 id 记录只增靠 disband 清理，但上限仍须显式（全项目集合的既定原则）：
     // 无界数组是唯一不受限的存储放大面。500 远超真实规模（组数 ≤ 标签数）。
     autoGroups: new DataRepository<number[]>(
       'tabs.auto-groups.v1',
       z.array(z.number()).max(AUTO_GROUPS_LIMIT),
-      []
+      [],
+      { rmwLock: AUTO_GROUPS_RMW_LOCK }
     ),
     autoDiscard: new DataRepository<AutoDiscardBatch[]>(
       'tabs.auto-discard-batch.v1',
@@ -100,7 +126,9 @@ function createRepositories(): Repositories {
     // 首次启动标志：false 表示新设备（可从浏览器同步通道镜像恢复）。
     seeded: new DataRepository<boolean>('tabs.sync-seeded.v1', z.boolean(), false),
     // 快照列表（命名快照 + 关窗自动保存），本地优先、零账号。
-    snapshots: new DataRepository<Snapshot[]>('tabs.snapshots.v1', SnapshotSchema.array(), [])
+    snapshots: new DataRepository<Snapshot[]>('tabs.snapshots.v1', SnapshotSchema.array(), [], {
+      rmwLock: SNAPSHOTS_RMW_LOCK
+    })
   };
 }
 

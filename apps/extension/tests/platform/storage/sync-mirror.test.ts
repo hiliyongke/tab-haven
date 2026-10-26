@@ -102,6 +102,68 @@ describe('SyncMirror', () => {
     expect(mirror?.folders[0]).toMatchObject({ id: 'new' });
   });
 
+  it('写入失败不留下半截镜像（先 set 后 remove：他设备 pull 不会误报「镜像损坏」）', async () => {
+    /**
+     * 要防的失效：performWrite 先 remove 旧块再 set 新块时，set 失败会留下
+     * 「meta 声明 N 块、块已被删到 1 块」的中间态 —— 他设备 pull() 据此判
+     * unreadable，把一次写失败显示成「镜像损坏」。
+     */
+    const sync = fakeBrowser.storage.sync;
+    // Given 一份已落盘的多块镜像
+    syncMirror.schedule({
+      folders: [{ id: 'old', name: 'x'.repeat(20_000), collapsed: false, createdAt: 1, items: [] }],
+      pins: [],
+      settings: DEFAULT_SETTINGS
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(await syncMirror.pull()).not.toBeNull();
+
+    // When 一次较小的写入在 set 处失败
+    const setSpy = vi.spyOn(sync, 'set').mockRejectedValueOnce(new Error('quota'));
+    syncMirror.schedule(payload('new'));
+    await vi.advanceTimersByTimeAsync(600);
+    setSpy.mockRestore();
+
+    // Then 旧镜像仍完整可读（不是缺块的中间态）
+    const mirror = await syncMirror.pull();
+    expect(mirror?.folders[0]).toMatchObject({ id: 'old' });
+    expect(syncMirror.readLastPullIssue()).toBe('ok');
+  });
+
+  it('写侧容量超限：回执带 reason=quota（与「暂时写不上去」分列呈现）', async () => {
+    const reasons: string[] = [];
+    syncMirror.setMirrorResultHandlers({
+      onFailure: (_message, reason) => reasons.push(reason),
+      onSuccess: () => undefined
+    });
+    const oversized = 'x'.repeat(103_000);
+    syncMirror.schedule({
+      folders: [{ id: 'big', name: oversized, collapsed: false, createdAt: 1, items: [] }],
+      pins: [],
+      settings: DEFAULT_SETTINGS
+    });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(reasons).toEqual(['quota']);
+  });
+
+  it('暂时性写失败：回执带 reason=write（可退避重试）', async () => {
+    const reasons: string[] = [];
+    syncMirror.setMirrorResultHandlers({
+      onFailure: (_message, reason) => reasons.push(reason),
+      onSuccess: () => undefined
+    });
+    const setSpy = vi
+      .spyOn(fakeBrowser.storage.sync, 'set')
+      .mockRejectedValueOnce(new Error('quota'));
+
+    syncMirror.schedule(payload('flaky'));
+    await vi.advanceTimersByTimeAsync(600);
+    setSpy.mockRestore();
+
+    expect(reasons).toEqual(['write']);
+  });
+
   it('clearAll 清除全部镜像块（关闭同步 / 清空数据后不得有残留）', async () => {
     syncMirror.schedule(payload('x'));
     await vi.advanceTimersByTimeAsync(600);
@@ -241,5 +303,26 @@ describe('SyncMirror', () => {
     const all = await sync.get(null);
     expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);
     expect(await syncMirror.pull()).toBeNull();
+  });
+
+  it('pagehide 时立即落盘去抖窗口内的待写镜像（不等 500ms）', async () => {
+    syncMirror.schedule(payload('unload'));
+    window.dispatchEvent(new Event('pagehide'));
+
+    // pull 与 write 共用同一条串行链：拿到回执即代表卸载前的那次写已完成。
+    const mirror = await syncMirror.pull();
+    expect(mirror?.folders[0]).toMatchObject({ id: 'unload' });
+  });
+
+  it('dispose() 解绑 pagehide 监听并丢弃待写镜像（实例作废后不得再回写）', async () => {
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    syncMirror.schedule(payload('pending'));
+    syncMirror.dispose();
+
+    expect(removeSpy).toHaveBeenCalledWith('pagehide', expect.any(Function));
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(600);
+    expect(await syncMirror.pull()).toBeNull();
+    removeSpy.mockRestore();
   });
 });

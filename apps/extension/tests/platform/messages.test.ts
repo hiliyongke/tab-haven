@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import {
+  AUTO_DISCARDED_IDS_LIMIT,
   MessageSchema,
   PENDING_ACTIONS_KEY,
   PENDING_ACTIONS_LIMIT,
@@ -111,6 +112,28 @@ describe('MessageSchema 协议契约', () => {
     expect(MessageSchema.safeParse({ type: 'skip-auto-save-once', windowId: 1.5 }).success).toBe(
       false
     );
+  });
+
+  it('auto-discarded 的 tabIds 有上限（runtime 通道不是无界传输面）', () => {
+    const atLimit = Array.from({ length: AUTO_DISCARDED_IDS_LIMIT }, (_, i) => i + 1);
+    expect(
+      MessageSchema.safeParse({
+        type: 'auto-discarded',
+        tabIds: atLimit,
+        count: atLimit.length,
+        at: 1
+      }).success
+    ).toBe(true);
+    // 超限整条被拒：发送侧必须先截断并留痕，否则这一轮的撤销入口静默消失。
+    const overLimit = [...atLimit, atLimit.length + 1];
+    expect(
+      MessageSchema.safeParse({
+        type: 'auto-discarded',
+        tabIds: overLimit,
+        count: overLimit.length,
+        at: 1
+      }).success
+    ).toBe(false);
   });
 });
 

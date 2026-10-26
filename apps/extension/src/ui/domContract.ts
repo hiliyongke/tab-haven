@@ -51,3 +51,52 @@ export const findFolderItemRow = (tabId: number): HTMLElement | null =>
 /** 取容器内所有可回车激活的行（按 DOM 顺序）。 */
 export const findActivatableRows = (container: HTMLElement): HTMLElement[] =>
   Array.from(container.querySelectorAll<HTMLElement>(`[${ROW_ACTIVATABLE_ATTR}]`));
+
+/**
+ * 高亮持续时间：必须与 `.is-located` 的 CSS 动画时长保持一致 ——
+ * 改动画不改这里，高亮会提前消失；改这里不改动画，class 已摘而动画还在跑。
+ */
+const LOCATE_HIGHLIGHT_MS = 1200;
+
+/** 视觉行元素：滚动锚点是 `<li>`，动画定义在内部 `.row-item` 上。 */
+function visualRowOf(target: HTMLElement): HTMLElement {
+  return target.querySelector<HTMLElement>('.row-item') ?? target;
+}
+
+/**
+ * 重播一次定位脉冲（入口是行的锚点元素，内部自行解析视觉行）。
+ *
+ * 「先摘 class → 读一次 `offsetWidth` 强制同步布局 → 再挂回 class」是让同一个 CSS
+ * 动画重新播放的唯一可靠手段：同一帧内 remove+add 会被浏览器合并，动画不会重启。
+ * 这个强制重排的技巧在本仓只有这一份实现（`pulseTabRows` 与 `useLocateActive`
+ * 共用），此前两处各写一遍，改一处必漏另一处。
+ *
+ * `timers` 用于把清理定时器交给调用方的生命周期管理（组件卸载时一并清掉）；
+ * 不传表示无需跟踪（如一次性批量脉冲，元素上再挂一次 class 也无害）。
+ */
+export function pulseRow(target: HTMLElement, timers?: Set<number>): void {
+  const row = visualRowOf(target);
+  row.classList.remove('is-located');
+  void row.offsetWidth;
+  row.classList.add('is-located');
+  const id = window.setTimeout(() => {
+    row.classList.remove('is-located');
+    timers?.delete(id);
+  }, LOCATE_HIGHLIGHT_MS);
+  timers?.add(id);
+}
+
+/**
+ * 给指定标签行播放一次定位脉冲（复用 `.is-located` 的既有动画）。
+ *
+ * 只查临时区（data-tabs-tab-id）：清理重复的保留项一定是临时区标签，
+ * 固定区条目（data-folder-tab-id）不参与，避免同 id 命中到固定区去。
+ * 用途：批量操作后高亮「被保留的项」（如清理重复后让用户看到每个域名留下了哪一个）。
+ */
+export function pulseTabRows(tabIds: readonly number[]): void {
+  for (const tabId of tabIds) {
+    const target = findTabRow(tabId);
+    if (!target) continue;
+    pulseRow(target);
+  }
+}

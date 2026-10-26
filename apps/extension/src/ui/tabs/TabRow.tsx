@@ -49,6 +49,7 @@ export const TabRow = memo(function TabRow({
   indent,
   isHighlighted,
   isSearchActive,
+  autoScrollOnSearch = true,
   rowActionsVisible = true,
   noCache = false,
   containerKey
@@ -83,8 +84,13 @@ export const TabRow = memo(function TabRow({
   indent?: number;
   /** 是否被浏览器高亮（多选选区）。 */
   isHighlighted?: boolean;
-  /** 是否为当前搜索结果。 */
+  /** 是否为当前搜索结果（仅高亮样式；滚动由 autoScrollOnSearch 控制）。 */
   isSearchActive?: boolean;
+  /**
+   * 搜索命中行自动 scrollIntoView（默认 true）。
+   * 虚拟化分区必须传 false：那里的滚动由 VirtualRowList 按 index 承担。
+   */
+  autoScrollOnSearch?: boolean;
   /** 是否显示行尾快捷操作。 */
   rowActionsVisible?: boolean;
   /** 是否命中「开发者禁缓存」规则（侧边栏角标提示用）。 */
@@ -146,11 +152,19 @@ export const TabRow = memo(function TabRow({
     }
   }, [isActive, autoScrollActive]);
 
+  /**
+   * 搜索命中行滚入可视区。
+   *
+   * `isSearchActive` 只承担高亮样式，滚动另走 `autoScrollOnSearch`：虚拟化分区
+   * 的滚动由 VirtualRowList 按 index 单点承担（行可能在渲染窗口外，本行的
+   * scrollIntoView 压根不会挂载），两路并存时目标口径不同会互相抖动 ——
+   * 故虚拟化分支显式传 false。
+   */
   useEffect(() => {
-    if (isSearchActive && liRef.current) {
+    if (autoScrollOnSearch && isSearchActive && liRef.current) {
       liRef.current.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
-  }, [isSearchActive]);
+  }, [isSearchActive, autoScrollOnSearch]);
 
   // 行内事件回调同样必须稳定：RowItem 是 memo 组件，内联箭头函数每次渲染
   // 都是新引用，浅比较必然失败 —— 任何 prop 变化（如 isSearchActive）都会让

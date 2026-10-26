@@ -194,6 +194,50 @@ describe('restoreFromMirrorOnEnable', () => {
     expect(h.set).toHaveBeenLastCalledWith({ mirrorIssue: 'unreadable' });
   });
 
+  /**
+   * 回归（M4 / S2）：镜像与备份文件同属外部可控输入，url / favicon 必须与导入侧
+   * 同款收紧。此前这里只用基础 schema，同一份「外部数据」在备份入口被降级为
+   * `about:blank`、在镜像入口却原样落盘 —— 等于给备份侧的收紧留了一条绕行通道。
+   */
+  it('镜像条目 url 为脚本 / 本地文件时归一为 about:blank（与备份入口同口径）', async () => {
+    mocks.pull.mockResolvedValueOnce({
+      folders: [
+        {
+          id: 'f1',
+          name: '镜像文件夹',
+          collapsed: false,
+          createdAt: 1,
+          items: [
+            { id: 'i1', url: 'javascript:alert(1)', title: 'XSS', createdAt: 1 },
+            { id: 'i2', url: 'file:///etc/passwd', title: '本地文件', createdAt: 1 },
+            {
+              id: 'i3',
+              url: 'https://ok.com/',
+              title: '正常',
+              favIconUrl: 'https://tracker.example/pixel.png',
+              createdAt: 1
+            }
+          ]
+        }
+      ],
+      pins: [],
+      settings: DEFAULT_SETTINGS
+    });
+    mocks.pullIssue.mockReturnValueOnce('ok');
+    const h = await harness();
+
+    await expect(h.run()).resolves.toBe('restored');
+
+    const written = h.foldersWrite.mock.calls[0]![0] as Array<{
+      items: Array<Record<string, unknown>>;
+    }>;
+    expect(written[0]!.items[0]!.url).toBe('about:blank');
+    expect(written[0]!.items[1]!.url).toBe('about:blank');
+    // 正常条目不受影响；非白名单的 favicon 归一为 undefined（不触发外链请求）
+    expect(written[0]!.items[2]!.url).toBe('https://ok.com/');
+    expect(written[0]!.items[2]!.favIconUrl).toBeUndefined();
+  });
+
   it('本地已有数据：以本地为准不覆盖，仍置 seeded（换机流程完成）', async () => {
     mocks.pull.mockResolvedValueOnce({
       folders: [folder('from-mirror')],

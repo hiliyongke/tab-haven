@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SNAPSHOTS_LIMIT, SNAPSHOT_TABS_LIMIT, SnapshotSchema } from '@/core/schema/models';
 import { parseWorkona, WORKONA_INPUT_LIMIT } from '@/core/insights/workonaImport';
+import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 
 /** 真实 Workona 导出结构的精简样本（字段名大小写与官方导出一致）。 */
 const SAMPLE = JSON.stringify({
@@ -95,7 +96,10 @@ describe('parseWorkona', () => {
     });
     const result = parseWorkona(raw, () => 'fixed-id', 42);
     expect(result.snapshots[0]?.id).toBe('fixed-id');
-    expect(result.snapshots[0]?.name).toBe('Workona import');
+    // 落盘默认名走 DEFAULT_SNAPSHOT_NAMES 常量（与 OneTab 侧同口径），
+    // 不按界面语言生成 —— 换语言不该产出两套名字。
+    expect(result.snapshots[0]?.name).toBe(DEFAULT_SNAPSHOT_NAMES.workona);
+    expect(result.snapshots[0]?.name).toBe('Workona 导入');
     expect(result.snapshots[0]?.createdAt).toBe(42);
   });
 

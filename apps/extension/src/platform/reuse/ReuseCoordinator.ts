@@ -1,8 +1,8 @@
 import type { TabRecord } from '@/core/tab-types';
 import { rankForKeep } from '@/core/dup/DedupeByUrl';
 import { inspectUrl, webComparisonKey } from '@/core/url/UrlInspector';
-import { AllowanceLedger } from '@/platform/reuse/AllowanceLedger';
-import { ReusePolicy } from '@/platform/reuse/ReusePolicy';
+import { AllowanceLedger } from '@/core/reuse/AllowanceLedger';
+import { ReusePolicy } from '@/core/reuse/ReusePolicy';
 import { logDegraded } from '@/platform/diagnostics';
 
 /**

@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import type { KeyboardEvent } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useListNavigation } from '@/entrypoints/sidepanel/hooks/useListNavigation';
+import { useListNavigation } from '@/ui/hooks/useListNavigation';
 
 /**
  * 列表键盘漫游（↑↓ / Enter）。

@@ -91,45 +91,50 @@ export function useSpaces(): {
     return useSnapshotStore.getState().updateSpace(current);
   }, []);
 
+  /**
+   * 切换空间：写回现场 → 关闭当前标签 → 恢复目标 → 落盘激活 id → 提示。
+   *
+   * 刻意**不再**用 `void (async () => { … })()` 包一层：那样外层返回的 Promise 会在
+   * 工作完成前就 resolve，调用方 `await performSwitch(...)` 拿到的「完成」是假的 ——
+   * 紧接着读取状态会读到切换前的值，而 `switching` 也已被置回 false。
+   */
   const performSwitch = useCallback(
     async (target: Snapshot) => {
       switchingRef.current = true;
       setSwitching(true);
-      void (async () => {
-        try {
-          // 现场为空时不写回（保留原工作区内容），此时直接中止切换并提示。
-          if (!(await flushCurrentSpace())) {
-            notify(t('当前窗口没有可保存的标签，已保留原工作区内容'));
-            return;
-          }
-          const tabs = await queryCurrentWindowTabs();
-          const targetWindowId = tabs[0]?.windowId;
-          const closable = tabs.filter(isSwitchClosable);
-          if (closable.length > 0) {
-            await useUndoStore.getState().closeWithUndo(
-              closable,
-              closable.map((tab) => tab.id)
-            );
-          }
-          // 显式同一窗口：缺省会走 getLastFocused，中途焦点移动会关 A 开 B。
-          const restored = await useSnapshotStore.getState().restore(target.id, targetWindowId);
-          const count = restored.count;
-          await useDataStore.getState().tryUpdateSettings({ activeSpaceId: target.id });
-          notify(
-            closable.length === 0
-              ? t('已切换到「{{name}}」，恢复 {{count}} 个标签', { name: target.name, count })
-              : t('已切换到「{{name}}」，恢复 {{count}} 个标签；刚才关闭的可通过撤销找回', {
-                  name: target.name,
-                  count
-                })
-          );
-        } catch (error) {
-          useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error);
-        } finally {
-          switchingRef.current = false;
-          setSwitching(false);
+      try {
+        // 现场为空时不写回（保留原工作区内容），此时直接中止切换并提示。
+        if (!(await flushCurrentSpace())) {
+          notify(t('当前窗口没有可保存的标签，已保留原工作区内容'));
+          return;
         }
-      })();
+        const tabs = await queryCurrentWindowTabs();
+        const targetWindowId = tabs[0]?.windowId;
+        const closable = tabs.filter(isSwitchClosable);
+        if (closable.length > 0) {
+          await useUndoStore.getState().closeWithUndo(
+            closable,
+            closable.map((tab) => tab.id)
+          );
+        }
+        // 显式同一窗口：缺省会走 getLastFocused，中途焦点移动会关 A 开 B。
+        const restored = await useSnapshotStore.getState().restore(target.id, targetWindowId);
+        const count = restored.count;
+        await useDataStore.getState().tryUpdateSettings({ activeSpaceId: target.id });
+        notify(
+          closable.length === 0
+            ? t('已切换到「{{name}}」，恢复 {{count}} 个标签', { name: target.name, count })
+            : t('已切换到「{{name}}」，恢复 {{count}} 个标签；刚才关闭的可通过撤销找回', {
+                name: target.name,
+                count
+              })
+        );
+      } catch (error) {
+        useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error);
+      } finally {
+        switchingRef.current = false;
+        setSwitching(false);
+      }
     },
     [flushCurrentSpace, notify, setSwitching, t]
   );

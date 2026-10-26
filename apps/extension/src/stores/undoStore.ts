@@ -188,6 +188,17 @@ let loadInFlight: Promise<void> | null = null;
 let undoWatcherStarted = false;
 /** 同上，重做栈一份：两个仓库各自整表写，各需一个 watcher。 */
 let redoWatcherStarted = false;
+/**
+ * 已注册 watcher 的退订函数。
+ *
+ * 运行时刻意**不**退订：本 store 的生命周期 = 上下文生命周期（侧边栏关闭即销毁），
+ * watcher 就是跨页同步通道，退订等于关掉同步。
+ *
+ * 只在 HMR 重载时统一执行：模块级守卫（`undoWatcherStarted` 等）随模块重载重置，
+ * 旧模块实例注册的监听器却仍挂在 `storage.onChanged` 上 —— 它持有旧 store 的
+ * `set`，会把旧值写回新实例的内存态（列表抖动 + 旧栈复活）。
+ */
+const watcherUnsubscribers: Array<() => void> = [];
 
 /**
  * undoRepository 写盘串行链（追加顺序）。
@@ -288,6 +299,53 @@ function enqueueRedoPersist(
     '重做栈写入失败'
   );
 }
+
+/**
+ * 撤销/重做**双栈同写**：一次撤销要同时改两个存储键（undo 出栈 + redo 入栈），
+ * 两次写入必须落在**同一个跨页锁内的同一段临界区**。
+ *
+ * 此前二者各走一条串行链、各拿一次 UNDO_PERSIST_LOCK：任何一次中途崩溃/写失败
+ * 都会留下「undo 已出栈、redo 未入栈」——重启后是「撤销已生效但重做为空」，
+ * 用户拿不回刚撤销的东西。两害相权：redo 多一条重复项（下一次关闭批次入栈即清空
+ * 重做栈，不会误关标签）远轻于「撤销生效了却无法重做」，因此**先写 redo 再写
+ * undo**，崩溃窗口里留下的是前者。
+ *
+ * 返回是否整体成功；任一写入失败或锁内抛错即 false，由调用方整体回退内存态。
+ * persistUndo 关闭时不写盘，视为成功（纯会话内语义，不存在跨栈分叉）。
+ */
+function enqueueUndoRedoPersist(
+  redoApply: ((disk: UndoBatch[]) => UndoBatch[]) | undefined,
+  undoApply: (disk: UndoBatch[]) => UndoBatch[]
+): Promise<boolean> {
+  return undoPersistChain
+    .enqueue(async () => {
+      const settings = await settingsRepository.read();
+      if (!settings.persistUndo) return true;
+      let ok = true;
+      await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
+        // 写盘内容一律在锁内以「磁盘基线 + 本页意图」计算（与 enqueuePersist 同口径）。
+        if (redoApply) {
+          const redoOk = await redoRepository.write(redoApply(await redoRepository.read()));
+          if (!redoOk) {
+            logFailure('undoStore', '重做栈写入失败，本次重做状态可能未持久化');
+            ok = false;
+          }
+        }
+        const undoOk = await undoRepository.write(undoApply(await undoRepository.read()));
+        if (!undoOk) {
+          logFailure('undoStore', '撤销历史写入失败，本次撤销状态可能未持久化');
+          ok = false;
+        }
+      });
+      return ok;
+    })
+    .catch((error: unknown) => {
+      // 锁请求在上下文销毁时以 AbortError reject：不接住会让调用方拿到 rejection，
+      // 撤销流程中断在「标签已恢复、状态未记账」的半途。
+      logFailure('undoStore', '撤销/重做栈同写失败', error);
+      return false;
+    });
+}
 /* @i18n-ignore-end */
 
 export const useUndoStore = create<UndoState>()((set, get) => {
@@ -362,15 +420,15 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     // 比「这次撤销没生效」严重得多。宁可不撤销，也不关不该关的标签。
     const tabs = await queryWindowTabs(windowId).catch(() => undefined);
     if (tabs === undefined) {
-      set({
-        toast: {
-          message: translate('未能读取目标窗口，暂无法撤销（请切到该窗口后重试）'),
-          canUndo: false,
-          batchId: undefined,
-          tone: 'error'
-        }
+      // 走 showToast 而非裸 set：提示条统一出口会把「撤销记录写盘失败」的说明
+      // 并进本次回执（见 showToast 注释）。绕过它时该标记会滞留到下一次**任意**
+      // 提示上，把「未能写入磁盘」挂到一次写盘成功的操作 —— 假告警。
+      showToast({
+        message: translate('未能读取目标窗口，暂无法撤销（请切到该窗口后重试）'),
+        canUndo: false,
+        batchId: undefined,
+        tone: 'error'
       });
-      scheduleToastClear();
       return;
     }
     // 必须带上固定标签：快照恢复会按快照里的 pinned 状态新建**固定**标签，
@@ -385,27 +443,20 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       if (tabs.length === 0) {
         onCommitted(get().batches, undefined);
         await enqueueUndoPersist((disk) => disk.filter((entry) => entry.id !== batch.id));
-        set({
-          toast: {
-            message: translate('这些标签已不在窗口中，无需撤销'),
-            canUndo: false,
-            batchId: undefined
-          }
+        showToast({
+          message: translate('这些标签已不在窗口中，无需撤销'),
+          canUndo: false,
+          batchId: undefined
         });
       } else {
         // 保留批次（不是悬空条目：重试成功才出栈），明确告知以便用户再试。
-        set({
-          toast: {
-            message: translate(
-              '未能定位到本次恢复的标签，可稍后重试（这些标签可能已经改变了网址）'
-            ),
-            canUndo: false,
-            batchId: undefined,
-            tone: 'error'
-          }
+        showToast({
+          message: translate('未能定位到本次恢复的标签，可稍后重试（这些标签可能已经改变了网址）'),
+          canUndo: false,
+          batchId: undefined,
+          tone: 'error'
         });
       }
-      scheduleToastClear();
       return;
     }
 
@@ -424,15 +475,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     const closed = targets.filter((tab) => closedIds.includes(tab.id));
     if (closed.length === 0) {
       // 一个都没关掉：保留批次让用户重试，不吞掉这次撤销。
-      set({
-        toast: {
-          message: translate('操作失败，请稍后重试'),
-          canUndo: false,
-          batchId: undefined,
-          tone: 'error'
-        }
+      showToast({
+        message: translate('操作失败，请稍后重试'),
+        canUndo: false,
+        batchId: undefined,
+        tone: 'error'
       });
-      scheduleToastClear();
       return;
     }
 
@@ -475,15 +523,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     if (windowId === undefined) {
       // 无可用窗口时必须让用户知情：静默 return 会让「点了撤销什么都没发生」。
       // 注意：这里刻意不提交出栈——批次必须留在栈里，否则用户再也拿不回来。
-      set({
-        toast: {
-          message: translate('操作失败，请稍后重试'),
-          canUndo: false,
-          batchId: undefined,
-          tone: 'error'
-        }
+      showToast({
+        message: translate('操作失败，请稍后重试'),
+        canUndo: false,
+        batchId: undefined,
+        tone: 'error'
       });
-      scheduleToastClear();
       return;
     }
     // kind='restore' 记的是「快照恢复新建出来、此刻仍开着」的标签 —— 撤销它要
@@ -499,6 +544,9 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     const failedCount = result.failed.length;
     // 失败项保留为一个新批次（放回栈顶，位置最靠前，便于立刻重试）。
     const retryBatch = failedCount > 0 ? { ...batch, entries: result.failed } : undefined;
+    // 回退基线：两栈在本次撤销前的状态（双栈写盘失败时整体回到这里）。
+    const beforeBatches = get().batches;
+    const beforeRedoBatches = get().redoBatches;
     // 出栈基于「此刻的栈」而非入口快照：恢复期间可能有新批次入栈（如同步关闭），
     // 用入口快照会把它们整批抹掉。
     onCommitted(get().batches, retryBatch);
@@ -509,47 +557,52 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     const restoredEntries = batch.entries.filter(
       (entry) => !result.failed.includes(entry) && !result.skippedAlreadyOpen.includes(entry)
     );
-    if (restoredEntries.length > 0) {
-      const redoBatch: UndoBatch = { ...batch, entries: restoredEntries };
-      const settings = await settingsRepository.read();
+    const redoBatch: UndoBatch | undefined =
+      restoredEntries.length > 0 ? { ...batch, entries: restoredEntries } : undefined;
+    const settings = await settingsRepository.read();
+    if (redoBatch) {
       set({ redoBatches: pushBatch(get().redoBatches, redoBatch, settings.undoStackLimit) });
-      await enqueueRedoPersist((disk) => pushBatch(disk, redoBatch, settings.undoStackLimit));
     }
 
-    // 出栈后入队持久化：链内以磁盘栈为基线按 id 精确移除本批次（恢复期间
-    // 可能有新批次入栈，也可能是另一窗口写入的批次），失败项放回栈顶。
-    await enqueueUndoPersist((disk) => {
-      const remaining = disk.filter((entry) => entry.id !== batch.id);
-      return retryBatch ? [retryBatch, ...remaining] : remaining;
-    });
-
-    set({
-      toast: {
-        message:
-          failedCount > 0
-            ? translate(
-                '已恢复 {{count}} 个标签；{{failed}} 个恢复失败，已保留在撤销历史中可重试',
-                {
-                  count: result.count,
-                  failed: failedCount
-                }
-              )
-            : translate('已恢复 {{count}} 个标签', { count: result.count }),
-        canUndo: false,
-        batchId: undefined,
-        // 查询目标窗口失败（按不去重继续）时附一句说明：本次可能多建了副本，
-        // 属信息而非错误，走 note 同槽展示，不阻断流程也不改回执口径。
-        note: result.degraded
-          ? translate('未能读取窗口现状，可能多开了已经打开着的页面')
-          : undefined,
-        // 重做出口挂在本次撤销的回执上：撤销刚发生，正是用户最可能反悔的时刻。
-        action:
-          get().redoBatches.length > 0
-            ? { label: translate('重做'), run: () => void get().redo() }
-            : undefined
+    // 出栈（undo）与入栈（redo）必须同写：见 enqueueUndoRedoPersist 的取舍说明。
+    // 链内以磁盘栈为基线按 id 精确移除本批次（恢复期间可能有新批次入栈，也可能
+    // 是另一窗口写入的批次），失败项放回栈顶。
+    const persisted = await enqueueUndoRedoPersist(
+      redoBatch ? (disk) => pushBatch(disk, redoBatch, settings.undoStackLimit) : undefined,
+      (disk) => {
+        const remaining = disk.filter((entry) => entry.id !== batch.id);
+        return retryBatch ? [retryBatch, ...remaining] : remaining;
       }
+    );
+    if (!persisted) {
+      // 整体回退内存态：两栈要么一起落盘、要么一起保持撤销前的样子。留在
+      // 「内存说可重做、磁盘上没有」的分叉上，最坏的是重启后重做入口凭空消失，
+      // 而界面刚刚还承诺过可重做。标签已恢复的事实回退不了，但撤销记录回得去
+      // （恢复管线对「窗口中已有同 URL」的条目按 skipped 处理，不会重复打开）。
+      set({ batches: beforeBatches, redoBatches: beforeRedoBatches });
+      // 可见回执：由下方 showToast 经 undoPersistFailed 转成本次回执的 note。
+      undoPersistFailed = true;
+    }
+
+    showToast({
+      message:
+        failedCount > 0
+          ? translate('已恢复 {{count}} 个标签；{{failed}} 个恢复失败，已保留在撤销历史中可重试', {
+              count: result.count,
+              failed: failedCount
+            })
+          : translate('已恢复 {{count}} 个标签', { count: result.count }),
+      canUndo: false,
+      batchId: undefined,
+      // 查询目标窗口失败（按不去重继续）时附一句说明：本次可能多建了副本，
+      // 属信息而非错误，走 note 同槽展示，不阻断流程也不改回执口径。
+      note: result.degraded ? translate('未能读取窗口现状，可能多开了已经打开着的页面') : undefined,
+      // 重做出口挂在本次撤销的回执上：撤销刚发生，正是用户最可能反悔的时刻。
+      action:
+        get().redoBatches.length > 0
+          ? { label: translate('重做'), run: () => void get().redo() }
+          : undefined
     });
-    scheduleToastClear();
   };
 
   /**
@@ -562,6 +615,17 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     batch: UndoBatch,
     onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void
   ): Promise<void> => {
+    // CAS：置位与判据必须是同一次同步操作，不能分开。
+    //
+    // 调用方（`undo` / `undoBatch`）的 `isExecuting()` 在 `await get().load()` **之前**
+    // 判定，而置位在这里（await 之后）。于是 ready=false 时同一 tick 的两次撤销会
+    // 各自通过那道判空、各自 await 同一个 loadInFlight、各自 popBatch 拿到**同一个**
+    // latest —— 同一批标签被恢复两次（撤销从安全网变成重复标签制造机）。
+    // persistUndo=false 时跨页复核整段跳过，那道判空是唯一拦截，缺口更大。
+    //
+    // 放在本函数开头（await 之前同步执行）覆盖全部调用方：zustand 的 set 同步生效，
+    // 置位后同 tick 内的第二个调用方立刻读到。
+    if (get().undoing || get().redoing) return;
     set({ undoing: true });
     try {
       // 跨页互斥：锁名声明在同层的 crossPageLock（存储键不散落到 store）。
@@ -643,26 +707,34 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         // 本页下次全量写盘会把对方批次从磁盘抹掉。
         if (!undoWatcherStarted) {
           undoWatcherStarted = true;
-          undoRepository.watch((value) => {
-            // 回显守卫：本页写入触发的回放内容相同，跳过 set。
-            // 与 snapshotStore / dataStore 统一用 structuralSignature 做结构比较：
-            // 撤销栈上限不确定地增长（createUndoBatch 逐批累积），裸 JSON.stringify
-            // 每次 storage 变更都全量序列化两遍，属可避免的固定开销。
-            if (structuralSignature(value) === structuralSignature(get().batches)) return;
-            set({ batches: value });
-          });
+          watcherUnsubscribers.push(
+            undoRepository.watch((value) => {
+              // 回显守卫：本页写入触发的回放内容相同，跳过 set。
+              // 与 snapshotStore / dataStore 统一用 structuralSignature 做结构比较：
+              // 撤销栈上限不确定地增长（createUndoBatch 逐批累积），裸 JSON.stringify
+              // 每次 storage 变更都全量序列化两遍，属可避免的固定开销。
+              if (structuralSignature(value) === structuralSignature(get().batches)) return;
+              set({ batches: value });
+            })
+          );
         }
         // 重做栈同样需要跨页回流：另一页撤销写入的重做项在本页内存看不到时，
         // 「入栈即清重做栈」的守卫（仅看内存）就不会触发，陈旧的重做项会留到
         // 下次重做 —— 重做按 URL 反查，可能关掉与本次撤销无关的标签。
         if (!redoWatcherStarted) {
           redoWatcherStarted = true;
-          redoRepository.watch((value) => {
-            if (structuralSignature(value) === structuralSignature(get().redoBatches)) return;
-            set({ redoBatches: value });
-          });
+          watcherUnsubscribers.push(
+            redoRepository.watch((value) => {
+              if (structuralSignature(value) === structuralSignature(get().redoBatches)) return;
+              set({ redoBatches: value });
+            })
+          );
         }
+        // 两个栈都要留基线：只守卫 batches 时，read 在途期间外部写入的**重做栈**
+        // 会被这里读到的磁盘旧值整表覆盖（重做按 URL 反查关闭，旧栈复活意味着
+        // 重做可能去关与本次撤销无关的标签）。
         const before = get().batches;
+        const beforeRedo = get().redoBatches;
         const settings = await settingsRepository.read();
         const batches = settings.persistUndo ? await undoRepository.read() : [];
         const redoBatches = settings.persistUndo ? await redoRepository.read() : [];
@@ -670,12 +742,17 @@ export const useUndoStore = create<UndoState>()((set, get) => {
           await enqueueUndoPersist(() => [], { alwaysWrite: true });
           await enqueueRedoPersist(() => [], { alwaysWrite: true });
         }
-        // read 在途期间 watcher 已回放更新的值（引用变化）时以其为准，只补 ready。
-        if (get().batches !== before) {
-          set({ ready: true, redoBatches });
-          return;
-        }
-        set({ batches, redoBatches, ready: true });
+        // read 在途期间 watcher 已回放更新的值（引用变化）时以**内存**为准：
+        // 磁盘读的是回放之前的状态，回写会让对方刚写入的内容消失。
+        // 逐栈判定而非「任一变化就两个栈都不落」：另一栈确实没被回放过，
+        // 此刻磁盘值就是它的最新已知状态，不落会让它停在加载前的旧值上。
+        const batchesChanged = get().batches !== before;
+        const redoChanged = get().redoBatches !== beforeRedo;
+        set({
+          batches: batchesChanged ? get().batches : batches,
+          redoBatches: redoChanged ? get().redoBatches : redoBatches,
+          ready: true
+        });
       })().finally(() => {
         loadInFlight = null;
       });
@@ -793,6 +870,10 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
     undoBatch: async (batchId) => {
       if (isExecuting()) return;
+      // 与 `undo` 同口径：撤销历史面板是持久化列表，面板在 load 完成前就能渲染出
+      // 条目（数据来自磁盘而非本页内存栈）。此时按内存栈查找必然 miss，会给出
+      // 与事实相反的「该操作已不存在」——条目其实还在，只是本页还没读进来。
+      if (!get().ready) await get().load();
       const batch = get().batches.find((entry) => entry.id === batchId);
       if (!batch) {
         // 按 id 找不到批次（已被另一页面/上一次撤销消费）。撤销历史面板里的
@@ -991,4 +1072,13 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       await enqueueRedoPersist(() => [], { alwaysWrite: true });
     }
   };
+});
+
+// HMR 重载时退订 watcher（见 watcherUnsubscribers 的注释）：模块级守卫会随重载
+// 重置，而旧监听器仍挂着并把旧值写回新实例 —— 真实泄漏 + 旧栈复活。
+import.meta.hot?.dispose(() => {
+  for (const unsubscribe of watcherUnsubscribers) unsubscribe();
+  watcherUnsubscribers.length = 0;
+  undoWatcherStarted = false;
+  redoWatcherStarted = false;
 });

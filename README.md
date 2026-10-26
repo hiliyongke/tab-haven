@@ -106,12 +106,13 @@ apps/extension/src/
 ├── core/               # 纯领域逻辑（零 chrome/DOM 依赖，单测主战场）
 │   ├── url/             # UrlInspector：URL 规约 + 分类（全应用 URL 判定唯一事实来源）
 │   ├── dup/             # DuplicateIndex + KeeperPolicy：重复组索引与 keeper 策略
+│   ├── reuse/           # AllowanceLedger / ReusePolicy：复用引擎的纯决策（豁免账本 + 复用判定）
 │   ├── site/            # SiteKey / HostRules / SiteResolver / SiteGrouping：同域名聚合（代码层沿用 site 命名）
 │   ├── fixed/           # PinIdentity / FolderOps / Reconcile：固定空间（UI 文案为「收藏夹」）领域
 │   ├── group/           # AutoGrouping：自动分组计划（纯决策）
 │   ├── commands/        # folderCommands：文件夹纯计算
 │   ├── search/          # SearchEngine：fuzzysort + pinyin-pro 三目标索引
-│   ├── snapshot/        # snapshotDiff：快照恢复前 diff 预览
+│   ├── snapshot/        # snapshotDiff / trimSnapshots / oneTabImport / missingTabs：快照 diff、裁剪、OneTab 解析、缺失条目
 │   ├── undo/            # UndoStack：操作记录制 + 栈深淘汰
 │   ├── insights/        # tabInsights：习惯洞察 + workonaImport：Workona 迁移解析
 │   ├── nocache/         # noCachePattern：禁缓存站点规则归一化
@@ -122,10 +123,10 @@ apps/extension/src/
 │   └── schema/          # models.ts：zod schema 族 + 导出文件格式（校验唯一口径）
 ├── platform/           # chrome 适配层（唯一触碰 chrome.* 的层）
 │   ├── tabs.ts          # 标签查询 / 事件聚合 / 操作
-│   ├── reuse/           # AllowanceLedger / ReusePolicy / ReuseCoordinator：复用引擎
+│   ├── reuse/           # ReuseCoordinator / reuseAllowance / persistedLedger：复用引擎（chrome 侧编排与镜像）
 │   ├── sync/            # TabSyncService：事件→快照节流调度
 │   ├── storage/         # DataRepository：zod 校验读写 + 坏数据隔离 + 变更订阅
-│   ├── snapshot/        # 快照构建 / 裁剪 / 持久化 / 恢复 / OneTab 解析
+│   ├── snapshot/        # 快照构建 / 持久化 / 恢复（裁剪与 OneTab 解析属纯逻辑，在 core/snapshot）
 │   ├── undo/            # RestoreEngine：撤销恢复管线
 │   ├── group/           # 原生标签组适配
 │   ├── nocache/         # declarativeNetRequest 动态规则
@@ -138,7 +139,7 @@ apps/extension/src/
 │   ├── messages.ts      # 类型安全消息协议（zod）
 │   └── registry.ts      # 组合根：仓库实例装配
 ├── stores/             # zustand store 族（dataStore / tabStore / undoStore / snapshotStore + data/ 切片）
-├── ui/                 # React 组件库（common / tabs / fixed / search / dialog / dnd）
+├── ui/                 # React 组件库（common / tabs / fixed / search / dialog / dnd / hooks）
 ├── i18n/               # UI 文案（react-i18next）
 ├── theme-init.ts       # 头部同步主题，避免闪烁
 └── styles/             # Tailwind + CSS 变量
@@ -183,6 +184,8 @@ apps/extension/src/
 | `pnpm format` / `pnpm format:check`                              | Prettier 格式化 / 只校验不写入                                                    |
 
 > 每个命令的用途、产出与注意事项见 `package.json` 的 `scriptDocs` 字段（JSON 不支持注释，说明集中放在那里，此处只列简表）。
+
+> **`pnpm crx` 的签名私钥要单独备份**：首次打包时浏览器在 `.output/tabs.pem` 生成 CRX3 签名私钥，后续版本必须复用同一把，否则 Chrome 视作不同扩展、无法覆盖升级。它未入库（`.gitignore` 已排除 `*.pem` 与 `.output/`），而 `.output/` 是构建产物目录——清理时会连同删掉。需要保留离线分发能力，先把它复制到仓库外再清理。
 
 ### 文案（i18n）体系
 

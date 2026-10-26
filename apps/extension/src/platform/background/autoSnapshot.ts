@@ -7,6 +7,7 @@ import { buildSnapshot, collectSnapshotTabs, persistSnapshot } from '@/platform/
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { logDegraded } from '@/platform/diagnostics';
 import { AUTO_SNAPSHOT_ALARM } from '@/platform/storage/keys';
+import { listNormalWindowIds } from '@/platform/windows';
 
 /**
  * 定时自动快照。
@@ -64,34 +65,32 @@ export async function runAutoSnapshot(): Promise<void> {
     const settings = await settingsRepository.read();
     if (!settings.autoSaveSnapshots) return;
 
-    // 与 windowCache 同款查询：populate:false 不回传标签数组（标签另行按窗口查询），
-    // 且不依赖 windowTypes 参数（部分运行环境的实现不一致）。
-    // 窗口列表查询失败不能退化成空数组：那样本轮会「静默什么都不保存」，
+    // 与 windowCache / autoGroup 共用 `listNormalWindowIds`：三条快照路径此前各判一次
+    // 「哪些窗口算普通窗口」，无痕窗口只会在其中一条路上被写进持久快照。
+    // 查询失败不能退化成空数组：那样本轮会「静默什么都不保存」，
     // 与「所有窗口都没有可保存标签」在表现上完全一致，自动保存的缺口无从察觉。
-    const wins = await browser.windows.getAll({ populate: false }).catch((error) => {
+    const windowIds = await listNormalWindowIds().catch((error) => {
       logDegraded('auto-snapshot', '窗口列表查询失败，本轮未保存任何窗口', error);
-      return [];
+      return [] as number[];
     });
-    const normalWins = wins.filter((win) => win.incognito !== true);
     const previous = await latestAutoSignature();
     let saved = 0;
 
-    for (const win of normalWins) {
-      if (typeof win.id !== 'number') continue;
-      const tabs = await collectWindowTabs(win.id).catch((error) => {
+    for (const windowId of windowIds) {
+      const tabs = await collectWindowTabs(windowId).catch((error) => {
         // 单窗口采集失败不得静默跳过：自动快照是唯一兜底链路，缺窗必须留痕。
-        logDegraded('auto-snapshot', `窗口 ${win.id} 标签采集失败，本轮跳过该窗口`, error);
+        logDegraded('auto-snapshot', `窗口 ${windowId} 标签采集失败，本轮跳过该窗口`, error);
         return [] as SnapshotTab[];
       });
       if (tabs.length === 0) continue;
       // 单窗口场景与上一份完全相同则跳过；多窗口时以首窗口差异判断（其余窗口仍需各自保存）。
-      if (normalWins.length === 1 && previous !== null && urlSetFingerprint(tabs) === previous)
+      if (windowIds.length === 1 && previous !== null && urlSetFingerprint(tabs) === previous)
         continue;
       const snapshot = buildSnapshot({
         name: '',
         fallbackName: DEFAULT_SNAPSHOT_NAMES.auto,
         origin: 'auto',
-        windowId: win.id,
+        windowId,
         tabs
       });
       const ok = await persistSnapshot(snapshot).catch((error) => {

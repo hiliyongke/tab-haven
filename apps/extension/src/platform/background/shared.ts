@@ -89,11 +89,30 @@ export function buildWhitelistMatcher(whitelist: readonly string[]): (hostname: 
   };
 }
 
+/**
+ * 通知用途。
+ *
+ * Chrome 对同名 id 的通知是**替换**而非排队：固定 id `tabs-action` 下，自动休眠的
+ * 「已休眠 N 个标签（可一键唤醒）」会被紧随其后的一次「保存失败」直接顶掉 ——
+ * 用户只看到后者，前一条里那个唯一的撤销入口就此消失。
+ * 按用途分 id 后，两条通知各占一个槽位，互不覆盖。
+ */
+export type NotifyPurpose = 'auto-discard' | 'action';
+
+const NOTIFICATION_IDS: Record<NotifyPurpose, string> = {
+  'auto-discard': 'tabs-auto-discard',
+  action: 'tabs-action'
+};
+
 /** 通知用户（notifications 权限不可用时静默）。 */
-export function notifyUser(title: string, message: string): void {
+export function notifyUser(
+  title: string,
+  message: string,
+  purpose: NotifyPurpose = 'action'
+): void {
   if (!browser.notifications?.create) return;
   browser.notifications
-    .create('tabs-action', {
+    .create(NOTIFICATION_IDS[purpose], {
       type: 'basic',
       iconUrl: browser.runtime.getURL('/icon/128.png'),
       title,

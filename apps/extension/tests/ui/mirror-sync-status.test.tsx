@@ -21,12 +21,14 @@ type PullIssue = 'ok' | 'none' | 'local' | 'chunk-limit' | 'unreadable';
 function renderStatus(state: {
   issue?: PullIssue | null;
   writeFailed?: boolean;
+  quotaExceeded?: boolean;
   enabled?: boolean;
 }) {
   useDataStore.setState({
     settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: state.enabled ?? true },
     mirrorIssue: state.issue ?? null,
-    mirrorWriteFailed: state.writeFailed ?? false
+    mirrorWriteFailed: state.writeFailed ?? false,
+    mirrorQuotaExceeded: state.quotaExceeded ?? false
   });
   return render(<MirrorSyncStatus t={(key: string) => translate(key)} />);
 }
@@ -37,7 +39,8 @@ afterEach(() => {
   useDataStore.setState({
     settings: DEFAULT_SETTINGS,
     mirrorIssue: null,
-    mirrorWriteFailed: false
+    mirrorWriteFailed: false,
+    mirrorQuotaExceeded: false
   });
 });
 
@@ -58,6 +61,21 @@ describe('MirrorSyncStatus 五态映射', () => {
     expect(container).toHaveTextContent(
       translate('未生效（本次改动未上传）：其他设备不会收到这份数据')
     );
+  });
+
+  it('写入失败且容量超限：说「超出同步容量上限」（与 PRIVACY.md §4 同口径）', () => {
+    // 写侧已用与 pull 同一把尺子拦截，超配额时「超出容量上限」若只由 pull 触发，
+    // 用户看到的就是「本次改动未上传」——那句会让人以为重试即可成功。
+    const { container } = renderStatus({
+      issue: 'ok',
+      writeFailed: true,
+      quotaExceeded: true
+    });
+
+    expect(container).toHaveTextContent(
+      translate('未生效（超出同步容量上限）：其他设备不会收到这份数据')
+    );
+    expect(container).not.toHaveTextContent(translate('未生效（本次改动未上传）'));
   });
 
   it('拉取成功：说「已生效」', () => {

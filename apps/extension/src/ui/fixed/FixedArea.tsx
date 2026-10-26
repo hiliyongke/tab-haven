@@ -13,7 +13,7 @@ import { useScrollFade } from '@/ui/common/useScrollFade';
 import { classifyDrop } from '@/ui/dnd/dropPolicy';
 import { FIXED_AREA_DROPPABLE, type DragData } from '@/ui/dnd/types';
 import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
-import { FolderRow } from './FolderRow';
+import { FolderRow } from '@/ui/fixed/FolderRow';
 
 interface CreateFolderRequest {
   name: string;
@@ -35,7 +35,9 @@ export function FixedArea() {
   const createFolder = useDataStore((state) => state.createFolder);
   const addTabsToFolder = useDataStore((state) => state.addTabsToFolder);
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
-  const settings = useDataStore((state) => state.settings);
+  // 只订阅用到的字段：订阅整个 settings 对象会让任意设置变更都重渲染固定区
+  // （而本组件只用 conceptsSeen 决定是否展示首启概念卡）。
+  const conceptsSeen = useDataStore((state) => state.settings.conceptsSeen);
   const notify = useUndoStore((state) => state.notify);
   const [creating, setCreating] = useState(false);
   const [dropRequest, setDropRequest] = useState<CreateFolderRequest | null>(null);
@@ -159,7 +161,7 @@ export function FixedArea() {
               <p className="fixed-area-empty">
                 {t('点击 + 新建文件夹，或直接把标签/分组拖到这里')}
               </p>
-              {!settings.conceptsSeen && (
+              {!conceptsSeen && (
                 <div className="relative mt-1">
                   <FixedConceptsMap />
                   <button

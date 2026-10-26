@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react';
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-ghost' | 'soft' | 'soft-outline';
+type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'accent-ghost'
+  | 'danger'
+  | 'danger-ghost'
+  | 'soft'
+  | 'soft-outline';
 
 /**
  * 每段末尾的 `disabled:hover:*` 不是冗余：原生 `<button disabled>` 在 Chrome 里
@@ -10,6 +18,16 @@ type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-ghost' | 'soft
 const BUTTON_TONES: Record<ButtonVariant, string> = {
   primary: 'bg-accent-600 text-on-accent hover:bg-accent-700 disabled:hover:bg-accent-600',
   secondary: 'text-gray-600 hover:bg-gray-100 disabled:hover:bg-transparent',
+  /* ghost / accent-ghost：无底色无边框的「文字按钮」（取消 / 从 OneTab 导入 /
+     洞察行动出口同款）。此前这类按钮在面板里各写一套 class 串，min-h-6 命中
+     下限与 disabled:hover 兜底只改一处就会漏另一处 —— 收进变体后这些口径
+     与其余六个变体同源（尤其 disabled:hover 的兜底，见文件头注释）。 */
+  ghost: 'text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent',
+  /* 强调色文字按钮（习惯洞察的行动出口）。与 ghost 同骨架、只换强调色，
+     而不是让调用方用 className 覆盖 ghost 的 text-gray-500：两个 text-* 工具类
+     同属 utilities 层、特异性相同，胜负取决于 Tailwind 的**输出顺序**，
+     把「行动按钮是绿是灰」交给编译顺序不可接受。 */
+  'accent-ghost': 'font-medium text-accent-700 hover:bg-accent-100 disabled:hover:bg-transparent',
   // 走 red-700 令牌而非 opacity：全站唯一用透明度表达 hover 的变体，
   // 与其余五个变体的「换一档底色」口径不一致。
   danger: 'bg-red-600 text-on-accent hover:bg-red-700 disabled:hover:bg-red-600',

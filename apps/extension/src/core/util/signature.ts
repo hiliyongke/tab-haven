@@ -25,5 +25,12 @@ function faviconDigest(value: unknown): string {
  * 用于「读到的持久化值是否真的变了」的判等（避免无意义的整表回写）。
  */
 export function structuralSignature(value: unknown): string {
-  return JSON.stringify(value, (key, val) => (key === 'favIconUrl' ? faviconDigest(val) : val));
+  // `JSON.stringify(undefined)` 返回 **undefined**（不是字符串），返回类型却是
+  // `string` —— 类型契约说谎会让「判等」静默变成 `true`，进而跳过本该落盘的写入。
+  // 这里保持返回类型 `string`（改签名会波及 5 处调用方），用 String(value) 兜底：
+  // 得到的 'undefined' 与任何真实序列化结果都不相等，判等语义仍然成立。
+  return (
+    JSON.stringify(value, (key, val) => (key === 'favIconUrl' ? faviconDigest(val) : val)) ??
+    String(value)
+  );
 }

@@ -1,6 +1,7 @@
 import { useTranslation } from '@/i18n';
 import type { LucideIcon } from 'lucide-react';
 import { getExtensionVersion } from '@/platform/navigation';
+import { COMMANDS, commandKeyParts } from '@/core/commands';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { Kbd } from '@/ui/common/Kbd';
 
@@ -308,17 +309,21 @@ const PANEL_SHORTCUTS: { labelKey: string; keys: string[] }[] = [
   { labelKey: '键盘拖拽', keys: ['Space'] }
 ];
 
+/** 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl Shift（与设置页同口径）。 */
+const IS_MAC = /mac/i.test(globalThis.navigator?.platform ?? '');
+
 /**
  * 浏览器级全局快捷键（在任意页面生效）。
  * 与侧边栏内快捷键分开列：这组可以在浏览器扩展快捷键页自行修改，
  * 写死默认值会让改了键的用户以为产品文档是错的。
+ *
+ * 键位与说明同源于 `core/commands`（与 manifest 的口径由守卫对齐）：此前这里恒
+ * 显示 `Ctrl Shift F`，Mac 用户看到的是与系统不符的写法。
  */
-const GLOBAL_SHORTCUTS: { labelKey: string; keys: string[] }[] = [
-  { labelKey: '聚焦搜索', keys: ['Ctrl', 'Shift', 'F'] },
-  { labelKey: '打开 / 聚焦侧边栏', keys: ['Ctrl', 'Shift', 'O'] },
-  { labelKey: '定位当前标签', keys: ['Ctrl', 'Shift', 'L'] },
-  { labelKey: '休眠后台标签', keys: ['Ctrl', 'Shift', 'U'] }
-];
+const GLOBAL_SHORTCUTS: { labelKey: string; keys: string[] }[] = COMMANDS.map((command) => ({
+  labelKey: command.labelKey,
+  keys: commandKeyParts(command.suggestedKey, IS_MAC)
+}));
 
 /**
  * 隐私承诺：产品宪法级底线，置于 Hero 之下最显眼处（原文常量，渲染时过 t()）。

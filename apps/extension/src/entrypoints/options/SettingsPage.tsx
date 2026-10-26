@@ -15,6 +15,7 @@ import {
   logDegraded,
   readAllDiagnostics
 } from '@/platform/diagnostics';
+import { clearQuarantine, readQuarantine } from '@/platform/storage/DataRepository';
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
 import { downloadJsonFile, openAboutPage, openUrlInTab } from '@/platform/navigation';
 import { datedJsonFilename } from '@/core/util/filename';
@@ -41,24 +42,27 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 /**
  * 导入事务的分区名 → 界面称呼（写盘失败提示要指出卡在哪一步）。
  *
- * 整块豁免 zh-linter：这里存的是**待翻译的原文**，由 `partitionLabel` 在实际
- * 提示那一刻经 `t()` 翻译。若在此处直接写 `t(...)`，映射会在模块加载期求值，
- * 那时语言尚未确定，切语言后文案不会跟着变。
+ * 值存的是**待翻译的原文**，由 `partitionLabel` 在提示那一刻经 `t()` 翻译 ——
+ * 此处直接写 `t(...)` 会让映射在模块加载期求值，那时语言尚未确定，切语言后文案
+ * 不会跟着变。
+ *
+ * 形态与 `settingSections.tsx` 的 `COLOR_THEME_LABELS` 一致（属性名以 `Key` 结尾）：
+ * 这是扫描器抽取常量表的约定（常量表不是调用点，只有 `*Key` 属性的值会被抽进词典）。
+ * 早先这里是 `Record<string, string>` 且整块 `@i18n-ignore` 豁免 —— 豁免压住的只是
+ * zh-linter 告警，词条进不了词典，英文模式下「折叠状态」直接露中文而 scan / check 双绿。
  */
-// @i18n-ignore-start
-const PARTITION_LABELS: Record<string, string> = {
-  folders: '收藏夹',
-  pins: '常驻磁贴',
-  settings: '设置',
-  snapshots: '快照',
-  siteCollapse: '折叠状态'
+const PARTITION_LABELS: Record<string, { labelKey: string }> = {
+  folders: { labelKey: '收藏夹' },
+  pins: { labelKey: '常驻磁贴' },
+  settings: { labelKey: '设置' },
+  snapshots: { labelKey: '快照' },
+  siteCollapse: { labelKey: '折叠状态' }
 };
-// @i18n-ignore-end
 
 /** 取分区的界面称呼；未知分区原样返回（不丢信息）。 */
 function partitionLabel(name: string, t: (key: string) => string): string {
   const label = PARTITION_LABELS[name];
-  return label === undefined ? name : t(label);
+  return label === undefined ? name : t(label.labelKey);
 }
 
 export function SettingsPage() {
@@ -85,6 +89,18 @@ export function SettingsPage() {
   /** 清除所有数据的确认弹窗 + 勾选确认（危险操作的防误触双保险）。 */
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearAck, setClearAck] = useState(false);
+  /** 坏数据隔离区条数：让用户看得见「有没有数据被判坏过」（PRIVACY.md §3.1-a）。 */
+  const [quarantineCount, setQuarantineCount] = useState(0);
+
+  const refreshQuarantineCount = () => {
+    void readQuarantine()
+      .then((list) => setQuarantineCount(list.length))
+      .catch(() => setQuarantineCount(0));
+  };
+
+  useEffect(() => {
+    refreshQuarantineCount();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,12 +219,21 @@ export function SettingsPage() {
       // 跨上下文全量读取：诊断环形缓冲落在 storage.local，
       // background SW / sidepanel 的降级记录都在其中（纯内存缓冲会漏掉主故障现场）。
       const entries = await readAllDiagnostics();
-      if (entries.length === 0) {
+      // 坏数据隔离区一并导出：它不进诊断环形缓冲（会被真故障挤出），
+      // 而「哪个存储键坏过、坏了什么」恰恰是排查坏数据类报障的关键凭据。
+      // PRIVACY.md 第 3.1-a 节对外承诺了这条出口，只写不读会让承诺落空。
+      const quarantine = await readQuarantine();
+      if (entries.length === 0 && quarantine.length === 0) {
         setTransferStatus(t('暂无异常记录'));
         return;
       }
-      downloadJsonFile(datedJsonFilename('tabs-diagnostics'), exportDiagnostics(entries));
+      downloadJsonFile(
+        datedJsonFilename('tabs-diagnostics'),
+        exportDiagnostics(entries, quarantine)
+      );
       await clearDiagnostics();
+      if (quarantine.length > 0) await clearQuarantine();
+      refreshQuarantineCount();
       setTransferStatus(t('诊断信息已导出'));
     } catch (error) {
       logDegraded('options', '诊断信息导出失败', error);
@@ -456,9 +481,16 @@ export function SettingsPage() {
           </div>
           <Row
             label={t('导出诊断信息')}
-            hint={t(
-              '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带'
-            )}
+            hint={
+              quarantineCount > 0
+                ? t(
+                    '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带。坏数据隔离区另有 {{count}} 条留档，会一并导出',
+                    { count: quarantineCount }
+                  )
+                : t(
+                    '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带'
+                  )
+            }
           >
             <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
               {t('导出报告')}

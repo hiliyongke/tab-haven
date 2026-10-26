@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pinIdentity } from '@/core/fixed/PinIdentity';
+import { canAddPin, pinIdentity } from '@/core/fixed/PinIdentity';
+import { PINS_LIMIT } from '@/core/schema/models';
 import {
   createFolder,
   createFolderItem,
@@ -35,6 +36,21 @@ describe('pinIdentity', () => {
   it('非 http(s) 返回 null', () => {
     expect(pinIdentity('chrome://newtab/')).toBeNull();
     expect(pinIdentity('about:blank')).toBeNull();
+  });
+});
+
+/**
+ * 磁贴数量预检（store 的「加入磁贴」与 background 右键「固定」共用同一口径）。
+ *
+ * 上限定义在 schema 层（导出侧 `.max(PINS_LIMIT)`），预检不共用它时，写路径
+ * 可以写出超限数据 —— 导出不校验、导入整批拒绝，用户只看到「备份文件无效」。
+ */
+describe('canAddPin', () => {
+  it('未达上限可新增，达到上限即拒绝（上限取自 PINS_LIMIT）', () => {
+    expect(canAddPin(0)).toBe(true);
+    expect(canAddPin(PINS_LIMIT - 1)).toBe(true);
+    expect(canAddPin(PINS_LIMIT)).toBe(false);
+    expect(canAddPin(PINS_LIMIT + 1)).toBe(false);
   });
 });
 

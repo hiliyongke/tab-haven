@@ -110,9 +110,9 @@ const PINYIN_WEIGHT = 4;
 /**
  * 默认结果条数上限。
  *
- * 与「索引多少份历史快照」（`historyIndex` 的 HISTORY_SNAPSHOT_LIMIT）**不是
- * 一回事**：那个是索引规模，这个是单次查询返回的条数。两者恰好同为 20 时极易被
- * 当成同一个旋钮误调，故显式命名区分。
+ * 与「索引多少份历史快照」（`historyIndex` 的 HISTORY_SNAPSHOT_LIMIT = 20）**不是
+ * 一回事**：那个是索引规模，这个是单次查询返回的条数（50）。两个旋钮取值不同，
+ * 却极易被当成同一个（调索引规模不会改变单页返回条数，反之亦然），故显式命名区分。
  */
 export const DEFAULT_SEARCH_LIMIT = 50;
 

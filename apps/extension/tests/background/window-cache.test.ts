@@ -321,6 +321,55 @@ describe('scheduleWindowRefresh 防抖', () => {
 });
 
 describe('initWindowTabsCache 重水化', () => {
+  /**
+   * 普通窗口的判定口径（非无痕 + type normal）由 `platform/windows` 统一提供，
+   * 关窗自动快照 / 定时自动快照 / 自动分组三处共用。无痕窗口的 URL 与标题
+   * 不得经「关窗」这条路径落进持久快照 —— 定时快照刻意排除了它。
+   */
+  it('无痕窗口不建缓存、其 onRemoved 不写快照（与定时快照同口径）', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, autoSaveSnapshots: true });
+    const incognitoId = 5001;
+    const normalId = 5002;
+    const windows = fakeBrowser.windows as unknown as { getAll: () => Promise<unknown[]> };
+    windows.getAll = vi.fn(async () => [
+      { id: incognitoId, incognito: true, type: 'normal' },
+      { id: normalId, incognito: false, type: 'normal' }
+    ]) as never;
+    // 无痕窗口即便被刷新（标签事件路径）也不得进缓存
+    mockTabsQuery(incognitoId, [
+      rawTab({ id: 51, windowId: incognitoId, url: 'https://secret.com/' })
+    ]);
+    mockTabsQuery(normalId, [rawTab({ id: 52, windowId: normalId, url: 'https://normal.com/' })]);
+
+    await initWindowTabsCache();
+
+    // 无痕窗口被跳过后缓存为空；关窗时无源数据 ⇒ 不写快照
+    await handleWindowRemoved(incognitoId);
+    expect(await snapshotsRepository.read()).toHaveLength(0);
+
+    // 同一批窗口里普通窗口照常工作（否则「不写快照」可能因什么都没发生而假绿）
+    await handleWindowRemoved(normalId);
+    const all = await snapshotsRepository.read();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.tabs.map((tab) => tab.url)).toEqual(['https://normal.com/']);
+  });
+
+  it('非 normal 类型的窗口（popup / devtools）同样不建缓存', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, autoSaveSnapshots: true });
+    const popupId = 5003;
+    const windows = fakeBrowser.windows as unknown as { getAll: () => Promise<unknown[]> };
+    windows.getAll = vi.fn(async () => [{ id: popupId, incognito: false, type: 'popup' }]) as never;
+    mockTabsQuery(popupId, [rawTab({ id: 61, windowId: popupId, url: 'https://popup.com/' })]);
+    // 先确认该窗口确实有可采集的标签（排除「本来就没数据」的假绿）
+    await refreshWindowTabs(popupId);
+    await fakeBrowser.storage.session.set({ [WINDOW_TABS_KEY]: {} });
+
+    await initWindowTabsCache();
+    await handleWindowRemoved(popupId);
+
+    expect(await snapshotsRepository.read()).toHaveLength(0);
+  });
+
   it('session 缓存损坏时丢弃并留痕，不抛错（脏数据不得连累关窗快照整体失败）', async () => {
     await fakeBrowser.storage.session.set({ [WINDOW_TABS_KEY]: { bad: 'shape' } });
     const windows = fakeBrowser.windows as unknown as { getAll: () => Promise<unknown[]> };

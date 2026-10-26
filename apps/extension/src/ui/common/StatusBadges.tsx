@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { TabRecord } from '@/core/tab-types';
 import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
@@ -26,7 +27,7 @@ export function StatusBadges({
   noCache?: boolean;
 }) {
   const { t } = useTranslation();
-  const badges: React.ReactNode[] = [];
+  const badges: ReactNode[] = [];
 
   if (duplicateCount > 1) {
     badges.push(

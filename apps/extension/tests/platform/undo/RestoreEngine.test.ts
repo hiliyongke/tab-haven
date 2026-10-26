@@ -181,6 +181,27 @@ describe('restoreTabRecordsDetailed', () => {
     expect(result.failed).toHaveLength(1);
   });
 
+  it('复用豁免未获确认时计入 degraded（界面不得只报「已恢复 N 个」）', async () => {
+    // 豁免是「恢复出来的标签不被复用引擎合并掉」的唯一凭据：发放未获确认时，
+    // 标签可能随即被合并，此时「已恢复」是假的——degraded 必须把它交上去。
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((() =>
+      Promise.resolve({ ok: false })) as never);
+
+    const result = await restoreTabRecordsDetailed([record({ url: 'https://a.com/' })], WINDOW_ID);
+
+    expect(result.count).toBe(1);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('复用豁免获确认时不计入 degraded（正常路径不得误报降级）', async () => {
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((() =>
+      Promise.resolve({ ok: true })) as never);
+
+    const result = await restoreTabRecordsDetailed([record({ url: 'https://a.com/' })], WINDOW_ID);
+
+    expect(result.degraded).toBe(false);
+  });
+
   it('单条创建失败不影响同批其余标签，且失败项进入明细', async () => {
     // 只注入「哪条 URL 会失败」这一个变量，其余走真实的 fake-browser 创建路径。
     const tabs = fakeBrowser.tabs as unknown as {

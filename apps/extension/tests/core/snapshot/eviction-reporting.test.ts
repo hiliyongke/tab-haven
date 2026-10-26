@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { trimSnapshotsWithEvicted } from '@/platform/snapshot/snapshots';
+import { trimSnapshotsWithEvicted } from '@/core/snapshot/trimSnapshots';
 import type { Settings } from '@/core/schema/models';
 
 /**
  * 快照裁剪的淘汰上报。
  *
  * 与 tests/core/eviction-reporting.test.ts 同契约（kept + evicted 无遗漏、无
- * 重复），但按层镜像落在这里：`trimSnapshotsWithEvicted` 属于 platform 层。
+ * 重复），按层镜像落在 core：`trimSnapshotsWithEvicted` 是纯领域计算。
  */
 
 const settings: Settings = {

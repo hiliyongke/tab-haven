@@ -19,6 +19,15 @@ function domainAccent(domain: string): string {
   return `hsl(${hue} ${sat}% ${light}%)`;
 }
 
+/**
+ * 取色结果缓存（按 data: URL 去重）。
+ *
+ * 同一个 favicon 会被磁贴与分区各取一次色，每次都是「新建 Image + canvas +
+ * 逐像素求均值」；缓存后同一图标只算一次，后续直接复用同一个 Promise。
+ * 只缓存 `data:` URL（远程 favicon 本来就在函数入口返回 null）。
+ */
+const faviconColorCache = new Map<string, Promise<string | null>>();
+
 /** 从 data: URL favicon 提取主色（canvas 可读，无 CORS 污染）。失败返回 null。 */
 function extractFaviconColor(dataUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -77,7 +86,10 @@ export function useDomainAccent(favIconUrl?: string, domain?: string): string | 
     setColor(fb);
     let cancelled = false;
     if (favIconUrl && favIconUrl.startsWith('data:')) {
-      extractFaviconColor(favIconUrl).then((c) => {
+      const cached = faviconColorCache.get(favIconUrl);
+      const pending = cached ?? extractFaviconColor(favIconUrl);
+      if (!cached) faviconColorCache.set(favIconUrl, pending);
+      pending.then((c) => {
         if (!cancelled) setColor(c ?? fb);
       });
     }

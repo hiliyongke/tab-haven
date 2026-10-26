@@ -17,7 +17,6 @@ import type { RestoreSnapshotResult } from '@/platform/snapshot/snapshots';
 import {
   buildSnapshot,
   collectSnapshotTabs,
-  parseOneTab,
   persistSnapshot,
   replaceSpaceSnapshot,
   restoreSnapshot,
@@ -26,6 +25,7 @@ import {
 import { parseWorkona } from '@/core/insights/workonaImport';
 import { newId } from '@/core/util/id';
 import { buildPartialSnapshot } from '@/core/snapshot/snapshotDiff';
+import { parseOneTab } from '@/core/snapshot/oneTabImport';
 import { isHttpUrl } from '@/core/url/UrlInspector';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
@@ -107,10 +107,13 @@ interface SnapshotState {
 
   /** 拉取快照列表（面板启动时调用）。 */
   load: () => Promise<void>;
-  /** 把当前窗口标签存为命名快照（name 留空则自动命名）。 */
-  saveCurrentWindow: (name?: string) => Promise<void>;
-  /** 把当前窗口标签存为轻量「工作区」快照（复用快照能力，OQ-3 最小版）。 */
-  saveSpace: (name?: string) => Promise<void>;
+  /**
+   * 把当前窗口标签存为命名快照（name 留空则自动命名）。
+   * 返回是否真的落盘了：空现场返回 false（失败原因由 notifyError 承载）。
+   */
+  saveCurrentWindow: (name?: string) => Promise<boolean>;
+  /** 把当前窗口标签存为轻量「工作区」快照（复用快照能力，OQ-3 最小版）。返回值同 saveCurrentWindow。 */
+  saveSpace: (name?: string) => Promise<boolean>;
   /** 归档当前窗口：保存并关闭全部标签，返回保存标签数。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
   /** 从 OneTab 导出文本导入为快照，返回导入标签数。 */
@@ -157,49 +160,81 @@ interface SnapshotState {
 
 /** 仓库 watcher 注册守卫（load 可重入，监听器只注册一次）。 */
 let watcherStarted = false;
+/**
+ * 在途 load 的共享 promise（与 undoStore 同模式）。
+ *
+ * 缺了它时 StrictMode 双挂载 / 多入口并发会各自发起一次全量读盘：快照族是本项目
+ * 最大的读（200 份 × 1000 条 × base64 favicon），重复读既放大启动耗时，也多出
+ * 一次「以旧值覆盖新值」的窗口。完成后自动清空，下次 load 仍重新读盘。
+ */
+let loadInFlight: Promise<void> | null = null;
+/**
+ * watcher 退订函数（见 undoStore 的同名约定）。
+ *
+ * 运行时刻意不退订（本 store 生命周期 = 上下文生命周期，watcher 即跨页同步通道）；
+ * 只在 HMR 重载时统一执行，否则旧模块实例的监听器会把旧列表写回新实例。
+ */
+const watcherUnsubscribers: Array<() => void> = [];
 
 export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   snapshots: [],
   ready: false,
 
   load: async () => {
-    // 先注册 watcher 再 read：read 完成到 watch 注册之间的 background 写入
-    // （关窗自动保存直写仓库）若无人接收，内存列表会一直少一条直到下次变更。
-    // 守卫：load 会被 StrictMode 与多入口重复调用，每次都注册会让同一次仓库变更
-    // 被回放 N 次（列表抖动 + 重复渲染）。
-    if (!watcherStarted) {
-      watcherStarted = true;
-      // 回显守卫：本页面自身写入触发的回放内容相同，直接跳过。
-      //
-      // 用 structuralSignature 而非裸 JSON.stringify：快照族上限为
-      // SNAPSHOTS_LIMIT(200) × SNAPSHOT_TABS_LIMIT(1000)，且每条标签自带
-      // favIconUrl（大量站点是 base64 data URL，占单条数据绝大部分体积）。
-      // 裸 stringify 会在**每次** storage 变更（关窗自动保存 / 定时快照）对
-      // 整族做两次全量序列化——即 tabStore 判定过的「大标签量下每次事件的固定热点」。
-      // structuralSignature 会跳过 favIconUrl，代价是「仅 favicon 变化」时延迟
-      // 一次刷新（见 core/util/signature 的模块注释），下次真实变更即自愈。
-      // 该守卫只影响内存回放的时机，不参与任何写盘，跳过不会造成数据丢失。
-      snapshotsRepository.watch((value) => {
-        if (structuralSignature(value) === structuralSignature(get().snapshots)) return;
-        set({ snapshots: value });
-      });
-    }
-    const before = get().snapshots;
-    const snapshots = await snapshotsRepository.read();
-    // 反向窗口：read 在途期间 background 写入（关窗自动保存），watcher 回放
-    // 已把新值放进内存（引用变化）——此时以 watcher 交付为准，read 到的
-    // 启动时刻旧值不得回写覆盖，只补 ready 标记。
-    if (get().snapshots !== before) {
-      set({ ready: true });
-      return;
-    }
-    set({ snapshots, ready: true });
+    loadInFlight ??= (async () => {
+      // 先注册 watcher 再 read：read 完成到 watch 注册之间的 background 写入
+      // （关窗自动保存直写仓库）若无人接收，内存列表会一直少一条直到下次变更。
+      // 守卫：load 会被 StrictMode 与多入口重复调用，每次都注册会让同一次仓库变更
+      // 被回放 N 次（列表抖动 + 重复渲染）。
+      if (!watcherStarted) {
+        watcherStarted = true;
+        // 回显守卫：本页面自身写入触发的回放内容相同，直接跳过。
+        //
+        // 用 structuralSignature 而非裸 JSON.stringify：快照族上限为
+        // SNAPSHOTS_LIMIT(200) × SNAPSHOT_TABS_LIMIT(1000)，且每条标签自带
+        // favIconUrl（大量站点是 base64 data URL，占单条数据绝大部分体积）。
+        // 裸 stringify 会在**每次** storage 变更（关窗自动保存 / 定时快照）对
+        // 整族做两次全量序列化——即 tabStore 判定过的「大标签量下每次事件的固定热点」。
+        // structuralSignature 会跳过 favIconUrl，代价是「仅 favicon 变化」时延迟
+        // 一次刷新（见 core/util/signature 的模块注释），下次真实变更即自愈。
+        // 该守卫只影响内存回放的时机，不参与任何写盘，跳过不会造成数据丢失。
+        watcherUnsubscribers.push(
+          snapshotsRepository.watch((value) => {
+            if (structuralSignature(value) === structuralSignature(get().snapshots)) return;
+            set({ snapshots: value });
+          })
+        );
+      }
+      const before = get().snapshots;
+      const snapshots = await snapshotsRepository.read();
+      // 反向窗口：read 在途期间 background 写入（关窗自动保存），watcher 回放
+      // 已把新值放进内存（引用变化）——此时以 watcher 交付为准，read 到的
+      // 启动时刻旧值不得回写覆盖，只补 ready 标记。
+      if (get().snapshots !== before) {
+        set({ ready: true });
+        return;
+      }
+      set({ snapshots, ready: true });
+    })().finally(() => {
+      loadInFlight = null;
+    });
+    await loadInFlight;
   },
 
   saveCurrentWindow: async (name) => {
     const tabs = await queryCurrentWindowTabs();
     const groups = await queryWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
+    // 空现场不落盘：一条 tabCount=0 的快照既不可恢复，又占掉一个命名快照名额
+    // （SNAPSHOTS_LIMIT），与 replaceSpaceSnapshot（platform/snapshot/snapshots.ts）
+    // 对空现场的明确拒绝同口径 —— 两条保存路径对同一现场的判定必须一致。
+    // 必须给可见回执：静默 return 会让用户以为保存成功了。
+    // 返回值承载同一事实：调用方（如「保存并关闭」类串联动作）据此中止后续步骤，
+    // 不必去读 toast 猜结果。
+    if (snapTabs.length === 0) {
+      useUndoStore.getState().notifyError(translate('没有可保存的当前标签'));
+      return false;
+    }
     const snapshot = buildSnapshot({
       name: name ?? '',
       fallbackName: DEFAULT_SNAPSHOT_NAMES.manual,
@@ -212,12 +247,18 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
+    return true;
   },
 
   saveSpace: async (name) => {
     const tabs = await queryCurrentWindowTabs();
     const groups = await queryWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
+    // 同 saveCurrentWindow：空工作区不落盘（换过去等于清空窗口且无从恢复）。
+    if (snapTabs.length === 0) {
+      useUndoStore.getState().notifyError(translate('没有可保存的当前标签'));
+      return false;
+    }
     const snapshot = buildSnapshot({
       name: name ?? '',
       fallbackName: DEFAULT_SNAPSHOT_NAMES.space,
@@ -227,6 +268,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
+    return true;
   },
 
   archiveCurrentWindow: async (name) => {
@@ -437,3 +479,11 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   reset: () => set({ snapshots: [], ready: false })
 }));
+
+// HMR 重载时退订 watcher（见 watcherUnsubscribers 的注释）：模块级守卫会随重载
+// 重置，而旧监听器仍挂着并把旧列表写回新实例。
+import.meta.hot?.dispose(() => {
+  for (const unsubscribe of watcherUnsubscribers) unsubscribe();
+  watcherUnsubscribers.length = 0;
+  watcherStarted = false;
+});

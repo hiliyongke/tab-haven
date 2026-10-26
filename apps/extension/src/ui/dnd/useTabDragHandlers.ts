@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useTranslation } from '@/i18n';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { reorderBlockedReason } from '@/core/site/reorderCapability';
+import { DEFAULT_FOLDER_NAMES } from '@/core/snapshot/defaultNames';
 import {
   computeGroupMoveIndex,
   computeReorderIndex,
@@ -406,7 +407,9 @@ export function useTabDragHandlers() {
           const tab = useTabStore
             .getState()
             .tabs.find((candidate) => candidate.id === activeData.tabId);
-          if (tab) requestCreateFolder(tab.title || t('无标题标签'), [tab.id]);
+          // 落盘名必须走常量：按界面语言生成会让中英文界面产出两套名字，
+          // 与导入侧「同名合并」的语义打架（见 core/snapshot/defaultNames）。
+          if (tab) requestCreateFolder(tab.title || DEFAULT_FOLDER_NAMES.untitled, [tab.id]);
           return;
         }
         if (activeData.type === DragType.Section) {

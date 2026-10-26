@@ -112,6 +112,40 @@ describe('syncNoCacheRules 注入闸门', () => {
     expect(updateDynamicRules).not.toHaveBeenCalled();
   });
 
+  it('权限查询失败（unknown）时不动现有规则：不清空已生效的 DNR', async () => {
+    // 权限查询抛错 ≠ 未授权：塌缩成 false 会让本轮撤掉已经生效的规则，
+    // 表现为「用户什么都没做，禁缓存自己失效了」。
+    (fakeBrowser as unknown as { permissions?: unknown }).permissions = {
+      contains: vi.fn(async () => {
+        throw new Error('permissions unavailable');
+      })
+    };
+    const { updateDynamicRules } = installDnr([{ id: 1 }, { id: 2 }]);
+
+    await syncNoCacheRules(
+      settingsWith({ noCacheEnabled: true, noCachePatterns: ['https://a.com/'] })
+    );
+
+    expect(updateDynamicRules).not.toHaveBeenCalled();
+    expect(readDiagnostics().some((e) => e.message.includes('权限查询结果未知'))).toBe(true);
+  });
+
+  it('明确未授权时按未授权处理（清空已注入规则，不留半套）', async () => {
+    installPermission(false);
+    const { updateDynamicRules } = installDnr([{ id: 1 }]);
+
+    await syncNoCacheRules(
+      settingsWith({ noCacheEnabled: true, noCachePatterns: ['https://a.com/'] })
+    );
+
+    const call = updateDynamicRules.mock.calls[0]![0] as unknown as {
+      removeRuleIds: number[];
+      addRules: unknown[];
+    };
+    expect(call.removeRuleIds).toEqual([1]);
+    expect(call.addRules).toEqual([]);
+  });
+
   it('同步失败必须留痕（禁缓存能力静默失效无从排查）', async () => {
     installPermission(true);
     const api = fakeBrowser as unknown as { declarativeNetRequest?: unknown };

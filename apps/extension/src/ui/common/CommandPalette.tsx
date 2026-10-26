@@ -198,7 +198,6 @@ export function CommandPalette({
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDialogElement>(null);
   /** listbox 的稳定 id：aria-controls / aria-activedescendant 的组合依赖它。 */
   const listId = useId();
@@ -559,7 +558,6 @@ export function CommandPalette({
               只有 activedescendant 而缺少 listbox 上下文时，读屏会直接忽略该属性，
               键盘上下键移动时读屏用户完全无感知。 */}
           <input
-            ref={inputRef}
             type="text"
             className="w-full bg-transparent text-sm text-gray-800 placeholder:text-gray-500"
             placeholder={t('输入命令或搜索标签…')}
@@ -645,7 +643,9 @@ export function CommandPalette({
               {commandGroupOf(cmd.id) !== commandGroupOf(commandItems[i - 1]?.id) && (
                 <div
                   role="presentation"
-                  className="px-4 pb-0.5 pt-1.5 text-3xs font-medium tracking-wide text-gray-400"
+                  /* gray-500 而非 gray-400：分组标题是需要阅读的正文，gray-400
+                     对 surface 仅约 2.4–2.8:1，低于 WCAG 1.4.3 的 4.5:1。 */
+                  className="px-4 pb-0.5 pt-1.5 text-3xs font-medium tracking-wide text-gray-500"
                 >
                   {commandGroupLabel(commandGroupOf(cmd.id), t)}
                 </div>

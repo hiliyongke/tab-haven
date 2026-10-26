@@ -99,7 +99,12 @@ export function UndoHistoryPanel({
     void restoreRecentClosed(entry.sessionId)
       .then((ok) => {
         // 失败走 notifyError（role="alert"）：与抛错分支同一语义强度。
-        if (ok) notify(t('已从浏览器最近关闭中恢复'));
+        if (ok) {
+          notify(t('已从浏览器最近关闭中恢复'));
+          // 已恢复的 sessionId 立即失效：留在本列表里再点必然失败
+          // （浏览器侧该会话已不存在），点了「没反应」比消失更费解。
+          setRecent((prev) => prev?.filter((item) => item.sessionId !== entry.sessionId) ?? null);
+        }
         // ok === false 同样要留痕：否则「点了恢复没反应」在诊断里没有对应条目。
         else notifyFailure('sessions', t('操作失败，请稍后重试'), undefined);
       })

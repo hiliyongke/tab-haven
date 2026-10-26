@@ -104,31 +104,26 @@ export const Icons = {
 /**
  * 通用图标渲染器：接收一个 LucideIcon 组件并透传 className / aria。
  *
- * 只解构 { d, className, title } 时，调用方传 `aria-label` 会被静默丢弃
- * （图标默认 aria-hidden），导致「已固定」这类仅靠图标表达的状态对读屏完全不存在。
- * 需要可访问名时显式传 ariaLabel，或在外层并列一个 sr-only 文本。
+ * 图标默认 aria-hidden，调用方传 `aria-label` 会被静默丢弃，导致「已固定」这类
+ * 仅靠图标表达的状态对读屏完全不存在。需要可访问名时显式传 ariaLabel
+ * （或在外层并列一个 sr-only 文本）。
  */
 export function Icon({
   d,
   className,
-  title,
   ariaLabel
 }: {
   d: LucideIcon;
   className?: string;
-  title?: string;
   ariaLabel?: string;
 }) {
   const Cmp = d;
-  const hidden = ariaLabel ? undefined : title ? undefined : 'true';
   return (
     <Cmp
       className={className}
-      aria-hidden={hidden}
+      aria-hidden={ariaLabel ? undefined : 'true'}
       role={ariaLabel ? 'img' : undefined}
       aria-label={ariaLabel}
-    >
-      {title ? <title>{title}</title> : null}
-    </Cmp>
+    />
   );
 }

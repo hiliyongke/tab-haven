@@ -7,9 +7,9 @@ import {
 import { dedupePins } from '@/core/fixed/FolderOps';
 import {
   FOLDERS_LIMIT,
-  FixedFolderSchema,
-  PINS_LIMIT,
-  PersistentPinSchema
+  InboundFixedFolderSchema,
+  InboundPersistentPinSchema,
+  PINS_LIMIT
 } from '@/core/schema/models';
 import type { DataContext } from './types';
 
@@ -67,8 +67,15 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
 
   // 镜像来自浏览器账号通道，属外部可控输入（与备份文件同级）：集合必须带体积
   // 上限（与 initSlice 同口径），否则一份异常镜像就能把本地库撑到远超正常使用规模。
-  const parsedFolders = FixedFolderSchema.array().max(FOLDERS_LIMIT).safeParse(mirror.folders);
-  const parsedPins = PersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
+  //
+  // 用导入侧的 Inbound* schema 而非基础 schema：url / favIconUrl 的收紧（非 http(s)
+  // 归一为 about:blank、favicon 只放行 data:image/chrome/chrome-extension）在备份
+  // 入口已经生效，同一份「外部数据」若在镜像入口原样落盘，等于给备份侧的收紧留了
+  // 一条绕行通道（收紧只加在外部输入侧，不加进基础 schema —— 后者会误伤运行时读盘）。
+  const parsedFolders = InboundFixedFolderSchema.array()
+    .max(FOLDERS_LIMIT)
+    .safeParse(mirror.folders);
+  const parsedPins = InboundPersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
   // 单边解析失败：不恢复、不置 seeded、不推镜像——
   // 任何一边落不了本地时推镜像都会把本地空值覆盖云端对应分区，且永久失去恢复机会。
   if (!parsedFolders.success || !parsedPins.success) {

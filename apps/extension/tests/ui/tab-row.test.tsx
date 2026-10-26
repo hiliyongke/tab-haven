@@ -137,3 +137,26 @@ describe('TabRow', () => {
     expect(screen.getByText('https://example.com/page')).toBeInTheDocument();
   });
 });
+
+/**
+ * 搜索命中行的滚动开关。
+ *
+ * 虚拟化分区里行可能根本没挂载（TabRow 的 scrollIntoView 无从触发），滚动由
+ * VirtualRowList 按 index 单点承担；若这里仍无条件滚动，会出现「行级滚动 +
+ * 列表层滚动」两路并发、目标口径不同而抖动。故滚动与高亮拆成两个开关。
+ */
+describe('TabRow 搜索命中滚动开关', () => {
+  it('默认：命中行自行 scrollIntoView（全量渲染分区依赖它）', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+    renderTabRow(tabOf(), { isSearchActive: true });
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it('autoScrollOnSearch=false：命中行不自行滚动，只保留高亮（虚拟化分支）', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+    renderTabRow(tabOf(), { isSearchActive: true, autoScrollOnSearch: false });
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+});

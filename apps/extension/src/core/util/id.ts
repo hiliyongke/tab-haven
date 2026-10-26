@@ -43,7 +43,7 @@ export function newId(prefix: string): string {
   // 连续取 id，只靠「时间戳 + 随机串」留下真实的碰撞窗口（碰撞的可见后果是
   // 两条记录互相覆盖，表现为「刚建的东西没了」）。因此随机段前带上进程内单调
   // 递增序号 —— 它把同毫秒的碰撞从「概率」变成「不可能」。
-  // 序号 2 位 + 随机 6 位 = 8 位，与改动前的随机段等长，id 形状不变。
+  // 序号 2 位 + 随机 6 位 = 8 位，随机段长度恒定（id 形状可解析）。
   fallbackSeq = (fallbackSeq + 1) % 36 ** 2;
   return `${prefix}-${Date.now().toString(36)}-${fallbackSeq.toString(36).padStart(2, '0')}${randomPart()}`;
 }

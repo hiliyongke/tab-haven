@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ReusePolicy } from '@/platform/reuse/ReusePolicy';
+import { ReusePolicy } from '@/core/reuse/ReusePolicy';
 import type { TabRecord } from '@/core/tab-types';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {

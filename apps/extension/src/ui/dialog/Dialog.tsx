@@ -111,17 +111,27 @@ function applyBackgroundInert(inert: boolean): void {
  * DialogShell / CommandPalette / OnboardingTour 共用，保证所有浮层行为一致。
  * onClose 用 ref 持有最新值：effect 只在挂载/卸载执行一次，避免父组件因后台
  * 标签更新重渲染时重跑焦点逻辑抢焦、或 triggerRef 被覆盖导致焦点恢复失效。
+ *
+ * `trapFocus = false` 供**短暂浮层**（右键菜单）入栈：它只借用弹窗栈的两件事
+ * ——「isModalOpen() 为真，全局快捷键（⌘K/⌘P/⌘J）不再叠加第二层浮层」与
+ * 「背景惰性化」；焦点陷阱与 Esc/Tab 处理留给浮层自己（菜单的 Tab 语义是
+ * 「离开菜单」而非循环，两处都处理会重复触发 onClose）。
  */
 export function useModalA11y(
   shellRef: React.RefObject<HTMLElement | null>,
-  onClose: () => void
+  onClose: () => void,
+  trapFocus = true
 ): void {
   const onCloseRef = useRef(onClose);
   // 提交后更新：onClose 只在用户按键时读取，effect 保证读到的是最新值，
   // 同时避免在并发渲染下把未提交的中间回调写进 ref。
+  const trapFocusRef = useRef(trapFocus);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+  useEffect(() => {
+    trapFocusRef.current = trapFocus;
+  }, [trapFocus]);
 
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
@@ -129,14 +139,16 @@ export function useModalA11y(
     // 的 showModal() 注册在本 effect 之后，同一批 passive effect 同步执行完才轮到
     // 微任务，此时 dialog 已打开、子树可聚焦。否则 focus() 打在 display:none 的
     // 子树上静默失效，焦点落在 dialog 元素自身（键盘漫游整体不可用）。
-    queueMicrotask(() => {
-      // 跳过关闭按钮（data-dialog-dismiss）：弹窗一打开焦点应落在输入框或主按钮
-      // 上，而不是右上角的 ✕ —— 否则输入型弹窗要再按一次 Tab 才能开始打字。
-      const focusable = Array.from(
-        shellRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []
-      ).filter((el) => !el.hasAttribute('data-dialog-dismiss'));
-      focusable[0]?.focus();
-    });
+    if (trapFocusRef.current) {
+      queueMicrotask(() => {
+        // 跳过关闭按钮（data-dialog-dismiss）：弹窗一打开焦点应落在输入框或主按钮
+        // 上，而不是右上角的 ✕ —— 否则输入型弹窗要再按一次 Tab 才能开始打字。
+        const focusable = Array.from(
+          shellRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []
+        ).filter((el) => !el.hasAttribute('data-dialog-dismiss'));
+        focusable[0]?.focus();
+      });
+    }
 
     // 背景滚动锁定：模态打开时背景仍随滚轮滚动，会让遮罩与内容错位、且把
     // 「在遮罩上滚一下」变成误操作。嵌套弹窗只在最外层上锁/解锁 —— 内层
@@ -196,7 +208,10 @@ export function useModalA11y(
         first.focus();
       }
     };
-    document.addEventListener('keydown', onKeyDown, true);
+    // 不抢陷阱的浮层自带 Esc / Tab 处理：两个监听器都挂在 document 捕获阶段，
+    // 同一节点上的 stopPropagation 拦不住彼此（需要 stopImmediatePropagation），
+    // 同一次按键会关两次。
+    if (trapFocusRef.current) document.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
       const index = modalStack.indexOf(self);
@@ -300,7 +315,6 @@ export function PromptDialog({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const inputRef = useRef<HTMLInputElement>(null);
   // 受控值：确认按钮随输入实时禁用 —— 空值点「确定」完全静默会被当成「按钮坏了」，
   // 禁用态让不可提交的原因一目了然。
   const [value, setValue] = useState(initialValue ?? '');
@@ -327,7 +341,6 @@ export function PromptDialog({
       }
     >
       <TextField
-        inputRef={inputRef}
         value={value}
         placeholder={placeholder}
         /* 视觉 label 由弹窗标题承担，读屏需要程序化关联（placeholder 不算标签） */

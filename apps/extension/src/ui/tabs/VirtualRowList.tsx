@@ -109,12 +109,21 @@ export function VirtualRowList({
   // 实测的是 wrapper 内 li 的自然高度（wrapper 只定高不裁剪，li 可溢出）；
   // 与当前生效值一致时不 setState（防「测→改→再测」反馈循环）。
   const total = tabs.length;
-  // 上界钳制：tabs 收缩（搜索过滤/批量关标签）时 scrollTop 仍是旧值，
-  // start 可能超过 total，slice 返回空数组使整个虚拟列表空白一瞬。
-  // 依赖浏览器「内容高度收缩 → scrollTop 越界钳位 → 派发 scroll」的自愈
-  // 是 UA 行为而非契约，显式钳到末行保证任何时刻渲染窗口都非空。
+  const totalHeight = total * effectiveItemSize;
+  /**
+   * 上界钳制：tabs 收缩（搜索过滤/批量关标签）时 scrollTop 仍是旧值。
+   *
+   * 只钳 start 不够：内容高度收缩后容器**没有可滚动余量**，浏览器不会派发
+   * scroll（依赖「scrollTop 越界钳位 → 派发 scroll」的自愈是 UA 行为而非契约），
+   * scrollTop 恒为旧值 —— start 被钳到末行、end 也跟着越界，结果只剩最后一行
+   * 挂载（滚到 2000px 后过滤成 3 条，看到的是孤零零一条）。
+   *
+   * 故派生一个已钳位的 `scrolledTop`，窗口的**两个端点**都用它算。
+   */
+  const maxScrollTop = Math.max(0, totalHeight - viewport);
+  const scrolledTop = Math.min(scrollTop, maxScrollTop);
   const start = Math.min(
-    Math.max(0, Math.floor(scrollTop / effectiveItemSize) - OVERSCAN),
+    Math.max(0, Math.floor(scrolledTop / effectiveItemSize) - OVERSCAN),
     Math.max(0, total - 1)
   );
   useEffect(() => {
@@ -129,10 +138,9 @@ export function VirtualRowList({
     if (height > 0 && Math.abs(height - effectiveItemSize) >= 1) setMeasuredSize(height);
   }, [start, effectiveItemSize, measuredSize]);
 
-  const totalHeight = total * effectiveItemSize;
   // maxHeight 已是真实 px，不再乘 scale（见 scale 的注释）。
   const containerHeight = Math.min(totalHeight, maxHeight);
-  const end = Math.min(total, Math.ceil((scrollTop + viewport) / effectiveItemSize) + OVERSCAN);
+  const end = Math.min(total, Math.ceil((scrolledTop + viewport) / effectiveItemSize) + OVERSCAN);
   const visible = tabs.slice(start, end);
 
   // rAF 节流：滚动事件每帧最多触发一次 setState，避免高频滚动时整树反复重渲染。
@@ -225,8 +233,18 @@ export function VirtualRowList({
           <ul>（非虚拟分支由 sectionCards 提供）——缺了这个角色，渲染出的就是
           「父非 ul/ol 的孤儿 li」，读屏会丢失「列表 N 项」语义与位置播报。
           行 wrapper 标为 presentation，让 <li> 直接挂回 list 的语义上下文。
+
+          aria-setsize 声明「全集 N 项」：虚拟化只挂载窗口内的行，读屏按 DOM
+          数项会得到「3 项」这类随滚动变化的数字。
+          （aria-posinset 挂在行 wrapper 上会被 presentation 角色吞掉，
+          它必须落在调用方渲染的 <li> 上 —— 但那需要给 renderRow 增加位置入参，
+          属接口变更，不在本次改动范围。）
         */}
-        <div role="list" style={{ transform: `translateY(${start * effectiveItemSize}px)` }}>
+        <div
+          role="list"
+          aria-setsize={total}
+          style={{ transform: `translateY(${start * effectiveItemSize}px)` }}
+        >
           {visible.map((tab, index) => (
             <div
               key={tab.id}

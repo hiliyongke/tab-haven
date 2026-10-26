@@ -9,7 +9,7 @@
     "dev": "pnpm --filter tabs dev",
     "dev:edge": "pnpm --filter tabs dev:edge",
     "build": "pnpm --filter tabs build",
-    "typecheck": "pnpm --filter tabs typecheck && pnpm --filter i18n-kit typecheck",
+    "typecheck": "pnpm --filter tabs typecheck && pnpm --filter i18n-kit typecheck && tsc --noEmit",
     "lint": "eslint . --max-warnings 0 && pnpm --filter tabs lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -76,8 +76,9 @@
       "eslint --fix"
     ]
   },
-  "//devDependencies": "跨包共用的版本走 pnpm-workspace.yaml 的 catalog（`catalog:`），只在一处用的（prettier / lint-staged / simple-git-hooks）就地写版本。",
+  "//devDependencies": "跨包共用的版本走 pnpm-workspace.yaml 的 catalog（`catalog:`），只在一处用的（prettier / lint-staged / simple-git-hooks）就地写版本。`@types/node` 是根级跨包守卫（tests/config/*.ts 用 node:fs / node:url 读源码做静态比对）所必需的类型包，版本与 apps/extension 同一份。",
   "devDependencies": {
+    "@types/node": "catalog:",
     "@eslint/js": "catalog:",
     "eslint": "catalog:",
     "eslint-config-prettier": "catalog:",

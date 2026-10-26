@@ -126,4 +126,32 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
     // 平移后仍只挂载少量行
     expect(mountedRows(view).length).toBeLessThan(20);
   });
+
+  it('数据源收缩后渲染窗口回到界内（scrollTop 派生时钳到剩余可滚动量）', async () => {
+    const renderRow = vi.fn((tab: TabRecord) => <div>row-{tab.id}</div>);
+    const view = render(
+      <VirtualRowList tabs={tabsOf(100)} itemSize={32} maxHeight={400} renderRow={renderRow} />
+    );
+    const scroller = view.container.querySelector<HTMLElement>('.virtual-row-scroll');
+    expect(scroller).not.toBeNull();
+    await waitFor(() => expect(mountedRows(view)).toHaveLength(6));
+
+    // 滚到列表末尾：scrollTop 远超后面 3 条的总高度
+    scroller!.scrollTop = 100 * 32;
+    fireEvent.scroll(scroller!);
+    await waitFor(() => {
+      const translated = view.container.querySelector<HTMLElement>(
+        '.virtual-row-scroll > div > div'
+      );
+      expect(translated?.style.transform).toBe(`translateY(${(100 - 6) * 32}px)`);
+    });
+
+    // 过滤成 3 条：容器不再有可滚动余量，浏览器不会派发 scroll 来自愈 scrollTop
+    view.rerender(
+      <VirtualRowList tabs={tabsOf(3)} itemSize={32} maxHeight={400} renderRow={renderRow} />
+    );
+
+    // 未钳制时 start 被顶到 2、end=3 —— 只剩最后一行，前两行空白
+    await waitFor(() => expect(mountedRows(view)).toHaveLength(3));
+  });
 });

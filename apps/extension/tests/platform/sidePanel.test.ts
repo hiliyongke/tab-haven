@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { openSidePanel } from '@/platform/sidePanel';
+import { openSidePanel, setActionClickBehavior } from '@/platform/sidePanel';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 
 /**
- * 打开侧边栏的能力探测与降级。
+ * 侧边栏平台适配的行为规格：打开（`openSidePanel`）与工具栏点击行为对齐
+ * （`setActionClickBehavior`）。两者同属 `platform/sidePanel`，此前被拆成两个
+ * 测试文件（side-panel / sidePanel），命名与风格都不统一，现合并到一处。
  *
  * 断言重点是**失败路径留痕**：静默吞错会表现为「点『打开面板』没反应」，
  * 且用户无法区分「浏览器不支持」与「打开被拒绝」。
@@ -107,5 +109,53 @@ describe('openSidePanel', () => {
     await openSidePanel();
 
     expect(lastDiagnostic()).toContain('无法确定目标窗口');
+  });
+});
+
+/**
+ * 「点击图标是打开面板还是后台整理」由设置决定，而 `setPanelBehavior` 不跨浏览器
+ * 会话持久 —— SW 每次唤醒都要对齐一次。这条链上没有返回值可断言，能钉死的是
+ * **传参**与**降级**：能力缺失 / 调用失败都不能把设置层的意图变成异常抛给调用方。
+ */
+describe('setActionClickBehavior', () => {
+  // 整体替换 `fakeBrowser.sidePanel`，而不是往既有对象上挂属性：上面那个
+  // describe 的 afterEach 会把它置为 undefined，`fakeBrowser.reset()` 不会重建，
+  // 逐个属性赋值会踩到「Cannot set properties of undefined」。
+  const stubBehavior = (setPanelBehavior: unknown) => {
+    (fakeBrowser as unknown as { sidePanel?: unknown }).sidePanel = { setPanelBehavior };
+  };
+
+  it('Given 开启「点击图标打开面板」When 对齐 Then 把开关原样传给浏览器', async () => {
+    const spy = vi.fn(async () => undefined);
+    stubBehavior(spy);
+
+    await setActionClickBehavior(true);
+
+    expect(spy).toHaveBeenCalledWith({ openPanelOnActionClick: true });
+  });
+
+  it('Given 关闭该行为 When 对齐 Then 传 false（点击走 SW 后台整理）', async () => {
+    const spy = vi.fn(async () => undefined);
+    stubBehavior(spy);
+
+    await setActionClickBehavior(false);
+
+    expect(spy).toHaveBeenCalledWith({ openPanelOnActionClick: false });
+  });
+
+  it('Given 浏览器不支持 setPanelBehavior When 对齐 Then 静默跳过而不抛异常', async () => {
+    (fakeBrowser as unknown as { sidePanel?: unknown }).sidePanel = {};
+
+    await expect(setActionClickBehavior(true)).resolves.toBeUndefined();
+  });
+
+  it('Given 浏览器调用失败 When 对齐 Then 吞掉异常（对齐失败不应打断 SW 启动）', async () => {
+    stubBehavior(
+      vi.fn(async () => {
+        throw new Error('behavior rejected');
+      })
+    );
+
+    await expect(setActionClickBehavior(true)).resolves.toBeUndefined();
   });
 });

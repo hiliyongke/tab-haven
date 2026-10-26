@@ -25,6 +25,8 @@ export const DEFAULT_SNAPSHOT_NAMES = {
   auto: '自动快照',
   /** OneTab 文本导入。 */
   oneTab: 'OneTab 导入',
+  /** Workona 导出文件导入（与 OneTab 侧同口径：落盘名走常量，不按界面语言生成）。 */
+  workona: 'Workona 导入',
   /**
    * 快速整理前保存的现场快照。
    *
@@ -33,5 +35,21 @@ export const DEFAULT_SNAPSHOT_NAMES = {
    * "Pre-regroup scene" 两种名字。
    */
   regroup: '重排前现场'
+} as const;
+// @i18n-ignore-end
+
+/**
+ * 落盘用的默认文件夹 / 标签组名（与上面快照同名同理：不参与 i18n）。
+ *
+ * 供 entrypoints 侧替换「新建时用界面语言生成名字」的写法——按语言生成会让
+ * 中文界面产出「无标题标签」、英文界面产出 "Untitled folder"，而「同名合并」
+ * 的导入语义要求同一份数据在同一台设备上是同一个名字。
+ */
+// @i18n-ignore-start
+export const DEFAULT_FOLDER_NAMES = {
+  /** 未命名（新建文件夹的初始名）。 */
+  untitled: '无标题标签',
+  /** 浏览器原生组无标题时的展示/落盘名。 */
+  unnamedGroup: '未命名标签组'
 } as const;
 // @i18n-ignore-end

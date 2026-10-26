@@ -31,7 +31,18 @@ interface SessionData {
   manualStandaloneTabIds: number[];
 }
 
-const EMPTY_SESSION: SessionData = { itemTabBindings: {}, manualStandaloneTabIds: [] };
+/**
+ * 空会话（每次返回新对象）。
+ *
+ * 不能写成 `{ ...EMPTY_SESSION }`：浅拷贝只换外层，内层 `{}` / `[]` 仍是常量的
+ * 同一引用，调用方往 `itemTabBindings` 塞一个键就永久污染了它。
+ */
+function emptySession(): SessionData {
+  return { itemTabBindings: {}, manualStandaloneTabIds: [] };
+}
+
+/** 只读用途的空会话常量（需要一份可写默认值时调用 `emptySession()`）。 */
+const EMPTY_SESSION: SessionData = emptySession();
 
 /**
  * 读取会话数据（`storage.session`）。校验失败按空会话返回并留痕：
@@ -46,14 +57,14 @@ export async function readSession(): Promise<SessionData> {
       if (stored[SESSION_KEY] !== undefined) {
         logDegraded('session', '会话数据校验失败，已按空会话处理', parsed.error);
       }
-      return { ...EMPTY_SESSION, itemTabBindings: {}, manualStandaloneTabIds: [] };
+      return emptySession();
     }
     return parsed.data;
   } catch (error) {
     // 读取失败会让调用方以为「当前没有任何绑定」，进而错误地重建绑定。
     // 必须可观测（无遥测产品无服务端日志可查），故收口到统一诊断。
     logDegraded('session', '会话数据读取失败，按空会话处理', error);
-    return { ...EMPTY_SESSION, itemTabBindings: {}, manualStandaloneTabIds: [] };
+    return emptySession();
   }
 }
 
@@ -65,7 +76,9 @@ export async function readSession(): Promise<SessionData> {
  */
 async function writeSession(data: SessionData): Promise<boolean> {
   try {
-    await browser.storage.session.set({ [SESSION_KEY]: data });
+    // 写入侧同样过 schema（读侧已有）：只校验读侧会让「内存里合法、磁盘上非法」的
+    // 数据绕过唯一校验口径 —— 下一次 read 只能整块丢弃并留痕，而写入方毫不知情。
+    await browser.storage.session.set({ [SESSION_KEY]: SessionDataSchema.parse(data) });
     return true;
   } catch (error) {
     logDegraded('session', '会话数据写入失败，已降级为内存态（面板重启后丢失）', error);

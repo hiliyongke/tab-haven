@@ -86,6 +86,30 @@ describe('planAutoGroups', () => {
     ).toHaveLength(0);
   });
 
+  it('分组信息不可知的标签不参与新建原生组（跨窗口搜索 / 组查询降级兜底）', () => {
+    // 规格：deriveSections 会把 groupId 不在已知 groups 内的标签按未分组处理
+    // （否则这些标签既不在原生区也不在未分组区，会从列表里消失）。但它们在浏览器
+    // 侧**可能已属于某个原生组**，为它新建组会覆盖既有归属 —— 区分口径与裁决见
+    // planAutoGroups 的注释。这里既无「创建原生组」计划，也不产出空计划。
+    const plans = planAutoGroups([
+      siteSection('github.com', [
+        makeTab(1, { windowId: 2, groupId: 9 }),
+        makeTab(2, { windowId: 2, groupId: 9 })
+      ])
+    ]);
+    expect(plans).toEqual([]);
+  });
+
+  it('混入分组信息不可知的标签时整组跳过，普通未分组分区照常建组', () => {
+    const plans = planAutoGroups([
+      siteSection('github.com', [makeTab(1), makeTab(2, { groupId: 9 })]),
+      siteSection('notion.so', [makeTab(3), makeTab(4)])
+    ]);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ title: 'notion.so', tabIds: [3, 4] });
+    expect(plans[0]?.absorbIntoGroupId).toBeUndefined();
+  });
+
   it('存在已入原生组的标签时整组跳过（不打扰手动分组）', () => {
     const plans = planAutoGroups([
       siteSection('github.com', [makeTab(1), makeTab(2, { groupId: 7 })])

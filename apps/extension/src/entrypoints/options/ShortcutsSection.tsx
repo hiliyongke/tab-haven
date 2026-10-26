@@ -1,6 +1,7 @@
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { Kbd } from '@/ui/common/Kbd';
+import { COMMANDS, formatCommandKeys } from '@/core/commands';
 import { Row, Section } from '@/entrypoints/options/settingControls';
 
 /**
@@ -24,15 +25,13 @@ export function ShortcutsSection({
   const { t } = useTranslation();
   return (
     <Section title={t('快捷键')}>
-      {(
-        [
-          ['F', t('聚焦搜索')],
-          ['O', t('打开 / 聚焦侧边栏')],
-          ['L', t('定位当前激活标签')],
-          ['U', t('休眠当前窗口的后台标签')]
-        ] as const
-      ).map(([key, hint]) => (
-        <Row key={key} label={<Kbd>{IS_MAC ? `⌃⇧${key}` : `Ctrl+Shift+${key}`}</Kbd>} hint={hint}>
+      {/* 浏览器级快捷键：键位与说明同源于 core/commands（与 manifest 的口径由守卫对齐） */}
+      {COMMANDS.map((command) => (
+        <Row
+          key={command.id}
+          label={<Kbd>{formatCommandKeys(command.suggestedKey, IS_MAC)}</Kbd>}
+          hint={t(command.labelKey)}
+        >
           <span className="text-2xs text-gray-500">{t('浏览器级')}</span>
         </Row>
       ))}

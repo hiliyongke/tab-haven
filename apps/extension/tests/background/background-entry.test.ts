@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
+import { DEFAULT_SETTINGS, PINS_LIMIT, type Settings } from '@/core/schema/models';
 import { createFolder, createFolderItem } from '@/core/fixed/FolderOps';
 import { PENDING_ACTIONS_KEY } from '@/platform/messages';
 import {
   foldersRepository,
+  pinsRepository,
   settingsRepository,
   snapshotsRepository
 } from '@/platform/storage/repositories';
-import { clearDiagnostics } from '@/platform/diagnostics';
+import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
+import { initHeadlessI18n, t } from '@/i18n/headless';
 import { getLastActiveTabId, recordActiveTab } from '@/platform/background/windowCache';
 import { syncCachedSettings } from '@/platform/background/shared';
 
@@ -111,6 +113,19 @@ function runtimeMock(name: 'getURL' | 'setUninstallURL') {
 /** 读取 `beforeEach` 里安装的 runtime.sendMessage spy（SW → 面板的单向消息出口）。 */
 function sendMessageMock() {
   return fakeBrowser.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>;
+}
+
+/**
+ * 清掉启动期与上一用例残留的角标写入。
+ *
+ * 冷启动补刷改走**直刷**（`refreshBadge`）后，入口启动本身就会写一次角标；此外
+ * `showBadgeOverride` 的覆盖态是 badge 模块的模块级状态，会跨用例残留（真实环境里
+ * 由 1500ms 到期清除）。故先把定时器推过到期点，再清空记录 —— 这样断言的才是
+ * 「本次点击」的结果，而不是启动补刷或上一用例的 ✓。
+ */
+async function settleBadge(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(1600);
+  actionMock('setBadgeText').mockClear();
 }
 
 /** 安装子模块依赖的浏览器 API stub，并启动入口，返回监听器表。 */
@@ -470,6 +485,7 @@ describe('action.onClicked（regroup 模式）', () => {
 
   it('regroup 模式下无可整理内容时不打勾（不制造假反馈）', async () => {
     const listeners = await boot({ actionClickMode: 'regroup' });
+    await settleBadge();
     Object.assign(fakeBrowser.tabs, {
       query: vi.fn(async () => [rawTab({ id: 1, url: 'https://a.com/', index: 0 })])
     });
@@ -483,6 +499,7 @@ describe('action.onClicked（regroup 模式）', () => {
 
   it('panel 模式下点击由 Chrome 打开侧边栏，onClicked 不做任何事', async () => {
     const listeners = await boot({ actionClickMode: 'panel' });
+    await settleBadge();
 
     listeners.get('action.onClicked')!();
 
@@ -686,6 +703,55 @@ describe('contextMenus.onClicked 路由', () => {
     listeners.get('contextMenus.onClicked')!({ menuItemId: 'th:action:open-panel' } as never);
 
     await vi.waitFor(() => expect(open).toHaveBeenCalled());
+  });
+
+  it('正常固定：写库并把真实标签置 pinned', async () => {
+    const { listeners } = await bootWithFolder();
+    const setPinned = vi.spyOn(fakeBrowser.tabs, 'update').mockResolvedValue({} as never);
+
+    listeners.get('contextMenus.onClicked')!(
+      { menuItemId: 'th:page:pin' } as never,
+      rawTab({ id: 77, url: 'https://pinning.com/', pinned: false }) as never
+    );
+
+    await vi.waitFor(async () => {
+      expect((await pinsRepository.read()).map((p) => p.identity)).toEqual(['pinning.com']);
+    });
+    await vi.waitFor(() => expect(setPinned).toHaveBeenCalledWith(77, { pinned: true }));
+  });
+
+  it('达上限时右键固定：不写入、通知失败并留痕（超限量会让整份备份被拒）', async () => {
+    await pinsRepository.write(
+      Array.from({ length: PINS_LIMIT }, (_, i) => ({
+        id: `pin-${i}`,
+        identity: `site-${i}.com`,
+        url: `https://site-${i}.com/`,
+        title: `Site ${i}`
+      }))
+    );
+    const { listeners } = await bootWithFolder();
+    const notifications = fakeBrowser.notifications as unknown as {
+      create: ReturnType<typeof vi.fn>;
+    };
+    notifications.create.mockClear();
+
+    listeners.get('contextMenus.onClicked')!(
+      { menuItemId: 'th:page:pin' } as never,
+      rawTab({ id: 78, url: 'https://overflow.com/', pinned: false }) as never
+    );
+
+    await vi.waitFor(() =>
+      expect(readDiagnostics().some((e) => e.message.includes('上限'))).toBe(true)
+    );
+    // 关键断言：入口不再自己写 pins，超限时一条都不会多出来
+    expect(await pinsRepository.read()).toHaveLength(PINS_LIMIT);
+    // 反馈必须与事实一致：走的是失败文案，不能报「已加入常驻磁贴」。
+    // 文案按 SW 侧同一条 `t()` 解析（后台无 React，语言由 initHeadlessI18n 决定）。
+    await initHeadlessI18n();
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: t('加入常驻磁贴失败，请重试。') })
+    );
   });
 });
 

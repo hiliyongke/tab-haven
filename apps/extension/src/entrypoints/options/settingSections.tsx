@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import i18n, { useTranslation } from '@/i18n';
+import i18n, { useTranslation, type Translate } from '@/i18n';
 import type { Settings } from '@/core/schema/models';
 import { COLOR_THEMES, type ColorTheme } from '@/core/theme/colorThemes';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
@@ -197,16 +197,22 @@ type MirrorSyncState = MirrorSyncIssue | 'write-failed';
  * 导出供行为规格测试直接渲染：五态映射必须逐态可断言
  * （见 tests/ui/mirror-sync-status.test.tsx）。
  */
-export function MirrorSyncStatus({ t }: { t: (key: string) => string }) {
+export function MirrorSyncStatus({ t }: { t: Translate }) {
   const enabled = useDataStore((s) => s.settings.syncMirrorEnabled);
   const issue = useDataStore((s) => s.mirrorIssue);
   const writeFailed = useDataStore((s) => s.mirrorWriteFailed);
+  const quotaExceeded = useDataStore((s) => s.mirrorQuotaExceeded);
 
   // 本次会话没拉取过镜像（已 seeded 的设备不拉取，因为本地即权威）时通常不渲染：
   // 没有依据却显示「已生效」是把猜测当事实。写失败是例外——它是本次会话的真实
   // 结果，必须呈现，否则「开了同步但其他设备收不到」仍是静默的。
   if (!enabled) return null;
-  const state: MirrorSyncState | null = writeFailed ? 'write-failed' : issue;
+  // 写侧失败也要分原因：**容量**预检命中时说「超出同步容量上限」，否则说
+  // 「本次改动未上传」。写侧已用与 pull 同一把尺子拦截，若「超出容量上限」只由
+  // pull 的 chunk 计数触发，超配额的用户看到的就是「本次改动未上传」—— 与
+  // PRIVACY.md §4 的对外口径不一致（用户据此会以为重试就能成功）。
+  const writeState: MirrorSyncState = quotaExceeded ? 'chunk-limit' : 'write-failed';
+  const state: MirrorSyncState | null = writeFailed ? writeState : issue;
   if (state === null) return null;
   // 五态必须给五句不同的话：布尔只能表达「坏/不坏」，于是「镜像损坏」会被说成
   // 「超出容量上限」，而「从未同步过」反而显示「已生效」。
@@ -239,7 +245,7 @@ export function MirrorSyncStatus({ t }: { t: (key: string) => string }) {
  * 现在按依赖参数化（t 与 sidePanelSide 是运行时值），由组件调用一次即可。
  */
 export function buildSections(
-  t: (key: string, options?: Record<string, unknown>) => string,
+  t: Translate,
   sidePanelSide: string
 ): { id: string; titleKey: string; specs: SettingSpec[] }[] {
   return [
