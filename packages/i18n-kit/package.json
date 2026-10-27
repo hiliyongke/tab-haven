@@ -25,7 +25,7 @@
   },
   "//devDependencies": "react 是可选 peer（本包不强依赖运行时），但 src/react.tsx 的类型检查需要 @types/react；src/node.ts 与 tests 用 Node 内置模块，需 @types/node —— 二者都不由宿主间接提供，由本包自己声明：库包不该依赖宿主的间接类型来源。",
   "devDependencies": {
-    "@babel/parser": "^8.0.7",
+    "@babel/parser": "^8.0.8",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "typescript": "catalog:",
