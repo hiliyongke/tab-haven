@@ -31,7 +31,7 @@ interface ReorderBlockedInput {
  *  - `sync-off` 是用户主动关的开关 → 提示要点明「在哪能打开」；
  *  - `recency` 是用户不易察觉的视图语义限制 → 提示要点明「切到浏览器顺序」。
  * 任何一条静默失效都会让用户判定「拖拽坏了」—— 拖了就一定有结果或一定有说明，
- * 这条口径由 `ui/dnd/dropPolicy`（判定）与 `ui/dnd/useTabDragHandlers`（文案）共同保证。
+ * 这条口径由 `ui/dnd/dropPolicy`（判定）与 `ui/hooks/useTabDragHandlers`（文案）共同保证。
  */
 export function reorderBlockedReason(input: ReorderBlockedInput): ReorderBlockedReason | undefined {
   if (!input.tabOrderSync) return 'sync-off';

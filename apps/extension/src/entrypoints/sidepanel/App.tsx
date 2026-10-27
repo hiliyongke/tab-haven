@@ -35,13 +35,14 @@ import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
+import { Button } from '@/ui/common/Button';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { SettingsSync } from '@/ui/common/SettingsSync';
 import { StatusToast } from '@/ui/common/StatusToast';
 import { UndoHistoryPanel } from '@/ui/common/UndoHistoryPanel';
-import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
+import { SnapshotsPanel } from '@/ui/snapshot/SnapshotsPanel';
 import { OnboardingTour } from '@/ui/common/OnboardingTour';
-import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
+import { CommandPalette, type PaletteActions } from '@/ui/panels/CommandPalette';
 import { SpaceStrip } from '@/ui/common/SpaceStrip';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { DndRoot } from '@/ui/dnd/DndRoot';
@@ -64,7 +65,7 @@ import { useSpaces } from '@/entrypoints/sidepanel/hooks/useSpaces';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { useOtherWindows } from '@/ui/tabs/useOtherWindows';
 import { OtherWindowsSection } from '@/ui/tabs/OtherWindowsSection';
-import { RestoreConfirmDialog } from '@/ui/common/RestoreConfirmDialog';
+import { RestoreConfirmDialog } from '@/ui/snapshot/RestoreConfirmDialog';
 import type { Snapshot } from '@/core/schema/models';
 import { useListNavigation } from '@/ui/hooks/useListNavigation';
 import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
@@ -78,7 +79,7 @@ import {
   LoadingSkeleton,
   NoSearchResults
 } from '@/ui/common/ListStates';
-import { useTabDragHandlers } from '@/ui/dnd/useTabDragHandlers';
+import { useTabDragHandlers } from '@/ui/hooks/useTabDragHandlers';
 
 /** 初始化失败后的自动重试延迟：给仓库读取一次喘息，避免在同一故障上立刻重试。 */
 const INIT_RETRY_DELAY_MS = 1000;
@@ -1176,13 +1177,14 @@ export default function App() {
                 )}
               </p>
             </div>
-            <button
-              type="button"
-              className="shrink-0 rounded px-1.5 py-0.5 text-3xs font-medium text-accent-700 transition-base hover:bg-accent-100"
+            <Button
+              variant="accent-ghost"
+              size="xs"
+              className="shrink-0 text-3xs"
               onClick={() => void tryUpdateSettings({ tipSeen: true })}
             >
               {t('知道了')}
-            </button>
+            </Button>
           </div>
         )}
         {/* 工作区切换条（C1）：无工作区快照时整条隐藏。 */}
@@ -1333,16 +1335,18 @@ export default function App() {
           {/* aria-label 不能省：≤300px 档的 CSS 会把 <span> 文字 display:none，
               display:none 同时把文本移出可访问树 —— 窄面板下这个按钮会变成
               一个没有名称的空「按钮」，而它是侧栏最核心的入口。 */}
-          <button
-            type="button"
+          {/* 虚线框整条「新建标签」：盒模型与配色由 .add-tab-btn（unlayered）承担，
+              Button 只补 label / disabled / 焦点环口径。 */}
+          <Button
+            variant="ghost"
+            size="sm"
             className="add-tab-btn"
-            aria-label={t('新建标签')}
-            title={t('新建标签')}
+            label={t('新建标签')}
             onClick={() => void createNewTab()}
           >
             <Icon d={Icons.plus} className="h-4 w-4" />
             <span>{t('新建标签')}</span>
-          </button>
+          </Button>
         </div>
 
         {/* 提示条挂在「+ 新建标签」与底栏之间（实体占位）：浮层会盖住用户正在操作的行。 */}

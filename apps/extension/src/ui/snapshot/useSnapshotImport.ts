@@ -12,6 +12,9 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
  * 拆出后面板只消费 `{ source, text, name, ... }` 与 `runImport`，导入的失败口径
  * （过大 / 非 JSON / 非 Workona / 无网址 / 截断）集中在 `runImport` 一处。
  */
+/** 导入来源：OneTab 纯文本 / Workona 导出 JSON。 */
+export type ImportSource = 'onetab' | 'workona';
+
 export function useSnapshotImport(params: {
   t: Translate;
   notify: (message: string) => void;
@@ -19,10 +22,10 @@ export function useSnapshotImport(params: {
   /** 导入成功后回到列表视图。 */
   onDone: () => void;
 }): {
-  source: 'onetab' | 'workona';
+  source: ImportSource;
   text: string;
   name: string;
-  setSource: (source: 'onetab' | 'workona') => void;
+  setSource: (source: ImportSource) => void;
   setText: (text: string) => void;
   setName: (name: string) => void;
   runImport: () => Promise<void>;

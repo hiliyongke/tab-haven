@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { FixedFolder } from '@/core/schema/models';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
-import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
+import { CommandPalette, type PaletteActions } from '@/ui/panels/CommandPalette';
 import { translate } from '@/i18n';
 
 /**

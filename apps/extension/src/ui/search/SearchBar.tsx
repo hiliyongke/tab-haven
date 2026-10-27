@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { IconButton } from '@/ui/common/IconButton';
 
 /**
  * 常驻顶部搜索框，输入即过滤：
@@ -35,7 +36,9 @@ export function SearchBar({
   const [focused, setFocused] = useState(false);
   return (
     <>
-      <div className="search-bar">
+      {/* input-row：下划线式输入的容器级承载（与命令面板输入行、弹窗输入框同一组
+          声明，见 main.css「输入落位语言」），别在这里另写一份边框。 */}
+      <div className="search-bar input-row">
         <Icon d={Icons.search} className="search-bar-icon h-4 w-4" />
         <input
           ref={inputRef}
@@ -55,6 +58,9 @@ export function SearchBar({
             }
           }}
         />
+        {/* 刻意保留裸 button：它是 toggle 语义（aria-pressed），而 Button /
+            IconButton / RowActionButton 都不下发 aria-pressed；换成它们会让读屏
+            丢失「开 / 关」状态。视觉与命中区由 .search-bar-history 承担。 */}
         {showHistoryToggle && onToggleHistory && (
           <button
             type="button"
@@ -70,19 +76,19 @@ export function SearchBar({
             <Icon d={Icons.history} className="h-3.5 w-3.5" />
           </button>
         )}
+        {/* 圆角胶囊与 24px 命中区由 .search-bar-clear（unlayered）承担，
+            IconButton 只补 label / disabled / 焦点环口径。 */}
         {query && (
-          <button
-            type="button"
+          <IconButton
+            icon={Icons.close}
+            iconClass="h-3.5 w-3.5"
+            label={t('清除搜索')}
             className="search-bar-clear"
-            title={t('清除搜索')}
-            aria-label={t('清除搜索')}
             onClick={() => {
               onChange('');
               inputRef.current?.focus();
             }}
-          >
-            <Icon d={Icons.close} className="h-3.5 w-3.5" />
-          </button>
+          />
         )}
       </div>
       {showKeyboardHint && focused && (

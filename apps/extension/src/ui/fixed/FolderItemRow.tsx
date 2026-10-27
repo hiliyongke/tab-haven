@@ -14,7 +14,8 @@ interface FolderItemRuntime {
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
-import { Icon, Icons } from '@/ui/common/Icon';
+import { Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 import { RowActions } from '@/ui/common/RowActions';
 import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
@@ -173,40 +174,29 @@ export const FolderItemRow = memo(function FolderItemRow({
     () => (
       <RowActions>
         {runtimeTab && (runtimeTab.audible || runtimeTab.muted) && (
-          <button
-            type="button"
-            className="row-action"
-            title={runtimeTab.muted ? t('取消静音') : t('静音')}
-            aria-label={runtimeTab.muted ? t('取消静音') : t('静音')}
+          <RowActionButton
+            icon={runtimeTab.muted ? Icons.volumeOff : Icons.volumeOn}
+            label={runtimeTab.muted ? t('取消静音') : t('静音')}
             onClick={() => void toggleMute(runtimeTab)}
-          >
-            <Icon d={runtimeTab.muted ? Icons.volumeOff : Icons.volumeOn} className="h-3.5 w-3.5" />
-          </button>
+          />
         )}
         {runtimeTab &&
           !runtimeTab.discarded &&
           !runtimeTab.active &&
           canSafelyDiscardTab(runtimeTab) && (
-            <button
-              type="button"
-              className="row-action"
-              title={t('休眠标签（释放内存）')}
-              aria-label={t('休眠标签（释放内存）')}
+            <RowActionButton
+              icon={Icons.snowflake}
+              label={t('休眠标签（释放内存）')}
               onClick={() => void discardTab(runtimeTab.id)}
-            >
-              <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
-            </button>
+            />
           )}
-        <button
-          type="button"
-          className="row-action is-danger"
-          title={t('移出文件夹（已打开会一并关闭）')}
-          aria-label={t('移出文件夹（已打开会一并关闭）')}
+        <RowActionButton
+          icon={Icons.close}
+          label={t('移出文件夹（已打开会一并关闭）')}
+          danger
           disabled={importing}
           onClick={handleRemove}
-        >
-          <Icon d={Icons.close} className="h-3.5 w-3.5" />
-        </button>
+        />
       </RowActions>
     ),
     [runtimeTab, t, importing, toggleMute, discardTab, handleRemove]

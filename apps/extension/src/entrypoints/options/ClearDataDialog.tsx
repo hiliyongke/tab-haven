@@ -1,5 +1,6 @@
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
+import { Checkbox } from '@/ui/common/Checkbox';
 import { DialogShell } from '@/ui/dialog/Dialog';
 
 interface ClearDataDialogProps {
@@ -61,12 +62,7 @@ export function ClearDataDialog({
         </p>
         {/* items-start 让复选框与多行说明首行顶部对齐，不再靠 mt-px(1px) 微调 */}
         <label className="flex cursor-pointer items-start gap-2 text-2xs text-gray-700">
-          <input
-            type="checkbox"
-            checked={ack}
-            onChange={(event) => onAckChange(event.target.checked)}
-            className="mt-0.5"
-          />
+          <Checkbox checked={ack} className="mt-0.5" onChange={onAckChange} />
           <span>{t('我已了解上述数据将被永久删除，且无法恢复')}</span>
         </label>
       </div>

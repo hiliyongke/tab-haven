@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
-import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
+import { SnapshotsPanel } from '@/ui/snapshot/SnapshotsPanel';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useTabStore } from '@/stores/tabStore';
 

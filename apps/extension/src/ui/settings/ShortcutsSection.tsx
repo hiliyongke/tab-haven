@@ -2,7 +2,7 @@ import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { Kbd } from '@/ui/common/Kbd';
 import { COMMANDS, formatCommandKeys } from '@/core/commands';
-import { Row, Section } from '@/entrypoints/options/settingControls';
+import { Row, Section } from '@/ui/settings/settingControls';
 
 /**
  * 平台修饰键判定：Mac 用户应看到 ⌃⇧ 而非 Ctrl+Shift。

@@ -7,7 +7,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { useScrollFade } from '@/ui/common/useScrollFade';
-import { classifyDrop } from '@/ui/dnd/dropPolicy';
+import { classifyDrop, dropFeedbackClass } from '@/ui/dnd/dropPolicy';
 import { PINNED_STRIP_DROPPABLE, type DragData } from '@/ui/dnd/types';
 import { SortablePinnedTile, makePinMiddleClickHandler } from '@/ui/tabs/SortablePinnedTile';
 import { buildPinRuntimeIndex, CLOSED_PIN_RUNTIME } from '@/ui/tabs/pinRuntime';
@@ -43,14 +43,7 @@ export function PinnedStrip() {
   const dropOutcome = activeData
     ? classifyDrop(activeData, { id: PINNED_STRIP_DROPPABLE, data: PINNED_STRIP_DROP_DATA })
     : undefined;
-  const dropRejected = dropOutcome?.kind === 'reject';
-  const dropFeedback = !isOver
-    ? ''
-    : dropRejected
-      ? ' is-drop-rejected'
-      : dropOutcome?.kind === 'accept'
-        ? ' is-drop-target'
-        : '';
+  const dropFeedback = dropFeedbackClass(isOver, dropOutcome);
 
   // 一次建索引取代「每个磁贴各扫一遍全量标签」。
   // 注意 hook 必须在早退之前调用：pins 为空时组件仍要返回 null，但 hooks 顺序不能变。

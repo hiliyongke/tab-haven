@@ -716,7 +716,8 @@ describe('FolderEditDialog', () => {
       />
     );
     fireEvent.click(screen.getByRole('button', { name: translate('删除文件夹') }));
-    fireEvent.click(screen.getByRole('button', { name: translate('删除') }));
+    // 确认按钮与行内删除同一口径（FolderDeleteConfirmDialog）：动作本身，非中性「确定」
+    fireEvent.click(screen.getByRole('button', { name: translate('确认删除') }));
 
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalled();

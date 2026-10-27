@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import type { Snapshot, UndoBatch } from '@/core/schema/models';
-import { CommandPalette, type PaletteActions } from '@/ui/common/CommandPalette';
+import { CommandPalette, type PaletteActions } from '@/ui/panels/CommandPalette';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 import { translate } from '@/i18n';

@@ -17,7 +17,7 @@ import { activatableRowProps } from '@/ui/domContract';
  *  键盘拖拽走主按钮：KeyboardSensor 要求 keydown 目标即 activator 本体，
  *  因此 activatorRef/buttonAttributes/buttonListeners 挂到主按钮上，
  *  容器 listeners 只承担指针拖拽（整行可拖），与按钮键盘监听互不重复激活。 */
-interface RowItemContainer {
+export interface RowItemContainer {
   ref?: (node: HTMLElement | null) => void;
   listeners?: object | undefined;
   style?: CSSProperties;

@@ -158,9 +158,10 @@ export function UndoHistoryPanel({
         {batches.length > 0 && (
           <section className="mb-3">
             <div className="mb-1 flex items-center justify-between gap-2">
-              {/* 分组小标题统一口径（与 SnapshotsPanel / CommandPalette / AboutPage 一致）：
-                  11px + font-medium + tracking-wide + gray-500 */}
-              <h3 className="text-3xs font-medium tracking-wide text-gray-500">
+              {/* 分组小标题统一口径：.group-label（11px + font-medium + tracking-wide
+                  + gray-500），与 SnapshotsPanel / CommandPalette 同源 —— 此前靠本注释
+                  维持一致，改口径必漏一处，现在由语义类保证。 */}
+              <h3 className="group-label">
                 {/* 纯中文：品牌名嵌进中文短语（「Tabs撤销」）会在中文界面留下
                     中英混排且缺空格的读法，英文模式下又会被整句译掉品牌词。 */}
                 {t('撤销')} · {batches.length}
@@ -173,7 +174,7 @@ export function UndoHistoryPanel({
                   size="sm"
                   disabled={redoing}
                   onClick={() => void redo()}
-                  title={t('再次关闭刚恢复的 {{count}} 个标签（可再次撤销）', {
+                  tooltip={t('再次关闭刚恢复的 {{count}} 个标签（可再次撤销）', {
                     count: redoBatches[0]?.entries.length ?? 0
                   })}
                 >
@@ -184,11 +185,15 @@ export function UndoHistoryPanel({
             <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {[...batches].reverse().map((batch) => (
                 <li key={batch.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50"
+                  {/* 整行按钮收敛到 Button：命中下限 / disabled:hover 兜底与其余按钮同源。
+                      只传 tooltip 不传 label —— 行的可访问名应由可见文本（站点 + 数量 +
+                      时间）承担，aria-label 会把整段盖成一句提示。 */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 px-3 py-2 text-left text-xs"
+                    tooltip={t('恢复该批次关闭的标签')}
                     onClick={() => void undoBatch(batch.id)}
-                    title={t('恢复该批次关闭的标签')}
                   >
                     <span className="min-w-0 flex-1 truncate font-medium text-gray-700">
                       {batch.entries[0]
@@ -212,7 +217,7 @@ export function UndoHistoryPanel({
                       {/* 量词不能裸写：英文模式会残留「个」。整句进词典。 */}·{' '}
                       {t('共 {{count}} 个', { count: batch.entries.length })}
                     </span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -221,15 +226,16 @@ export function UndoHistoryPanel({
 
         {recent !== null && recent.length > 0 && (
           <section>
-            <h3 className="mb-1 text-3xs font-medium tracking-wide text-gray-500">
+            <h3 className="group-label mb-1">
               {t('浏览器最近关闭')} · {recent.length}
             </h3>
             <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {recent.map((entry) => (
                 <li key={entry.sessionId}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 px-3 py-2 text-left text-xs"
                     onClick={() => handleRestoreRecent(entry)}
                     disabled={restoringId !== null}
                   >
@@ -248,7 +254,7 @@ export function UndoHistoryPanel({
                     <span className="shrink-0 text-2xs text-gray-500">
                       {restoringId === entry.sessionId ? '…' : formatTime(entry.lastModified)}
                     </span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>

@@ -4,7 +4,8 @@ import type { DraggableAttributes, DraggableSyntheticListeners } from '@dnd-kit/
 import { useTranslation } from '@/i18n';
 import { hostnameOf } from '@/core/url/UrlInspector';
 import { Favicon } from '@/ui/common/Favicon';
-import { Icon, Icons } from '@/ui/common/Icon';
+import { Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { useDomainAccent } from '@/ui/tabs/accent';
 
@@ -97,6 +98,9 @@ export function PinnedTile({
       style={accent ? ({ '--tile-accent': accent } as CSSProperties) : undefined}
       onContextMenu={openMenu}
     >
+      {/* 刻意保留裸 button：这里同时挂着 dnd-kit 的 setNodeRef / attributes /
+          listeners 与 onAuxClick（中键打开），还有 sortable 的 inline transform。
+          三个按钮原语都不转发 ref、也不接受外挂属性，替换会让拖拽失效。 */}
       <button
         ref={sortable?.setNodeRef}
         type="button"
@@ -122,15 +126,14 @@ export function PinnedTile({
         </span>
       </button>
       {onUnpin && (
-        <button
-          type="button"
-          className="row-action pinned-unpin"
-          title={unpinTitle ?? t('取消固定')}
-          aria-label={unpinTitle ?? t('取消固定')}
+        <RowActionButton
+          icon={Icons.close}
+          label={unpinTitle ?? t('取消固定')}
+          /* 磁贴角标是 12px 图标（.pinned-unpin 把命中区扩到 24px）。 */
+          iconClass="h-3 w-3"
+          className="pinned-unpin"
           onClick={onUnpin}
-        >
-          <Icon d={Icons.close} className="h-3 w-3" />
-        </button>
+        />
       )}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} />}
     </article>

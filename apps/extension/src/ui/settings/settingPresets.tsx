@@ -4,8 +4,9 @@ import { openSidePanel } from '@/platform/sidePanel';
 import { useDataStore } from '@/stores/dataStore';
 import type { Settings } from '@/core/schema/models';
 import { Button } from '@/ui/common/Button';
+import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
-import { Section } from '@/entrypoints/options/settingControls';
+import { Section } from '@/ui/settings/settingControls';
 
 /**
  * 设置页的「引导层」：预设画像与能力发现。
@@ -100,14 +101,11 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
     <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-700">{t('快速预设')}</h2>
+        {/* 与 SnapshotRow 的「恢复勾选」同款强调色文字按钮，统一走 accent-ghost。 */}
         {undoPatch && (
-          <button
-            type="button"
-            className="min-h-6 rounded px-2 py-1 text-2xs font-medium text-accent-600 transition-base hover:bg-accent-50"
-            onClick={() => void revertPreset()}
-          >
+          <Button variant="accent-ghost" size="xs" onClick={() => void revertPreset()}>
             {t('撤销预设')}
-          </button>
+          </Button>
         )}
       </div>
       {/* 11px：与同文件预设描述（text-3xs）同档，小一号会显得不统一 */}
@@ -115,6 +113,9 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {PRESET_PROFILES.map((preset) => {
           const active = isActive(preset);
+          // 刻意保留裸 button：预设卡是 toggle 语义（aria-pressed），而 Button /
+          // IconButton / RowActionButton 都不下发 aria-pressed；换成 Button 会让
+          // 读屏丢失「使用中」状态，且卡片是 flex-col 多行布局，不是按钮形态。
           return (
             <button
               key={preset.id}
@@ -131,10 +132,17 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
               <span className="flex w-full items-center justify-between gap-1">
                 <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
                 {active && (
-                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-accent-100 px-1.5 py-px text-3xs font-medium text-accent-700">
+                  /* 两处「使用中」徽章必须同构：此前只有「自定义」那一处被收口，
+                     激活预设的这一处仍手写同一套 class 串。 */
+                  <Chip
+                    tone="accent"
+                    cjk
+                    size="md"
+                    className="inline-flex shrink-0 items-center gap-0.5"
+                  >
                     <Icon d={Icons.check} className="h-3 w-3" />
                     {t('使用中')}
-                  </span>
+                  </Chip>
                 )}
               </span>
               <span className="text-3xs leading-snug text-gray-600">{t(preset.descKey)}</span>
@@ -146,10 +154,10 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
           <div className="flex flex-col items-start gap-1 rounded-lg border border-dashed border-gray-300 bg-surface px-3 py-2 sm:col-span-3">
             <span className="flex w-full items-center justify-between gap-1">
               <span className="text-sm font-medium text-gray-700">{t('自定义')}</span>
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-px text-3xs font-medium text-gray-600">
+              <Chip cjk size="md" className="inline-flex shrink-0 items-center gap-0.5">
                 <Icon d={Icons.check} className="h-3 w-3" />
                 {t('使用中')}
-              </span>
+              </Chip>
             </span>
             <span className="text-3xs leading-snug text-gray-600">
               {t('当前配置由你手动调整，不对应任何预设；可点击上方预设一键套用')}

@@ -7,9 +7,16 @@ type FieldElement = HTMLInputElement | HTMLTextAreaElement;
 /**
  * 统一文本输入控件（弹窗 / 表单 / 搜索框共用）。
  *
- * 统一收口 `rounded border border-gray-200 bg-surface px-2 py-1.5 …` 这类样式串：
- * 散落各处时边框统一用 border-gray-200 —— 对 surface 仅 1.33:1，
- * 不满足 WCAG 1.4.11 的 3:1。此处边框统一走 --border-control 令牌。
+ * 统一收口输入框的边框口径：散落各处时边框统一用 border-gray-200 —— 对 surface
+ * 仅 1.33:1，不满足 WCAG 1.4.11 的 3:1。此处边框统一走 --border-control 令牌。
+ *
+ * **单行输入的落位语言与侧边栏搜索输入框一致**：只留下边框 + 无底色，聚焦时下边框
+ * 转品牌色。此前是完整描边框（`rounded border`），在窄侧栏里会与卡片自身的边界叠成
+ * 双线，观感笨重；改成下边框后焦点可见性不减反增（与 `.search-bar:focus-within`
+ * 的下划线式指示同语言，见 main.css）。
+ *
+ * 多行（textarea）**保留完整描边框**：只留下边框时，两三行高的文本区看不出可输入
+ * 范围的上下界，尤其是「禁缓存站点 / 批量导入」这类整段粘贴的场景。
  *
  * 支持单行（input）与多行（textarea），以及受控 / 非受控两种用法。
  */
@@ -100,10 +107,15 @@ export function TextField({
      三档都要有 min-h：sm 不加时实测 22px，低于 WCAG 2.5.8 的 24px 下限，
      且 px-1.5(6px) / py-0.5(2px) 脱 4px 网格。 */
   const base =
-    'w-full rounded text-gray-800 transition-base ' +
+    'w-full text-gray-800 transition-base ' +
     (variant === 'bare'
       ? 'bg-transparent focus:outline-none'
-      : 'border border-control bg-surface focus:border-accent-500') +
+      : multiline
+        ? 'rounded border border-control bg-surface focus:border-accent-500'
+        : /* input-line：下划线式输入的**输入级**承载，与侧边栏搜索框 / 命令面板
+             输入行共用 main.css 里那一组声明（边框令牌 + 焦点指示条）。别在这里
+             另写一份 border-b —— 改焦点行为时会漏掉这一处。 */
+          'input-line') +
     (size === 'lg' ? ' px-3 py-1.5 text-sm min-h-9' : '') +
     (size === 'md' ? ' px-2 py-1 text-sm min-h-8' : '') +
     (size === 'sm' ? ' px-2 py-0.5 text-xs min-h-6' : '') +

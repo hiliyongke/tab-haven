@@ -180,6 +180,10 @@ export function WhitelistEditor({
               className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs text-gray-600"
             >
               {entry}
+              {/* 刻意保留裸 button：.whitelist-remove 已用 inset -6px 把 12px 图标
+                  的命中区扩到 24px（无缺陷可修），而 RowActionButton 内部固定
+                  .row-action 的 20×20 盒 + 品牌色 hover，会把这枚 chip 从 16px 撑到
+                  24px、并把 hover 语义从「灰字变深」改成品牌底。 */}
               <button
                 type="button"
                 aria-label={t('移出白名单')}

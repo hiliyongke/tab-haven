@@ -2,6 +2,7 @@ import { useTranslation } from '@/i18n';
 import type { LucideIcon } from 'lucide-react';
 import { getExtensionVersion } from '@/platform/navigation';
 import { COMMANDS, commandKeyParts } from '@/core/commands';
+import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { Kbd } from '@/ui/common/Kbd';
 
@@ -474,18 +475,19 @@ export function AboutPage() {
           <p className="mt-1 text-sm text-gray-600">{t('本地优先、无账号、无云端的标签工作台')}</p>
         </div>
         {version && (
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-3xs text-gray-500">
+          /* 版本胶囊此前是 text-gray-500（gray-500 在 gray-100 底上仅 3.92:1，
+             不达 AA）；收口到 Chip 后随中性档统一为 gray-600。 */
+          <Chip cjk size="md">
             {t('版本 {{version}}', { version })}
-          </span>
+          </Chip>
         )}
         <ul className="mt-1 flex flex-wrap gap-1.5">
           {PRIVACY_BADGES.map((badge) => (
-            <li
-              key={badge.labelKey}
-              className="inline-flex items-center gap-1 rounded-full bg-accent-50 px-2.5 py-1 text-3xs font-medium text-accent-700"
-            >
-              <Icon d={Icons.check} className="h-3 w-3" />
-              {t(badge.labelKey)}
+            <li key={badge.labelKey}>
+              <Chip tone="brand" cjk size="md" className="inline-flex items-center gap-1">
+                <Icon d={Icons.check} className="h-3 w-3" />
+                {t(badge.labelKey)}
+              </Chip>
             </li>
           ))}
         </ul>
@@ -553,7 +555,7 @@ export function AboutPage() {
           <div className="rounded-lg border border-gray-200 bg-surface px-4 py-3">
             {/* 11px/500 而非 10px/600：层级应是 14/600 → 12/500 → 11/500 单调递减，
                 最小一级字重回弹到 600 会比上一级还重，且 10px 低于 11px 下限。 */}
-            <p className="pb-1 text-3xs font-medium tracking-wide text-gray-500">{t('侧边栏内')}</p>
+            <p className="group-label pb-1">{t('侧边栏内')}</p>
             <ul className="divide-y divide-gray-100">
               {PANEL_SHORTCUTS.map((shortcut) => (
                 <li
@@ -571,9 +573,7 @@ export function AboutPage() {
             </ul>
           </div>
           <div className="rounded-lg border border-gray-200 bg-surface px-4 py-3">
-            <p className="pb-1 text-3xs font-medium tracking-wide text-gray-500">
-              {t('浏览器级（全局）')}
-            </p>
+            <p className="group-label pb-1">{t('浏览器级（全局）')}</p>
             <ul className="divide-y divide-gray-100">
               {GLOBAL_SHORTCUTS.map((shortcut) => (
                 <li

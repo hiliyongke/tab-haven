@@ -281,7 +281,7 @@ export function DialogShell({
           </h2>
           {/* 可见的关闭入口：只有 Esc / 点遮罩两条隐藏路径用户不会知道。
               dismiss 标记让「打开聚焦首项」跳过它（焦点应落在输入框或主按钮上）。 */}
-          <IconButton icon={Icons.close} box="md" title={t('关闭')} dismiss onClick={onClose} />
+          <IconButton icon={Icons.close} size="md" label={t('关闭')} dismiss onClick={onClose} />
         </div>
         {/* min-h-0：flex 子项默认 min-height:auto，会顶破父级 max-h 而滚不起来。
             scroll-fade：快照面板 20 条、撤销历史都在这一层里滚，没有底部边界提示

@@ -61,7 +61,7 @@ export function StatusToast() {
       )}
       {/* 复用 IconButton：手写的关闭按钮只有 18px 命中区（p-0.5 + 14px 图标），
           低于项目自定的 24px 下限；IconButton 自带 min-h-6 min-w-6 与禁用/悬停口径。 */}
-      <IconButton icon={Icons.close} title={t('关闭提示')} box="sm" onClick={clearToast} />
+      <IconButton icon={Icons.close} label={t('关闭提示')} size="sm" onClick={clearToast} />
     </div>
   );
 }

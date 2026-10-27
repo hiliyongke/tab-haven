@@ -10,7 +10,7 @@ import { matchesNoCachePattern } from '@/platform/nocache/noCacheRules';
 import { usePinyinDictionary } from '@/ui/search/usePinyinDictionary';
 import type { Snapshot } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
-import { useAllWindowTabs } from '@/ui/common/useAllWindowTabs';
+import { useAllWindowTabs } from '@/ui/search/useAllWindowTabs';
 
 /**
  * 常驻搜索：查询状态、模糊搜索引擎、命中/过滤、键盘导航、以及禁缓存角标集。

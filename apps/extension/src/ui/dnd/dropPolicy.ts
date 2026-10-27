@@ -3,7 +3,7 @@
  *
  * 拖拽有三个消费方，过去它们各自判断投放能力，必然漂移：
  *  1. 落点视觉（GroupCard / FixedArea / PinnedStrip / FolderItemRow）—— 决定高不高亮；
- *  2. 松手执行（useTabDragHandlers）—— 决定做不做、做什么；
+ *  2. 松手执行（ui/hooks/useTabDragHandlers）—— 决定做不做、做什么；
  *  3. 拒绝反馈 —— 决定提示什么。
  * 「高亮了却不动」「没高亮却真的动了」全部源于 1 与 2 用了两套判断。
  *
@@ -66,7 +66,7 @@ export type DropAction =
   /** 持久化磁贴之间排序。 */
   | { kind: 'reorder-pins' };
 
-/** 拒绝原因：必须能落到一句用户能懂的说明上（文案见 useTabDragHandlers）。 */
+/** 拒绝原因：必须能落到一句用户能懂的说明上（文案见 ui/hooks/useTabDragHandlers）。 */
 export type DropRejectCode =
   /** 导入事务进行中：固定空间的写入会被丢弃。 */
   | 'importing'

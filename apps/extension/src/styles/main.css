@@ -821,6 +821,9 @@ html.theme-transition *::after {
   height: 20px;
   border-radius: 999px;
   border: 1px solid var(--border-control);
+  /* 色值由 ColorSwatchGroup 以 `--swatch` 变量注入（取值来自 core/theme/colorThemes）：
+     写死在 JSX 的 backgroundColor 上既绕开主题刻度，也躲开了设计令牌守卫的扫描。 */
+  background: var(--swatch, transparent);
   box-shadow: inset 0 0 0 2px var(--surface);
   cursor: pointer;
   transition:
@@ -1023,6 +1026,19 @@ html.theme-transition *::after {
   color: var(--c-red-600);
 }
 
+/* 禁用态：原生 <button disabled> 在 Chrome 里**仍然匹配 :hover**（Button.tsx 头部
+   注释同因），只写静态样式挡不住 hover 变色 —— FolderRow 给「恢复为原生标签组」
+   传了 disabled，禁用时悬停照样亮起，看着像还能点。这里把 hover / focus 的值
+   显式回落到静默态（透明度与光标由组件侧的 disabled:* 工具类承担，见
+   RowActionButton）。
+   注意 `.section-card:hover .row-action:hover` 的特异性是 (0,4,0)，高于本块的
+   (0,3,0)，故那条规则另加了 `:not(:disabled)` —— 否则卡内的禁用按钮仍会变色。 */
+.row-action:disabled:hover,
+.row-action:disabled:focus-visible {
+  background: transparent;
+  color: var(--c-gray-500);
+}
+
 /* 行内关闭是最高频的行操作之一：视觉目标放大到 22px（命中区经 ::after 扩到 26px），
    降低相邻行密集时的点空率；其余行内操作保持 20px 以维持信息密度。 */
 .row-item .row-action.is-danger {
@@ -1059,6 +1075,32 @@ button:has(> .count-badge) {
   z-index: 2;
 }
 
+/* ---------- 复选框（与 .switch 同族的表单原语，见 ui/common/Checkbox.tsx） ----------
+ * 尺寸与勾选项色收在这里：此前调用点写 `h-3.5 w-3.5 shrink-0 accent-[var(--c-brand-500)]`，
+ * 三处各写一遍，且 accent-[…] 是任意值，绕开了 @theme 的 --color-accent-* 刻度。 */
+.checkbox {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  accent-color: var(--c-brand-500);
+  cursor: pointer;
+}
+.checkbox:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- 分组小标题（面板分区 / 命令面板分组 / 撤销分组共用） ----------
+ * 此前 `text-3xs font-medium tracking-wide text-gray-500` 在 8 处逐字重复，
+ * 「保持一致」靠的是其中一处写的注释（UndoHistoryPanel）—— 注释不会跟着复制走，
+ * 改字号或改色阶必漏一处。收成语义类后由代码保证。 */
+.group-label {
+  font-size: var(--text-3xs);
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: var(--c-gray-500);
+}
+
 /* ---------- chip：徽角 / 小胶囊的紧凑排版 ----------
  * 只给 10-11px 的窄容器用（徽章、来源标记、计数胶囊、chip 按钮）。长段落正文禁用。
  *
@@ -1085,6 +1127,56 @@ button:not([disabled]) {
 }
 
 /* ---------- 常驻顶部搜索框（替代弹窗式覆盖层） ---------- */
+/* ---------- 输入落位语言（全站统一：下划线式，没有第二种） ----------
+ * 以侧边栏顶部搜索框为唯一参照：无底色、仅 1px 下边框，聚焦时下边框转品牌色
+ * 并叠一条 2px 内嵌指示条。此前搜索框 / 命令面板 / 弹窗输入框各写一套
+ * （border-subtle / border-gray-200 / 完整描边框），改一处必漏另两处。
+ *
+ * 两种承载方式，**视觉与焦点行为同一组声明**：
+ *  - 容器级 `.input-row`：搜索框、命令面板输入行 —— 下划线要横跨图标与按钮的
+ *    整行宽度，画在容器上（此时内部 input 必须是无边框的，否则双线）；
+ *  - 输入级 `.input-line`：弹窗 / 表单里的独立输入框 —— 没有容器可依附。
+ *
+ * 静态态用 --border-subtle（淡线）：这是「参照顶部搜索框」的观感要求 —— 此前统一
+ * 时换成了 --border-control，实测下来那条线偏重、与搜索框原本的轻盈感不符。
+ * 代价是静态下边框对比度 <3:1（WCAG 1.4.11），可访问性由**聚焦态**承担：下边框
+ * 转品牌色并叠 2px 指示条（对比度充足且更醒目），且输入框另有占位文案与图标提示
+ * 存在感。若将来要严格满足静态 3:1，改回 --border-control 一处即可。
+ */
+.input-row {
+  border-bottom: 1px solid var(--border-subtle);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    border-bottom-width var(--dur-fast) var(--ease-out);
+}
+.input-line {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    border-bottom-width var(--dur-fast) var(--ease-out);
+}
+/* 焦点指示走容器/输入整体，不在 input 上画全局焦点环：
+   全宽裸输入框套 2px 圆角 outline 会与下边框叠成双重描边，观感突兀。
+
+   加粗成 2px 单条线（而不是 1px 边框 + inset -2px 叠层）：两者同色时会渲染成
+   一条约 3px 的实心底边，在 plain（强调色＝中性灰）主题下就是一条发闷的深灰条。
+   单条 2px 的焦点可见性不减，观感干净。 */
+.input-row:focus-within,
+.input-line:focus {
+  border-bottom-color: var(--c-brand-500);
+  border-bottom-width: 2px;
+}
+.input-line:focus {
+  outline: none;
+  /* 全局 focus-visible 焦点环会画一圈 1px 方框（含 canvas 色 box-shadow 描边）——
+     裸输入框套方框与下边框叠成双重描边。焦点由本节的 2px 下边框承担，
+     与 .search-bar-input:focus-visible 同口径。 */
+  box-shadow: none;
+}
+
 .search-bar {
   position: relative;
   z-index: 30;
@@ -1094,19 +1186,6 @@ button:not([disabled]) {
   gap: 4px;
   padding: 4px 8px;
   background: var(--canvas);
-  border-bottom: 1px solid var(--border-subtle);
-  /* 聚焦指示（底边框 + inset 指示条）走过渡，避免聚焦瞬间硬切闪一下 */
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out);
-}
-/* 键盘流主入口：聚焦时由容器整体给出焦点指示 ——
-   底边框转品牌色 + 底部 2px 指示条（下划线式，干净且醒目）。
-   不在 input 上画全局焦点环：全宽裸输入框套 2px 圆角 outline 会与
-   底边框叠成双重描边，观感突兀。焦点可见性不减反增（容器级指示）。 */
-.search-bar:focus-within {
-  border-bottom-color: var(--c-brand-500);
-  box-shadow: inset 0 -2px 0 0 var(--c-brand-500);
 }
 
 .search-bar-icon {
@@ -2112,8 +2191,10 @@ body.dnd-dragging .fixed-area {
   font-size: 10px;
   font-weight: 600;
 }
-/* 行内按钮自身 hover 时升级为品牌色背景 */
-.section-card:hover .row-action:hover {
+/* 行内按钮自身 hover 时升级为品牌色背景。
+   :not(:disabled) 不可省：本条特异性 (0,4,0) 高于 .row-action:disabled:hover，
+   不加就会让卡内的禁用按钮在悬停时重新变色。 */
+.section-card:hover .row-action:not(:disabled):hover {
   background: var(--c-brand-100);
   color: var(--c-brand-700);
 }

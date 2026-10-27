@@ -9,21 +9,24 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react';
 import { useTranslation } from '@/i18n';
-import { useSortable } from '@dnd-kit/sortable';
 import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
-import { RowActions } from '@/ui/common/RowActions';
 import { RowItem } from '@/ui/common/RowItem';
 import { ContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { StatusBadges } from '@/ui/common/StatusBadges';
 import { useUndoStore } from '@/stores/undoStore';
 import { writeClipboardText } from '@/platform/clipboard';
-import { DragType } from '@/ui/dnd/types';
 import { tabRowIdProps } from '@/ui/domContract';
+import { TabRowActions } from '@/ui/tabs/TabRowActions';
+import { useTabRowSortable } from '@/ui/tabs/useTabRowSortable';
 
 /**
  * 标签行：拖拽 / 预览 / Alt+↑↓ 重排等容器逻辑；视觉壳复用通用 RowItem。
  * 拖拽由全局 dnd-kit 管理：列表内排序走 useSortable，跨容器投放由全局 onDragEnd 分派。
+ *
+ * 本文件只保留**行内容与交互**（滚动、菜单、复制、键盘重排）；dnd-kit 适配在
+ * `useTabRowSortable`、行尾操作组在 `TabRowActions` —— 原 413 行里三者混排，
+ * 改一个按钮的可见条件要在拖拽与菜单逻辑之间翻找。
  *
  * memo 化的前提：App 层已把回调收敛进 sectionCallbacks 的 useMemo，且 tab 引用由 store 保证稳定。
  */
@@ -101,48 +104,6 @@ export const TabRow = memo(function TabRow({
   const { t } = useTranslation();
 
   const liRef = useRef<HTMLLIElement | null>(null);
-
-  // 排序使用 dnd-kit：始终可拖（跨容器拖到固定空间不受排序开关影响），
-  // 列表内排序是否生效由 App 层按 tabOrderSync 设置控制。
-  const sortable = useSortable({
-    id: tab.id,
-    // 关掉让位过渡：其余行会在 200ms 内持续位移，而碰撞检测读的是实时矩形，
-    // 动画期间矩形一直在变，落点随之漂移 —— 表现为「松手前要停一下才准」。
-    // 去掉过渡后元素瞬间到位，矩形立即稳定，落点与所见一致。
-    transition: null,
-    data: {
-      type: DragType.Tab,
-      tabId: tab.id,
-      containerKey,
-      // 行间排序是否可用（false = 超阈值强制虚拟化分区的行：UI 已提示
-      // 「拖拽排序已暂停」，但行仍保留 draggable/droppable 以支持跨容器
-      // 拖到固定空间）。拖放分发据此拦截 Tab→Tab 真实排序——否则出现
-      // 「提示暂停、松手却真实重排」的行为矛盾。
-      canReorder: reorderEnabled !== false,
-      title: tab.title || '',
-      // 拖拽跟随层要显示图标：带页面地址交给 Favicon 走浏览器通道，不再带图标地址。
-      url: tab.url
-    }
-  });
-
-  // 键盘拖拽与指针拖拽分流：键盘监听挂主按钮（KeyboardSensor 要求 keydown 目标即 activator），
-  // 指针监听挂整行（PointerSensor 无目标限制），两者不会为同一事件重复激活。
-  //
-  // 必须 memo 化：解构 `sortable.listeners` 每次渲染都会产生全新对象，直接下传会让
-  // RowItem 的 memo 100% 失效 —— 大列表父级重渲染时全部行都要走一遍 reconcile。
-  const sortableKeyDown = sortable.listeners?.onKeyDown as
-    ((event: ReactKeyboardEvent<HTMLButtonElement>) => void) | undefined;
-  const sortablePointerListeners = useMemo(() => {
-    const rest: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(sortable.listeners ?? {})) {
-      if (key !== 'onKeyDown') rest[key] = value;
-    }
-    return rest;
-  }, [sortable.listeners]);
-  const buttonListeners = useMemo(
-    () => (sortableKeyDown ? { onKeyDown: sortableKeyDown } : undefined),
-    [sortableKeyDown]
-  );
 
   // 当前激活标签变化时，将其滚动进可视区（仅在不完全可见时滚动）。
   useEffect(() => {
@@ -249,65 +210,30 @@ export const TabRow = memo(function TabRow({
     [reorderEnabled, onMoveTab, tab.id]
   );
 
+  const rowContainer = useTabRowSortable({
+    tabId: tab.id,
+    containerKey,
+    reorderEnabled: reorderEnabled !== false,
+    title: tab.title || '',
+    url: tab.url,
+    menuOpen: menu !== null
+  });
+
   // 行内派生元素一律 memo 化：它们作为 props 下传给 RowItem，每次新建对象
   // 都会击穿其 memo（详见 RowItem 注释）。
   const tabActions = useMemo(
     () => (
-      <RowActions forceVisible={rowActionsVisible}>
-        {(tab.audible || tab.muted) && (
-          <button
-            type="button"
-            className="row-action"
-            title={tab.muted ? t('取消静音') : t('静音')}
-            aria-label={tab.muted ? t('取消静音') : t('静音')}
-            onClick={() => onToggleMute(tab)}
-          >
-            <Icon d={tab.muted ? Icons.volumeOff : Icons.volumeOn} className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <button
-          type="button"
-          className="row-action"
-          title={tab.pinned ? t('取消固定') : t('固定到浏览器标签栏（置顶）')}
-          aria-label={tab.pinned ? t('取消固定') : t('固定到浏览器标签栏（置顶）')}
-          onClick={() => onTogglePin(tab)}
-        >
-          <Icon d={Icons.pin} className={'h-3.5 w-3.5' + (tab.pinned ? ' text-accent-500' : '')} />
-        </button>
-        {onDuplicate && (
-          <button
-            type="button"
-            className="row-action"
-            title={t('打开副本')}
-            aria-label={t('打开副本')}
-            onClick={() => onDuplicate(tab)}
-          >
-            <Icon d={Icons.copy} className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {onDiscard && !tab.discarded && !tab.active && (
-          <button
-            type="button"
-            className="row-action"
-            title={t('休眠标签（释放内存）')}
-            aria-label={t('休眠标签（释放内存）')}
-            onClick={() => onDiscard(tab)}
-          >
-            <Icon d={Icons.snowflake} className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <button
-          type="button"
-          className="row-action is-danger"
-          title={t('关闭标签')}
-          aria-label={t('关闭标签')}
-          onClick={() => onClose(tab)}
-        >
-          <Icon d={Icons.close} className="h-3.5 w-3.5" />
-        </button>
-      </RowActions>
+      <TabRowActions
+        tab={tab}
+        rowActionsVisible={rowActionsVisible}
+        onToggleMute={onToggleMute}
+        onTogglePin={onTogglePin}
+        onDuplicate={onDuplicate}
+        onDiscard={onDiscard}
+        onClose={onClose}
+      />
     ),
-    [tab, onToggleMute, onTogglePin, onDuplicate, onDiscard, onClose, t, rowActionsVisible]
+    [tab, onToggleMute, onTogglePin, onDuplicate, onDiscard, onClose, rowActionsVisible]
   );
 
   const secondary = useMemo(
@@ -341,53 +267,6 @@ export const TabRow = memo(function TabRow({
       />
     ),
     [tab, duplicateCount, isSplitCompanion, showSplitBadges, noCache]
-  );
-
-  // container 依赖 useSortable 的返回值：其内部对象每次渲染都是新引用，
-  // 因此只取标量字段做依赖，让 container 在「排序状态未变」时保持稳定。
-  const transformX = sortable.transform?.x;
-  const transformY = sortable.transform?.y;
-  const {
-    transition: sortTransition,
-    isDragging,
-    setNodeRef,
-    setActivatorNodeRef,
-    attributes
-  } = sortable;
-  const rowContainer = useMemo(
-    () => ({
-      ref: setNodeRef,
-      activatorRef: setActivatorNodeRef,
-      // 主按钮是行内唯一的交互元素：菜单可弹出/已展开的状态挂在这里（读屏可播报），
-      // 而不是挂在不参与交互的 li 上。
-      buttonAttributes: {
-        ...attributes,
-        'aria-haspopup': 'menu',
-        'aria-expanded': menu !== null
-      },
-      listeners: sortablePointerListeners,
-      buttonListeners,
-      style: {
-        transform:
-          transformX || transformY
-            ? `translate3d(${transformX ?? 0}px, ${transformY ?? 0}px, 0)`
-            : undefined,
-        transition: sortTransition
-      },
-      className: isDragging ? 'is-sorting' : undefined
-    }),
-    [
-      setNodeRef,
-      setActivatorNodeRef,
-      attributes,
-      menu,
-      sortablePointerListeners,
-      buttonListeners,
-      transformX,
-      transformY,
-      sortTransition,
-      isDragging
-    ]
   );
 
   return (

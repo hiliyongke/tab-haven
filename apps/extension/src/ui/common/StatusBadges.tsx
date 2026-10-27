@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { TabRecord } from '@/core/tab-types';
 import { useTranslation } from '@/i18n';
+import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
 
 /**
@@ -31,16 +32,17 @@ export function StatusBadges({
 
   if (duplicateCount > 1) {
     badges.push(
-      <span
+      <Chip
         key="dup"
-        className="status-badge status-keep chip rounded bg-warn-100 px-1 text-warn-700"
+        tone="warn"
+        className="status-badge status-keep"
         title={t('此网址在当前窗口共有 {{count}} 份', { count: duplicateCount })}
       >
         <span aria-hidden="true">{duplicateCount}×</span>
         <span className="sr-only">
           {t('此网址在当前窗口共有 {{count}} 份', { count: duplicateCount })}
         </span>
-      </span>
+      </Chip>
     );
   }
 
@@ -51,14 +53,9 @@ export function StatusBadges({
     badges.push(
       /* 雪花必须包一层与同组徽章同构的 chip（胶囊底 + px-1）：裸图标并排时高度与
          水平度量都不同，看着像漏渲染。 */
-      <span
-        key="frozen"
-        className="chip status-badge status-keep rounded bg-gray-100 px-1 text-gray-600"
-        title={t('已休眠（点击唤醒）')}
-        aria-label={t('已休眠（点击唤醒）')}
-      >
+      <Chip key="frozen" className="status-badge status-keep" label={t('已休眠（点击唤醒）')}>
         <Icon d={Icons.snowflake} className="h-3 w-3" />
-      </span>
+      </Chip>
     );
   }
 
@@ -78,55 +75,57 @@ export function StatusBadges({
     badges.push(
       /* 与同组徽章同构（rounded + bg + px-1 + font-medium）：「静」若没有
          内边距与底色，并排时高度与水平度量都和邻居不同，像漏渲染。 */
-      <span
-        key="muted"
-        className="status-badge chip chip--cjk rounded bg-gray-100 px-1 text-gray-600"
-        title={t('已静音')}
-      >
+      <Chip key="muted" cjk className="status-badge" title={t('已静音')}>
         <span aria-hidden="true">{t('静')}</span>
         <span className="sr-only">{t('已静音')}</span>
-      </span>
+      </Chip>
     );
   }
 
   if (showSplitBadges && tab.splitViewId !== undefined) {
     badges.push(
-      <span
+      <Chip
         key="split"
         /* 与「伴」同构（浅底深字）：「拆」用饱和实底会比主信息（标签标题）还抢眼；
            分屏的强调由 data-split-role 的左侧竖线承担。 */
-        className="status-badge chip chip--cjk rounded bg-accent-100 px-1 text-accent-700"
+        tone="accent"
+        cjk
+        className="status-badge"
         title={t('正在分屏显示')}
       >
         <span aria-hidden="true">{t('拆')}</span>
         <span className="sr-only">{t('正在分屏显示')}</span>
-      </span>
+      </Chip>
     );
   }
 
   if (isSplitCompanion) {
     badges.push(
-      <span
+      <Chip
         key="companion"
-        className="status-badge chip chip--cjk rounded bg-accent-100 px-1 text-accent-700"
+        tone="accent"
+        cjk
+        className="status-badge"
         title={t('与当前标签同屏分屏')}
       >
         <span aria-hidden="true">{t('伴')}</span>
         <span className="sr-only">{t('与当前标签同屏分屏')}</span>
-      </span>
+      </Chip>
     );
   }
 
   if (noCache) {
     badges.push(
-      <span
+      <Chip
         key="noCache"
-        className="status-badge chip chip--cjk rounded bg-warn-100 px-1 text-warn-700"
+        tone="warn"
+        cjk
+        className="status-badge"
         title={t('此站点已设为打开时不使用缓存')}
       >
         <span aria-hidden="true">{t('禁')}</span>
         <span className="sr-only">{t('此站点已设为打开时不使用缓存')}</span>
-      </span>
+      </Chip>
     );
   }
 

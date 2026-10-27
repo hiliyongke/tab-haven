@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { SegmentedChip } from '@/ui/common/SegmentedChip';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 
 /**
@@ -53,38 +54,28 @@ export function SpaceStrip({
           「存了 3 个工作区但当前不在任何一个里」时界面上是 N 个全部未高亮的 chip、
           没有任何文字标识当前视图范围 —— 用户无法回答「我现在看到的是哪个范围」。
           未激活时它就是激活项（exitSpace 对未激活态是空操作，安全）。 */}
-      <button
-        type="button"
-        aria-pressed={activeSpaceId === undefined}
+      <SegmentedChip
+        shape="pill"
+        tone="brand"
+        selected={activeSpaceId === undefined}
         disabled={switching}
-        title={t('全部标签')}
-        onClick={onExit}
-        className={
-          'chip chip--cjk rounded-full border px-2 py-1 transition-colors disabled:opacity-50 ' +
-          (activeSpaceId === undefined
-            ? 'border-accent-500 bg-accent-500 text-on-accent hover:bg-accent-600'
-            : 'border-gray-200 bg-surface text-gray-600 hover:bg-gray-50')
-        }
+        tooltip={t('全部标签')}
+        onSelect={onExit}
       >
         {t('全部标签')}
-      </button>
+      </SegmentedChip>
       {spaces.map((space) => {
         const active = space.id === activeSpaceId;
         return (
-          <button
+          <SegmentedChip
             key={space.id}
-            type="button"
-            aria-pressed={active}
+            shape="pill"
+            tone="brand"
+            selected={active}
             disabled={switching}
-            title={space.name}
-            onClick={() => onSwitch(space)}
-            className={
-              'chip chip--cjk flex max-w-[140px] items-center gap-1 rounded-full border px-2 py-1 transition-colors disabled:opacity-50 ' +
-              /* 激活态也要有 hover 分支：否则鼠标悬停在已选工作区上零反馈 */
-              (active
-                ? 'border-accent-500 bg-accent-500 text-on-accent hover:bg-accent-600'
-                : 'border-gray-200 bg-surface text-gray-600 hover:bg-gray-50')
-            }
+            tooltip={space.name}
+            className="flex max-w-[140px] items-center gap-1"
+            onSelect={() => onSwitch(space)}
           >
             {/* 名称截断点：空间名由用户输入，无长度上限，不截断会把整条撑出横向滚动条 */}
             <span className="truncate">{space.name}</span>
@@ -94,19 +85,19 @@ export function SpaceStrip({
               {space.tabCount}
             </span>
             <span className="sr-only">{t('共 {{count}} 个标签', { count: space.tabCount })}</span>
-          </button>
+          </SegmentedChip>
         );
       })}
-      <button
-        type="button"
+      {/* 一次性入口（不是开关）：不传 selected，避免落 aria-pressed 误导。 */}
+      <SegmentedChip
+        shape="pill"
         disabled={switching}
-        onClick={onSaveAs}
-        // 虚线本身就是弱信号，再叠 1.6:1 的低对比边框，用户看不出这里有个入口。
-        className="chip chip--cjk flex items-center gap-1 rounded-full border border-dashed border-control px-2 py-1 text-gray-500 transition-colors hover:text-gray-700 disabled:opacity-50"
+        className="flex items-center gap-1 border-dashed border-control"
+        onSelect={onSaveAs}
       >
         <Icon d={Icons.plus} className="h-3 w-3" />
         {t('存为工作区')}
-      </button>
+      </SegmentedChip>
     </div>
   );
 }

@@ -2,8 +2,11 @@ import { useMemo } from 'react';
 import { useTranslation } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { hostnameOf } from '@/core/url/UrlInspector';
+import { Button } from '@/ui/common/Button';
+import { Chip } from '@/ui/common/Chip';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 import type { OtherWindow, OtherWindowsStatus } from '@/ui/tabs/useOtherWindows';
 
 /**
@@ -77,14 +80,17 @@ export function OtherWindowsSection({
             <p className="text-3xs leading-relaxed text-warn-700">
               {t('其他窗口暂时读不出来（浏览器查询失败）。标签数据不受影响，可重试。')}
             </p>
+            {/* 告警色文字按钮：沿用 ghost 骨架（无底色），配色由 className 覆盖。
+                顺带补上变体自带的 min-h-6 / px-2 —— 原文无 padding，命中区不足 24px。 */}
             {onRetry && (
-              <button
-                type="button"
-                className="mt-1 rounded font-medium text-3xs text-warn-700 underline underline-offset-2 transition-base hover:bg-warn-100"
+              <Button
+                variant="ghost"
+                size="xs"
+                className="mt-1 font-medium text-3xs text-warn-700 underline underline-offset-2 hover:bg-warn-100"
                 onClick={onRetry}
               >
                 {t('重试')}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -125,9 +131,9 @@ export function OtherWindowsSection({
               {t('窗口 · {{count}} 个标签', { count: win.tabs.length })}
             </span>
             {win.hasActive && (
-              <span className="rounded-full bg-accent-100 px-1.5 text-2xs text-accent-700">
+              <Chip tone="accent" size="md">
                 {t('含激活标签')}
-              </span>
+              </Chip>
             )}
           </p>
           {buckets.map(([host, tabs]) => (
@@ -148,6 +154,10 @@ export function OtherWindowsSection({
               {tabs.map((tab) => (
                 <div key={tab.id} className="flex min-w-0 items-center gap-1.5 px-2 py-1">
                   <Favicon pageUrl={tab.url} title={tab.title || tab.url || ''} />
+                  {/* 刻意保留裸 button：Button 的 min-h-6 + py-1 会把这一行的行高
+                      从 28px 撑到 32px，px-2 还会让标题相对 favicon 右移 8px ——
+                      密集列表里这是布局回归，不是收敛。（命中区不足 24px 的问题
+                      与 ListStates 的引导块同类，需另立方案，不在本轮范围。） */}
                   <button
                     type="button"
                     className="min-w-0 flex-1 truncate text-left text-3xs text-gray-700 hover:text-accent-700"
@@ -156,36 +166,34 @@ export function OtherWindowsSection({
                   >
                     {tab.title || tab.url}
                     {tab.active && (
-                      <span className="ml-1 rounded bg-accent-100 px-1 text-2xs text-accent-700">
+                      <Chip tone="accent" className="ml-1">
                         {t('激活')}
-                      </span>
+                      </Chip>
                     )}
                   </button>
                   {/* 拉到当前窗口：「聚焦」会把浏览器窗口焦点跳走、侧边栏上下文跟着
                       切换，用户容易迷失，因此跨窗口整理必须另给一条不切焦点的路径。 */}
                   {onPullToWindow && (
-                    <button
-                      type="button"
-                      className="row-action shrink-0"
-                      title={t('拉到当前窗口')}
-                      aria-label={t('拉到当前窗口')}
+                    <RowActionButton
+                      icon={Icons.layers}
+                      label={t('拉到当前窗口')}
+                      className="shrink-0"
                       onClick={() => onPullToWindow(tab)}
-                    >
-                      <Icon d={Icons.layers} className="h-3.5 w-3.5" />
-                    </button>
+                    />
                   )}
-                  <button
-                    type="button"
-                    /* 危险态统一走 .row-action.is-danger（见 main.css）：此前手写的
-                       text-gray-400 + hover 红是同一语义的第二份实现，静默态 2.68:1
-                       低于非文本的 3:1，命中区也只有 18px。 */
-                    className="row-action is-danger shrink-0"
-                    title={t('关闭该标签')}
-                    aria-label={t('关闭该标签')}
+                  {/* 危险态统一走 .row-action.is-danger（见 main.css）：此前手写的
+                      text-gray-400 + hover 红是同一语义的第二份实现，静默态 2.68:1
+                      低于非文本的 3:1，命中区也只有 18px。 */}
+                  <RowActionButton
+                    icon={Icons.close}
+                    label={t('关闭该标签')}
+                    danger
+                    /* 12px 图标是这一行的既有观感（与左侧 14px 的「拉到当前窗口」不同档），
+                       本轮只收口不改版，故显式保留；统一图标尺寸另议。 */
+                    iconClass="h-3 w-3"
+                    className="shrink-0"
                     onClick={() => onCloseTab(tab)}
-                  >
-                    <Icon d={Icons.close} className="h-3 w-3" />
-                  </button>
+                  />
                 </div>
               ))}
             </div>

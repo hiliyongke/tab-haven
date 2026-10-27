@@ -6,6 +6,7 @@ import { COLOR_THEMES, type ColorTheme } from '@/core/theme/colorThemes';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 import { useDataStore } from '@/stores/dataStore';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
+import { ColorSwatchGroup } from '@/ui/common/ColorSwatchGroup';
 import { Select } from '@/ui/common/Select';
 import { TextField } from '@/ui/common/TextField';
 import { Toggle } from '@/ui/common/Toggle';
@@ -14,7 +15,7 @@ import {
   NoCacheToggle,
   Row,
   WhitelistEditor
-} from '@/entrypoints/options/settingControls';
+} from '@/ui/settings/settingControls';
 
 /**
  * 设置页的**配置层**：声明式描述设置行（`buildSections`）与统一渲染器（`SettingRow`）。
@@ -271,24 +272,20 @@ export function buildSections(
           labelKey: '主题色',
           hintKey: '强调色与深色底色随所选色号变化',
           render: ({ settings, update, t }) => (
-            <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t('主题色')}>
-              {COLOR_THEMES.map((swatch) => (
-                <input
-                  key={swatch.id}
-                  type="radio"
-                  name="colorTheme"
-                  checked={settings.colorTheme === swatch.id}
-                  title={t(COLOR_THEME_LABELS[swatch.id].labelKey)}
-                  aria-label={t(COLOR_THEME_LABELS[swatch.id].labelKey)}
-                  /* 样式走 .theme-swatch：视觉 20px / 命中 24px，
-                     选中态为「白色内环 + 品牌外环」双层（gray-500 外环
-                     落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */
-                  className="theme-swatch appearance-none"
-                  style={{ backgroundColor: swatch.hex }}
-                  onChange={() => update('colorTheme', swatch.id)}
-                />
-              ))}
-            </div>
+            /* 色板复用 ColorSwatchGroup：色值取自 core/theme/colorThemes 的单一来源，
+               以 --swatch 变量注入（.theme-swatch 用 var(--swatch) 取），
+               不在 JSX 里写字面色值。选中态为「白色内环 + 品牌外环」双层
+               （gray-500 外环落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */
+            <ColorSwatchGroup
+              label={t('主题色')}
+              value={settings.colorTheme}
+              options={COLOR_THEMES.map((swatch) => ({
+                value: swatch.id,
+                label: t(COLOR_THEME_LABELS[swatch.id].labelKey),
+                hex: swatch.hex
+              }))}
+              onSelect={(id) => update('colorTheme', id)}
+            />
           )
         },
         {

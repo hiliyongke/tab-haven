@@ -1,8 +1,10 @@
 import { useRef } from 'react';
 import { useTranslation } from '@/i18n';
-import { snapshotOriginBadge } from '@/ui/common/snapshotOrigin';
+import { snapshotOriginBadge } from '@/ui/snapshot/snapshotOrigin';
 import type { HistorySearchHit } from '@/ui/search/useSearchController';
+import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 import { formatTime } from '@/ui/common/format';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 
@@ -16,7 +18,7 @@ import { useScrollFade } from '@/ui/common/useScrollFade';
  */
 
 /**
- * 来源徽标（文案键 + 配色）改由 `@/ui/common/snapshotOrigin` 提供。
+ * 来源徽标（文案键 + 配色）改由 `@/ui/snapshot/snapshotOrigin` 提供。
  *
  * 本文件此前自持一份映射表：复制时「自动快照」档漂到了 `text-gray-500`
  * （在 gray-100 底上仅 3.92:1，不达 WCAG AA），而 `SnapshotRow` 的同一档早已修正为
@@ -52,9 +54,7 @@ export function HistoryHitsSection({
     >
       <header className="flex shrink-0 items-center gap-1.5 px-2 py-1">
         <Icon d={Icons.history} className="h-3 w-3 shrink-0 text-gray-500" />
-        <span className="text-3xs font-medium tracking-wide text-gray-500">
-          {t('历史命中（快照与归档）')}
-        </span>
+        <span className="group-label">{t('历史命中（快照与归档）')}</span>
         <span className="text-3xs text-gray-500">
           {t('{{count}} 条历史记录', { count: hits.length })}
         </span>
@@ -93,14 +93,9 @@ export function HistoryHitsSection({
                 <p className="mt-px flex min-w-0 items-center gap-1.5 text-3xs text-gray-500">
                   {/* 徽标必须 shrink-0 + nowrap：flex 子项默认可收缩，中文逐字断行
                     会把「自动快照」拆成「自动快 / 照」（窄面板下必现）。 */}
-                  <span
-                    className={
-                      'chip chip--cjk shrink-0 whitespace-nowrap rounded px-1 py-px ' +
-                      badge.className
-                    }
-                  >
+                  <Chip cjk tone={badge.tone} className="shrink-0 whitespace-nowrap py-px">
                     {badgeLabel}
-                  </span>
+                  </Chip>
                   {/* min-w-0 不可省：flex 子项默认 min-width:auto，在 truncate 的
                       white-space:nowrap 下 min-content = 全文宽度，会顶开右侧
                       shrink-0 的时间与按钮，且优先级高于 max-width。 */}
@@ -111,26 +106,20 @@ export function HistoryHitsSection({
                   <span className="min-w-0 max-w-[40%] truncate">{hit.tab.url}</span>
                 </p>
               </div>
-              <button
-                type="button"
-                title={t('打开该页面')}
-                aria-label={t('打开该页面')}
-                /* 复用 .row-action（20px 视觉 + ::after 扩到 24px 命中、统一的
-                   hover/focus 与危险态），不再手写同款原子类串。 */
-                className="row-action shrink-0"
+              {/* 复用 RowActionButton（20px 视觉 + ::after 扩到 24px 命中、统一的
+                  hover/focus 与危险态），不再手写同款原子类串。 */}
+              <RowActionButton
+                icon={Icons.search}
+                label={t('打开该页面')}
+                className="shrink-0"
                 onClick={() => onOpenUrl(hit.tab.url)}
-              >
-                <Icon d={Icons.search} className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                title={t('恢复该快照')}
-                aria-label={t('恢复该快照')}
-                className="row-action shrink-0"
+              />
+              <RowActionButton
+                icon={Icons.openAll}
+                label={t('恢复该快照')}
+                className="shrink-0"
                 onClick={() => onRestoreSnapshot(hit.snapshotId, hit.snapshotTabCount)}
-              >
-                <Icon d={Icons.openAll} className="h-3.5 w-3.5" />
-              </button>
+              />
             </li>
           );
         })}

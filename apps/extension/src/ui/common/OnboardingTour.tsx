@@ -90,7 +90,9 @@ export function OnboardingTour({
         /* dialog-sm + px-4 py-3：与弹窗族同一宽度刻度（min(400px,90vw)，自带 vw 兜底）
            与同一内边距。原 max-w-[calc(100%-16px)] 是任意值，且 sm:max-w-sm 依赖
            640px 断点 —— 侧边栏视口 ≤500px，该断点永不命中（死代码）。 */
-        className="dialog-sm modal-panel elev-3 relative m-0 rounded-xl border border-gray-200 bg-surface px-4 py-3"
+        /* m-auto 而非 m-0：与命令面板同因 —— 原生 <dialog> 经 showModal() 后脱离
+           文档流，居中靠浏览器默认的 margin:auto，写 m-0 会让它贴到左上角。 */
+        className="dialog-sm modal-panel elev-3 relative m-auto rounded-xl border border-gray-200 bg-surface px-4 py-3"
         aria-labelledby={titleId}
         onCancel={(event) => {
           // Esc 已由 useModalA11y preventDefault 并走 onDismiss；此分支只兜底
@@ -136,15 +138,17 @@ export function OnboardingTour({
         )}
 
         <div className="mt-5 flex items-center justify-between">
-          <button
-            type="button"
-            /* min-h-6 px-2：无 padding / min-height 时实测约 16.5px —— 是全文
-               最小的点击目标，而它承载的是「永久关闭引导」这个不可逆动作。 */
-            className="min-h-6 rounded px-2 text-3xs text-gray-500 transition-base hover:bg-gray-100 hover:text-gray-600"
+          {/* 命中下限（min-h-6 / px-2）与 disabled:hover 兜底交给 ghost 变体 ——
+              原文实测无 padding / min-height 时只有约 16.5px，而它承载的是
+              「永久关闭引导」这个不可逆动作。text-3xs 保留原字号（xs 档默认 2xs）。 */}
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-3xs hover:text-gray-600"
             onClick={onDone}
           >
             {t('跳过')}
-          </button>
+          </Button>
           <div className="flex gap-2">
             {step > 1 && (
               <Button variant="secondary" onClick={() => setStep((s) => s - 1)}>
@@ -165,7 +169,9 @@ export function OnboardingTour({
 
         {/* 进度点：可点击跳步（向导常见交互）。改用 button 并补 aria-label，
             读屏用户可获得「转到第 n 步」而非被 aria-hidden 整块吞掉。
-            tour-dot 透明扩区把 6px 视觉高度撑到 ≥24px 命中（WCAG 2.5.8）。 */}
+            tour-dot 透明扩区把 6px 视觉高度撑到 ≥24px 命中（WCAG 2.5.8）。
+            刻意不换成 Button / IconButton：两者都有 min-h-6，会把 6px 的圆点撑成
+            24px 实心块（min-height 压过 h-1.5），且本处既无图标也无文字。 */}
         <div className="mt-4 flex justify-center gap-1">
           {Array.from({ length: TOTAL }, (_, i) => (
             <button

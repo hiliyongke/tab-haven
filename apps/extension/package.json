@@ -14,7 +14,7 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "check:ui": "vitest run tests/ui/design-tokens.test.ts",
+    "check:ui": "vitest run tests/ui/design-tokens.test.ts tests/ui/component-consistency.test.ts",
     "check:privacy": "node scripts/privacy-check.mjs",
     "check:i18n": "i18n-kit check && i18n-kit lint",
     "i18n:report": "i18n-kit check --report",

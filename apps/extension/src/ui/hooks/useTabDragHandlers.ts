@@ -38,6 +38,11 @@ import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
  * **可行性判定不在本文件**：能放下什么、放不下为什么，统一由 `ui/dnd/dropPolicy`
  * 回答。这里只负责「执行」与「拒绝时把原因翻译成人话」——判定一旦散落回分发层，
  * 就会重新出现「落点亮着却不动」「拖了完全没反应」两难。
+ *
+ * 落位说明：本文件是 hook（无渲染职责），与 useListNavigation / useRowRoving 等
+ * 同处 `ui/hooks`。它**不放在 `ui/dnd/`**：`src/ui/dnd/**` 有独立的覆盖率阈值档，
+ * 本文件 580 余行且当前几乎无测试，并入会把该档均值从约 90% 压到 45%、直接击穿
+ * 门禁（详见 vitest.config.ts 的阈值注释）。
  */
 export function useTabDragHandlers() {
   const { t } = useTranslation();

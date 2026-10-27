@@ -8,7 +8,9 @@ import { useUndoStore } from '@/stores/undoStore';
 import { PromptDialog } from '@/ui/dialog/Dialog';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
-import { Icon, Icons } from '@/ui/common/Icon';
+import { Chip } from '@/ui/common/Chip';
+import { Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 import { classifyDrop } from '@/ui/dnd/dropPolicy';
 import { FIXED_AREA_DROPPABLE, type DragData } from '@/ui/dnd/types';
@@ -119,7 +121,7 @@ export function FixedArea() {
           className="module-shell fixed-area scroll-fade"
           setNodeRef={attachNodeRef}
           isOver={isOver}
-          dropRejected={dropOutcome?.kind === 'reject'}
+          outcome={dropOutcome}
           /* 标题不带强调色条：收藏夹与「站点分组」同为一级模块头，两者必须同构
              （模块头 = 纯标题 + 计数 + 操作；强调色只属于模块内的分区卡片，
              文件夹卡片自己带品牌色条，见 FolderRow）。 */
@@ -128,26 +130,19 @@ export function FixedArea() {
               {/* 概念卡常驻入口：它原本只在「一个文件夹都没有」时出现，而用户
                   建了第一个文件夹（真正需要区分 5 种「固定」语义时）它就永久
                   消失了 —— 需要区分的那一刻恰好没有帮助。 */}
-              <button
-                type="button"
-                className="row-action"
-                title={t('什么是收藏夹 / 常驻磁贴 / 浏览器固定标签')}
-                aria-label={t('查看概念说明')}
-                aria-expanded={showConcepts}
+              {/* tooltip 比可访问名长：悬停要能看懂「这是什么」，读屏只需「查看概念说明」。 */}
+              <RowActionButton
+                icon={Icons.infoAlert}
+                label={t('查看概念说明')}
+                tooltip={t('什么是收藏夹 / 常驻磁贴 / 浏览器固定标签')}
+                ariaExpanded={showConcepts}
                 onClick={() => setShowConcepts((prev) => !prev)}
-              >
-                <Icon d={Icons.infoAlert} className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                className="row-action"
-                title={t('新建文件夹')}
-                aria-label={t('新建文件夹')}
+              />
+              <RowActionButton
+                icon={Icons.plus}
+                label={t('新建文件夹')}
                 onClick={() => setCreating(true)}
-              >
-                <Icon d={Icons.plus} className="h-3.5 w-3.5" />
-                <span className="sr-only">{t('新建文件夹')}</span>
-              </button>
+              />
             </div>
           }
         >
@@ -164,14 +159,14 @@ export function FixedArea() {
               {!conceptsSeen && (
                 <div className="relative mt-1">
                   <FixedConceptsMap />
-                  <button
-                    type="button"
-                    className="chip chip--cjk absolute right-1 top-0.5 shrink-0 rounded px-1.5 py-1 text-gray-500 transition-base hover:bg-gray-100 hover:text-gray-600"
-                    onClick={() => void tryUpdateSettings({ conceptsSeen: true })}
+                  <Chip
+                    cjk
+                    className="absolute right-1 top-0.5 py-1 hover:bg-gray-100 hover:text-gray-600"
                     title={t('不再显示')}
+                    onClick={() => void tryUpdateSettings({ conceptsSeen: true })}
                   >
                     {t('不再显示')}
-                  </button>
+                  </Chip>
                 </div>
               )}
             </>

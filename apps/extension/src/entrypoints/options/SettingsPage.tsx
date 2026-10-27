@@ -19,11 +19,11 @@ import { clearQuarantine, readQuarantine } from '@/platform/storage/DataReposito
 import { getSidePanelSide, type SidePanelSide } from '@/platform/sidePanel';
 import { downloadJsonFile, openAboutPage, openUrlInTab } from '@/platform/navigation';
 import { datedJsonFilename } from '@/core/util/filename';
-import { SettingsOutline, type OutlineItem } from '@/entrypoints/options/SettingsOutline';
-import { Row, Section } from '@/entrypoints/options/settingControls';
+import { SettingsOutline, type OutlineItem } from '@/ui/settings/SettingsOutline';
+import { Row, Section } from '@/ui/settings/settingControls';
 import { buildSections, SettingRow, type SettingSpec } from '@/entrypoints/options/settingSections';
-import { CapabilitiesGuide, PresetsPanel } from '@/entrypoints/options/settingPresets';
-import { ShortcutsSection } from '@/entrypoints/options/ShortcutsSection';
+import { CapabilitiesGuide, PresetsPanel } from '@/ui/settings/settingPresets';
+import { ShortcutsSection } from '@/ui/settings/ShortcutsSection';
 import { ClearDataDialog } from '@/entrypoints/options/ClearDataDialog';
 
 /**
@@ -442,6 +442,9 @@ export function SettingsPage() {
             )}
           >
             <>
+              {/* 裸 <input type="file"> 的显式豁免：ui 层没有 FilePicker 原语，
+                  本元素只是被上方「导入 JSON」按钮以 ref.click() 触发的隐藏文件
+                  选择器，不承载任何视觉形态，故不套 TextField / Button。 */}
               <input
                 ref={importInputRef}
                 type="file"

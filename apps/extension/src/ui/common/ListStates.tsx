@@ -84,13 +84,17 @@ export function EmptyTabs({
           {hasSnapshots && onOpenSnapshots && (
             <div className="mx-1 max-w-56 rounded-lg border border-accent-200 bg-accent-50 px-2.5 py-2 text-3xs leading-relaxed text-accent-700">
               <p>{t('这个窗口现在是空的。如果你刚遇到崩溃或误关，可以从快照把整个窗口找回来。')}</p>
-              <button
-                type="button"
-                className="mt-1 rounded font-medium underline underline-offset-2 transition-base hover:bg-accent-100 hover:text-accent-700"
+              {/* 原手写按钮无 padding / min-height，命中区只有约 16px（低于 WCAG
+                  2.5.8 的 24px）。换成 accent-ghost + xs：字号与强调色不变，
+                  命中下限由变体承担。 */}
+              <Button
+                variant="accent-ghost"
+                size="xs"
+                className="mt-1 underline underline-offset-2"
                 onClick={onOpenSnapshots}
               >
                 {t('查看我的快照')}
-              </button>
+              </Button>
             </div>
           )}
         </div>

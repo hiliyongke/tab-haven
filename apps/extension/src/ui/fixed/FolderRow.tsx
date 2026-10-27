@@ -4,77 +4,28 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { FixedFolder } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { saveFolderToBookmarks } from '@/platform/bookmarks';
-import { webComparisonKey } from '@/core/url/UrlInspector';
 import { createTabsWithUrls } from '@/platform/tabs';
+import { webComparisonKey } from '@/core/url/UrlInspector';
+import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
 import { useUndoStore } from '@/stores/undoStore';
-import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
-import { FolderEditDialog } from '@/ui/fixed/FolderEditDialog';
 import { GroupCard } from '@/ui/common/GroupCard';
-import { Icon, Icons } from '@/ui/common/Icon';
+import { CollapseChevron } from '@/ui/common/CollapseChevron';
 import { DragType } from '@/ui/dnd/types';
 import { LOCATE_TAB_EVENT } from '@/ui/fixed/events';
-import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import { FolderItemRow } from '@/ui/fixed/FolderItemRow';
+import { FolderRowActions } from '@/ui/fixed/FolderRowActions';
+import { FolderRowDialogs, type FolderDialog } from '@/ui/fixed/FolderRowDialogs';
+import { CLOSED_RUNTIME, getTabRuntimeIndex } from '@/ui/fixed/tabRuntimeIndex';
 
-/**
- * 全量标签 → 条目匹配索引（按 tabs 数组引用做模块级缓存）。
+/** 固定文件夹：复用分组卡片（section-card + SectionHead）的视觉与交互。
  *
- * N 个 FolderRow 各自建索引是 N×O(标签) 的重复劳动；索引内容只取决于 tabs
- * 引用，缓存后每次快照全局只建一次。
- *
- * 与 `@/ui/tabs/pinRuntime` 的 `buildPinRuntimeIndex` 是**两套**索引，不要合并：
- * 那个按 pin 身份（去参 URL）索引到磁贴运行时，本索引按完整比较键 / 原始 URL /
- * tabId 索引到标签记录，消费方与键口径都不同。
+ * 本文件只保留**行的编排**：索引在 `tabRuntimeIndex`、头部操作组在
+ * `FolderRowActions`、三个弹窗在 `FolderRowDialogs` —— 原 402 行里三者与
+ * 拖拽/定位/菜单逻辑混排，改一个按钮的禁用条件要跨三段 JSX 定位。
  */
-interface TabRuntimeIndex {
-  byKey: Map<string, TabRecord>;
-  byRawUrl: Map<string, TabRecord>;
-  byId: Map<number, TabRecord>;
-}
-/**
- * 容量 2 的 LRU（队首 = 最近使用）。
- *
- * 单槽缓存不够：A/B 两个 tabs 引用**交替**命中时（如「本窗口」与「全窗口搜索」
- * 两种快照轮流传给 FolderRow）每次都未命中，索引被反复重建 —— 这正是缓存想
- * 消灭的开销。容量 2 覆盖交替场景，且不随窗口数增长。
- */
-const INDEX_CACHE_SIZE = 2;
-const indexCache: Array<{ tabs: readonly TabRecord[]; index: TabRuntimeIndex }> = [];
-function getTabRuntimeIndex(tabs: readonly TabRecord[]): TabRuntimeIndex {
-  const hitAt = indexCache.findIndex((entry) => entry.tabs === tabs);
-  if (hitAt !== -1) {
-    const hit = indexCache[hitAt]!;
-    indexCache.splice(hitAt, 1);
-    indexCache.unshift(hit);
-    return hit.index;
-  }
-  const byKey = new Map<string, TabRecord>();
-  const byRawUrl = new Map<string, TabRecord>();
-  const byId = new Map<number, TabRecord>();
-  for (const tab of tabs) {
-    // URL 索引排除隐身标签：与 handleOpenAll / openSavedItem 的匹配口径一致
-    // （均含 !tab.incognito）。否则隐身窗口里打开的条目会显示「已打开」，
-    // 而「打开全部」仍判其缺失再次打开。byId 保留全量（pendingTabId 是显式绑定）。
-    if (tab.url && !tab.incognito) {
-      const key = webComparisonKey(tab.url, tab.pendingUrl);
-      if (key !== null) byKey.set(key, tab);
-      byRawUrl.set(tab.url, tab);
-    }
-    byId.set(tab.id, tab);
-  }
-  const built: TabRuntimeIndex = { byKey, byRawUrl, byId };
-  indexCache.unshift({ tabs, index: built });
-  if (indexCache.length > INDEX_CACHE_SIZE) indexCache.pop();
-  return built;
-}
-
-/** 未打开条目的运行时状态单例：内联 `{ isOpen: false }` 每次渲染都是新引用，会击穿 FolderItemRow 的 memo。 */
-const CLOSED_RUNTIME = { isOpen: false } as const;
-
-/** 固定文件夹：复用分组卡片（section-card + SectionHead）的视觉与交互。 */
 export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFolder }) {
   const { t } = useTranslation();
   const renameFolder = useDataStore((state) => state.renameFolder);
@@ -143,9 +94,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
 
   /** 弹窗状态：edit 改名 / convert 转原生组 / delete 删除确认。
    *  删除必须有确认 —— 文件夹是用户长期积累的资产，直删不可撤销。 */
-  const [dialog, setDialog] = useState<
-    { type: 'edit' } | { type: 'convert' } | { type: 'delete' } | null
-  >(null);
+  const [dialog, setDialog] = useState<FolderDialog>(null);
   /** 转原生组执行中：该操作会先恢复已关闭条目（逐个开标签）再建组，耗时可能数百 ms，
    *  期间禁用转换入口，避免重复触发同一文件夹的第二次转换。 */
   const [converting, setConverting] = useState(false);
@@ -191,7 +140,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
   // 子 sortable 节点多做一轮无效重渲染。
   const itemSortableIds = useMemo(() => folder.items.map((item) => item.id), [folder.items]);
 
-  // 头部操作：与原生组同款布局 [打开全部 / 存为书签 / 转原生组 / 编辑]，删除整合到 FolderEditDialog。
+  // 头部操作与右键菜单共用同一组 handler。
   // useCallback：右键菜单的 items 是 useMemo，依赖这两个 handler；不 memo 化会让
   // 菜单项数组每次渲染都重建（进而让 ContextMenu 的键盘监听反复解绑重挂）。
   const handleOpenAll = useCallback(() => {
@@ -220,75 +169,29 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
         useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
       );
   }, [folder, notify, t]);
-  const headerAction = (
-    <>
-      <button
-        type="button"
-        className="row-action"
-        title={t('打开文件夹全部条目')}
-        aria-label={t('打开文件夹全部条目')}
-        onClick={(event) => {
-          event.stopPropagation();
-          handleOpenAll();
-        }}
-      >
-        <Icon d={Icons.openAll} className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        className="row-action"
-        title={t('导出到浏览器书签')}
-        aria-label={t('导出到浏览器书签')}
-        onClick={(event) => {
-          event.stopPropagation();
-          handleExportBookmarks();
-        }}
-      >
-        <Icon d={Icons.bookmarkAdd} className="h-3.5 w-3.5" />
-      </button>
-      {/* 转原生组 / 编辑（含删除）会写固定空间：导入事务期间写入会被丢弃，
-          点了只会「没反应」，直接禁用入口。
-          「打开全部」「存为书签」不改固定空间数据，不受影响。 */}
-      <button
-        type="button"
-        className="row-action"
-        title={t('恢复为原生标签组')}
-        aria-label={t('恢复为原生标签组')}
-        disabled={importing || converting}
-        onClick={(event) => {
-          event.stopPropagation();
-          setDialog({ type: 'convert' });
-        }}
-      >
-        <Icon d={Icons.toNativeGroup} className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        className="row-action"
-        title={t('编辑文件夹')}
-        aria-label={t('编辑文件夹')}
-        disabled={importing}
-        onClick={(event) => {
-          event.stopPropagation();
-          setDialog({ type: 'edit' });
-        }}
-      >
-        <Icon d={Icons.pencil} className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        className="row-action is-danger"
-        title={t('删除文件夹（标签保留）')}
-        aria-label={t('删除文件夹（标签保留）')}
-        disabled={importing}
-        onClick={(event) => {
-          event.stopPropagation();
-          setDialog({ type: 'delete' });
-        }}
-      >
-        <Icon d={Icons.trash} className="h-3.5 w-3.5" />
-      </button>
-    </>
+
+  /** 转原生组：执行期间置 `converting`，禁用入口避免同一文件夹重复转换。 */
+  const handleConvert = useCallback(() => {
+    setConverting(true);
+    void onRestoreFolderAsGroup(folder.id)
+      .then((converted) => notify(t(converted ? '已恢复为原生标签组' : '文件夹中没有可转换的标签')))
+      // 失败必须走 error 强度（role="alert"）：用 notify（role="status"）会
+      // 把它降级成普通状态排队播报，与同文件其它失败路径的语义强度不一致。
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('fixed', t('恢复原生标签组失败'), error)
+      )
+      .finally(() => setConverting(false));
+  }, [folder.id, notify, onRestoreFolderAsGroup, t]);
+
+  const handleRename = useCallback(
+    (name: string) => {
+      void renameFolder(folder.id, name).then(
+        () => notify(t('已重命名文件夹')),
+        (error: unknown) =>
+          useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
+      );
+    },
+    [folder.id, notify, renameFolder, t]
   );
 
   /* 右键菜单：文件夹的 5 个操作不能只有无文字图标按钮一条路 —— 窄面板下容易误点
@@ -330,16 +233,19 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
           title={folder.name}
           count={folder.items.length}
           accent="var(--c-brand-500)"
-          icon={
-            <Icon
-              d={Icons.chevron}
-              className={
-                'icon h-3.5 w-3.5 transition-transform' + (folder.collapsed ? '' : ' rotate-90')
-              }
+          icon={<CollapseChevron collapsed={folder.collapsed} />}
+          onToggle={() => void toggleFolderCollapsed(folder.id)}
+          action={
+            <FolderRowActions
+              importing={importing}
+              converting={converting}
+              onOpenAll={handleOpenAll}
+              onExportBookmarks={handleExportBookmarks}
+              onConvert={() => setDialog({ type: 'convert' })}
+              onEdit={() => setDialog({ type: 'edit' })}
+              onDelete={() => setDialog({ type: 'delete' })}
             />
           }
-          onToggle={() => void toggleFolderCollapsed(folder.id)}
-          action={headerAction}
           collapsed={folder.collapsed}
         >
           {!folder.collapsed && (
@@ -372,57 +278,14 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
       {/* 弹窗必须脱离 GroupCard 的折叠闸门：GroupCard 对 children 用了
         {!collapsed && children}，折叠态下弹窗不会被挂载，导致点编辑/删除/转原生组无反应。
         弹窗经 Portal 挂到 body，放到这里不受 DOM 层级影响。 */}
-      {dialog?.type === 'edit' && (
-        <FolderEditDialog
-          initialName={folder.name}
-          onRename={(name) => {
-            void renameFolder(folder.id, name).then(
-              () => notify(t('已重命名文件夹')),
-              (error: unknown) =>
-                useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
-            );
-          }}
-          onDelete={() => deleteWithUndo()}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.type === 'convert' && (
-        <ConfirmDialog
-          title={t('恢复为原生标签组')}
-          message={t('将打开「{{name}}」中的标签，并删除这个文件夹。是否继续？', {
-            name: folder.name
-          })}
-          danger
-          onConfirm={() => {
-            setDialog(null);
-            setConverting(true);
-            void onRestoreFolderAsGroup(folder.id)
-              .then((converted) =>
-                notify(t(converted ? '已恢复为原生标签组' : '文件夹中没有可转换的标签'))
-              )
-              // 失败必须走 error 强度（role="alert"）：用 notify（role="status"）会
-              // 把它降级成普通状态排队播报，与同文件其它失败路径的语义强度不一致。
-              .catch((error: unknown) =>
-                useUndoStore.getState().notifyFailure('fixed', t('恢复原生标签组失败'), error)
-              )
-              .finally(() => setConverting(false));
-          }}
-          onCancel={() => setDialog(null)}
-        />
-      )}
-      {dialog?.type === 'delete' && (
-        <ConfirmDialog
-          title={t('删除文件夹')}
-          message={t('删除文件夹“{{name}}”？正在打开的标签不会关闭。', { name: folder.name })}
-          danger
-          confirmLabel={t('确认删除')}
-          onConfirm={() => {
-            setDialog(null);
-            deleteWithUndo();
-          }}
-          onCancel={() => setDialog(null)}
-        />
-      )}
+      <FolderRowDialogs
+        dialog={dialog}
+        folder={folder}
+        onClose={() => setDialog(null)}
+        onRename={handleRename}
+        onDelete={deleteWithUndo}
+        onConvert={handleConvert}
+      />
     </>
   );
 });

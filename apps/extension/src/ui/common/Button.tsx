@@ -49,6 +49,8 @@ export function Button({
   type = 'button',
   className,
   disabled,
+  label,
+  tooltip,
   title,
   ariaLabel,
   onClick,
@@ -59,7 +61,21 @@ export function Button({
   type?: 'button' | 'submit';
   className?: string;
   disabled?: boolean;
+  /**
+   * 可访问名（icon-only 按钮必填）：落到 aria-label。
+   * 有可见文字的按钮可以省略 —— 此时可访问名由 children 承担，
+   * 传了 label 会以它为准（覆盖可见文字）。
+   */
+  label?: string;
+  /** 鼠标提示需要比可访问名更长时用它（缺省回落 label）。 */
+  tooltip?: string;
+  /**
+   * @deprecated 用 `tooltip`。
+   * 仍会被兜底为可访问名（此前 `title` 与 `ariaLabel` 互不兜底，只传 title 的
+   * 按钮读屏拿不到名字），但只做提示时请改用 tooltip，否则长提示会顶掉可见文字。
+   */
   title?: string;
+  /** @deprecated 用 `label`。 */
   ariaLabel?: string;
   onClick?: () => void;
   children: ReactNode;
@@ -84,8 +100,8 @@ export function Button({
         (className ? ' ' + className : '')
       }
       disabled={disabled}
-      title={title}
-      aria-label={ariaLabel}
+      title={tooltip ?? title ?? label}
+      aria-label={label ?? ariaLabel ?? title}
       onClick={onClick}
     >
       {children}

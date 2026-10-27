@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18n, { translate } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
-import { SnapshotsPanel } from '@/ui/common/SnapshotsPanel';
+import { SnapshotsPanel } from '@/ui/snapshot/SnapshotsPanel';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 
 /**

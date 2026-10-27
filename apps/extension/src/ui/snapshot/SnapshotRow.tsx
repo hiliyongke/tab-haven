@@ -2,11 +2,16 @@ import { useMemo, useRef } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import type { SnapshotDiffResult } from '@/core/snapshot/snapshotDiff';
+import { Button } from '@/ui/common/Button';
+import { Chip } from '@/ui/common/Chip';
+import { Checkbox } from '@/ui/common/Checkbox';
+import { CollapseChevron } from '@/ui/common/CollapseChevron';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 import { TextField } from '@/ui/common/TextField';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 import { formatTime } from '@/ui/common/format';
-import { snapshotOriginBadge } from '@/ui/common/snapshotOrigin';
+import { snapshotOriginBadge } from '@/ui/snapshot/snapshotOrigin';
 import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 
 interface SnapshotRowProps {
@@ -142,9 +147,9 @@ export function SnapshotRow({
             {(() => {
               const badge = snapshotOriginBadge(snap.origin);
               return (
-                <span className={'chip chip--cjk shrink-0 rounded px-1 py-px ' + badge.className}>
+                <Chip cjk tone={badge.tone} className="shrink-0 py-px">
                   {t(badge.labelKey)}
-                </span>
+                </Chip>
               );
             })()}
             <span className="min-w-0 truncate">
@@ -156,53 +161,40 @@ export function SnapshotRow({
             的误触率明显上升（删除不可逆）。 */}
         <div className="flex shrink-0 items-center gap-1">
           {/* 查看详情：展开快照内的标签清单（恢复前可确认内容） */}
-          <button
-            type="button"
-            title={t('查看快照内标签')}
-            aria-label={t('查看快照内标签')}
-            aria-expanded={isDetailOpen}
-            className="rounded p-1 text-gray-500 hover:bg-gray-100"
+          <RowActionButton
+            label={t('查看快照内标签')}
+            ariaExpanded={isDetailOpen}
             onClick={() => onToggleDetail(snap.id)}
           >
-            <Icon
-              d={Icons.chevron}
-              className={'h-4 w-4 transition-transform' + (isDetailOpen ? ' rotate-90' : '')}
-            />
-          </button>
-          <button
-            type="button"
-            title={t('恢复')}
-            aria-label={t('恢复')}
+            {/* 折叠箭头复用 CollapseChevron：本行图标是 16px，比列表行默认档大一号。 */}
+            <CollapseChevron collapsed={!isDetailOpen} className="h-4 w-4" />
+          </RowActionButton>
+          <RowActionButton
+            icon={Icons.openAll}
+            label={t('恢复')}
             disabled={restoring}
-            className="rounded p-1 text-gray-500 hover:bg-accent-50 hover:text-accent-600 disabled:opacity-50 disabled:hover:bg-transparent"
+            iconClass="h-4 w-4"
             onClick={() => void onRestore(snap.id, snap.tabCount)}
-          >
-            <Icon d={Icons.openAll} className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            title={t('重命名')}
-            aria-label={t('重命名')}
-            className="rounded p-1 text-gray-500 hover:bg-gray-100"
+          />
+          <RowActionButton
+            icon={Icons.pencil}
+            label={t('重命名')}
+            iconClass="h-4 w-4"
             onClick={() => onBeginRename(snap.id, snap.name)}
-          >
-            <Icon d={Icons.pencil} className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            title={t('删除')}
-            aria-label={t('删除')}
-            /* 删除与「查看详情」「重命名」静默态完全同色同形，无 hover 设备上
-               不可分；改为静默中性、hover/focus 转红（与 .row-action.is-danger
-               同口径），并扩到 28px 命中区。
-               危险态走 .row-action.is-danger 统一入口：手写 hover:bg-red-50 /
-               hover:text-red-600 是同一语义的第二份实现，改一处漏一处；且此前
-               另加的 text-gray-400 把静默态压到 2.68:1（低于非文本的 3:1）。 */
-            className="row-action is-danger"
+          />
+          {/* 删除与「查看详情」「重命名」静默态完全同色同形，无 hover 设备上
+             不可分；改为静默中性、hover/focus 转红（与 .row-action.is-danger
+             同口径），并扩到 28px 命中区。
+             危险态走 .row-action.is-danger 统一入口：手写 hover:bg-red-50 /
+             hover:text-red-600 是同一语义的第二份实现，改一处漏一处；且此前
+             另加的 text-gray-400 把静默态压到 2.68:1（低于非文本的 3:1）。 */}
+          <RowActionButton
+            icon={Icons.trash}
+            label={t('删除')}
+            danger
+            iconClass="h-4 w-4"
             onClick={() => void onDelete(snap.id)}
-          >
-            <Icon d={Icons.trash} className="h-4 w-4" />
-          </button>
+          />
         </div>
       </div>
       {isDetailOpen && (
@@ -253,11 +245,9 @@ export function SnapshotRow({
                   return (
                     <li key={key} className="flex min-w-0 items-center gap-1.5 py-1">
                       {onToggleSelected && checked !== undefined && (
-                        <input
-                          type="checkbox"
-                          className="h-3.5 w-3.5 shrink-0 accent-[var(--c-brand-500)]"
+                        <Checkbox
                           checked={checked}
-                          aria-label={tab.title || tab.url}
+                          ariaLabel={tab.title || tab.url}
                           onChange={() => onToggleSelected(key)}
                         />
                       )}
@@ -268,14 +258,14 @@ export function SnapshotRow({
                         {tab.title || tab.url}
                       </span>
                       {diff && isExisting && (
-                        <span className="chip chip--cjk shrink-0 rounded bg-gray-100 px-1 py-px text-gray-600">
+                        <Chip cjk className="shrink-0 py-px">
                           {t('已存在')}
-                        </span>
+                        </Chip>
                       )}
                       {diff && isSkipped && (
-                        <span className="chip chip--cjk shrink-0 rounded bg-gray-100 px-1 py-px text-gray-600">
+                        <Chip cjk className="shrink-0 py-px">
                           {t('不恢复')}
-                        </span>
+                        </Chip>
                       )}
                       {/* min-w-0 不可省：无它时 min-width:auto 会击穿 max-w-[45%]，
                           长 URL 直接撑满并顶开同行元素。 */}
@@ -288,14 +278,17 @@ export function SnapshotRow({
               </ul>
               {onRestoreSelected && selectedKeys && (
                 <div className="border-t border-gray-100 px-2 py-1.5">
-                  <button
-                    type="button"
+                  {/* 强调色文字按钮统一走 accent-ghost 变体（与「从 OneTab 导入」同款）：
+                      命中下限与 disabled:hover 兜底由变体承担，此处只补 w-full。 */}
+                  <Button
+                    variant="accent-ghost"
+                    size="xs"
+                    className="w-full"
                     disabled={restoring || selectedKeys.size === 0}
-                    className="w-full min-h-6 rounded px-2 py-1 text-2xs font-medium text-accent-700 transition-base hover:bg-accent-50 disabled:opacity-50 disabled:hover:bg-transparent"
                     onClick={() => void onRestoreSelected(snap.id, selectedKeys.size)}
                   >
                     {t('恢复勾选（{{count}}）', { count: selectedKeys.size })}
-                  </button>
+                  </Button>
                 </div>
               )}
             </>
