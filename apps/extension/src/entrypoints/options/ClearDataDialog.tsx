@@ -50,18 +50,18 @@ export function ClearDataDialog({
     >
       <div className="flex flex-col gap-3">
         <p className="text-3xs leading-relaxed text-gray-600">{t('以下数据将被永久删除：')}</p>
-        <ul className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-2xs text-gray-700">
+        <ul className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-3xs text-gray-700">
           <li>· {t('收藏夹与常驻磁贴')}</li>
           <li>· {t('全部快照与归档')}</li>
           <li>· {t('可撤销的关闭记录')}</li>
           <li>· {t('全部设置（恢复为默认值）')}</li>
           <li>· {t('跨设备同步镜像')}</li>
         </ul>
-        <p className="text-2xs font-medium text-warn-700">
+        <p className="text-3xs font-medium text-warn-700">
           {t('此操作不可恢复。建议先导出一份备份。')}
         </p>
         {/* items-start 让复选框与多行说明首行顶部对齐，不再靠 mt-px(1px) 微调 */}
-        <label className="flex cursor-pointer items-start gap-2 text-2xs text-gray-700">
+        <label className="flex cursor-pointer items-start gap-2 text-3xs text-gray-700">
           <Checkbox checked={ack} className="mt-0.5" onChange={onAckChange} />
           <span>{t('我已了解上述数据将被永久删除，且无法恢复')}</span>
         </label>

@@ -6,7 +6,8 @@ import type { Settings } from '@/core/schema/models';
 import { Button } from '@/ui/common/Button';
 import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
-import { Section } from '@/ui/settings/settingControls';
+import { IconTile } from '@/ui/common/IconTile';
+import { Row, Section } from '@/ui/settings/settingControls';
 
 /**
  * 设置页的「引导层」：预设画像与能力发现。
@@ -55,9 +56,17 @@ const PRESET_PROFILES: PresetProfile[] = [
   }
 ];
 
-export function PresetsPanel({ onApplied }: { onApplied: (message: string) => void }) {
+export function PresetsPanel() {
   const { t } = useTranslation();
   const settings = useDataStore((state) => state.settings);
+  /**
+   * 套用/撤销的结果就地展示。
+   *
+   * 此前经 `onApplied` 冒泡到设置页的 `transferStatus`，而后者只渲染在页面底部
+   * 的「数据备份」分区里 —— 在页面顶部点预设，反馈出现在一屏之外，与「没生效」
+   * 无法区分。结果属于这张卡的动作，就留在卡里。
+   */
+  const [status, setStatus] = useState<string | null>(null);
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
   /** 最近一次套用的预设及其生效前的设置快照：提供「撤销预设」出口。 */
   const [undoPatch, setUndoPatch] = useState<{
@@ -83,9 +92,9 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
     const ok = await tryUpdateSettings(preset.patch);
     if (ok) {
       setUndoPatch({ patch: preset.patch, before });
-      onApplied(t('已应用「{{name}}」预设', { name: t(preset.nameKey) }));
+      setStatus(t('已应用「{{name}}」预设', { name: t(preset.nameKey) }));
     } else {
-      onApplied(t('设置未保存：存储不可用，请重试'));
+      setStatus(t('设置未保存：存储不可用，请重试'));
     }
   };
 
@@ -94,13 +103,13 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
     const { before } = undoPatch;
     setUndoPatch(null);
     const ok = await tryUpdateSettings(before);
-    onApplied(ok ? t('已撤销预设更改') : t('设置未保存：存储不可用，请重试'));
+    setStatus(ok ? t('已撤销预设更改') : t('设置未保存：存储不可用，请重试'));
   };
 
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-surface p-4 sm:mb-8">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-700">{t('快速预设')}</h2>
+        <h2 className="section-title">{t('快速预设')}</h2>
         {/* 与 SnapshotRow 的「恢复勾选」同款强调色文字按钮，统一走 accent-ghost。 */}
         {undoPatch && (
           <Button variant="accent-ghost" size="xs" onClick={() => void revertPreset()}>
@@ -165,6 +174,11 @@ export function PresetsPanel({ onApplied }: { onApplied: (message: string) => vo
           </div>
         )}
       </div>
+      {status !== null && (
+        <output className="mt-2 block text-3xs text-gray-600" role="status" aria-live="polite">
+          {status}
+        </output>
+      )}
     </section>
   );
 }
@@ -210,36 +224,29 @@ export function CapabilitiesGuide() {
   };
   return (
     <Section title={t('你能做什么')}>
-      <div className="divide-y divide-gray-100">
-        {CAPABILITIES.map((cap) => (
-          <div key={cap.titleKey} className="flex items-center gap-3 px-4 py-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-50 text-accent-600">
-              <Icon d={cap.icon} className="h-4 w-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-800">{t(cap.titleKey)}</p>
-              <p className="mt-0.5 text-3xs leading-snug text-gray-600">{t(cap.howKey)}</p>
-            </div>
-            <Button variant="secondary" size="sm" onClick={() => void openSidePanel()}>
-              {t('在侧边栏试用')}
-            </Button>
-          </div>
-        ))}
-        <div className="flex items-center gap-3 px-4 py-3">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-50 text-accent-600">
-            <Icon d={Icons.sparkles} className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-gray-800">{t('重新观看引导')}</p>
-            <p className="mt-0.5 text-3xs leading-snug text-gray-600">
-              {t('下次打开侧边栏时重新播放首启引导（误按 Esc 关闭后可从这里找回）')}
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" onClick={() => void replayTour()}>
-            {t('重新观看')}
+      {/* 走 Row：与设置项同一套行布局（窄屏堆叠、控件撑满），此前手写行不参与断点，
+          窗口拉窄时按钮被挤成两行而相邻设置行不会。 */}
+      {CAPABILITIES.map((cap) => (
+        <Row
+          key={cap.titleKey}
+          icon={<IconTile icon={cap.icon} />}
+          label={t(cap.titleKey)}
+          hint={t(cap.howKey)}
+        >
+          <Button variant="secondary" size="sm" onClick={() => void openSidePanel()}>
+            {t('在侧边栏试用')}
           </Button>
-        </div>
-      </div>
+        </Row>
+      ))}
+      <Row
+        icon={<IconTile icon={Icons.sparkles} />}
+        label={t('重新观看引导')}
+        hint={t('下次打开侧边栏时重新播放首启引导（误按 Esc 关闭后可从这里找回）')}
+      >
+        <Button variant="secondary" size="sm" onClick={() => void replayTour()}>
+          {t('重新观看')}
+        </Button>
+      </Row>
     </Section>
   );
 }

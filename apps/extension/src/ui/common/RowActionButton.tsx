@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from 'react';
+import { forwardRef, type ButtonHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from '@/ui/common/Icon';
 
@@ -13,19 +13,23 @@ import { Icon } from '@/ui/common/Icon';
  * 与 `IconButton` 的分工：IconButton 是 24/32px 的工具条档（可带文字标签与计数
  * 徽章），本组件是 20px 的密集列表档，视觉与命中扩区都走 main.css 的 `.row-action`
  * （::after 把 20px 撑到 24px，WCAG 2.5.8）。
+ *
+ * 转发 ref 并透传原生属性：dnd-kit 的键盘手柄要把 `ref` 与 `attributes`
+ * （role / tabIndex / aria-roledescription）挂到真按钮上。此前 SectionHead 的
+ * 手柄因为拿不到这两样而退回手写 `<button className="row-action">` —— 形态一致的
+ * 按钮出现两个实现，正是本组件要消灭的重复。
  */
-export function RowActionButton({
-  icon,
-  label,
-  tooltip,
-  danger = false,
-  disabled,
-  ariaExpanded,
-  className,
-  iconClass = 'h-3.5 w-3.5',
-  children,
-  onClick
-}: {
+type RowActionButtonProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  | 'type'
+  | 'className'
+  | 'title'
+  | 'aria-label'
+  | 'aria-expanded'
+  | 'disabled'
+  | 'onClick'
+  | 'children'
+> & {
   icon?: LucideIcon;
   /**
    * 可访问名：同时落到 `title` 与 `aria-label`（与 IconButton 同口径）。
@@ -48,25 +52,46 @@ export function RowActionButton({
    */
   children?: ReactNode;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={
-        /* disabled:* 两项与 Button / IconButton 同口径（50% 透明度 + 非手型光标）。
-           hover 回落写在 main.css 的 .row-action:disabled —— 原生 disabled 按钮
-           在 Chrome 里仍匹配 :hover，只在组件侧写类挡不住 CSS 里的变色。 */
-        'row-action disabled:cursor-default disabled:opacity-50' +
-        (danger ? ' is-danger' : '') +
-        (className ? ' ' + className : '')
-      }
-      title={tooltip ?? label}
-      aria-label={label}
-      aria-expanded={ariaExpanded}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children ?? (icon ? <Icon d={icon} className={iconClass} /> : null)}
-    </button>
-  );
-}
+};
+
+export const RowActionButton = forwardRef<HTMLButtonElement, RowActionButtonProps>(
+  function RowActionButton(
+    {
+      icon,
+      label,
+      tooltip,
+      danger = false,
+      disabled,
+      ariaExpanded,
+      className,
+      iconClass = 'h-3.5 w-3.5',
+      children,
+      onClick,
+      ...rest
+    },
+    ref
+  ) {
+    return (
+      <button
+        {...rest}
+        ref={ref}
+        type="button"
+        className={
+          /* disabled:* 两项与 Button / IconButton 同口径（50% 透明度 + 非手型光标）。
+             hover 回落写在 main.css 的 .row-action:disabled —— 原生 disabled 按钮
+             在 Chrome 里仍匹配 :hover，只在组件侧写类挡不住 CSS 里的变色。 */
+          'row-action disabled:cursor-default disabled:opacity-50' +
+          (danger ? ' is-danger' : '') +
+          (className ? ' ' + className : '')
+        }
+        title={tooltip ?? label}
+        aria-label={label}
+        aria-expanded={ariaExpanded}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {children ?? (icon ? <Icon d={icon} className={iconClass} /> : null)}
+      </button>
+    );
+  }
+);

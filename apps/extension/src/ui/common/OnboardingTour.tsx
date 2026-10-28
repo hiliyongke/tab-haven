@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
 import { useModalA11y } from '@/ui/dialog/Dialog';
 
 const TOTAL = 3;
@@ -92,7 +93,7 @@ export function OnboardingTour({
            640px 断点 —— 侧边栏视口 ≤500px，该断点永不命中（死代码）。 */
         /* m-auto 而非 m-0：与命令面板同因 —— 原生 <dialog> 经 showModal() 后脱离
            文档流，居中靠浏览器默认的 margin:auto，写 m-0 会让它贴到左上角。 */
-        className="dialog-sm modal-panel elev-3 relative m-auto rounded-xl border border-gray-200 bg-surface px-4 py-3"
+        className="dialog-sm modal-panel modal-surface relative m-auto px-4 py-3"
         aria-labelledby={titleId}
         onCancel={(event) => {
           // Esc 已由 useModalA11y preventDefault 并走 onDismiss；此分支只兜底
@@ -125,28 +126,29 @@ export function OnboardingTour({
         {/* 终步的备份提醒：数据只存在本机，卸载即清除 —— 在用户最有耐心看完的
             引导终局给出一次导出机会，而不是等他踩到损失后才发现没有出口。 */}
         {last && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg border border-accent-200 px-3 py-2">
-            <p className="min-w-0 flex-1 text-3xs leading-relaxed text-accent-700">
+          <Callout
+            tone="plain"
+            density="page"
+            align="center"
+            className="mt-3"
+            action={
+              onExport && (
+                <Button variant="secondary" size="sm" onClick={onExport}>
+                  {t('立即导出')}
+                </Button>
+              )
+            }
+          >
+            <p className="text-3xs leading-relaxed">
               {t('数据只保存在这台设备的浏览器里，卸载扩展会一并清除。建议现在导出一份备份。')}
             </p>
-            {onExport && (
-              <Button variant="secondary" size="sm" onClick={onExport}>
-                {t('立即导出')}
-              </Button>
-            )}
-          </div>
+          </Callout>
         )}
 
         <div className="mt-5 flex items-center justify-between">
-          {/* 命中下限（min-h-6 / px-2）与 disabled:hover 兜底交给 ghost 变体 ——
-              原文实测无 padding / min-height 时只有约 16.5px，而它承载的是
-              「永久关闭引导」这个不可逆动作。text-3xs 保留原字号（xs 档默认 2xs）。 */}
-          <Button
-            variant="ghost"
-            size="xs"
-            className="text-3xs hover:text-gray-600"
-            onClick={onDone}
-          >
+          {/* 命中下限（min-h-6 / px-2）与 disabled:hover 兜底交给 ghost 变体；
+              11px 字号走 dense 档，不再用 className 压 xs 的 text-2xs。 */}
+          <Button variant="ghost" size="dense" className="hover:text-gray-600" onClick={onDone}>
             {t('跳过')}
           </Button>
           <div className="flex gap-2">

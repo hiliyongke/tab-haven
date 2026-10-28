@@ -8,6 +8,7 @@ import {
   type ReactNode
 } from 'react';
 import { useTranslation } from '@/i18n';
+import type { Density } from '@/core/schema/models';
 import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { activatableRowProps } from '@/ui/domContract';
@@ -65,7 +66,7 @@ export const RowItem = memo(
       isDropTarget?: boolean;
       /** 落点在结构上不接受当前拖拽类型：显示禁用态而非投放高亮（与 isDropTarget 互斥）。 */
       isDropRejected?: boolean;
-      density?: 'compact' | 'cozy' | 'large';
+      density?: Density;
       indent?: number;
       onClick?: () => void;
       onAuxClick?: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -116,6 +117,7 @@ export const RowItem = memo(
       // 三种并排出现的「可按元素」，圆角必须收敛到两档（6 / 8），否则悬停底色
       // 出现时会表现为圆角毛刺。行与分区头统一到 6px，磁贴/卡片保留 8px 一档。
       'group relative flex items-center gap-1 rounded-md pl-1.5 pr-1.5 py-0.5 text-xs transition-base row-item' +
+      (density === 'tight' ? ' density-tight' : '') +
       (density === 'cozy' ? ' density-cozy' : '') +
       (density === 'large' ? ' density-large' : '') +
       (isActive ? ' is-active' : '') +

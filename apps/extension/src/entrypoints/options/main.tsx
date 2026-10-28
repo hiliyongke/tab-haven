@@ -15,7 +15,7 @@ installGlobalErrorHandlers();
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary scope="options">
-      <EntryRoot scope="options">
+      <EntryRoot scope="options" layout="page">
         <SettingsPage />
       </EntryRoot>
     </ErrorBoundary>

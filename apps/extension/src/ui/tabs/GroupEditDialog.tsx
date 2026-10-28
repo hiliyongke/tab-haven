@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isImeComposing } from '@/core/util/keyboard';
 import { useTranslation } from '@/i18n';
 import { DialogShell } from '@/ui/dialog/Dialog';
 import { Button } from '@/ui/common/Button';
@@ -78,7 +79,8 @@ export function GroupEditDialog({
         value={draft}
         onChange={setDraft}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
+          // 输入法组合中按 Enter 是「选词」，不是「保存」。
+          if (e.key === 'Enter' && !isImeComposing(e)) commit();
         }}
       />
       {/* 分组取色器：无文字、纯色块，边框是唯一的边界线索 —— 必须用 --border-control

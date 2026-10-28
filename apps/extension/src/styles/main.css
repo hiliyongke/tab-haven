@@ -40,6 +40,9 @@
   --text-2xs--line-height: 1;
   --text-3xs: 0.6875rem; /* 11px */
   --text-3xs--line-height: 1.45;
+  /* 正文主字号显式声明（与 Tailwind 默认同值）：语义类（.section-title）
+     要能引用 var(--text-sm)，否则它只能在 CSS 里硬写 0.875rem。 */
+  --text-sm: 0.875rem;
 
   /* 间距基准：4px。显式声明（即便与 Tailwind 默认值相同）是为了让「本项目
      用 4px 网格、一切间距都是它的整数倍」成为可被工具校验的事实，而不是口头约定。 */
@@ -693,6 +696,22 @@ body {
   animation: dialog-enter var(--dur-normal) var(--ease-out);
 }
 
+/* ---------- 浮层表面（对话框 / 命令面板 / 引导 / 右键菜单）----------
+ * 这四类都是「浮在内容之上的面板」，此前各自写一遍
+ * `rounded-xl border border-gray-200 bg-surface` + elev-3，菜单那一处顺手写成
+ * rounded-lg —— 同一视觉层级出现 8px / 12px 两档圆角，且没有说明。
+ * 表面（边框 / 圆角 / 底色 / 阴影）收到这里，浮层只声明尺寸与布局。 */
+.modal-surface {
+  border: 1px solid var(--c-gray-200);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+}
+/* 菜单档：常贴边打开、面积小，12px 圆角在 40px 高的面板上显得过圆。 */
+.modal-surface--menu {
+  border-radius: var(--radius-lg);
+}
+
 /* Toast 进场：从下方轻滑入（退场同样受卸载时机限制，保持瞬时） */
 @keyframes toast-enter {
   from {
@@ -1046,6 +1065,29 @@ html.theme-transition *::after {
   height: 22px;
 }
 
+/* ---------- 右键菜单项 ----------
+ * 菜单的键盘导航靠 DOM 焦点，而程序化 focus() 在 Chrome 里不触发 :focus-visible
+ * （上一次交互是指针时启发式不命中），所以焦点环必须挂在 :focus 上。
+ * 底色取 --row-hover(gray-100) 而不是 gray-50：后者对白面仅 1.04:1，等于没有指示。
+ * 焦点环内缩 2px：菜单贴边打开时，外扩的环会被面板边缘裁掉一半。 */
+.menu-item:hover,
+.menu-item:focus {
+  background: var(--row-hover);
+}
+.menu-item:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.menu-item.is-danger:hover,
+.menu-item.is-danger:focus {
+  background: var(--c-red-50);
+}
+/* 原生 disabled 仍匹配 :hover / :focus，显式回落，避免禁用项看起来可点。 */
+.menu-item:disabled:hover,
+.menu-item:disabled:focus {
+  background: transparent;
+}
+
 /* 计数徽章（工具条角标等）：品牌绿底，满足对比度；
    11px 迷你尺寸挂在 24px 图标按钮角落，外圈 canvas 描边与图标视觉分离；
    两位数自动呈小胶囊（min-width + 横向 padding），不挤成正圆大球。 */
@@ -1099,6 +1141,18 @@ button:has(> .count-badge) {
   font-weight: 500;
   letter-spacing: 0.025em;
   color: var(--c-gray-500);
+}
+
+/* ---------- 区块标题（设置页 / 关于页的一级分区标题）----------
+ * 此前同一角色有 5 套写法：14px/600/gray-600（关于页与设置页各写一份常量）、
+ * 14px/600/gray-700（预设卡，少一个 tracking）、10px/600（目录）、
+ * 10px/500 uppercase（其他窗口）。同一屏会出现两种标题观感。
+ * 语义类只定义**排版**，外边距由调用点决定（目录标题更紧凑）。 */
+.section-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  color: var(--c-gray-600);
 }
 
 /* ---------- chip：徽角 / 小胶囊的紧凑排版 ----------
@@ -1685,6 +1739,53 @@ button:not([disabled]) {
   transition: opacity var(--dur-fast) var(--ease-out);
   cursor: grab;
   pointer-events: none;
+}
+/* 超紧凑：行内上下留白归零（默认 2px → 0），单屏多显示约 3–4 行。
+   取舍写在 schema 注释里：单行高度会低于 24px 推荐目标，但行是满宽可点区域、
+   相邻行之间没有空隙，且这是用户显式选择的档位（默认仍是 cozy）。
+   左内距不动，保证标题竖线与分区头 / 搜索框仍在同一条 8px 线上。 */
+.row-item.density-tight,
+[data-density='tight'] .row-item {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/* 超紧凑不只压行高：分区头、分区间距、固定区容器与置顶磁贴一起收一档。
+   只收行高时，切到该档看到的是「行变密了，顶部磁贴与收藏夹头还是原样」——
+   面板上半屏几乎没变，像只改了一半。
+   数值：分区头 28→24（6→4px 内距，16px 计数胶囊仍是下限）、固定区 6/8→2/4、
+   磁贴 36→32、两行封顶 86→78。 */
+[data-density='tight'] .section-head {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+[data-density='tight'] .section-card + .section-card {
+  margin-top: 1px;
+}
+/* 分区体底部 2px 是行与下一张卡片的分隔留白；行本身已贴边时它就成了唯一空隙。 */
+[data-density='tight'] .section-body {
+  padding-bottom: 0;
+}
+[data-density='tight'] .fixed-area,
+[data-density='tight'] .module-shell {
+  padding-top: 2px;
+  padding-bottom: 4px;
+}
+[data-density='tight'] .pinned-strip {
+  margin-bottom: 4px;
+  padding-top: 4px;
+  padding-bottom: 0;
+}
+/* 磁贴只在指针设备上收小：触屏档的磁贴是 56px 宽 + 名称（见 @media (hover: none)），
+   压回 32px 会让「无 tooltip 时靠名称辨识」的兜底失效。
+   .pinned-unpin 角标 top:-4px 依赖 .pinned-grid 的 4px 顶部内距，这里不动它。 */
+@media (hover: hover) {
+  [data-density='tight'] .pinned-tile {
+    width: 32px;
+    height: 32px;
+  }
+  [data-density='tight'] .pinned-grid {
+    max-height: 78px;
+  }
 }
 /* 宽松密度：增加行内边距，信息更舒展 */
 .row-item.density-cozy {

@@ -3,9 +3,10 @@ import { useTranslation } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { hostnameOf } from '@/core/url/UrlInspector';
 import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
 import { Chip } from '@/ui/common/Chip';
 import { Favicon } from '@/ui/common/Favicon';
-import { Icon, Icons } from '@/ui/common/Icon';
+import { Icons } from '@/ui/common/Icon';
 import { RowActionButton } from '@/ui/common/RowActionButton';
 import type { OtherWindow, OtherWindowsStatus } from '@/ui/tabs/useOtherWindows';
 
@@ -68,32 +69,23 @@ export function OtherWindowsSection({
   if (status === 'error') {
     return (
       <section className="mt-1">
-        <p className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-gray-500">
-          {t('其他窗口')}
-        </p>
-        <div
-          role="alert"
-          className="mb-1.5 flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-2.5 py-2"
-        >
-          <Icon d={Icons.infoAlert} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn-600" />
-          <div className="min-w-0 flex-1">
-            <p className="text-3xs leading-relaxed text-warn-700">
-              {t('其他窗口暂时读不出来（浏览器查询失败）。标签数据不受影响，可重试。')}
-            </p>
-            {/* 告警色文字按钮：沿用 ghost 骨架（无底色），配色由 className 覆盖。
-                顺带补上变体自带的 min-h-6 / px-2 —— 原文无 padding，命中区不足 24px。 */}
-            {onRetry && (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="mt-1 font-medium text-3xs text-warn-700 underline underline-offset-2 hover:bg-warn-100"
-                onClick={onRetry}
-              >
-                {t('重试')}
-              </Button>
-            )}
-          </div>
-        </div>
+        <p className="group-label px-2 pb-1 pt-2">{t('其他窗口')}</p>
+        <Callout role="alert" tone="warn" className="mb-1.5" icon={Icons.infoAlert}>
+          <p className="text-3xs leading-relaxed">
+            {t('其他窗口暂时读不出来（浏览器查询失败）。标签数据不受影响，可重试。')}
+          </p>
+          {/* 告警色文字按钮：配色由 warn-ghost 变体承担，命中下限由 size=dense 承担。 */}
+          {onRetry && (
+            <Button
+              variant="warn-ghost"
+              size="dense"
+              className="mt-1 underline underline-offset-2"
+              onClick={onRetry}
+            >
+              {t('重试')}
+            </Button>
+          )}
+        </Callout>
       </section>
     );
   }
@@ -102,9 +94,7 @@ export function OtherWindowsSection({
   if (status === 'loading') {
     return (
       <section className="mt-1">
-        <p className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-gray-500">
-          {t('其他窗口')}
-        </p>
+        <p className="group-label px-2 pb-1 pt-2">{t('其他窗口')}</p>
         <div className="mb-1.5 rounded-lg border border-gray-100 bg-surface px-2.5 py-2">
           <span className="skeleton block h-3 w-24" />
           <span className="skeleton mt-1.5 block h-3 flex-1" />
@@ -119,9 +109,7 @@ export function OtherWindowsSection({
   return (
     // 不设 aria-label：下方可见标题已提供可访问名，重复会二次播报。
     <section className="mt-1">
-      <p className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-gray-500">
-        {t('其他窗口')}
-      </p>
+      <p className="group-label px-2 pb-1 pt-2">{t('其他窗口')}</p>
       {/* 窗口卡不再 mx-1 内缩：内缩 4px 后其内部内容的竖线必然偏离全局 8px，
           改为满宽卡（与 .section-card 同一语言）+ 内部 px-2，内容落在 8px 竖线上。 */}
       {bucketsByWindow.map(({ win, buckets }) => (

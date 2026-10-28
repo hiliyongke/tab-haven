@@ -8,6 +8,7 @@ import { Checkbox } from '@/ui/common/Checkbox';
 import { CollapseChevron } from '@/ui/common/CollapseChevron';
 import { ColorSwatchGroup } from '@/ui/common/ColorSwatchGroup';
 import { RowActionButton } from '@/ui/common/RowActionButton';
+import { RowItem } from '@/ui/common/RowItem';
 import { Icons } from '@/ui/common/Icon';
 
 /**
@@ -288,5 +289,29 @@ describe('CollapseChevron', () => {
     // Then: 收起朝右、展开朝下
     expect(collapsedSvg?.getAttribute('class')).not.toContain('rotate-90');
     expect(expandedSvg?.getAttribute('class')).toContain('rotate-90');
+  });
+});
+
+describe('RowItem 密度档位', () => {
+  const renderRow = (density?: 'tight' | 'compact' | 'cozy' | 'large') =>
+    render(<RowItem faviconTitle="示例" title="示例标签" density={density} />);
+
+  it('超紧凑 / 宽松 / 大字号各落到自己的语义类', () => {
+    const { container, rerender } = renderRow('tight');
+    expect(container.querySelector('.row-item')).toHaveClass('density-tight');
+
+    rerender(<RowItem faviconTitle="示例" title="示例标签" density="cozy" />);
+    expect(container.querySelector('.row-item')).toHaveClass('density-cozy');
+
+    rerender(<RowItem faviconTitle="示例" title="示例标签" density="large" />);
+    expect(container.querySelector('.row-item')).toHaveClass('density-large');
+  });
+
+  it('compact 是基准档：不加任何 density-* 类（避免继承别的档位）', () => {
+    const { container } = renderRow('compact');
+    const row = container.querySelector('.row-item');
+    expect(row).not.toHaveClass('density-tight');
+    expect(row).not.toHaveClass('density-cozy');
+    expect(row).not.toHaveClass('density-large');
   });
 });

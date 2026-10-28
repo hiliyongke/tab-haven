@@ -1,6 +1,8 @@
 import { useTranslation } from '@/i18n';
+import type { Density } from '@/core/schema/models';
 import { createPlainNewTab } from '@/platform/tabs';
 import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
 import { EmptyState } from '@/ui/common/EmptyState';
 import { Icon, Icons } from '@/ui/common/Icon';
 
@@ -19,7 +21,7 @@ import { Icon, Icons } from '@/ui/common/Icon';
  *
  * @param density 与真实列表同档，否则切到「大字号」时骨架与真实行差 4px。
  */
-export function LoadingSkeleton({ density = 'cozy' }: { density?: 'compact' | 'cozy' | 'large' }) {
+export function LoadingSkeleton({ density = 'cozy' }: { density?: Density }) {
   return (
     <div className="flex flex-col py-1">
       <div className="section-head">
@@ -35,6 +37,7 @@ export function LoadingSkeleton({ density = 'cozy' }: { density?: 'compact' | 'c
           key={i}
           className={
             'row-item' +
+            (density === 'tight' ? ' density-tight' : '') +
             (density === 'cozy' ? ' density-cozy' : '') +
             (density === 'large' ? ' density-large' : '')
           }
@@ -82,8 +85,10 @@ export function EmptyTabs({
           </Button>
           {/* 与 UndoHistoryPanel 同款引导块：强调色块 + 文案 + 一步跳转 */}
           {hasSnapshots && onOpenSnapshots && (
-            <div className="mx-1 max-w-56 rounded-lg border border-accent-200 bg-accent-50 px-2.5 py-2 text-3xs leading-relaxed text-accent-700">
-              <p>{t('这个窗口现在是空的。如果你刚遇到崩溃或误关，可以从快照把整个窗口找回来。')}</p>
+            <Callout className="mx-1 max-w-56">
+              <p className="text-3xs leading-relaxed">
+                {t('这个窗口现在是空的。如果你刚遇到崩溃或误关，可以从快照把整个窗口找回来。')}
+              </p>
               {/* 原手写按钮无 padding / min-height，命中区只有约 16px（低于 WCAG
                   2.5.8 的 24px）。换成 accent-ghost + xs：字号与强调色不变，
                   命中下限由变体承担。 */}
@@ -95,7 +100,7 @@ export function EmptyTabs({
               >
                 {t('查看我的快照')}
               </Button>
-            </div>
+            </Callout>
           )}
         </div>
       }

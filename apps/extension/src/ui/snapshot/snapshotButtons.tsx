@@ -2,33 +2,14 @@ import type { ReactNode } from 'react';
 import { Button } from '@/ui/common/Button';
 
 /**
- * 次级文字按钮（「取消 / 从 OneTab 导入 / 本周周报」等同款入口）。
- *
- * 命中下限与视觉此前在四处各写一遍同样的 class 串：改一处（如 WCAG 2.5.8 的
- * 24px 下限从 py-1 抬到 min-h-6）要同步改四处，漏一处就留下一个 20px 的按钮，
- * 而这类缺陷只在无障碍审计里才暴露。现统一走 `Button variant="ghost" size="xs"`。
- */
-export function TextButton({
-  onClick,
-  className = '',
-  children
-}: {
-  onClick: () => void;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Button variant="ghost" size="xs" className={className} onClick={onClick}>
-      {children}
-    </Button>
-  );
-}
-
-/**
- * 洞察行动按钮（「清理重复 / 一键休眠 / 归档当前窗口」同款，见 TextButton 的收口理由）。
+ * 洞察行动按钮（「清理重复 / 一键休眠 / 归档当前窗口」同款）。
  *
  * `chip chip--cjk` 保留在调用侧：徽角字号由 `.chip` 统一（且它不在 Tailwind 的
  * utilities 层，不受 Button 的 text-2xs 影响），Button 只提供盒子与强调色。
+ *
+ * 此前的 `TextButton`（`variant="ghost" size="xs"` 的空壳）已删除：
+ * 它只是同一形态的第二个名字，5 个调用点全部在 snapshot 模块内，
+ * 直接写 Button 变体即可，少一层没有增益的间接。
  */
 export function InsightActionButton({
   onClick,

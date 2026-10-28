@@ -1,6 +1,8 @@
 import { useTranslation } from '@/i18n';
 import type { computeInsights } from '@/core/insights/tabInsights';
-import { InsightActionButton, TextButton } from '@/ui/snapshot/snapshotButtons';
+import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
+import { InsightActionButton } from '@/ui/snapshot/snapshotButtons';
 
 /** 习惯洞察区块的锚点 id：底栏洞察入口直达后滚动定位到这里。 */
 export const INSIGHTS_ANCHOR_ID = 'snapshots-insights';
@@ -53,12 +55,8 @@ export function SnapshotReportView({
       </div>
       {/* 习惯洞察：从当前窗口实时推导行动建议，全部本地计算。
           出口指向已有动作（清理重复 / 一键休眠 / 归档窗口），形成闭环。 */}
-      <div
-        id={INSIGHTS_ANCHOR_ID}
-        tabIndex={-1}
-        className="flex flex-col gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2.5"
-      >
-        <p className="text-2xs font-semibold text-accent-700">{t('习惯洞察')}</p>
+      <Callout id={INSIGHTS_ANCHOR_ID} tabIndex={-1} density="page" layout="stacked">
+        <p className="text-3xs font-semibold">{t('习惯洞察')}</p>
         <p className="text-3xs leading-relaxed text-accent-700/90">
           {t('全部本地计算，零上报——从当前窗口实时推导的行动建议')}
         </p>
@@ -109,10 +107,10 @@ export function SnapshotReportView({
               {t('窗口状态很健康：没有重复、无需休眠、也没有滞留标签')}
             </p>
           )}
-      </div>
-      <TextButton className="self-start" onClick={onBack}>
+      </Callout>
+      <Button variant="ghost" size="xs" className="self-start" onClick={onBack}>
         {t('取消')}
-      </TextButton>
+      </Button>
     </div>
   );
 }

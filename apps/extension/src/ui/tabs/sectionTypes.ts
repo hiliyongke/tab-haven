@@ -1,4 +1,5 @@
 import type { TabRecord } from '@/core/tab-types';
+import type { Density } from '@/core/schema/models';
 import type { TemporarySection } from '@/core/site/Sections';
 
 /** 卡片与行渲染共享的回调契约（SectionList 对外下发的标签交互入口）。 */
@@ -43,7 +44,7 @@ export interface SectionCardProps {
   showUrl?: boolean;
   autoScrollActive?: boolean;
   closeOnMiddleClick?: boolean;
-  density?: 'compact' | 'cozy' | 'large';
+  density?: Density;
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
   highlightedIds?: ReadonlySet<number>;

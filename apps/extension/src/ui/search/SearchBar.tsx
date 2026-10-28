@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isImeComposing } from '@/core/util/keyboard';
 import { useTranslation } from '@/i18n';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { IconButton } from '@/ui/common/IconButton';
@@ -52,7 +53,8 @@ export function SearchBar({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             onKeyDown?.(event);
-            if (!event.defaultPrevented && event.key === 'Escape') {
+            // Esc 在输入法组合中用于取消候选，不能同时把已输入的搜索词清掉。
+            if (!event.defaultPrevented && event.key === 'Escape' && !isImeComposing(event)) {
               event.preventDefault();
               onChange('');
             }

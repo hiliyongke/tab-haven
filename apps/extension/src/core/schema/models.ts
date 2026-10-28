@@ -182,8 +182,14 @@ export const SettingsSchema = z.object({
   // —— 外观 appearance ——
   /** 顶部常驻磁贴条（固定空间）显示开关。 */
   showPinnedStrip: z.boolean().default(true),
-  /** 列表密度：compact 紧凑 / cozy 宽松 / large 大字号（低视力可读性档位）。 */
-  density: z.enum(['compact', 'cozy', 'large']).default('cozy'),
+  /**
+   * 列表密度：`tight` 超紧凑 / `compact` 紧凑 / `cozy` 宽松 / `large` 大字号。
+   *
+   * 四档行内上下留白依次是 0 / 2 / 6 / 10px（见 main.css 的 .density-*）：
+   * 相邻档位差 2–4px，切换时行高变化肉眼可辨。`tight` 只在用户显式选择时生效 ——
+   * 单行高度会低于 24px 的推荐目标尺寸，属「用可点面积换信息密度」的取舍。
+   */
+  density: z.enum(['tight', 'compact', 'cozy', 'large']).default('cozy'),
   /** 标签行标题下方显示完整网址。 */
   showUrl: z.boolean().default(false),
   /** 底部工具区文字模式：新装默认开启，图标旁显示功能名称（窄面板自动退回纯图标；
@@ -351,6 +357,15 @@ export const SettingsSchema = z.object({
   showOtherWindows: z.boolean().default(false)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
+
+/**
+ * 列表密度档位（从 schema 派生）。
+ *
+ * UI 各处（RowItem / TabRow / SectionList / 骨架屏）此前各写一遍
+ * `'compact' | 'cozy' | 'large'`，加一档要改 6 处、漏一处就是类型对不上但运行正常的
+ * 半失效状态。统一从这里取。
+ */
+export type Density = Settings['density'];
 
 /**
  * 默认设置：直接由 `SettingsSchema` 派生，不再手抄一份字段。

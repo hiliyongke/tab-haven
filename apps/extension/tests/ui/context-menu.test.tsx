@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { ContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
+import { ContextMenu, useRowContextMenu, type ContextMenuItem } from '@/ui/common/ContextMenu';
 import { isModalOpen } from '@/ui/dialog/Dialog';
 
 /**
@@ -258,5 +258,64 @@ describe('ContextMenu 与弹窗栈', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(isModalOpen()).toBe(false);
+  });
+});
+
+/** 用 hook 打开菜单的真实宿主：行元素负责 contextmenu，菜单由 hook 的坐标渲染。 */
+function RowContextHost() {
+  const { menu, open, close } = useRowContextMenu();
+  return (
+    <>
+      <div data-testid="row" onContextMenu={open}>
+        一行标签
+      </div>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[{ id: 'close', label: '关闭标签', onSelect: vi.fn() }]}
+          onClose={close}
+        />
+      )}
+    </>
+  );
+}
+
+const ROW_RECT = {
+  left: 40,
+  top: 100,
+  right: 240,
+  bottom: 124,
+  width: 200,
+  height: 24,
+  x: 40,
+  y: 100,
+  toJSON: () => ({})
+} as DOMRect;
+
+describe('useRowContextMenu 的打开锚点', () => {
+  it('键盘触发（clientX/Y 为 0）时贴着该行下沿打开，而不是视口左上角', () => {
+    render(<RowContextHost />);
+    const row = screen.getByTestId('row');
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue(ROW_RECT);
+
+    // Shift+F10 / 菜单键：浏览器派发 contextmenu 但坐标恒为 0。
+    fireEvent.contextMenu(row, { clientX: 0, clientY: 0 });
+
+    const menu = screen.getByRole('menu');
+    expect(menu.style.left).toBe('40px');
+    expect(menu.style.top).toBe('124px');
+  });
+
+  it('指针触发时仍用指针坐标（不被行矩形覆盖）', () => {
+    render(<RowContextHost />);
+    const row = screen.getByTestId('row');
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue(ROW_RECT);
+
+    fireEvent.contextMenu(row, { clientX: 300, clientY: 200 });
+
+    const menu = screen.getByRole('menu');
+    expect(menu.style.left).toBe('300px');
+    expect(menu.style.top).toBe('200px');
   });
 });

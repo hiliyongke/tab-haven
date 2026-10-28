@@ -51,6 +51,8 @@ export function SnapshotsPanel({
 }: SnapshotsPanelProps) {
   const { t } = useTranslation();
   const snapshots = useSnapshotStore((state) => state.snapshots);
+  const snapshotsReady = useSnapshotStore((state) => state.ready);
+  const loadSnapshots = useSnapshotStore((state) => state.load);
   const saveCurrentWindow = useSnapshotStore((state) => state.saveCurrentWindow);
   const saveSpace = useSnapshotStore((state) => state.saveSpace);
   const deleteSnapshot = useSnapshotStore((state) => state.deleteSnapshot);
@@ -61,6 +63,22 @@ export function SnapshotsPanel({
 
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
+  /** 读盘失败：`load()` 的 rejection 不能只进诊断日志，面板要有可重试的错误态。 */
+  const [loadError, setLoadError] = useState(false);
+
+  /**
+   * 面板自己确保数据到位。
+   *
+   * 入口层（App）已经在挂载时发起过一次 load，但面板可能被更晚打开；
+   * `load()` 自带在途去重（stores/snapshotStore 的 loadInFlight），重复调用只等同一个
+   * promise，不会二次读盘。失败则转错误态；重试 = 清掉标记让本 effect 再跑一次。
+   */
+  useEffect(() => {
+    if (snapshotsReady || loadError) return;
+    void loadSnapshots().catch(() => setLoadError(true));
+  }, [snapshotsReady, loadError, loadSnapshots]);
+
+  const snapshotsState = loadError ? 'error' : snapshotsReady ? 'ready' : 'loading';
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   /** 视图切换：initialView 由入口指定（洞察直达为 'report'，见 Props 注释）。 */
@@ -363,6 +381,8 @@ export function SnapshotsPanel({
         <SnapshotListView
           ordered={ordered}
           groups={groups}
+          state={snapshotsState}
+          onRetryLoad={() => setLoadError(false)}
           saving={saving}
           onStartSaving={() => setSaving(true)}
           name={name}

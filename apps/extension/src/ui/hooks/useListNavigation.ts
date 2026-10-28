@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
+import { isImeComposing } from '@/core/util/keyboard';
 import { useLatestRef } from '@/ui/hooks/useLatestRef';
 
 /**
@@ -56,6 +57,10 @@ export function useListNavigation(params: {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>): boolean => {
+      // 输入法组合中：↑↓ 用于翻候选词、Enter 用于选词。若在这里 preventDefault 并
+      // 激活标签，中文用户打一个词就会跳走（且候选框会被抢掉方向键）。
+      // 返回 false 表示「未消费」，让事件继续留给输入法。
+      if (isImeComposing(event)) return false;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         if (tabIds.length === 0) return false;
         event.preventDefault();

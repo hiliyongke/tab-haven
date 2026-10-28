@@ -3,7 +3,6 @@ import { Button } from '@/ui/common/Button';
 import { SegmentedChip } from '@/ui/common/SegmentedChip';
 import { TextField } from '@/ui/common/TextField';
 import type { ImportSource } from '@/ui/snapshot/useSnapshotImport';
-import { TextButton } from '@/ui/snapshot/snapshotButtons';
 
 /**
  * 导入视图：OneTab 文本 / Workona JSON 两条迁移路径的表单。
@@ -76,10 +75,14 @@ export function SnapshotImportView({
         onChange={onTextChange}
       />
       <div className="flex justify-end gap-2">
-        <TextButton onClick={onCancel}>{t('取消')}</TextButton>
+        <Button variant="ghost" size="xs" onClick={onCancel}>
+          {t('取消')}
+        </Button>
         {/* 改走 Button：手写版少了 disabled:* 全族，且字号/圆角与其余按钮
             不在同一套刻度上。 */}
-        <Button variant="primary" size="xs" onClick={onImport}>
+        {/* 内容为空时禁用：此前点下去会把「什么都没粘贴」报成
+            「该快照没有可恢复的标签」—— 用户以为导入成功却拿到空快照。 */}
+        <Button variant="primary" size="xs" disabled={text.trim().length === 0} onClick={onImport}>
           {t('导入')}
         </Button>
       </div>

@@ -7,6 +7,7 @@ import { normalizeWhitelistHost } from '@/core/url/hostname';
 import { hasPermissions, requestPermissions, type PermissionQuery } from '@/platform/permissions';
 import { logDegraded } from '@/platform/diagnostics';
 import { Button } from '@/ui/common/Button';
+import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { ControlIdContext } from '@/ui/common/controlId';
 import { Select } from '@/ui/common/Select';
@@ -28,12 +29,11 @@ function SectionCount({ count }: { count?: number }) {
   const { t } = useTranslation();
   if (count === undefined) return null;
   return (
-    // 裸数字对读屏是孤立量词；可见数字 aria-hidden，改播完整语义
+    // 裸数字对读屏是孤立量词；可见数字 aria-hidden，改播完整语义。
+    // 视觉走 .count-pill：与侧栏分区头的计数是同一个「计数胶囊」语义，
+    // 不再单独维护一套描边矩形（此前两处计数长得不一样）。
     <>
-      <span
-        aria-hidden="true"
-        className="chip rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-gray-600"
-      >
+      <span aria-hidden="true" className="count-pill">
         {count}
       </span>
       <span className="sr-only">{t('共 {{count}} 项', { count })}</span>
@@ -65,7 +65,8 @@ export function Section({
     <section id={id} className="mb-6 scroll-mt-6 sm:mb-8">
       {/* px-4：与卡片内 Row 的 px-4 同线（16px），也让本标题与「快速预设」卡内
           标题（其 section 自带 p-4）处在同一条竖线上 —— 两者差 16px 会错开。 */}
-      <h2 className="mb-3 flex items-center gap-2 px-4 text-sm font-semibold tracking-wide text-gray-600">
+      {/* section-title：与关于页共用同一套标题排版（此前两页各写一份常量）。 */}
+      <h2 className="section-title mb-3 flex items-center gap-2 px-4">
         <span>{title}</span>
         <SectionCount count={count} />
       </h2>
@@ -101,11 +102,14 @@ function isAssociableControl(children: ReactNode): boolean {
 export function Row({
   label,
   hint,
+  icon,
   children
 }: {
   /** 允许 ReactNode：快捷键行需要传 <Kbd>，仅字符串无法表达键帽视觉。 */
   label: ReactNode;
   hint?: string;
+  /** 左侧前置图标底座（能力清单这类「图标 + 两行说明 + 动作」的行）。 */
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   const controlId = useId();
@@ -115,16 +119,19 @@ export function Row({
   const LabelTag = associable ? 'label' : 'div';
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0">
-        <LabelTag
-          className="block text-sm text-gray-800"
-          {...(associable ? { htmlFor: controlId } : {})}
-        >
-          {label}
-        </LabelTag>
-        {/* text-3xs(11px)：hint 是需要阅读的正文说明，遵守 main.css 顶部自订的
-            「正文说明一律 ≥ 11px」（10px 仅用于图标内文与徽角）。 */}
-        {hint && <div className="mt-0.5 text-3xs text-gray-600">{hint}</div>}
+      <div className="flex min-w-0 items-center gap-3">
+        {icon}
+        <div className="min-w-0">
+          <LabelTag
+            className="block text-sm text-gray-800"
+            {...(associable ? { htmlFor: controlId } : {})}
+          >
+            {label}
+          </LabelTag>
+          {/* text-3xs(11px)：hint 是需要阅读的正文说明，遵守 main.css 顶部自订的
+              「正文说明一律 ≥ 11px」（10px 仅用于图标内文与徽角）。 */}
+          {hint && <div className="mt-0.5 text-3xs text-gray-600">{hint}</div>}
+        </div>
       </div>
       {/* 窄屏下控件撑满整行（右对齐改为起始对齐，避免长文本域溢出） */}
       <div className="w-full shrink-0 sm:w-auto sm:pl-4">
@@ -175,25 +182,25 @@ export function WhitelistEditor({
         /* sm:max-w-60（15rem = 240px）：去掉全仓唯一的任意值宽度 class */
         <ul className="flex max-w-full flex-wrap justify-start gap-1 sm:max-w-60 sm:justify-end">
           {value.map((entry) => (
-            <li
-              key={entry}
-              className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-2xs text-gray-600"
-            >
-              {entry}
-              {/* 刻意保留裸 button：.whitelist-remove 已用 inset -6px 把 12px 图标
-                  的命中区扩到 24px（无缺陷可修），而 RowActionButton 内部固定
-                  .row-action 的 20×20 盒 + 品牌色 hover，会把这枚 chip 从 16px 撑到
-                  24px、并把 hover 语义从「灰字变深」改成品牌底。 */}
-              <button
-                type="button"
-                aria-label={t('移出白名单')}
-                title={t('移出白名单')}
-                onClick={() => onChange(value.filter((v) => v !== entry))}
-                /* whitelist-remove 透明扩区：12px 图标命中区远低于 WCAG 2.5.8 的 24px */
-                className="whitelist-remove text-gray-500 hover:text-gray-600"
-              >
-                <Icon d={Icons.close} className="h-3 w-3" />
-              </button>
+            <li key={entry}>
+              {/* 描边 Chip：可移除标签的视觉只有一个来源（此前与计数胶囊各写一串）。 */}
+              <Chip tone="outline" className="flex items-center gap-1 px-1.5 py-0.5">
+                {entry}
+                {/* 刻意保留裸 button：.whitelist-remove 已用 inset -6px 把 12px 图标
+                    的命中区扩到 24px（无缺陷可修），而 RowActionButton 内部固定
+                    .row-action 的 20×20 盒 + 品牌色 hover，会把这枚 chip 从 16px 撑到
+                    24px、并把 hover 语义从「灰字变深」改成品牌底。 */}
+                <button
+                  type="button"
+                  aria-label={t('移出白名单')}
+                  title={t('移出白名单')}
+                  onClick={() => onChange(value.filter((v) => v !== entry))}
+                  /* whitelist-remove 透明扩区：12px 图标命中区远低于 WCAG 2.5.8 的 24px */
+                  className="whitelist-remove text-gray-500 hover:text-gray-600"
+                >
+                  <Icon d={Icons.close} className="h-3 w-3" />
+                </button>
+              </Chip>
             </li>
           ))}
         </ul>
@@ -313,7 +320,7 @@ export function NoCachePatternEditor({
         }}
       />
       <div className="flex w-full items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-2xs text-gray-500">
+        <span className="min-w-0 truncate text-3xs text-gray-500">
           {invalidCount > 0
             ? t('已忽略 {{count}} 行格式无效的条目', { count: invalidCount })
             : t('每行一条，回车换行；失焦或点保存生效（⌘/Ctrl+Enter）')}
@@ -322,7 +329,7 @@ export function NoCachePatternEditor({
           {t('保存')}
         </Button>
       </div>
-      {full && <span className="text-2xs text-gray-500">{t('已达上限（50 条）')}</span>}
+      {full && <span className="text-3xs text-gray-500">{t('已达上限（50 条）')}</span>}
     </div>
   );
 }
@@ -391,10 +398,10 @@ export function NoCacheToggle({
         ariaLabel={t('开发者：指定站点禁用缓存')}
       />
       {denied && !settings.noCacheEnabled && (
-        <span className="text-2xs text-red-600">{t('未授予网站权限，功能未开启')}</span>
+        <span className="text-3xs text-red-600">{t('未授予网站权限，功能未开启')}</span>
       )}
       {permissionLost && settings.noCacheEnabled && (
-        <span className="flex items-center gap-1.5 text-2xs text-warn-600">
+        <span className="flex items-center gap-1.5 text-3xs text-warn-600">
           {t('网站权限已失效，规则未生效')}
           <Button variant="secondary" size="sm" onClick={() => void regrant()}>
             {t('重新授权')}

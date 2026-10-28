@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
 import { useUndoStore } from '@/stores/undoStore';
@@ -12,6 +12,8 @@ import { hostnameOf } from '@/core/url/UrlInspector';
 import { logDegraded } from '@/platform/diagnostics';
 import { formatRelative, formatTime, minutesSince } from '@/ui/common/format';
 import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
+import { Chip } from '@/ui/common/Chip';
 import { EmptyState } from '@/ui/common/EmptyState';
 
 /**
@@ -36,6 +38,39 @@ function kindLabel(kind: string, t: (key: string) => string): string | null {
   if (kind === 'restore-undo') return t('撤销快照恢复');
   if (kind === 'close') return t('手动关闭');
   return null;
+}
+
+/**
+ * 撤销列表的整行按钮。
+ *
+ * 语义是「可点击的列表行」而非工具条按钮，所以需要 `w-full / 左对齐 / 行内距 /
+ * 12px 正文`；Button 的尺寸刻度（dense 11 / xs 10 / sm 14）不覆盖 12px 这一档。
+ * 这段 class 串此前在「Tabs 撤销」与「浏览器最近关闭」两处逐字重复，
+ * 收敛到本组件后只留一份 —— 按钮尺寸刻度变更时不必再改两个地方。
+ */
+function UndoRowButton({
+  tooltip,
+  disabled,
+  onClick,
+  children
+}: {
+  tooltip?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="w-full justify-start gap-2 px-3 py-2 text-left text-xs"
+      tooltip={tooltip}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
 }
 
 export function UndoHistoryPanel({
@@ -134,14 +169,16 @@ export function UndoHistoryPanel({
 
         {/* D5.3 崩溃引导：撤销与浏览器最近关闭都为空，但存在快照时，提示用户从快照找回。 */}
         {!hasAny && hasSnapshots && (
-          <div className="mx-1 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-xs text-accent-700">
-            <p>{t('本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。')}</p>
+          <Callout density="page" className="mx-1">
+            <p className="text-xs">
+              {t('本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。')}
+            </p>
             {/* 复用统一按钮（与 ListStates 空态同款）：这里手写一份 accent
                 原子类会改主题/圆角要改两处，且越界令牌的悬停会静默失效。 */}
             <Button variant="soft-outline" size="xs" className="mt-1" onClick={onOpenSnapshots}>
               {t('查看我的快照')}
             </Button>
-          </div>
+          </Callout>
         )}
 
         {/* 栈深是「可找回」承诺的边界，但只在淘汰那一刻提示过一次（且同会话
@@ -188,10 +225,7 @@ export function UndoHistoryPanel({
                   {/* 整行按钮收敛到 Button：命中下限 / disabled:hover 兜底与其余按钮同源。
                       只传 tooltip 不传 label —— 行的可访问名应由可见文本（站点 + 数量 +
                       时间）承担，aria-label 会把整段盖成一句提示。 */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2 px-3 py-2 text-left text-xs"
+                  <UndoRowButton
                     tooltip={t('恢复该批次关闭的标签')}
                     onClick={() => void undoBatch(batch.id)}
                   >
@@ -202,13 +236,13 @@ export function UndoHistoryPanel({
                       {batch.entries.length > 1 ? ` +${batch.entries.length - 1}` : ''}
                     </span>
                     {kindLabel(batch.kind, t) && (
-                      <span className="chip chip--cjk shrink-0 rounded bg-gray-100 px-1 py-px text-gray-600">
+                      <Chip cjk className="shrink-0 py-px">
                         {kindLabel(batch.kind, t)}
-                      </span>
+                      </Chip>
                     )}
                     <span className="shrink-0 text-2xs text-gray-500">
                       {/* 撤销历史是「刚刚发生」的场景，读「12/3 14:07」比读「刚刚」
-                          慢一拍；1 小时内走相对文案，之外走日期自适应格式。 */}
+                            慢一拍；1 小时内走相对文案，之外走日期自适应格式。 */}
                       {minutesSince(batch.createdAt) < 1
                         ? t('刚刚')
                         : minutesSince(batch.createdAt) < 60
@@ -217,7 +251,7 @@ export function UndoHistoryPanel({
                       {/* 量词不能裸写：英文模式会残留「个」。整句进词典。 */}·{' '}
                       {t('共 {{count}} 个', { count: batch.entries.length })}
                     </span>
-                  </Button>
+                  </UndoRowButton>
                 </li>
               ))}
             </ul>
@@ -232,10 +266,7 @@ export function UndoHistoryPanel({
             <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {recent.map((entry) => (
                 <li key={entry.sessionId}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2 px-3 py-2 text-left text-xs"
+                  <UndoRowButton
                     onClick={() => handleRestoreRecent(entry)}
                     disabled={restoringId !== null}
                   >
@@ -254,7 +285,7 @@ export function UndoHistoryPanel({
                     <span className="shrink-0 text-2xs text-gray-500">
                       {restoringId === entry.sessionId ? '…' : formatTime(entry.lastModified)}
                     </span>
-                  </Button>
+                  </UndoRowButton>
                 </li>
               ))}
             </ul>

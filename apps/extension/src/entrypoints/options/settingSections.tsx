@@ -312,7 +312,11 @@ export function buildSections(
           kind: 'select',
           key: 'density',
           labelKey: '列表密度',
+          /* 四档只改行高，不改字号（大字号档除外）—— 用户选之前得知道会变什么，
+             否则「宽松」与「超紧凑」只能靠逐个试。 */
+          hintKey: '只影响标签行的高矮：超紧凑单屏显示更多行，大字号会同时放大标题与网址',
           options: [
+            { value: 'tight', label: t('超紧凑') },
             { value: 'compact', label: t('紧凑') },
             { value: 'cozy', label: t('宽松') },
             { value: 'large', label: t('大字号') }

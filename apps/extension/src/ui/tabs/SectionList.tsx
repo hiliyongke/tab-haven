@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from '@/i18n';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import type { Density } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
 import { CategoryModule } from '@/ui/common/CategoryModule';
@@ -51,7 +52,7 @@ function SectionListImpl({
   showUrl?: boolean;
   autoScrollActive?: boolean;
   closeOnMiddleClick?: boolean;
-  density?: 'compact' | 'cozy' | 'large';
+  density?: Density;
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
   highlightedIds?: ReadonlySet<number>;

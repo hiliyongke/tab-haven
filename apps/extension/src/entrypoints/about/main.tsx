@@ -20,7 +20,7 @@ installGlobalErrorHandlers();
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary scope="about">
-      <EntryRoot scope="about">
+      <EntryRoot scope="about" layout="page">
         <AboutPage />
       </EntryRoot>
     </ErrorBoundary>

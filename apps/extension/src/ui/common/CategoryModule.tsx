@@ -1,14 +1,17 @@
 import type { ReactNode } from 'react';
-import { SectionHead } from '@/ui/common/SectionHead';
-import { dropFeedbackClass, type DropOutcome } from '@/ui/dnd/dropPolicy';
+import { SectionShell } from '@/ui/common/SectionShell';
+import type { DropOutcome } from '@/ui/dnd/dropPolicy';
 
 /**
  * 分类模块外壳：固定标签 / 固定空间 / 站点分组 / 未分组 四类共用同一个视觉壳。
  *
- * 结构一致：`<section className="section-card {variant}">` + `<SectionHead title count action>` + children。
+ * 本组件现在只做接线：`section-card` 的 class 组合、`SectionHead`、折叠闸门与落点
+ * 反馈全部在 `SectionShell`（与可排序的 `GroupCard` 同一实现）。此前这里另写一份
+ * 壳，能力已经落后于 GroupCard —— `accent` 只画色条不加 `is-accented`，
+ * 计数胶囊不染色、相邻分区间距还会从 4px 变成 3px。
+ *
  * - `className` 用于变体标识（`module-shell` / `is-pinned` / 等）；
- * - `setNodeRef` + `isOver` + `outcome` 用于接收拖入投放（固定空间外壳使用）；
- * - 落点反馈一律由 `dropFeedbackClass` 给出（`ui/dnd/dropPolicy` 唯一口径）。
+ * - `setNodeRef` + `isOver` + `outcome` 用于接收拖入投放（固定空间外壳使用）。
  */
 export function CategoryModule({
   title,
@@ -49,24 +52,20 @@ export function CategoryModule({
   icon?: ReactNode;
 }) {
   return (
-    <section
-      ref={setNodeRef}
-      aria-label={ariaLabel}
-      className={
-        'section-card' +
-        (className ? ' ' + className : '') +
-        dropFeedbackClass(isOver ?? false, outcome)
-      }
+    <SectionShell
+      title={title}
+      count={count}
+      countLabel={countLabel}
+      action={action}
+      className={className}
+      setNodeRef={setNodeRef}
+      isOver={isOver}
+      outcome={outcome}
+      ariaLabel={ariaLabel}
+      icon={icon}
+      accent={accent}
     >
-      <SectionHead
-        title={title}
-        count={count}
-        countLabel={countLabel}
-        action={action}
-        accent={accent}
-        icon={icon}
-      />
       {children}
-    </section>
+    </SectionShell>
   );
 }

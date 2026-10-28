@@ -15,8 +15,7 @@ export function IconButton({
   label,
   tooltip,
   iconClass = 'h-4 w-4',
-  size,
-  box,
+  size = 'sm',
   tone = 'default',
   disabled,
   isOn,
@@ -37,8 +36,6 @@ export function IconButton({
   iconClass?: string;
   /** 按钮盒子大小：sm = p-1（16px 图标），md = p-1.5。 */
   size?: 'sm' | 'md';
-  /** @deprecated 用 `size`（取值与语义均不变）。 */
-  box?: 'sm' | 'md';
   /** 默认灰字；accent = 灰字 + hover 品牌绿（设置入口等）。 */
   tone?: 'default' | 'accent';
   disabled?: boolean;
@@ -71,7 +68,7 @@ export function IconButton({
   className?: string;
   onClick?: () => void;
 }) {
-  const resolvedSize = size ?? box ?? 'sm';
+  const resolvedSize = size;
   // 尺寸兜底：min-h/min-w 保证命中区不小于 24px（WCAG 2.5.8）。
   // 单靠 p-1 + h-4 图标刚好 24px，一旦调用方传入更小的 iconClass（如 h-3.5）就会掉到 22px。
   // 禁用态透明度与 Button 统一为 50（原 35 过淡，几乎看不出是个控件）。

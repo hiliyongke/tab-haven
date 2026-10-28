@@ -1,5 +1,6 @@
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
 import { SearchEngine } from '@/core/search/SearchEngine';
+import { isImeComposing } from '@/core/util/keyboard';
 import {
   buildHistoryTargets,
   decodeHistoryId,
@@ -209,6 +210,8 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
   const searchHitTabIds = useMemo(() => searchHits.map((hit) => hit.tabId), [searchHits]);
 
   const handleSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    // 输入法组合中 Esc 是「取消候选」，不能顺手清空搜索并把焦点扔出去。
+    if (isImeComposing(event)) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       setQuery('');

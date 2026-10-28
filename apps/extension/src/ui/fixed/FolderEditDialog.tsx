@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isImeComposing } from '@/core/util/keyboard';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { TextField } from '@/ui/common/TextField';
@@ -75,7 +76,8 @@ export function FolderEditDialog({
         ariaLabel={t('文件夹名称')}
         onChange={(value) => setDraft(value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') {
+          // 输入法组合中按 Enter 是「选词」，不是「保存」。
+          if (event.key === 'Enter' && !isImeComposing(event)) {
             onRename(draft.trim() || initialName);
             onClose();
           }

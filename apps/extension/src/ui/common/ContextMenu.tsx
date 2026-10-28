@@ -54,6 +54,13 @@ export function useRowContextMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const open = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
+    // 键盘触发（Shift+F10 / 菜单键）时 clientX/clientY 恒为 0，菜单会开在视口
+    // 左上角、与当前行完全脱节。这种情况改用元素下沿定位，菜单贴着被操作的行。
+    if (event.clientX === 0 && event.clientY === 0) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      setMenu({ x: rect.left, y: rect.bottom });
+      return;
+    }
     setMenu({ x: event.clientX, y: event.clientY });
   }, []);
   const close = useCallback(() => setMenu(null), []);
@@ -222,7 +229,7 @@ export function ContextMenu({
       role="menu"
       aria-orientation="vertical"
       aria-label={t('更多操作')}
-      className="modal-panel elev-3 fixed z-50 min-w-40 rounded-lg border border-gray-200 bg-surface py-1"
+      className="modal-panel modal-surface modal-surface--menu fixed z-50 min-w-40 py-1"
       style={fitted ?? style}
       onContextMenu={(event) => event.preventDefault()}
     >
@@ -235,14 +242,12 @@ export function ContextMenu({
              菜单项之间移动，而 role="menu" 的约定是一个 Tab 进出菜单。 */
           tabIndex={-1}
           disabled={item.disabled}
-          /* focus: 而非仅 focus-visible：菜单由程序化 focus() 打开首项，此时
-             Chrome 的 :focus-visible 启发式不命中（上一次交互是指针），焦点会落在
-             首项却毫无指示 —— 直接按 Enter 会执行一个用户看不见的项。
-             disabled:hover/disabled:focus 屏蔽：disabled 按钮仍匹配 :hover。 */
-          className={`block w-full truncate px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 focus:bg-gray-50 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent disabled:focus:bg-transparent ${
-            item.danger
-              ? 'text-red-600 hover:bg-red-50 focus:bg-red-50 disabled:hover:bg-transparent'
-              : 'text-gray-700'
+          /* `.menu-item`：hover / focus 底色与焦点环的唯一口径（main.css）。
+             focus 而非 focus-visible 是必需的 —— 菜单由程序化 focus() 打开首项，
+             此时 Chrome 的 :focus-visible 启发式不命中（上一次交互是指针），
+             焦点落在首项却毫无指示，直接按 Enter 会执行一个用户看不见的项。 */
+          className={`menu-item block w-full truncate px-3 py-1.5 text-left text-xs transition-colors disabled:cursor-default disabled:opacity-50 ${
+            item.danger ? 'is-danger text-red-600' : 'text-gray-700'
           }`}
           onClick={() => {
             item.onSelect();

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '@/i18n';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import type { Density } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { TabRow } from '@/ui/tabs/TabRow';
@@ -90,7 +91,7 @@ function RowList({
   showUrl?: boolean;
   autoScrollActive?: boolean;
   closeOnMiddleClick?: boolean;
-  density?: 'compact' | 'cozy' | 'large';
+  density?: Density;
   rowActionsVisible?: boolean;
   showSplitBadges?: boolean;
   depths?: ReadonlyMap<number, number>;
@@ -136,12 +137,15 @@ function RowList({
   if (useVirtual) {
     // itemSize 为估算起步值：VirtualRowList 首行挂载后会实测校准，
     // 字号 / 密度 / 副标题开关调整不再要求同步改这里的公式。
-    // 单行 = 行高 + 垂直 padding（compact 16+4 / cozy 16+12 / large 19+20）；
+    // 单行 = 行高 + 垂直 padding（tight 16+0 / compact 16+4 / cozy 16+12 / large 19+20）；
     // cozy 按 16+8 算得 24，实际 .density-cozy 是上下各 6px = 28，
     // 首帧 totalHeight 会少 4px，滚动条长度在挂载后跳一次。
+    // tight 必须与 compact 取不同的值：VirtualRowList 以 itemSize 变化作为
+    // 「丢弃旧实测值重新校准」的信号，两者同为 20 时切档不会重测，
+    // 虚拟列表会沿用旧行高（表现为行重叠或大段空隙）。
     // showUrl 副标题 compact/cozy 取 +13（10px leading-tight），large 取 +16（12px）。
     const itemSize =
-      (density === 'cozy' ? 28 : density === 'large' ? 39 : 20) +
+      (density === 'tight' ? 16 : density === 'cozy' ? 28 : density === 'large' ? 39 : 20) +
       (showUrl ? (density === 'large' ? 16 : 13) : 0);
     // 虚拟列表高度随面板可用高度自适应（上限 50vh / 480px）：注释的既定目标是
     // 「避免列表里套列表」，但 720px 上限在 1000px 高的窗口下仍产出 660px 的独立

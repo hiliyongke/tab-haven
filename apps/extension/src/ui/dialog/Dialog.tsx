@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { isImeComposing } from '@/core/util/keyboard';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { Icons } from '@/ui/common/Icon';
@@ -177,6 +178,9 @@ export function useModalA11y(
     const onKeyDown = (event: KeyboardEvent) => {
       // 仅栈顶弹窗响应（嵌套场景下非栈顶实例的监听器直接放行）。
       if (modalStack[modalStack.length - 1] !== self) return;
+      // 输入法组合中：Esc 是「取消候选」，不是「关闭弹窗」。放行给输入法，
+      // 连 stopPropagation 都不做 —— 组合态的按键不属于模态的语义。
+      if (isImeComposing(event)) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         // preventDefault：原生 <dialog> 场景的默认行为会再派发 cancel 事件，
@@ -268,7 +272,7 @@ export function DialogShell({
         // elev-3 而非 shadow-xl：阴影统一走 shadow-tint 暖调令牌（见 main.css）
         // overflow-hidden + 内容区滚动：标题与底栏在长内容弹窗里始终可见，
         // 圆角也不会被滚动内容切掉。
-        className={`${widthClassName} modal-panel elev-3 flex max-h-[85vh] flex-col overflow-hidden rounded-xl border border-gray-200 bg-surface`}
+        className={`${widthClassName} modal-panel modal-surface flex max-h-[85vh] flex-col overflow-hidden`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -348,7 +352,7 @@ export function PromptDialog({
         className="w-full"
         onChange={setValue}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && canSubmit) submit();
+          if (event.key === 'Enter' && canSubmit && !isImeComposing(event)) submit();
         }}
       />
     </DialogShell>

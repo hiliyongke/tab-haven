@@ -5,6 +5,7 @@ import { useUndoStore } from '@/stores/undoStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import type { Settings } from '@/core/schema/models';
 import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
 import { ConfirmDialog } from '@/ui/dialog/Dialog';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { FixedConceptsMap } from '@/ui/common/FixedConceptsMap';
@@ -79,6 +80,8 @@ export function SettingsPage() {
   const importBookmarksFromBar = useDataStore((state) => state.importBookmarksFromBar);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [transferStatus, setTransferStatus] = useState<string | null>(null);
+  /** 设置写入失败（页面级）：必须出现在改动发生的那一屏，不能落到页面底部。 */
+  const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
   const [sidePanelSide, setSidePanelSide] = useState<SidePanelSide>('unknown');
   /** 已解析待导入的备份数据（非 null 时显示导入确认弹窗）。 */
   const [pendingImport, setPendingImport] = useState<unknown>(null);
@@ -121,12 +124,15 @@ export function SettingsPage() {
   /**
    * 设置页的唯一写入通道。
    *
-   * 失败必须在页面上说清楚：设置是跨会话行为契约，写盘失败时 store 不会变更，
+   * 失败必须在**视口内**说清楚：设置是跨会话行为契约，写盘失败时 store 不会变更，
    * 界面会静默弹回旧值——用户只会觉得「开关点不动」，而不会知道数据根本没保存。
+   *
+   * 状态单独存放（不复用 `transferStatus`）：后者只渲染在页面底部的「数据备份」
+   * 分区里，而设置项散布在整页，把它顶到一屏之外等于没有提示。
    */
   const update = (key: keyof Settings, value: unknown) => {
     void tryUpdateSettings({ [key]: value } as Partial<Settings>).then((ok) => {
-      if (!ok) setTransferStatus(t('设置未保存：存储不可用，请重试'));
+      setSettingsStatus(ok ? null : t('设置未保存：存储不可用，请重试'));
     });
   };
 
@@ -335,9 +341,18 @@ export function SettingsPage() {
   if (!ready) {
     return (
       /* 与正式态共用同一外壳：加载态另用一个盒子时，ready 翻转会让容器宽度与
-         上下留白同时变化，「设置加载中…」横纵双向跳动。 */
+         上下留白同时变化。占位改用骨架屏，与侧栏列表同一套加载语言（此前是
+         一行「设置加载中…」，两处加载态观感不同）。 */
       <div className="mx-auto flex max-w-5xl justify-center gap-8 px-4 py-6 sm:px-6 sm:py-10">
-        <div className="min-w-0 max-w-2xl flex-1 text-sm text-gray-500">{t('设置加载中…')}</div>
+        <div className="mx-auto min-w-0 max-w-2xl flex-1">
+          <span className="sr-only" role="status">
+            {t('设置加载中…')}
+          </span>
+          <div className="skeleton mb-6 h-9 w-44" />
+          <div className="skeleton mb-6 h-10 w-full" />
+          <div className="skeleton mb-3 h-4 w-24" />
+          <div className="skeleton h-36 w-full" />
+        </div>
       </div>
     );
   }
@@ -359,13 +374,30 @@ export function SettingsPage() {
             </span>
             <div>
               <h1 className="text-lg font-semibold text-gray-900">{t('设置')}</h1>
-              <p className="mt-0.5 text-2xs text-gray-600">{t('个性化你的标签工作台')}</p>
+              {/* 12px：与关于页副标题（text-sm）同属「一级标题下一行」，10px 既低于
+                  项目自订的正文下限，也与关于页差出 4px。 */}
+              <p className="mt-0.5 text-xs text-gray-600">{t('个性化你的标签工作台')}</p>
             </div>
           </div>
           <Button variant="danger-ghost" onClick={() => setConfirmingReset(true)}>
             {t('恢复默认')}
           </Button>
         </header>
+
+        {/* 页面级写入失败提示：紧贴页头，改哪一项都在同一屏内看到结果。
+            导出/导入结果仍留在「数据备份」分区（那是该动作的发生地）。 */}
+        {settingsStatus !== null && (
+          <Callout
+            role="status"
+            aria-live="polite"
+            tone="warn"
+            density="page"
+            className="mb-4"
+            icon={Icons.infoAlert}
+          >
+            <p className="text-xs">{settingsStatus}</p>
+          </Callout>
+        )}
 
         {/* mb-6 sm:mb-8：与分区间距同档。恒为 24px 时在 sm 以上反而小于
             区块之间的 32px，层级关系倒置（"搜索框离首块更近"读起来像属于首块）。 */}
@@ -384,7 +416,7 @@ export function SettingsPage() {
         </div>
 
         <div id="presets.title" className="scroll-mt-6">
-          <PresetsPanel onApplied={setTransferStatus} />
+          <PresetsPanel />
         </div>
 
         <div id="settings.capabilitiesGuide" className="scroll-mt-6">

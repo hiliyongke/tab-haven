@@ -190,7 +190,7 @@ export function CommandPalette({
            文档流 —— 外层 .modal-overlay 的 items-center / justify-center 对它无效
            （DialogShell 用的是 <div>，靠父级居中是对的，别照抄到这里）。
            <dialog> 的居中来自浏览器默认的 margin:auto，写 m-0 会把它钉在左上角。 */
-        className="dialog-md modal-panel elev-3 relative m-auto overflow-hidden rounded-xl border border-gray-200 bg-surface p-0"
+        className="dialog-md modal-panel modal-surface relative m-auto overflow-hidden p-0"
         aria-label={t('命令面板')}
         onCancel={(event) => {
           event.preventDefault();

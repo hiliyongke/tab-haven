@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react';
+import { isImeComposing } from '@/core/util/keyboard';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import type { SnapshotDiffResult } from '@/core/snapshot/snapshotDiff';
@@ -131,6 +132,8 @@ export function SnapshotRow({
               ariaLabel={t('重命名')}
               onChange={onEditingNameChange}
               onKeyDown={(event) => {
+                // 输入法组合中的 Enter/Esc 是选词与取消候选，不提交/不取消重命名。
+                if (isImeComposing(event)) return;
                 if (event.key === 'Enter') void onCommitRename();
                 if (event.key === 'Escape') onCancelRename();
               }}

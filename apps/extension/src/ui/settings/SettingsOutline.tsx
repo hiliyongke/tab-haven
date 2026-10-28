@@ -61,7 +61,7 @@ export function SettingsOutline({ items }: { items: OutlineItem[] }) {
   return (
     <nav aria-label={t('目录')} className="hidden w-40 shrink-0 lg:block">
       <div className="sticky top-10">
-        <p className="mb-2 px-2 text-2xs font-semibold tracking-wide text-gray-500">{t('目录')}</p>
+        <p className="group-label mb-2 px-2">{t('目录')}</p>
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => {
             const active = item.id === activeId;

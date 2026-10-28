@@ -32,26 +32,26 @@ export function ShortcutsSection({
           label={<Kbd>{formatCommandKeys(command.suggestedKey, IS_MAC)}</Kbd>}
           hint={t(command.labelKey)}
         >
-          <span className="text-2xs text-gray-500">{t('浏览器级')}</span>
+          <span className="text-3xs text-gray-500">{t('浏览器级')}</span>
         </Row>
       ))}
       <Row label={<Kbd>{modKey('K')}</Kbd>} hint={t('侧边栏内聚焦搜索')}>
-        <span className="text-2xs text-gray-500">{t('侧边栏内')}</span>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row label={<Kbd>{modKey('P')}</Kbd>} hint={t('侧边栏内打开命令面板（搜索并直接执行动作）')}>
-        <span className="text-2xs text-gray-500">{t('侧边栏内')}</span>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row label={<Kbd>{modKey('J')}</Kbd>} hint={t('侧边栏内定位激活标签')}>
-        <span className="text-2xs text-gray-500">{t('侧边栏内')}</span>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row label={<Kbd>{modKey('Z')}</Kbd>} hint={t('侧边栏内撤销最近一次关闭')}>
-        <span className="text-2xs text-gray-500">{t('侧边栏内')}</span>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row
         label={<Kbd>{modShiftKey('Z')}</Kbd>}
         hint={t('侧边栏内重做最近一次撤销（再次关闭刚恢复的标签）')}
       >
-        <span className="text-2xs text-gray-500">{t('侧边栏内')}</span>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row label={t('自定义快捷键')} hint={t('在浏览器「扩展快捷键」设置页中调整按键')}>
         <Button variant="secondary" onClick={onOpenShortcutSettings}>

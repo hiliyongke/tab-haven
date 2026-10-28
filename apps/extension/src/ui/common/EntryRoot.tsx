@@ -15,7 +15,20 @@ import { logFailure } from '@/platform/diagnostics';
  *
  * 收口到这里之后：逻辑可测、两处入口共享同一实现、main.tsx 只剩 render。
  */
-export function EntryRoot({ scope, children }: { scope: string; children: ReactNode }) {
+export function EntryRoot({
+  scope,
+  layout = 'panel',
+  children
+}: {
+  scope: string;
+  /**
+   * 失败态的版式：`panel` = 侧边栏（内容区自带边距），`page` = 设置页/关于页
+   * （整页需版心与呼吸感）。`EmptyState` 是侧栏尺寸的组件，直接放进整页会贴在
+   * 左上角 —— 同一次打开，正常态居中、失败态贴边。
+   */
+  layout?: 'panel' | 'page';
+  children: ReactNode;
+}) {
   const initialize = useDataStore((state) => state.initialize);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -33,7 +46,16 @@ export function EntryRoot({ scope, children }: { scope: string; children: ReactN
     runInitialize();
   }, [runInitialize]);
 
-  if (loadFailed) return <LoadErrorState onRetry={runInitialize} />;
+  if (loadFailed) {
+    const errorState = <LoadErrorState onRetry={runInitialize} />;
+    return layout === 'page' ? (
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center px-6 py-10">
+        {errorState}
+      </div>
+    ) : (
+      errorState
+    );
+  }
 
   return (
     <>

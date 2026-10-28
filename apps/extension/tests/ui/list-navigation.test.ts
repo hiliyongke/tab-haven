@@ -101,4 +101,25 @@ describe('useListNavigation', () => {
     rerender({ tabIds: [1, 2, 3], resetKey: 'new-query' });
     expect(result.current.selectedTabId).toBe(1);
   });
+
+  it('输入法组合中的 Enter / ↑↓ 不消费也不激活（候选词操作留给 IME）', () => {
+    const onActivate = vi.fn();
+    const { result } = setup([7, 8], onActivate);
+    const ime = (k: string): KeyboardEvent<HTMLInputElement> =>
+      ({
+        key: k,
+        isComposing: true,
+        preventDefault: vi.fn()
+      }) as unknown as KeyboardEvent<HTMLInputElement>;
+
+    act(() => {
+      // 返回 false = 未消费：事件继续交给输入法（候选框需要方向键与回车）。
+      expect(result.current.handleKeyDown(ime('ArrowDown'))).toBe(false);
+      expect(result.current.handleKeyDown(ime('Enter'))).toBe(false);
+    });
+
+    expect(onActivate).not.toHaveBeenCalled();
+    // 方向键也不该移动游标：否则选完词回车就激活了「另一个」标签。
+    expect(result.current.selectedTabId).toBeUndefined();
+  });
 });

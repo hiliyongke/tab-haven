@@ -1,6 +1,7 @@
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useTranslation } from '@/i18n';
-import { Icon, Icons } from '@/ui/common/Icon';
+import { Icons } from '@/ui/common/Icon';
+import { RowActionButton } from '@/ui/common/RowActionButton';
 
 /** 卡片头部：标题 + 计数胶囊；可点击折叠，可选关闭（解散网站组）。
  *  排序用 dnd-kit：指针拖拽挂整个头部（dragHandleProps），
@@ -77,17 +78,17 @@ export function SectionHead({
   return (
     <div className="section-head" {...dragHandleProps}>
       {dragKeyboard && (
-        <button
-          type="button"
-          className="row-action section-drag-handle"
-          title={t('拖拽调整顺序（按住此处可拖到收藏夹）')}
+        /* 走 RowActionButton：形态（.row-action 的 20px 盒 + 命中扩区 + 禁用态兜底）
+           只有一个实现。dnd-kit 需要的 ref 与 attributes 由组件透传。 */
+        <RowActionButton
           ref={dragKeyboard.activatorRef}
+          label={t('拖拽调整顺序（按住此处可拖到收藏夹）')}
+          icon={Icons.grip}
+          iconClass="h-3 w-3"
+          className="section-drag-handle"
           {...dragKeyboard.attributes}
-          aria-label={t('拖拽调整顺序（按住此处可拖到收藏夹）')}
           onKeyDown={dragKeyboard.listeners?.onKeyDown}
-        >
-          <Icon d={Icons.grip} className="h-3 w-3" />
-        </button>
+        />
       )}
       {onToggle ? (
         <button
@@ -119,17 +120,18 @@ export function SectionHead({
         </span>
       )}
       {onClose && (
-        <button
-          type="button"
-          // is-danger：悬停/键盘聚焦转砖红（静默态保持中性灰，与行内「关闭」同语义），
-          // 让「整批关闭」在密集分组头部可被一眼认出是破坏性操作。
-          className="row-action close-site is-danger"
-          title={closeTitle}
-          aria-label={closeTitle}
+        /* is-danger：悬停/键盘聚焦转砖红（静默态保持中性灰，与行内「关闭」同语义），
+           让「整批关闭」在密集分组头部可被一眼认出是破坏性操作。
+           label 兜底到通用「关闭」：closeTitle 可选，直接喂给 aria-label 时
+           漏传会得到一个无名按钮（RowActionButton 的 label 是必填）。 */
+        <RowActionButton
+          icon={Icons.close}
+          label={closeTitle ?? t('关闭')}
+          tooltip={closeTitle}
+          danger
+          className="close-site"
           onClick={onClose}
-        >
-          <Icon d={Icons.close} className="h-3.5 w-3.5" />
-        </button>
+        />
       )}
     </div>
   );

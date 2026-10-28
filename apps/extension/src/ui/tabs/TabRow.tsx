@@ -9,6 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react';
 import { useTranslation } from '@/i18n';
+import type { Density } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { RowItem } from '@/ui/common/RowItem';
@@ -80,7 +81,7 @@ export const TabRow = memo(function TabRow({
   /** 中键点击关闭标签（固定空间入口保留，只关页面）。 */
   closeOnMiddleClick?: boolean;
   /** 列表密度：compact 紧凑 / cozy 宽松 / large 大字号。 */
-  density?: 'compact' | 'cozy' | 'large';
+  density?: Density;
   /** 是否显示分屏「拆 / 伴」标记。 */
   showSplitBadges?: boolean;
   /** 来源树模式下的缩进层级（0 为根）。 */

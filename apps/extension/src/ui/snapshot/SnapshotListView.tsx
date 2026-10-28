@@ -1,12 +1,13 @@
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import type { SnapshotDiffResult } from '@/core/snapshot/snapshotDiff';
+import { isImeComposing } from '@/core/util/keyboard';
 import { Button } from '@/ui/common/Button';
 import { EmptyState } from '@/ui/common/EmptyState';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { LoadErrorState, LoadingSkeleton } from '@/ui/common/ListStates';
 import { TextField } from '@/ui/common/TextField';
 import { SnapshotRow } from '@/ui/snapshot/SnapshotRow';
-import { TextButton } from '@/ui/snapshot/snapshotButtons';
 
 /** 按生命周期划分的展示组（概念收敛：命名 / 归档 / 自动）。 */
 export interface SnapshotGroup {
@@ -49,10 +50,19 @@ export function SnapshotListView({
   onRequestRestore,
   onDelete,
   onOpenImport,
-  onOpenReport
+  onOpenReport,
+  state,
+  onRetryLoad
 }: {
   ordered: Snapshot[];
   groups: SnapshotGroup[];
+  /**
+   * 数据状态：空列表与「还没读到 / 读不到」必须分开。
+   * 判据只有 `length === 0` 时，首帧与读盘失败都会说「还没有快照」——
+   * 后者是假信息（数据可能在，只是读不出来），且没有任何重试出口。
+   */
+  state: 'loading' | 'ready' | 'error';
+  onRetryLoad: () => void;
   saving: boolean;
   onStartSaving: () => void;
   name: string;
@@ -87,7 +97,7 @@ export function SnapshotListView({
         <div className="flex gap-2">
           <Button
             variant="soft-outline"
-            className="flex-1 gap-2 rounded-lg px-3 py-2"
+            className="flex-1 gap-2"
             tooltip={t('把当前窗口的标签存为一份快照，随时可整体恢复；不会出现在顶部切换条')}
             onClick={onStartSaving}
           >
@@ -95,8 +105,8 @@ export function SnapshotListView({
             {t('保存当前窗口为快照')}
           </Button>
           <Button
-            variant="secondary"
-            className="gap-2 rounded-lg border border-control px-3 py-2 font-medium hover:bg-gray-50"
+            variant="secondary-outline"
+            className="gap-2"
             tooltip={t(
               '把当前窗口存为一份「工作区」快照，可在顶部切换条一键切换；切走前会先保存当前窗口。每次保存都新增一条，不覆盖旧版'
             )}
@@ -106,7 +116,7 @@ export function SnapshotListView({
             <Icon d={Icons.layers} className="h-4 w-4" />
             {t('保存为工作区')}
             {/* 感叹号提醒：该按钮语义不直观（每次保存都新增一条，不覆盖），悬停看完整说明 */}
-            <Icon d={Icons.infoAlert} className="h-3.5 w-3.5 text-gray-400" />
+            <Icon d={Icons.infoAlert} className="h-3.5 w-3.5" />
           </Button>
         </div>
       ) : (
@@ -120,6 +130,8 @@ export function SnapshotListView({
             value={name}
             onChange={onNameChange}
             onKeyDown={(event) => {
+              // 输入法组合中 Enter/Esc 属于选词与取消候选：直接回车会把半截拼音存成快照名。
+              if (isImeComposing(event)) return;
               if (event.key === 'Enter') onSave();
               if (event.key === 'Escape') onCancelSaving();
             }}
@@ -127,7 +139,9 @@ export function SnapshotListView({
           <Button variant="primary" size="xs" onClick={onSave}>
             {t('保存')}
           </Button>
-          <TextButton onClick={onCancelSaving}>{t('取消')}</TextButton>
+          <Button variant="ghost" size="xs" onClick={onCancelSaving}>
+            {t('取消')}
+          </Button>
         </div>
       )}
 
@@ -136,7 +150,13 @@ export function SnapshotListView({
           （UndoHistoryPanel 已按此约定实现）。pr-1 也去掉 —— 内容区 px-4 之外
           再多 4px 会让列表右边缘比标题栏 × 少 4px。 */}
       <div className="flex flex-col gap-2">
-        {ordered.length === 0 ? (
+        {state === 'loading' ? (
+          /* 骨架与主列表同一套语言：面板打开到 read 完成之间不再闪一句
+             「还没有快照」，版面高度也不会跳。 */
+          <LoadingSkeleton />
+        ) : state === 'error' ? (
+          <LoadErrorState onRetry={onRetryLoad} />
+        ) : ordered.length === 0 ? (
           /* 复用通用空态：与面板其余空态同款（图标 + 说明），手写会出现三处三种观感。 */
           <EmptyState
             icon={<Icon d={Icons.snapshot} className="h-4 w-4" />}
@@ -183,12 +203,12 @@ export function SnapshotListView({
       </div>
 
       <div className="flex gap-2 border-t border-gray-200 pt-2">
-        <TextButton className="flex-1" onClick={onOpenImport}>
+        <Button variant="ghost" size="xs" className="flex-1" onClick={onOpenImport}>
           {t('从 OneTab 导入')}
-        </TextButton>
-        <TextButton className="flex-1" onClick={onOpenReport}>
+        </Button>
+        <Button variant="ghost" size="xs" className="flex-1" onClick={onOpenReport}>
           {t('本周周报')}
-        </TextButton>
+        </Button>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { getExtensionVersion } from '@/platform/navigation';
 import { COMMANDS, commandKeyParts } from '@/core/commands';
 import { Chip } from '@/ui/common/Chip';
 import { Icon, Icons } from '@/ui/common/Icon';
+import { IconTile } from '@/ui/common/IconTile';
 import { Kbd } from '@/ui/common/Kbd';
 
 /**
@@ -248,7 +249,10 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         titleKey: '主题三态 + 多套配色',
         bodyKey: '跟随系统 / 亮 / 暗三态，另有 5 套配色可选，切换带平滑过渡。'
       },
-      { titleKey: '三档密度', bodyKey: '紧凑 / 宽松 / 大字号，长列表与低视力场景都照顾到。' },
+      {
+        titleKey: '四档密度',
+        bodyKey: '超紧凑 / 紧凑 / 宽松 / 大字号，长列表与低视力场景都照顾到。'
+      },
       {
         titleKey: '自制弹窗与快捷键帮助',
         bodyKey: '不依赖浏览器原生弹窗；设置页有完整快捷键表，并可跳转浏览器扩展快捷键设置。'
@@ -451,10 +455,57 @@ const TECH_FACTS: { titleKey: string; bodyKey: string }[] = [
   }
 ];
 
-/** 区块标题样式统一（避免五处各写一遍）。 */
-const SECTION_TITLE_CLASS = 'mb-3 text-sm font-semibold tracking-wide text-gray-600';
+/** 区块标题样式统一（与设置页共用 .section-title，不再各写一份常量）。 */
+const SECTION_TITLE_CLASS = 'section-title mb-3';
 // rounded-lg（8px）与设置页卡片同档，避免跨页两套圆角。
 const CARD_CLASS = 'rounded-lg border border-gray-200 bg-surface p-4 transition-base';
+
+/** 事实卡：标题 + 一段说明（隐私 / 信任补充 / 技术三处共用同一形态）。 */
+function FactItem({ title, body }: { title: string; body: string }) {
+  return (
+    <li className={CARD_CLASS}>
+      <p className="text-xs font-medium text-gray-700">{title}</p>
+      <p className="mt-1 text-3xs leading-relaxed text-gray-500">{body}</p>
+    </li>
+  );
+}
+
+/**
+ * 快捷键卡片：分组标题 + 键位行（侧边栏内 / 浏览器级全局共用）。
+ *
+ * 两处此前是逐字复制的同一段 JSX，只有标题与脚注不同 —— 改键帽间距要改两遍。
+ */
+function ShortcutList({
+  title,
+  items,
+  footnote
+}: {
+  title: string;
+  items: { labelKey: string; keys: string[] }[];
+  footnote?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-lg border border-gray-200 bg-surface px-4 py-3">
+      {/* 11px/500 而非 10px/600：层级应是 14/600 → 12/500 → 11/500 单调递减，
+          最小一级字重回弹到 600 会比上一级还重，且 10px 低于 11px 下限。 */}
+      <p className="group-label pb-1">{title}</p>
+      <ul className="divide-y divide-gray-100">
+        {items.map((shortcut) => (
+          <li key={shortcut.labelKey} className="flex items-center justify-between gap-4 py-2">
+            <span className="text-xs text-gray-700">{t(shortcut.labelKey)}</span>
+            <span className="flex shrink-0 items-center gap-1">
+              {shortcut.keys.map((key) => (
+                <Kbd key={key}>{key}</Kbd>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {footnote && <p className="mt-2 text-3xs leading-relaxed text-gray-500">{footnote}</p>}
+    </div>
+  );
+}
 
 export function AboutPage() {
   const { t } = useTranslation();
@@ -500,9 +551,9 @@ export function AboutPage() {
           {CAPABILITY_GROUPS.map((group) => (
             <article key={group.titleKey} className={CARD_CLASS + ' hover:border-accent-300'}>
               <div className="flex items-center gap-2">
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent-50 text-accent-600">
+                <IconTile size="sm">
                   <Icon d={group.icon} className="h-3.5 w-3.5" />
-                </span>
+                </IconTile>
                 <h3 className="text-sm font-semibold text-gray-800">{t(group.titleKey)}</h3>
               </div>
               <ul className="mt-3 flex flex-col gap-2">
@@ -533,9 +584,9 @@ export function AboutPage() {
           {ENTRY_POINTS.map((entry) => (
             <article key={entry.titleKey} className={CARD_CLASS}>
               <div className="flex items-start gap-3">
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gray-100 text-gray-600">
+                <IconTile size="sm" tone="neutral">
                   <Icon d={entry.icon} className="h-3.5 w-3.5" />
-                </span>
+                </IconTile>
                 <div className="min-w-0">
                   <h3 className="text-xs font-semibold text-gray-800">{t(entry.titleKey)}</h3>
                   <p className="mt-1 text-3xs leading-relaxed text-gray-500">{t(entry.bodyKey)}</p>
@@ -550,49 +601,12 @@ export function AboutPage() {
       <section className="mt-8">
         <h2 className={SECTION_TITLE_CLASS}>{t('键盘快捷键')}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          {/* 双卡上下留白改由卡片自身 py-3 承担（原靠内部小标题的 pt-3 凑，
-              导致左卡底部只剩 li 的 10px、右卡另有 pb-3 共 12px，两边差 2px） */}
-          <div className="rounded-lg border border-gray-200 bg-surface px-4 py-3">
-            {/* 11px/500 而非 10px/600：层级应是 14/600 → 12/500 → 11/500 单调递减，
-                最小一级字重回弹到 600 会比上一级还重，且 10px 低于 11px 下限。 */}
-            <p className="group-label pb-1">{t('侧边栏内')}</p>
-            <ul className="divide-y divide-gray-100">
-              {PANEL_SHORTCUTS.map((shortcut) => (
-                <li
-                  key={shortcut.labelKey}
-                  className="flex items-center justify-between gap-4 py-2"
-                >
-                  <span className="text-xs text-gray-700">{t(shortcut.labelKey)}</span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    {shortcut.keys.map((key) => (
-                      <Kbd key={key}>{key}</Kbd>
-                    ))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-surface px-4 py-3">
-            <p className="group-label pb-1">{t('浏览器级（全局）')}</p>
-            <ul className="divide-y divide-gray-100">
-              {GLOBAL_SHORTCUTS.map((shortcut) => (
-                <li
-                  key={shortcut.labelKey}
-                  className="flex items-center justify-between gap-4 py-2"
-                >
-                  <span className="text-xs text-gray-700">{t(shortcut.labelKey)}</span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    {shortcut.keys.map((key) => (
-                      <Kbd key={key}>{key}</Kbd>
-                    ))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-3xs leading-relaxed text-gray-500">
-              {t('这组快捷键可在浏览器的扩展快捷键设置页自行修改。')}
-            </p>
-          </div>
+          <ShortcutList title={t('侧边栏内')} items={PANEL_SHORTCUTS} />
+          <ShortcutList
+            title={t('浏览器级（全局）')}
+            items={GLOBAL_SHORTCUTS}
+            footnote={t('这组快捷键可在浏览器的扩展快捷键设置页自行修改。')}
+          />
         </div>
       </section>
 
@@ -601,10 +615,7 @@ export function AboutPage() {
         <h2 className={SECTION_TITLE_CLASS}>{t('隐私与数据')}</h2>
         <ul className="grid gap-3 sm:grid-cols-2">
           {PRIVACY_FACTS.map((fact) => (
-            <li key={fact.titleKey} className={CARD_CLASS}>
-              <p className="text-xs font-medium text-gray-700">{t(fact.titleKey)}</p>
-              <p className="mt-1 text-3xs leading-relaxed text-gray-500">{t(fact.bodyKey)}</p>
-            </li>
+            <FactItem key={fact.titleKey} title={t(fact.titleKey)} body={t(fact.bodyKey)} />
           ))}
         </ul>
       </section>
@@ -630,10 +641,7 @@ export function AboutPage() {
         </div>
         <ul className="mt-3 grid gap-3 sm:grid-cols-2">
           {TRUST_EXTRA_FACTS.map((fact) => (
-            <li key={fact.titleKey} className={CARD_CLASS}>
-              <p className="text-xs font-medium text-gray-700">{t(fact.titleKey)}</p>
-              <p className="mt-1 text-3xs leading-relaxed text-gray-500">{t(fact.bodyKey)}</p>
-            </li>
+            <FactItem key={fact.titleKey} title={t(fact.titleKey)} body={t(fact.bodyKey)} />
           ))}
         </ul>
       </section>
@@ -643,10 +651,7 @@ export function AboutPage() {
         <h2 className={SECTION_TITLE_CLASS}>{t('技术与验证')}</h2>
         <ul className="grid gap-3 sm:grid-cols-3">
           {TECH_FACTS.map((fact) => (
-            <li key={fact.titleKey} className={CARD_CLASS}>
-              <p className="text-xs font-medium text-gray-700">{t(fact.titleKey)}</p>
-              <p className="mt-1 text-3xs leading-relaxed text-gray-500">{t(fact.bodyKey)}</p>
-            </li>
+            <FactItem key={fact.titleKey} title={t(fact.titleKey)} body={t(fact.bodyKey)} />
           ))}
         </ul>
       </section>

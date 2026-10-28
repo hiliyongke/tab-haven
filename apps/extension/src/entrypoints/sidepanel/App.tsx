@@ -71,6 +71,7 @@ import { useListNavigation } from '@/ui/hooks/useListNavigation';
 import { usePendingActions } from '@/entrypoints/sidepanel/hooks/usePendingActions';
 import { SortablePinnedTile } from '@/ui/tabs/SortablePinnedTile';
 import { CategoryModule } from '@/ui/common/CategoryModule';
+import { Callout } from '@/ui/common/Callout';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
 import { computeInsights } from '@/core/insights/tabInsights';
 import {
@@ -425,7 +426,13 @@ export default function App() {
     void loadUndo().catch((error: unknown) => {
       logFailure('sidepanel', '撤销历史加载失败', error);
     });
-    void useSnapshotStore.getState().load();
+    void useSnapshotStore
+      .getState()
+      .load()
+      .catch((error: unknown) => {
+        // 失败态由快照面板自己呈现（可重试）；这里只保证不留无归属的 rejection。
+        logFailure('sidepanel', '快照加载失败', error);
+      });
     const stopSync = startTabSync();
     return () => {
       cancelled = true;
@@ -1148,44 +1155,45 @@ export default function App() {
             因此它表达的是「此刻存储可能不可写」，而非「历史上有过失败」。
             宁可多提示一次，也不能让「界面显示成功、重启即丢」静默发生。 */}
         {storageDegraded && (
-          <div
+          <Callout
             role="alert"
-            /* 去掉 mx-1：mx-1 + px-3 = 16px，与全局 8px 内容竖线错开，
+            tone="warn"
+            /* 去掉 mx-1：mx-1 + px 内距 = 16px，与全局 8px 内容竖线错开，
                一屏出现两道左边缘（横幅 16 / 列表 8）。 */
-            className="mb-1 flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-2 py-2"
+            className="mb-1"
+            icon={Icons.infoAlert}
           >
-            <Icon d={Icons.infoAlert} className="mt-0.5 h-4 w-4 shrink-0 text-warn-600" />
-            <p className="min-w-0 flex-1 text-3xs leading-relaxed text-warn-700">
+            <p className="text-3xs leading-relaxed">
               {t(
                 '最近的改动可能没能保存到本地：请检查浏览器存储空间是否已满，或扩展权限是否被收回'
               )}
             </p>
-          </div>
+          </Callout>
         )}
         {/* 一次性「能力发现」Tip：仅首次展示。刻意排在搜索框之后——搜索是本面板最高频入口，
             教学性内容不得把它挤出首屏顶部。 */}
         {!settings.tipSeen && (
-          <div className="mb-1 flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-2 py-2">
-            <Icon d={Icons.sparkles} className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" />
-            <div className="min-w-0 flex-1">
-              <p className="text-3xs font-semibold text-accent-700">
-                {t('三处入口用满 Tabs 的能力')}
-              </p>
-              <p className="mt-0.5 text-3xs leading-relaxed text-accent-700/90">
-                {t(
-                  '① 页面 / 链接 / 标签栏右键可休眠、固定、按域名搜索；② 地址栏输入 t 后输关键词直达；③ ⌘P（Ctrl+P）打开命令面板，一步执行休眠 / 存快照 / 开设置。'
-                )}
-              </p>
-            </div>
-            <Button
-              variant="accent-ghost"
-              size="xs"
-              className="shrink-0 text-3xs"
-              onClick={() => void tryUpdateSettings({ tipSeen: true })}
-            >
-              {t('知道了')}
-            </Button>
-          </div>
+          <Callout
+            className="mb-1"
+            icon={Icons.sparkles}
+            action={
+              <Button
+                variant="accent-ghost"
+                size="dense"
+                className="shrink-0"
+                onClick={() => void tryUpdateSettings({ tipSeen: true })}
+              >
+                {t('知道了')}
+              </Button>
+            }
+          >
+            <p className="text-3xs font-semibold">{t('三处入口用满 Tabs 的能力')}</p>
+            <p className="mt-0.5 text-3xs leading-relaxed text-accent-700/90">
+              {t(
+                '① 页面 / 链接 / 标签栏右键可休眠、固定、按域名搜索；② 地址栏输入 t 后输关键词直达；③ ⌘P（Ctrl+P）打开命令面板，一步执行休眠 / 存快照 / 开设置。'
+              )}
+            </p>
+          </Callout>
         )}
         {/* 工作区切换条（C1）：无工作区快照时整条隐藏。 */}
         <SpaceStrip

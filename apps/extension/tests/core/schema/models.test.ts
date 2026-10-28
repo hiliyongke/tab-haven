@@ -63,6 +63,16 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.safeParse({ aggregationThreshold: 0 }).success).toBe(false);
     expect(SettingsSchema.safeParse({ aggregationThreshold: 6 }).success).toBe(false);
     expect(SettingsSchema.safeParse({ toastDurationSec: 0 }).success).toBe(false);
+    expect(SettingsSchema.safeParse({ density: 'ultra' }).success).toBe(false);
+  });
+
+  it('列表密度四档全部合法，默认仍是 cozy', () => {
+    // UI 侧（RowItem / 骨架屏 / SectionList）共用 Density 类型；
+    // 这里守住「档位集合」本身，加档/删档必须同步 UI 与 CSS。
+    for (const density of ['tight', 'compact', 'cozy', 'large'] as const) {
+      expect(SettingsSchema.parse({ density }).density).toBe(density);
+    }
+    expect(SettingsSchema.parse({}).density).toBe('cozy');
   });
 
   it('language 宽松校验：缺省 undefined，合法 BCP-47 通过', () => {

@@ -8,13 +8,17 @@ import type { ReactNode } from 'react';
  * （gray-500 落在 gray-100 上仅 3.92:1，不达 AA）—— 见 snapshotOrigin.ts 的注释。
  * 收口后新增徽章或调整配色只有一处可改（照 snapshotOrigin 的先例）。
  */
-export type ChipTone = 'neutral' | 'accent' | 'warn' | 'brand';
+export type ChipTone = 'neutral' | 'accent' | 'warn' | 'brand' | 'outline';
 
 const CHIP_TONES: Record<ChipTone, string> = {
   neutral: 'bg-gray-100 text-gray-600',
   accent: 'bg-accent-100 text-accent-700',
   warn: 'bg-warn-100 text-warn-700',
-  brand: 'bg-accent-50 text-accent-700'
+  brand: 'bg-accent-50 text-accent-700',
+  /* 描边档：可移除的标签（白名单条目）这类需要「边界可见」的场合。
+     此前它在设置页被手写两遍（计数胶囊与白名单条目各一串 class），
+     改配色要改两处。 */
+  outline: 'border border-gray-200 bg-gray-50 text-gray-600'
 };
 
 /**
