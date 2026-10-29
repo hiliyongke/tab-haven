@@ -2,7 +2,7 @@
 
 > **本地优先、无自有账号、无自有服务器的标签工作台**：把散乱的标签组织成有秩序的空间，并通过撤销、快照与归档降低误操作风险。
 
-Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它默认只管理**当前窗口**的标签页（其他窗口可在设置中开启后查看，并可切换或关闭——关闭同样进撤销栈，可反悔），提供侧边栏式的组织、搜索、拖拽整理与关闭操作多层撤销——数据以浏览器本地存储为主，扩展本身不发起任何网络请求；文件夹、常驻磁贴与设置可经你自己的浏览器账号同步通道镜像（见隐私说明）。
+Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它默认只管理**当前窗口**的标签页（工具栏角标与地址栏建议会读取所有普通窗口的标签元数据用于本机统计与搜索，仅内存计算、不落盘、不联网；其他窗口可在设置中开启后查看，并可切换或关闭——关闭同样进撤销栈，可反悔），提供侧边栏式的组织、搜索、拖拽整理与关闭操作多层撤销——数据以浏览器本地存储为主，扩展本身不发起任何网络请求；文件夹、常驻磁贴与设置可经你自己的浏览器账号同步通道镜像（见隐私说明）。
 
 - 无后端 · 无账号 · 无遥测 · **零出站网络请求（无任何例外）**：站点图标取自浏览器自己的本地图标库（本扩展的 `chrome-extension://<id>/_favicon/` 通道），不向被浏览站点发起任何请求（详见 PRIVACY.md 第 1 节）
 - 智能分组（同域名自动聚合，可选同步为原生标签组）
@@ -22,7 +22,7 @@ Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它默认只管�
 
 商店上架后，在扩展商店搜索 "Tabs" 一键安装。
 
-上架前需准备的材料（商店文案、权限理由、隐私政策 URL、截图）与发布前自查清单统一维护在 [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)；打包用 `pnpm zip`（WXT 只打入口产物与 `public/`，不含 `docs/`、`.codebuddy/`、`tests/` 等开发文件）。
+上架前需准备的材料（商店文案、权限理由、隐私政策 URL、截图）与发布前自查清单统一维护在 [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)；打包用 `pnpm zip`（WXT 只打入口产物与 `public/`，不含 `tests/`、`.codebuddy/`、`apps/site/` 等开发文件）。
 
 ### 从源码构建（开发者）
 
@@ -110,7 +110,7 @@ apps/extension/src/
 │   ├── site/            # SiteKey / HostRules / SiteResolver / SiteGrouping：同域名聚合（代码层沿用 site 命名）
 │   ├── fixed/           # PinIdentity / FolderOps / Reconcile：固定空间（UI 文案为「收藏夹」）领域
 │   ├── group/           # AutoGrouping：自动分组计划（纯决策）
-│   ├── commands/        # folderCommands：文件夹纯计算
+│   ├── commands.ts      # 浏览器级快捷键与命令的单一口径（与 wxt.config 由测试强制对齐）
 │   ├── search/          # SearchEngine：fuzzysort + pinyin-pro 三目标索引
 │   ├── snapshot/        # snapshotDiff / trimSnapshots / oneTabImport / missingTabs：快照 diff、裁剪、OneTab 解析、缺失条目
 │   ├── undo/            # UndoStack：操作记录制 + 栈深淘汰

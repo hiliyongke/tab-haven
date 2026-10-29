@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import extensionConfig from '../../vitest.config';
@@ -75,5 +76,46 @@ describe('覆盖率棘轮（vitest.config ↔ coverage-baseline）', () => {
       missing,
       `以下阈值档位在 coverage-baseline.json 中没有基线: ${missing.join(', ')}`
     ).toEqual([]);
+  });
+});
+
+/**
+ * 阈值档的 glob 必须至少命中一个文件。
+ *
+ * vitest 对「0 命中」的阈值档不报错（4.x 实测），目录改名后该档静默失效，
+ * 而上面的棘轮仍只比数字 —— 两道门会一起绿。这条断言把「档位还在」变成可验证事实。
+ */
+describe('覆盖率阈值档位命中校验', () => {
+  const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      return entry.isDirectory() ? walk(full) : [full];
+    });
+
+  /** 只支持 `**` 与 `*`：阈值档只用到这两种。 */
+  const globToRegExp = (glob: string): RegExp => {
+    const escaped = glob
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      // 先用占位串吃掉 `**`，否则随后的单星替换会把它拆成两段。
+      .replace(/\*\*/g, '@@DOUBLE_STAR@@')
+      .replace(/\*/g, '[^/]*')
+      .replace(/@@DOUBLE_STAR@@/g, '.*');
+    return new RegExp(`^${escaped}$`);
+  };
+
+  it('每一档都命中至少一个源文件（glob 失效会让该档恒绿）', () => {
+    const files = walk(SRC).map(
+      (file) => `src/${file.slice(SRC.length + 1).replaceAll('\\', '/')}`
+    );
+    // global 是全局汇总，不是路径 glob。
+    const globs = Object.keys(current ?? {}).filter((glob) => glob !== 'global');
+    expect(globs.length).toBeGreaterThan(0);
+    const misses = globs.filter((glob) => {
+      const pattern = globToRegExp(glob);
+      return !files.some((file) => pattern.test(file));
+    });
+    expect(misses, `以下阈值档未命中任何文件:\n  ${misses.join('\n  ')}`).toEqual([]);
   });
 });

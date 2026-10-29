@@ -84,8 +84,16 @@ export const parseOptions: ParserOptions = {
  * `as unknown as AstNode`；集中到此处后，「绕开 parser 类型」这件事只有一份实现，
  * 且必然与 `parseOptions` 同源。
  */
-export function parseAst(content: string): AstNode {
-  return parse(content, parseOptions) as unknown as AstNode;
+/**
+ * 解析源码为 AST —— 全仓唯一的解析器返回类型断言点。
+ *
+ * `.ts` 不启用 jsx 插件：`const f = <T>(x: T) => x` 在 jsx 语义下是标签起点，
+ * Babel 会以「Single type parameter T should have a trailing comma」恢复解析 ——
+ * 文本仍能抽到，但在「解析错误必须上报」之后会变成一条假失败。
+ */
+export function parseAst(content: string, jsx = true): AstNode {
+  const plugins = jsx ? parseOptions.plugins : parseOptions.plugins?.filter((p) => p !== 'jsx');
+  return parse(content, { ...parseOptions, plugins }) as unknown as AstNode;
 }
 
 /**
@@ -311,7 +319,7 @@ export function collectFromFile(
 
   let ast: AstNode;
   try {
-    ast = parseAst(content);
+    ast = parseAst(content, file.endsWith('.tsx'));
   } catch (error) {
     return {
       entries: [],
@@ -323,6 +331,16 @@ export function collectFromFile(
   const entries: ScannedEntry[] = [];
   const errors: string[] = [];
   const relativePath = relative(root, file);
+
+  // errorRecovery 下坏语法不会抛错，而是挂在 ast.errors 上继续产出部分 AST。
+  // 不读它，文件会「抽取成功但少一半词条」，守卫只看到失真的另一半。
+  const recoveredErrors = (ast as unknown as { errors?: unknown[] }).errors ?? [];
+  if (recoveredErrors.length > 0) {
+    const first = recoveredErrors[0] as { message?: string } | undefined;
+    errors.push(
+      `${relativePath} 解析有 ${recoveredErrors.length} 处语法错误（${first?.message ?? '未知'}），本文件抽取可能不完整`
+    );
+  }
 
   const push = (sentence: string, context: string | undefined, line: number | undefined): void => {
     if (sentence === '' || !HAS_ZH.test(sentence)) return;
@@ -344,19 +362,40 @@ export function collectFromFile(
    * 插值中文会既抽不到词条、又不被 lint 判为裸露中文（markTree 把值标记为已接管），
    * 于是 scan / check / lint 全绿，而英文模式原样显示中文。
    */
+  /** 子树里是否有含汉字的字面量（字符串 / 模板片段）。 */
+  const containsChineseLiteral = (node: AstNode): boolean => {
+    let found = false;
+    visit(node, (child) => {
+      if (child.type === 'StringLiteral' && HAS_ZH.test(String(child.value))) found = true;
+      if (child.type === 'TemplateElement' && HAS_ZH.test(quasiText(child))) found = true;
+    });
+    return found;
+  };
+
   const reportInterpolatedTemplate = (
     branch: AstNode | undefined,
     line: number | undefined
   ): void => {
-    if (
-      branch?.type === 'TemplateLiteral' &&
-      asNodes(branch.expressions).length > 0 &&
-      HAS_ZH.test(staticPart(branch))
-    ) {
-      errors.push(
-        `${relativePath}:${line ?? '?'} 模板串含插值，无法计算 key，请改写成 t('共 {{count}} 个', { count: n })`
-      );
+    if (branch === undefined) return;
+    // 模板串与字符串拼接是同一类事故：运行时原文随变量变化，哈希 key 无从计算。
+    // 只看 TemplateLiteral 会漏掉 `t('共' + n + '个')`——它既抽不到词条，又会因
+    // lint 把 t() 参数整棵标记为已接管而躲过「裸露中文」检查，最终 scan/check/lint 全绿。
+    let hasChinese: boolean;
+    if (branch.type === 'TemplateLiteral') {
+      // 无插值的模板串是正常字面量（literalText 已能取走），只有插值才不可计算 key。
+      if (asNodes(branch.expressions).length === 0) return;
+      hasChinese = HAS_ZH.test(staticPart(branch));
+    } else if (branch.type === 'BinaryExpression') {
+      // '共' + n + '个'：任一操作数含汉字即不可静态求值。
+      hasChinese = containsChineseLiteral(branch);
+    } else {
+      return;
     }
+    if (!hasChinese) return;
+    const kind = branch.type === 'TemplateLiteral' ? '模板串含插值' : '字符串拼接';
+    errors.push(
+      `${relativePath}:${line ?? '?'} ${kind}，无法计算 key，请改写成 t('共 {{count}} 个', { count: n })`
+    );
   };
 
   visit(ast, (node) => {
@@ -371,6 +410,21 @@ export function collectFromFile(
         }
         reportInterpolatedTemplate(branch, branch.loc?.start.line);
       }
+      // context 参与哈希 key 计算：非字面量时 check 按「无 context」算 key，
+      // 运行时却按变量值算 —— 英文模式仍露中文，而守卫全绿。
+      const options = asNode(args[1]);
+      if (options?.type === 'ObjectExpression') {
+        const contextProp = asNodes(options.properties).find(
+          (property) =>
+            property.type === 'ObjectProperty' &&
+            (asNode(property.key)?.name ?? asNode(property.key)?.value) === 'context'
+        );
+        if (contextProp !== undefined && literalText(asNode(contextProp.value)) === null) {
+          errors.push(
+            `${relativePath}:${contextProp.loc?.start.line ?? '?'} t() 的 context 不是字面量，词条 key 无法静态确定`
+          );
+        }
+      }
       return;
     }
 
@@ -384,10 +438,27 @@ export function collectFromFile(
         if (text !== null) {
           push(normalize(text), undefined, node.loc?.start.line);
         } else {
-          // 常量表的值也可能是插值模板串/条件表达式：literalText 取不到时不能静默
-          // 放过（与 t() 通道同口径），否则这类中文既漏抽词条又不报错。
+          // 常量表的值可能是条件/逻辑表达式：每一支都可能是运行时原文。
+          // 能静态取到的分支必须入词条；取不到的（拼接/插值）必须报错。
+          // 按节点类型枚举会漏掉「裸字面量分支」——中文既不入词典、也不报错。
           for (const branch of branchNodes(value)) {
-            reportInterpolatedTemplate(branch, branch.loc?.start.line ?? node.loc?.start.line);
+            const branchText = literalText(branch);
+            if (branchText !== null) {
+              push(
+                normalize(branchText),
+                undefined,
+                branch.loc?.start.line ?? node.loc?.start.line
+              );
+              continue;
+            }
+            if (branch.type === 'TemplateLiteral' || branch.type === 'BinaryExpression') {
+              reportInterpolatedTemplate(branch, branch.loc?.start.line ?? node.loc?.start.line);
+              continue;
+            }
+            if (!containsChineseLiteral(branch)) continue;
+            errors.push(
+              `${relativePath}:${branch.loc?.start.line ?? '?'} 常量表 ${name} 的值无法静态求值，请改用字面量`
+            );
           }
         }
       }
@@ -403,10 +474,21 @@ export function collectFromFile(
           (attribute) =>
             attribute.type === 'JSXAttribute' && asNode(attribute.name)?.name === 'context'
         );
-        const context = literalText(asNode(contextProp?.value)) ?? undefined;
+        // context 参与 key 计算：`context={'action'}` 要穿过表达式容器取字面量，
+        // 取不到就必须报错（否则运行时 key 与抽取 key 不一致，英文模式露中文）。
+        const contextValue = asNode(contextProp?.value);
+        const contextText =
+          contextValue?.type === 'JSXExpressionContainer'
+            ? literalText(asNode(contextValue.expression))
+            : literalText(contextValue);
+        if (contextProp !== undefined && contextText === null) {
+          errors.push(
+            `${relativePath}:${contextProp.loc?.start.line ?? '?'} <Trans> 的 context 不是字面量，词条 key 无法静态确定`
+          );
+        }
         push(
           normalize(jsxChildrenToString(node.children, (message) => errors.push(message))),
-          context,
+          contextText ?? undefined,
           node.loc?.start.line
         );
       }

@@ -18,6 +18,8 @@ export const DEFAULT_SNAPSHOT_NAMES = {
 // @i18n-ignore-start
 export const DEFAULT_FOLDER_NAMES = {
   untitled: '无标题标签',
-  unnamedGroup: '未命名标签组'
+  unnamedGroup: '未命名标签组',
+  /** 书签栏导入生成的文件夹：与其它默认名同口径，换界面语言不得改名。 */
+  bookmarkImport: '书签导入'
 } as const;
 // @i18n-ignore-end

@@ -1,6 +1,9 @@
 /**
  * 有限并发映射（纯工具，零宿主依赖）。限流避免 `Promise.all` 一次性发起成百上千条 `chrome.tabs.create` 放大尾延迟。
- * 结果**严格按入参下标返回**（与完成顺序无关）：快照/撤销恢复依赖「组内标签顺序 = 记录顺序」，乱序会让分组归属与排列错乱。
+ * 结果**严格按入参下标返回**（与完成顺序无关）。
+ *
+ * 注意：有序的只是**结果数组**，副作用仍按完成顺序发生。调用方若依赖「先创建 A 再创建 B」
+ * （如 `tabs.create({ index })`，index 是插入位置），必须用 `mapSequential`，否则落位会错乱。
  */
 
 /** 默认并发度：扩展 API 是单个 IPC 通道，8 路左右吞吐最佳，再高只会增大内存峰值与排队抖动。 */
@@ -61,5 +64,22 @@ export async function mapWithConcurrency<T, R>(
   };
   const size = Math.max(1, Math.min(Math.floor(limit) || 1, items.length));
   await Promise.all(Array.from({ length: size }, () => worker()));
+  return results;
+}
+
+/**
+ * 严格按顺序执行：上一项完成后再开始下一项，结果与入参同序。
+ *
+ * 只给**副作用有先后依赖**的场景用（`tabs.create({ index })` 的插入位置、整组 move）。
+ * 这类调用用 `mapWithConcurrency` 会得到「结果数组正确、实际落位错乱」——最容易被测试掩盖的形态。
+ */
+export async function mapSequential<T, R>(
+  items: readonly T[],
+  task: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    results.push(await task(items[index]!, index));
+  }
   return results;
 }

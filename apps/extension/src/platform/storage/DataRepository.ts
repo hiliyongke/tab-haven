@@ -1,7 +1,12 @@
 import { browser } from 'wxt/browser';
 import { z, type ZodType } from 'zod';
 import { logDegraded } from '@/platform/diagnostics';
-import { QUARANTINE_RMW_LOCK, withCrossPageLock } from './crossPageLock';
+import {
+  LOCK_BUSY,
+  QUARANTINE_RMW_LOCK,
+  withCrossPageLock,
+  withCrossPageLockIfAvailable
+} from './crossPageLock';
 import { QUARANTINE_KEY } from './keys';
 
 /** 隔离区单条原始数据上限：超出只留摘要，避免撑爆 local 配额。 */
@@ -72,7 +77,10 @@ export class DataRepository<T> {
   ): Promise<T | typeof RECOVERY_FAILED> {
     const lock = this.options.rmwLock;
     if (lock === undefined) return this.recoverFrom(raw, element);
-    return withCrossPageLock(lock, async () => {
+    // 调用方可能已经持有同一把锁（store 的「锁内重读」是标准写法）：Web Locks 不可重入，
+    // 这里若正常排队会永久悬挂（不抛错，日志里也看不出来）。改为不等待取锁；
+    // 取不到只做「恢复 + 隔离」不回写，把合法值交回调用方。
+    const recovered = await withCrossPageLockIfAvailable(lock, async () => {
       const area = browser.storage?.local;
       if (!area) return this.recoverFrom(raw, element);
       const fresh = (await area.get(this.key))[this.key];
@@ -86,12 +94,15 @@ export class DataRepository<T> {
         : // 重读到的是非数组的坏值：交回外层，由它按原快照整块隔离。
           RECOVERY_FAILED;
     });
+    if (recovered === LOCK_BUSY) return this.recoverFrom(raw, element, { persist: false });
+    return recovered;
   }
 
-  /** 从给定数组恢复（丢弃坏元素 → 隔离原件 → 回写）。调用方负责锁。 */
+  /** 从给定数组恢复（丢弃坏元素 → 隔离原件 → 回写）。调用方负责锁；`persist: false` 时只恢复不落盘。 */
   private async recoverFrom(
     source: readonly unknown[],
-    element: z.ZodTypeAny
+    element: z.ZodTypeAny,
+    options: { persist?: boolean } = {}
   ): Promise<T | typeof RECOVERY_FAILED> {
     const dropped: unknown[] = [];
     const kept = source.flatMap((item) => {
@@ -108,6 +119,7 @@ export class DataRepository<T> {
       await this.isolateCorrupted(dropped);
     }
     // 回写失败必须留痕：配额接近上限时回写恒失败，此后每次读取都会重跑恢复，诊断里毫无痕迹。
+    if (options.persist === false) return reparsed.data as T;
     const written = await this.write(reparsed.data as T);
     if (!written) {
       logDegraded('storage', `坏数据恢复后回写失败（${this.key}），下次读取将重复走恢复分支`);

@@ -23,6 +23,28 @@ export async function withCrossPageLock<T>(name: string, fn: () => Promise<T>): 
   return locks.request(name, fn) as Promise<T>;
 }
 
+/** 未取得锁（已被本上下文或其它上下文持有）。 */
+export const LOCK_BUSY = Symbol('cross-page-lock-busy');
+
+/**
+ * 尝试取锁但**不等待**。Web Locks 不可重入：同一上下文对同名锁再 `request` 会永久排队，
+ * 表现为整条链路悬挂（不是抛错，看日志也看不出来）。
+ *
+ * 只给「持锁路径内部还要做一次 RMW」的代码用：拿到锁就正常写，拿不到就跳过写、
+ * 把结果交回调用方。宁可少一次回写，也不能自锁。
+ */
+export async function withCrossPageLockIfAvailable<T>(
+  name: string,
+  fn: () => Promise<T>
+): Promise<T | typeof LOCK_BUSY> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  // 无 Web Locks 时不存在跨页互斥，也无自锁风险：直接执行（与 withCrossPageLock 降级同口径）。
+  if (!locks || typeof locks.request !== 'function') return fn();
+  return locks.request(name, { ifAvailable: true }, async (lock) =>
+    lock === null ? LOCK_BUSY : fn()
+  ) as Promise<T | typeof LOCK_BUSY>;
+}
+
 // ↓ 全仓锁名的唯一声明处。这些分区有多个独立写入方（面板 + background / 多个窗口），
 // 锁外 RMW 交错时后写覆盖先写，新增的条目会被静默抹掉。
 export const FOLDERS_RMW_LOCK = 'tabs.folders-rmw';

@@ -109,6 +109,11 @@ export async function runAutoSnapshot(): Promise<void> {
 export async function syncAutoSnapshotAlarm(settings: Settings): Promise<void> {
   try {
     if (settings.autoSaveSnapshots) {
+      // 同名 create 会**重置**触发时间，而 SW 每次被唤醒都会跑一遍本函数：
+      // 只看内存签名不够（SW 重启后签名归零），必须问浏览器现有闹钟的周期。
+      // 不比对就重建，周期会被无限期推后，自动快照可能永远不触发。
+      const existing = await browser.alarms.get(AUTO_SNAPSHOT_ALARM);
+      if (existing?.periodInMinutes === settings.autoSnapshotIntervalMin) return;
       await browser.alarms.create(AUTO_SNAPSHOT_ALARM, {
         periodInMinutes: settings.autoSnapshotIntervalMin,
         // 首次触发延后一个完整周期：刚开启设置时立刻写一份快照意义不大，

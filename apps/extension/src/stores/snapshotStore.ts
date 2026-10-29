@@ -83,8 +83,8 @@ interface SnapshotState {
   saveSpace: (name?: string) => Promise<boolean>;
   /** 归档当前窗口：保存并关闭全部标签，返回保存标签数。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
-  /** 从 OneTab 文本导入为快照，返回导入标签数。 */
-  importOneTab: (text: string, name?: string) => Promise<number>;
+  /** 从 OneTab 文本导入为快照；truncated 表示有效条目超过上限、超出部分被丢弃。 */
+  importOneTab: (text: string, name?: string) => Promise<{ count: number; truncated: boolean }>;
   /** 从 Workona JSON 批量导入快照族，返回 { 快照数, 标签数, 跳过数, 截断量, 失败原因 }。 */
   importWorkona: (text: string) => Promise<{
     snapshots: number;
@@ -241,8 +241,8 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   importOneTab: async (text, name) => {
-    const tabs = parseOneTab(text);
-    if (tabs.length === 0) return 0;
+    const { tabs, truncated } = parseOneTab(text);
+    if (tabs.length === 0) return { count: 0, truncated: false };
     const snapshot = buildSnapshot({
       name: name ?? '',
       fallbackName: DEFAULT_SNAPSHOT_NAMES.oneTab,
@@ -252,7 +252,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
-    return tabs.length;
+    return { count: tabs.length, truncated };
   },
 
   importWorkona: async (text) => {

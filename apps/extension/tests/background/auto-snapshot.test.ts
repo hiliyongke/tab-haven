@@ -196,6 +196,18 @@ describe('设置变更时的闹钟重建（无关设置不得推后自动快照�
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('SW 重启（内存签名归零）不重建同周期闹钟', async () => {
+    // Given: 已按当前设置建好闹钟
+    await bootEntry(ALARMS_ON);
+    const create = vi.spyOn(fakeBrowser.alarms, 'create');
+
+    // When: 模拟 SW 被回收后重新唤醒 —— 闭包里的签名是 undefined，只能靠浏览器侧闹钟判定
+    await bootEntry(ALARMS_ON);
+
+    // Then: 不得重建（同名 create 会把「每 30 分钟」无限期推后）
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('间隔 30 → 60 时才重建一次（周期变化必须生效）', async () => {
     await bootEntry(ALARMS_ON);
     const create = vi.spyOn(fakeBrowser.alarms, 'create');

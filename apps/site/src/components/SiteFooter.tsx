@@ -20,9 +20,9 @@ const FOOTER_GROUPS: readonly {
   {
     titleKey: '资源',
     links: [
-      { href: '#docs', labelKey: '隐私承诺' },
-      { href: '#docs', labelKey: '权限说明' },
-      { href: '#docs', labelKey: '快捷键' },
+      { href: '#privacy', labelKey: '隐私承诺' },
+      { href: '#permissions', labelKey: '权限说明' },
+      { href: '#shortcuts', labelKey: '快捷键' },
       { href: '#compare', labelKey: '能力对比' },
       { href: '#faq', labelKey: '常见问题' }
     ]

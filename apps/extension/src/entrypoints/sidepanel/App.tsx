@@ -107,7 +107,6 @@ export default function App() {
   const setHighlighted = useTabStore((state) => state.setHighlighted);
   const renameGroup = useTabStore((state) => state.renameGroup);
   const recolorGroup = useTabStore((state) => state.recolorGroup);
-  const moveGroup = useTabStore((state) => state.moveGroup);
   const startTabSync = useTabStore((state) => state.startTabSync);
   const initializeData = useDataStore((state) => state.initialize);
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
@@ -812,18 +811,6 @@ export default function App() {
     (groupId: number, color: string) => void recolorGroup(groupId, color),
     [recolorGroup]
   );
-  const handleMoveGroup = useCallback(
-    (groupId: number, index: number) => {
-      // 分组排序必须有反馈：这是「看不见结果」的操作（拖完界面按排序规则
-      // 重排，用户分不清是自己没拖成功还是已经生效）。
-      // moveGroup 返回 false 表示浏览器侧没动（乐观排序会在下次快照被校正回来），
-      // 此时报「已调整」等于谎报成功 —— 必须走失败口径。
-      void Promise.resolve(moveGroup(groupId, index)).then((ok) =>
-        ok ? notify(t('已调整分组顺序')) : notifyError(t('操作失败，请稍后重试'))
-      );
-    },
-    [moveGroup, notify, notifyError, t]
-  );
 
   // 快速整理：完全重新初始化临时区分组 —— 打散现有临时区原生组（分组+未分组），
   // 按当前聚合方式重组全部非固定标签；固定区域（浏览器置顶 / 顶部常驻磁贴 / 固定空间）不受影响。
@@ -919,7 +906,6 @@ export default function App() {
       onSaveGroupAsFolder: handleSaveGroupAsFolder,
       onGroupRename: handleRenameGroup,
       onGroupRecolor: handleRecolorGroup,
-      onGroupMove: handleMoveGroup,
       onToggleGroupCollapsed: (groupId: number, collapsed: boolean) =>
         void setGroupCollapsed(groupId, collapsed),
       onToggleSiteCollapsed: (siteKey: string, collapsed: boolean) => {
@@ -942,7 +928,6 @@ export default function App() {
       handleSaveGroupAsFolder,
       handleRenameGroup,
       handleRecolorGroup,
-      handleMoveGroup,
       handleReorder,
       handleMoveTab,
       notify,

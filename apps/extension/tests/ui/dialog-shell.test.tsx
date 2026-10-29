@@ -110,3 +110,34 @@ describe('DialogShell 三段式分区', () => {
     expect(document.querySelectorAll('.modal-panel button')).toHaveLength(1);
   });
 });
+
+describe('DialogShell 挂载位置', () => {
+  it('默认 portal 到 body：不受 .app 的层叠上下文影响', () => {
+    const { container } = render(
+      <DialogShell title="默认" onClose={vi.fn()}>
+        <p>内容</p>
+      </DialogShell>
+    );
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  it('inline 时留在调用处：原生模态 dialog 内部只有后代可交互', () => {
+    // Given: 一个已经 showModal 的原生 dialog（其外部子树一律 inert）
+    const host = document.createElement('dialog');
+    document.body.appendChild(host);
+
+    // When: inline 渲染外壳
+    render(
+      <DialogShell inline title="内嵌" onClose={vi.fn()}>
+        <p>内容</p>
+      </DialogShell>,
+      { container: host }
+    );
+
+    // Then: 节点是 dialog 的后代，而不是被 portal 到 body
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    host.remove();
+  });
+});

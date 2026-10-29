@@ -95,9 +95,16 @@ export function check(paths: KitPaths, options: CheckOptions = {}): CheckResult 
   }
 
   // 规则 3：源码里的原文必须已登记
-  const { entries, errors } = collectSentences(paths.src, paths.root, {
+  const { entries, errors, scannedFiles } = collectSentences(paths.src, paths.root, {
     keySuffixes: paths.keySuffixes
   });
+  /**
+   * 扫描面必须非空：`paths.src` 写错或目录改名时，抽取会「成功」返回 0 条，
+   * 后面的未登记/未翻译检查全部恒真，守卫报告通过而实际一条都没看。
+   */
+  if (scannedFiles === 0) {
+    issues.push(`未扫描到任何源文件（${paths.src}）：检查目录配置是否失效`);
+  }
   /**
    * 抽取本身的问题必须是失败项：解析失败、含插值的模板串、Trans 动态子节点、
    * 哈希碰撞 —— 这些在 `scan` 里都会拒绝落盘，若 `check` 里丢掉它们，就会出现

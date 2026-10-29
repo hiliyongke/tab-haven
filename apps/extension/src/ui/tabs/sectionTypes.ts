@@ -20,7 +20,6 @@ export interface SectionCallbacks {
   onMoveTab?: (tabId: number, direction: -1 | 1) => void;
   onGroupRename: (groupId: number, title: string) => void;
   onGroupRecolor: (groupId: number, color: string) => void;
-  onGroupMove: (groupId: number, index: number) => void;
   /** 与浏览器多选选区同步。 */
   onHighlightSelected?: () => void;
   /**

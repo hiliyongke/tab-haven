@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { isOneTabTooLarge } from '@/core/snapshot/oneTabImport';
 import type { Translate } from '@/i18n';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 
@@ -100,21 +101,26 @@ export function useSnapshotImport(params: {
         onDone();
         return;
       }
-      const count = await importOneTab(text, name.trim() || undefined);
+      const { count, truncated } = await importOneTab(text, name.trim() || undefined);
       if (count === 0) {
-        // 区分「用户没粘贴内容」与「粘贴了但解析不出条目」：后者可能是因为
-        // 超 1MB 被直接拒收，或整段都不是 http(s) 网址。笼统提示「快照为空」
-        // 会让用户以为导入成功却得到一个空快照，无从排查。
-        notify(
-          text.trim()
-            ? t(
+        // 区分「用户没粘贴内容」与「粘贴了但解析不出条目」：后者可能是超 1MB
+        // 被直接拒收，或整段都不是 http(s) 网址。笼统提示会让用户以为导入成功
+        // 却得到一个空快照，无从排查。
+        const message = !text.trim()
+          ? t('该快照没有可恢复的标签')
+          : isOneTabTooLarge(text)
+            ? t('内容超过 1MB 上限，请分批粘贴后再导入')
+            : t(
                 '没能解析出网址：请确认粘贴的是 OneTab 导出的文本（每行一个 http/https 网址），且内容不超过 1MB'
-              )
-            : t('该快照没有可恢复的标签')
-        );
+              );
+        notify(message);
         return;
       }
-      notify(t('已导入 {{count}} 个标签', { count }));
+      notify(
+        truncated
+          ? t('已导入 {{count}} 个标签（超出 1000 条上限的部分已忽略）', { count })
+          : t('已导入 {{count}} 个标签', { count })
+      );
       clear();
       onDone();
     } catch (error) {

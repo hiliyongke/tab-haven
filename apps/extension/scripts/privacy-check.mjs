@@ -341,6 +341,54 @@ if (!existsSync(MANIFEST)) {
 }
 
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+
+// ── manifest 结构冻结 ────────────────────────────────────────────────
+// 这三类字段会引入既有检查完全覆盖不到的能力面：
+//   content_scripts        向任意页面注入脚本（新的执行面）
+//   externally_connectable 允许外部站点/扩展直接发消息（新的通信面）
+//   web_accessible_resources 把内部资源暴露给页面（可被第三方引用）
+// 当前一个都没有；出现即失败，需要时连同 PRIVACY.md 与本脚本一起改。
+for (const key of ['content_scripts', 'externally_connectable', 'web_accessible_resources']) {
+  if (manifest[key] !== undefined) {
+    issues.push(`manifest 出现未审阅的 ${key}：会扩大注入或通信面，须先登记并评审`);
+  }
+}
+
+// CSP 是零出站的运行时兜底：产物里没有 connect-src 'none' 时，唯一拦截点只剩本脚本。
+const extensionCsp = manifest.content_security_policy?.extension_pages ?? '';
+if (!/connect-src\s+'none'/.test(extensionCsp)) {
+  issues.push("manifest 缺少 CSP connect-src 'none'：零出站红线失去浏览器层兜底");
+}
+// 只查 connect-src 不够，黑名单也不够：`img-src https://evil.example` 就是一次可用的
+// 像素外发，而它既不含通配符也不是裸协议。改成**白名单**：每个指令只允许已知来源，
+// 其余一律报「未登记」。
+const ALLOWED_CSP_SOURCES = new Set([
+  "'self'",
+  "'none'",
+  "'unsafe-inline'", // style-src 需要（Tailwind 内联样式）
+  'data:', // img-src 内联占位图
+  'chrome-extension:' // img-src 本扩展图标通道
+]);
+const unknownCspSources = extensionCsp
+  .split(';')
+  .map((directive) => directive.trim())
+  .filter(Boolean)
+  .flatMap((directive) => {
+    const [name, ...sources] = directive.split(/\s+/);
+    return sources
+      .filter((source) => !ALLOWED_CSP_SOURCES.has(source))
+      .map((source) => `${name} ${source}`);
+  });
+if (unknownCspSources.length > 0) {
+  // dev 构建会放行 HMR 的 localhost 来源：报「未登记」会让人误以为改坏了代码。
+  const devLike = unknownCspSources.some((source) => /localhost|127\.0\.0\.1/.test(source));
+  issues.push(
+    devLike
+      ? `CSP 含 dev 来源（${unknownCspSources.join('; ')}）：当前是 dev 构建，请先 pnpm build 再校验`
+      : `CSP 出现未登记来源: ${unknownCspSources.join('; ')}`
+  );
+}
+
 const permissions = new Set(manifest.permissions ?? []);
 const unexpected = [...permissions].filter((p) => !ALLOWED_PERMISSIONS.has(p));
 if (unexpected.length > 0) issues.push(`未授权权限: ${unexpected.sort().join(', ')}`);
@@ -366,10 +414,17 @@ if (documented === null) {
 
 // 主机权限同样进冻结清单：`<all_urls>` 是本项目最敏感的一项声明，
 // 只查 permissions 会让它完全游离在守卫之外。
-const hostPermissions = new Set([
-  ...(manifest.host_permissions ?? []),
-  ...(manifest.optional_host_permissions ?? [])
-]);
+const requiredHosts = new Set(manifest.host_permissions ?? []);
+const optionalHosts = new Set(manifest.optional_host_permissions ?? []);
+// 合并集合只用于「是否在冻结清单内」与文档双向比对；必需/按需必须分开判：
+// 合并后把 <all_urls> 从 optional_host_permissions 挪到 host_permissions，两边内容一模一样，
+// 门禁与文档比对全绿，而安装时已经变成「必须授予全部站点」。
+if (requiredHosts.size > 0) {
+  issues.push(
+    `主机权限必须以按需方式申请，但 manifest 声明为必需: ${[...requiredHosts].sort().join(', ')}`
+  );
+}
+const hostPermissions = new Set([...requiredHosts, ...optionalHosts]);
 const unexpectedHosts = [...hostPermissions].filter(
   (p) => !ALLOWED_OPTIONAL_HOST_PERMISSIONS.has(p)
 );
@@ -407,13 +462,16 @@ checkFaviconGuard();
 /** 单文件最多报告的网络命中数：压缩产物是单行，不设上限会被一条规则刷满输出。 */
 const MAX_HITS_PER_FILE = 5;
 
-function scanFiles(files, label) {
+function scanFiles(files, label, commentsExempt = true) {
   let hits = 0;
   for (const file of files) {
     const lines = readFileSync(file, 'utf8').split('\n');
     // HTML 与 CSS 是被浏览器直接解析的受保护对象，不豁免注释行；源码才豁免。
+    // 构建产物必须按「不豁免注释」处理：压缩后的 bundle 是单行，行首一个 `//`
+    // 就能让整行（含真实 fetch 调用）被跳过。
     const literalTarget = file.endsWith('.html') || file.endsWith('.css');
-    const exempt = literalTarget ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
+    const exempt =
+      literalTarget || !commentsExempt ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
     let fileHits = 0;
     lines.forEach((line, i) => {
       if (fileHits >= MAX_HITS_PER_FILE) return;
@@ -433,36 +491,51 @@ function scanFiles(files, label) {
   return hits;
 }
 
-scanFiles(walk(SRC), '源码');
+/**
+ * 扫描面下限：路径写错/目录改名时 `scanFiles` 零命中也会「通过」，
+ * 而这是零出站承诺的唯一拦截点。没有下游判据能兜住空扫描，只能在这里自己红。
+ */
+function expectSurface(files, label, min) {
+  if (files.length < min) {
+    issues.push(`${label}扫描面异常：仅 ${files.length} 个文件（下限 ${min}），门禁可能已空转`);
+  }
+  return files;
+}
+
+/** 目录缺失本身就是一个失败项：用 existsSync 包住 = 扫描面静默归零仍报通过。 */
+function surfaceWalk(dir, label, min) {
+  if (!existsSync(dir)) {
+    issues.push(`${label}目录不存在（${relative(ROOT, dir)}）：门禁可能已空转`);
+    return [];
+  }
+  return expectSurface(walk(dir), label, min);
+}
+
+scanFiles(surfaceWalk(SRC, '源码', 150), '源码');
 
 // 构建产物同样要扫：只扫 src/ 时，第三方依赖（pinyin-pro / tldts / fuzzysort 等）
 // 打进 bundle 后的网络调用完全不可见，而「零出站网络请求」是面向**最终产物**
 // 的承诺——用户安装的是 .output，不是 src。
-if (existsSync(OUT)) {
-  scanFiles(
-    walk(OUT).filter((f) => f.endsWith('.js') || f.endsWith('.html') || f.endsWith('.css')),
-    '构建产物'
-  );
-}
+scanFiles(
+  surfaceWalk(OUT, '构建产物', 5).filter(
+    (f) => f.endsWith('.js') || f.endsWith('.html') || f.endsWith('.css')
+  ),
+  '构建产物',
+  // 产物不豁免注释行：压缩 bundle 是单行，行首 `//` 会让整行（含真实 fetch）被跳过。
+  false
+);
 
 // 随包静态页（public/*.html，如卸载挽留页）同样要扫：它们被浏览器直接打开，
 // 页面里一个外链字体或统计像素就是一次真实出站请求，故不能只扫 src/ 与产物 JS。
-if (existsSync(PUBLIC_DIR)) {
-  scanFiles(
-    walk(PUBLIC_DIR).filter((f) => f.endsWith('.html')),
-    '静态页'
-  );
-}
+scanFiles(surfaceWalk(PUBLIC_DIR, '静态页', 1).filter((f) => f.endsWith('.html')), '静态页');
 
 // 工作区包（packages/*）同样要扫：packages/i18n-kit 的运行时（src/index.ts /
 // react.tsx）被 src/i18n 直接引用，是随包发布的运行时代码。只靠产物扫描是间接
 // 覆盖 —— 改了包内源码而不重新构建，门禁完全看不见。
-if (existsSync(PACKAGES)) {
-  scanFiles(
-    walk(PACKAGES).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')),
-    '工作区包'
-  );
-}
+scanFiles(
+  surfaceWalk(PACKAGES, '工作区包', 5).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')),
+  '工作区包'
+);
 
 if (issues.length > 0) {
   console.error('隐私回归检查失败:');

@@ -104,6 +104,14 @@ const LANGUAGE_LABELS: Record<string, string> = {
   it: 'Italiano',
   ar: 'العربية'
 };
+/**
+ * 语言码归一：Chrome 对「无法判定」可能返回 BCP-47 的 `und`，与本地哨兵 `unknown` 同义。
+ * 不归并会多出一个标题为「UND」的分组，且与 `unknown` 分组分裂。
+ */
+function normalizeLanguageCode(code: string | undefined): string {
+  return !code || code === 'und' ? 'unknown' : code;
+}
+
 function languageLabel(code: string, t: (key: string) => string): string {
   if (code === 'unknown') return t('未知语言');
   return LANGUAGE_LABELS[code] ?? code.toUpperCase();
@@ -501,7 +509,7 @@ export function deriveSections({
       if (list) list.push(tab);
       else byLang.set(code, [tab]);
     };
-    for (const tab of eligible) pushLang(tab.language || 'unknown', tab);
+    for (const tab of eligible) pushLang(normalizeLanguageCode(tab.language), tab);
     for (const code of [...byLang.keys()].sort()) {
       const siteKey = makeLangSiteKey(code);
       sections.push({

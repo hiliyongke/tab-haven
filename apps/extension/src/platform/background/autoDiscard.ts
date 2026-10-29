@@ -136,7 +136,10 @@ const runAutoDiscard = async (): Promise<void> => {
 async function syncAutoDiscardAlarm(settings: Settings): Promise<void> {
   try {
     if (settings.autoDiscardEnabled) {
-      // periodInMinutes 最小为 1；同名闹钟重复创建即重置，幂等安全。
+      // periodInMinutes 最小为 1；同名闹钟重复创建会重置触发时间，而 SW 每次唤醒都会
+      // 走到这里（内存签名重启即失效），故以浏览器现有闹钟为准做幂等。
+      const existing = await browser.alarms.get(AUTO_DISCARD_ALARM);
+      if (existing?.periodInMinutes === 1) return;
       await browser.alarms.create(AUTO_DISCARD_ALARM, { periodInMinutes: 1 });
     } else {
       await browser.alarms.clear(AUTO_DISCARD_ALARM);

@@ -105,7 +105,13 @@ export function lint(paths: KitPaths): LintResult {
   // 两边取同一份，否则「扫描器收进词典、lint 又判为裸露中文」会互相打架。
   const keySuffixes: readonly string[] = paths.keySuffixes ?? DEFAULT_KEY_SUFFIXES;
 
-  for (const file of walk(paths.src)) {
+  const files = walk(paths.src);
+  // 扫描面归零时「零报告」不是好消息，而是目录配置失效：没有任何下游判据能兜住它。
+  if (files.length === 0) {
+    reports.push(`${paths.src}: 未扫描到任何源文件，本次文案检查未执行`);
+  }
+
+  for (const file of files) {
     const content = readFileSync(file, 'utf8');
     if (NO_SCAN.test(content)) continue;
     const lines = content.split('\n');
@@ -113,7 +119,7 @@ export function lint(paths: KitPaths): LintResult {
 
     let ast: AstNode;
     try {
-      ast = parseAst(content);
+      ast = parseAst(content, file.endsWith('.tsx'));
     } catch (error) {
       // 解析失败不能静默 `continue`：坏语法文件（或 parser 不支持的语法）会被
       // 永久跳过，lint 仍然报告「通过」，而该文件的中文文案实际一条都没检查。

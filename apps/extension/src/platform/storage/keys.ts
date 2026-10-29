@@ -1,5 +1,5 @@
 /**
- * 存储键与闹钟名的唯一声明处（全仓）。`check:privacy` 的「存储键 ↔ PRIVACY.md」比对只扫 `src/platform/**`。
+ * 存储键与闹钟名的唯一声明处（全仓）。`check:privacy` 的「存储键 ↔ PRIVACY.md」比对扫整个 `src/`（不限某一层）。
  * 刻意不收两类：registry.ts 随 schema 内联的仓库键（拆开反而要跨文件确认）；
  * 主题镜像键 `tabs:theme` / `tabs:theme-hue`（theme-init.ts 须在渲染前同步执行、不能 import 模块，
  * 故在 ThemeApplier.ts 保留字面量，一致性由 tests 守卫）。

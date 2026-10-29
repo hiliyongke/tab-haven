@@ -82,5 +82,23 @@ function setupTabs(): void {
   select(0);
 }
 
+/**
+ * 锚点落在折叠详情里时先展开它。
+ *
+ * 文档区四个块默认收起，页脚的「权限说明 / 快捷键」直接指向其中的 `<details>`：
+ * 不展开的话跳过去只能看到标题，读者会以为链接指错了地方。
+ */
+function setupHashReveal(): void {
+  const reveal = (): void => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id) return;
+    const target = document.getElementById(id);
+    if (target instanceof HTMLDetailsElement) target.open = true;
+  };
+  window.addEventListener('hashchange', reveal);
+  reveal();
+}
+
 setupNav();
 setupTabs();
+setupHashReveal();

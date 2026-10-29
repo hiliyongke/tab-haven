@@ -17,7 +17,7 @@ export interface TabRuntimeIndex {
 /**
  * 容量 2 的 LRU（队首 = 最近使用）。
  * 单槽缓存不够：A/B 两个 tabs 引用**交替**命中时（如「本窗口」与「全窗口搜索」两种快照轮流传给
- * FolderRow）每次都未命中，索引被反复重建——这正是缓存想消灭的开销。容量 2 覆盖交替且不随窗口数增长。
+ * FolderRow）每次都未命中，索引被反复重建。容量 2 覆盖交替且不随窗口数增长。
  */
 const INDEX_CACHE_SIZE = 2;
 const indexCache: Array<{ tabs: readonly TabRecord[]; index: TabRuntimeIndex }> = [];

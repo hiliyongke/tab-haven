@@ -302,6 +302,38 @@ export function computeGroupMoveIndex(params: {
   return placeAfter ? last + 1 : first;
 }
 
+/**
+ * 把「标签序号」换算成 `chrome.tabGroups.move` 需要的**组序号**。
+ *
+ * 两者不是一回事：分组接口的 index 是窗口内标签组的排列位置（0..组数-1），
+ * 而分区拖拽算出的是标签序号。窗口里只要存在未分组标签或其它组，数值就会错位，
+ * 表现为「拖到 A 组后面，组却落到别处」。这里按「组的首个标签位置」还原组顺序，
+ * 再以目标组为锚点插入。
+ *
+ * 返回 `undefined` 表示目标组已不存在（拖拽期间被解散），调用方应静默放弃；
+ * 返回 `-1` 是接口约定的「放到窗口最后」，不是失败。
+ */
+export function computeNativeGroupMoveIndex(params: {
+  tabs: readonly TabRecord[];
+  sourceGroupId: number;
+  targetGroupId: number;
+  placeAfter: boolean;
+}): number | undefined {
+  const { tabs, sourceGroupId, targetGroupId, placeAfter } = params;
+  const order: number[] = [];
+  for (const tab of [...tabs].sort((a, b) => a.index - b.index)) {
+    if (tab.groupId === NO_GROUP || order.includes(tab.groupId)) continue;
+    order.push(tab.groupId);
+  }
+  // 先摘掉自身再定位：否则「拖到目标之后」会被自身占位顶偏一位。
+  const withoutSource = order.filter((id) => id !== sourceGroupId);
+  const targetAt = withoutSource.indexOf(targetGroupId);
+  if (targetAt === -1) return undefined;
+  const next = placeAfter ? targetAt + 1 : targetAt;
+  // 落到末尾时用 -1（接口约定的「放到窗口最后」）：index 等于组数不保证被接受。
+  return next >= withoutSource.length ? -1 : next;
+}
+
 /** 冻结（卸载）标签并返回是否成功。休眠后的标签点击会重新加载。 */
 export async function discardTab(tabId: number): Promise<boolean> {
   try {
@@ -599,22 +631,30 @@ export async function createTabsWithUrls(
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     target = win?.id;
   }
-  // 与 RestoreEngine / restoreSnapshot 同口径：每条「发放豁免 → create」，严格串行会随条目数
-  // 线性放大（常一次开几十条）。限流后约为 1/并发度，单条失败照旧跳过。
+  // 并发创建（每条先发豁免）：并发下完成顺序不定，追加到末尾的标签次序会与入参不一致。
+  // 结果数组按入参同序（mapWithConcurrency 只保证这一点），最后一次性 move 回位——
+  // 比串行创建快得多，又不必依赖 create 的完成顺序。
   const results = await mapWithConcurrency(urls, DEFAULT_CONCURRENCY, async (url) => {
     try {
       if (target !== undefined) await grantReuseAllowance(target, url);
-      await browser.tabs.create({
+      const created = await browser.tabs.create({
         url,
         active,
         ...(target !== undefined ? { windowId: target } : {})
       });
-      return true;
+      return created.id ?? null;
     } catch (error) {
       logDegraded('tabs', '批量新建标签：单条创建失败', error);
       // 无效 URL 跳过，其余继续
-      return false;
+      return null;
     }
   });
-  return results.filter(Boolean).length;
+  const createdIds = results.filter((id): id is number => id !== null);
+  if (target !== undefined && createdIds.length > 1) {
+    // 落位失败不影响「已打开」这一事实，但顺序会与入参不同，必须留痕而不是静默。
+    await browser.tabs.move(createdIds, { windowId: target, index: -1 }).catch((error) => {
+      logDegraded('tabs', '批量新建标签：按入参顺序落位失败，标签顺序可能与预期不同', error);
+    });
+  }
+  return createdIds.length;
 }

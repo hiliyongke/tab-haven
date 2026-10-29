@@ -1,5 +1,5 @@
 /**
- * 主题应用（三态 system/light/dark，行为规格 C-11）。
+ * 主题应用（三态 system/light/dark）。
  *
  * 双通道：
  *  - 权威设置在 chrome.storage（dataStore.settings）；

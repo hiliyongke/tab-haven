@@ -66,6 +66,9 @@ function stageDownloadZip(version) {
     fail(
       `未找到 .output/，下载按钮将指向不存在的地址：请先跑 \`pnpm build && pnpm zip\`；仅构建页面时设 SITE_SKIP_ZIP=1`
     );
+    // 跳过打包时必须清掉上一轮的包：页面 href 按当前版本号拼接，旧包留在 dist 里
+    // 会被一起发布出去，用户下到的是别的版本。
+    rmSync(targetDir, { recursive: true, force: true });
     return null;
   }
   // 按版本号精确匹配，而不是「取最新」：.output/ 里可能同时有 chrome 与 edge 两份包，
@@ -79,6 +82,7 @@ function stageDownloadZip(version) {
     fail(
       `.output/ 下没有 tabs-${version}-*.zip：下载按钮将指向不存在的地址。请先跑 \`pnpm zip\`（版本改了必须重新打包）；仅构建页面时设 SITE_SKIP_ZIP=1`
     );
+    rmSync(targetDir, { recursive: true, force: true });
     return null;
   }
   // 清空再拷：public/download 不在 dist 的清空范围内，上一轮构建留在这里的包会被一直发布出去。
@@ -110,7 +114,12 @@ function assertNoExternalRequests() {
   const networkApis = [];
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
-    for (const match of text.matchAll(/https?:\/\/([^\s"'<>)]+)/g)) {
+    for (const match of text.matchAll(
+      // 同时覆盖协议相对（`//host`）与 ws/wss：只认 http(s) 时，一条 `//cdn.x/y.js`
+      // 或 `wss://host` 就能绕过「零外链」自检。域名段要求至少一个点，避免把
+      // 代码里的 `// 注释` 误判成 URL。
+      /(?:(?:https?|wss?):)?\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'<>)]*)/gi
+    )) {
       // 先截断到 host 再**全等**比较：startsWith 会把 schema.org.evil.com 也放行。
       const host = match[1].split('/')[0];
       if (!allowedHosts.includes(host)) external.push(`${file}: ${host}`);
@@ -146,6 +155,13 @@ function findHanInEnglish(htmlPath) {
 }
 
 async function main() {
+  // 发布构建必须带真实域名：没有 SITE_URL 时 canonical / hreflang / sitemap / JSON-LD
+  // 全部静默缺失，而构建照样成功——产物与配好域名的版本外观完全一致。
+  if (process.env.SITE_BUILD_TARGET === 'release' && !SITE_URL) {
+    throw new Error(
+      '[site] release 构建必须先在 site.config.ts 填写 SITE_URL（canonical/hreflang/sitemap 依赖它）'
+    );
+  }
   const version = readVersion();
   // 页脚年份由构建期注入：写死年份每年都会过期一次，而这是唯一一处会暴露的日期。
   const year = String(new Date().getFullYear());
@@ -206,7 +222,15 @@ async function main() {
       `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`
     );
   } else {
-    console.warn('[site] SITE_URL 未配置：已跳过 sitemap.xml 与 canonical/hreflang/JSON-LD');
+    console.warn(
+      '[site] SITE_URL 未配置：已跳过 sitemap.xml 与 canonical/hreflang/JSON-LD（release 构建会直接失败）'
+    );
+  }
+
+  // 页面 href 是按版本号拼的，与磁盘上是否真的有这个文件无关：缺件必须在构建期失败，
+  // 否则「下载按钮 404」要等用户点击才暴露。
+  if (downloadPath !== null && !existsSync(join(distDir, downloadPath))) {
+    throw new Error(`[site] 下载按钮指向不存在的文件：${downloadPath}`);
   }
 
   const { external, networkApis } = assertNoExternalRequests();

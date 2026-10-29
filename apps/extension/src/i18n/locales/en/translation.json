@@ -331,7 +331,6 @@
   "i18n_00n1o2z": "Open pinned: {{name}}",
   "i18n_1nezuky": "Search tabs for: {{query}}",
   "i18n_1d52z2r": "Sync mirror write failed: local data is unaffected, but other devices will not receive this change",
-  "i18n_15aktic": "Bookmarks import",
   "i18n_0ouga1p": "Snapshot limit reached; the {{count}} oldest were removed (adjust snapshot retention in settings)",
   "i18n_0zm71mz": "Those tabs are no longer in the window — nothing to redo",
   "i18n_0x1ko8p": "Closed {{count}} tabs",
@@ -767,7 +766,6 @@
   "i18n_003q7wl": "Just now",
   "i18n_1it8f3m": "{{count}} min ago",
   "i18n_10ebhn6": "Release to drop · Esc to cancel",
-  "i18n_0ldz8af": "Group order updated",
   "i18n_1tacmf7": "Unmuted",
   "i18n_1s1gsjl": "Keeping the {{count}} most recent close records — you can raise the limit in settings",
   "i18n_12avfsy": "What are Favorites / pinned tiles / browser pinned tabs?",
@@ -800,5 +798,7 @@
   "i18n_0md0xsk": "Snapshot name can't be empty",
   "i18n_02eflt2": "This workspace no longer exists — refresh and try again",
   "i18n_13w717u": "Collapsed sites",
-  "i18n_1o3vqtk": "Save recent degradations as a local report (time and error descriptions only — no page titles or URLs) to attach when reporting an issue. {{count}} quarantined bad-data records will be exported along with it"
+  "i18n_1o3vqtk": "Save recent degradations as a local report (time and error descriptions only — no page titles or URLs) to attach when reporting an issue. {{count}} quarantined bad-data records will be exported along with it",
+  "i18n_0vxr3l9": "Content is over the 1 MB limit. Paste it in smaller batches.",
+  "i18n_0ez748q": "Imported {{count}} tabs (anything past the 1,000 limit was ignored)."
 }

@@ -16,12 +16,15 @@ import { ConfirmDialog } from '@/ui/dialog/Dialog';
 export function RestoreConfirmDialog({
   snapshot,
   onConfirm,
-  onCancel
+  onCancel,
+  inline = false
 }: {
   snapshot: Snapshot;
   /** 确认后执行（调用方负责真正恢复与结果提示）。 */
   onConfirm: () => void;
   onCancel: () => void;
+  /** 调用方本身处在原生模态 dialog 内时置 true，否则弹窗点不动（见 DialogShell.inline）。 */
+  inline?: boolean;
 }) {
   const { t } = useTranslation();
   // 将还原的分组数（快照内 distinct groupTitle）。
@@ -29,6 +32,7 @@ export function RestoreConfirmDialog({
   return (
     <ConfirmDialog
       title={t('恢复')}
+      inline={inline}
       message={t(
         '恢复「{{name}}」将打开 {{count}} 个标签（含 {{groups}} 个标签组）。当前已打开的标签不受影响。',
         {

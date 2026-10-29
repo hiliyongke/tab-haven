@@ -5,6 +5,7 @@ import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import {
   closeTabs,
   computeGroupMoveIndex,
+  computeNativeGroupMoveIndex,
   computeReorderIndex,
   createNewTab,
   discardTab,
@@ -188,6 +189,64 @@ describe('computeGroupMoveIndex', () => {
     expect(
       computeGroupMoveIndex({ tabs, sourceTabIds: [], targetTabIds: B, placeAfter: true })
     ).toBe(-1);
+  });
+});
+
+describe('computeNativeGroupMoveIndex', () => {
+  /**
+   * 组顺序由「组的首个标签位置」决定；未分组标签穿插时，标签序号与组序号不等。
+   * 这里故意让 10 组占 2 个标签、中间夹一个未分组标签：组序号 1 对应的标签序号是 3。
+   */
+  const grouped = [
+    tab({ id: 1, index: 0, groupId: 10 }),
+    tab({ id: 2, index: 1, groupId: 10 }),
+    tab({ id: 3, index: 2, groupId: NO_GROUP }),
+    tab({ id: 4, index: 3, groupId: 20 }),
+    tab({ id: 5, index: 4, groupId: 30 })
+  ];
+
+  it('拖到目标组之后返回组序号，而不是标签序号', () => {
+    expect(
+      computeNativeGroupMoveIndex({
+        tabs: grouped,
+        sourceGroupId: 10,
+        targetGroupId: 20,
+        placeAfter: true
+      })
+    ).toBe(1);
+  });
+
+  it('拖到目标组之前返回组序号', () => {
+    expect(
+      computeNativeGroupMoveIndex({
+        tabs: grouped,
+        sourceGroupId: 30,
+        targetGroupId: 10,
+        placeAfter: false
+      })
+    ).toBe(0);
+  });
+
+  it('落到末尾用 -1（接口约定的「放到最后」，不是失败）', () => {
+    expect(
+      computeNativeGroupMoveIndex({
+        tabs: grouped,
+        sourceGroupId: 10,
+        targetGroupId: 30,
+        placeAfter: true
+      })
+    ).toBe(-1);
+  });
+
+  it('目标组已解散返回 undefined：与 -1 区分，调用方才不会静默放弃', () => {
+    expect(
+      computeNativeGroupMoveIndex({
+        tabs: grouped,
+        sourceGroupId: 10,
+        targetGroupId: 99,
+        placeAfter: true
+      })
+    ).toBeUndefined();
   });
 });
 

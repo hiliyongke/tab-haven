@@ -5,7 +5,7 @@ import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types'
 import { isHttpUrl, webComparisonKey } from '@/core/url/UrlInspector';
 import { missingTabsOf } from '@/core/snapshot/missingTabs';
 import { trimSnapshotsWithEvicted } from '@/core/snapshot/trimSnapshots';
-import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
+import { mapSequential } from '@/core/util/concurrency';
 import { newId } from '@/core/util/id';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
 import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
@@ -181,10 +181,11 @@ export async function restoreSnapshot(
   const missing = missingTabsOf(snapshot, existingKeys);
   if (missing.length === 0) return { count: 0, degraded };
 
-  // 3. 有限并发创建：豁免 → 创建（pinned 内联）→ muted 后置。结果按 missing 顺序收集，
-  // 第 4 步的分组还原依赖该顺序（组内标签的排列由 tabIds 顺序决定，乱序会让恢复出的组与原快照不符）。
+  // 3. 逐条创建：`tabs.create` 不带 index 时按**完成顺序**追加，并发下完成顺序不定，
+  // 未分组标签在标签栏的排列会与快照不符。恢复是低频操作，用串行换取「按快照顺序还原」；
+  // 第 4 步的分组还原同样依赖 created 的顺序（组内排列由 tabIds 顺序决定）。
   const created = (
-    await mapWithConcurrency(missing, DEFAULT_CONCURRENCY, async (tab) => {
+    await mapSequential(missing, async (tab) => {
       try {
         // 未获确认时恢复出来的标签可能被复用引擎合并掉，必须传导为 degraded，否则界面报
         // 「已恢复」而标签随即消失。

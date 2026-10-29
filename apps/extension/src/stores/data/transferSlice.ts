@@ -1,9 +1,9 @@
-import { translate } from '@/i18n';
 import {
   createFolderItem,
   createFolder as createFolderModel,
   dedupePins
 } from '@/core/fixed/FolderOps';
+import { DEFAULT_FOLDER_NAMES } from '@/core/snapshot/defaultNames';
 import { fixedItemKey } from '@/core/fixed/FolderOps';
 import { EXPORT_FILE_VERSION, parseExportFile, type Settings } from '@/core/schema/models';
 import { webComparisonKey } from '@/core/url/UrlInspector';
@@ -265,7 +265,7 @@ export function createTransferSlice(
         if (bar.looseLeaves.length > 0) {
           const leaves = uniqueLeaves(bar.looseLeaves.filter((leaf) => isExportableUrl(leaf.url)));
           if (leaves.length > 0) {
-            const name = translate('书签导入');
+            const name = DEFAULT_FOLDER_NAMES.bookmarkImport;
             const items = leaves.map((leaf) =>
               createFolderItem({ url: leaf.url, title: leaf.title })
             );

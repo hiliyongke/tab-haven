@@ -34,8 +34,8 @@ const watcherUnsubscribers: Array<() => void> = [];
 
 /**
  * 有「写入成功」路径的分区各自的降级记账 scope。
- * 其余调用点（设置、折叠态、镜像恢复等）用 'dataStore' 上报，没有成功回调、不会自行复位——
- * 这正是所需：设置没写成功就不能假装恢复。
+ * 其余调用点（设置、折叠态、镜像恢复等）用 'dataStore' 上报，没有成功回调、不会自行复位：
+ * 设置没写成功就不能假装恢复。
  */
 const FOLDERS_SCOPE = 'fixed-folders';
 const PINS_SCOPE = 'persistent-pins';

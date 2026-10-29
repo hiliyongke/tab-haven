@@ -5,6 +5,7 @@ import { reorderBlockedReason } from '@/core/site/reorderCapability';
 import { DEFAULT_FOLDER_NAMES } from '@/core/snapshot/defaultNames';
 import {
   computeGroupMoveIndex,
+  computeNativeGroupMoveIndex,
   computeReorderIndex,
   groupTabs,
   moveTab,
@@ -254,10 +255,19 @@ export function useTabDragHandlers() {
       useTabStore.getState().applyGroupReorder(sourceTabIds, index);
 
       if (activeData.groupId !== undefined && overData.groupId !== undefined) {
+        // index 是**标签**序号（本地乐观排序用），而 tabGroups.move 要的是**组**序号：
+        // 窗口里存在未分组标签时两者不等，直接传会把组落到别处。
+        const groupIndex = computeNativeGroupMoveIndex({
+          tabs: allTabs,
+          sourceGroupId: activeData.groupId,
+          targetGroupId: overData.groupId,
+          placeAfter
+        });
+        if (groupIndex === undefined) return;
         // 与 handleReorder / moveTabs 分支同口径：失败无事件、不自愈，需主动刷新校正。
         void useTabStore
           .getState()
-          .moveGroup(activeData.groupId, index)
+          .moveGroup(activeData.groupId, groupIndex)
           .then((ok) => {
             if (!ok) tabSyncService.requestRefresh();
           })

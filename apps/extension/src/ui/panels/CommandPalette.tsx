@@ -260,6 +260,7 @@ export function CommandPalette({
         {pendingRestore !== null && (
           <RestoreConfirmDialog
             snapshot={pendingRestore}
+            inline
             onConfirm={() => {
               const snap = pendingRestore;
               setPendingRestore(null);

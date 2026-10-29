@@ -47,10 +47,32 @@ describe('collectFromFile: t() 调用点', () => {
     expect(result.errors.join('\n')).toContain('模板串含插值');
   });
 
+  it('Given 字符串拼接原文 When 抽取 Then 报「无法计算 key」而不是静默放过', () => {
+    // 回归：只认 TemplateLiteral 时，`'共' + n + '个'` 既抽不到词条，
+    // 又因 lint 把 t() 参数整棵标记为已接管而躲过裸露中文检查，三处守卫全绿。
+    const result = collect(`t('共' + count + '个标签');`);
+    expect(result.entries).toHaveLength(0);
+    expect(result.errors.join('\n')).toContain('字符串拼接');
+  });
+
   it('Given context 选项 When 抽取 Then 登记 context（同一原文可有两种译法）', () => {
     const entry = collect(`t('固定标签', { context: 'action' });`).entries[0];
     expect(entry?.sentence).toBe('固定标签');
     expect(entry?.context).toBe('action');
+  });
+
+  it('Given context 是非字面量 When 抽取 Then 报错而不是按无 context 算 key', () => {
+    // 运行时按变量值算 key、抽取按 undefined 算 key，两者不一致时英文模式露中文。
+    const result = collect(`t('固定标签', { context: ctx });`);
+    expect(result.errors.join('\n')).toContain('context 不是字面量');
+  });
+
+  it('Given 源码有可恢复的语法错误 When 抽取 Then 报「语法错误」且不丢掉能抽到的词条', () => {
+    // errorRecovery 下坏语法不抛错，只挂在 ast.errors 上；不读它等于「抽到多少算多少」。
+    // 这里用 tsx 下的 `<T>` 单类型参数歧义构造可恢复错误（Babel 会继续产出 AST）。
+    const result = collect(`const f = <T>(x: T) => x;\nt('甲文案');`, 'recover.tsx');
+    expect(result.errors.join('\n')).toContain('语法错误');
+    expect(result.entries.map((entry) => entry.sentence)).toContain('甲文案');
   });
 
   it('Given 不含汉字的字面量 When 抽取 Then 不登记（语义 key 直通，不进词典）', () => {
@@ -77,6 +99,20 @@ describe('collectFromFile: 常量表与 Trans', () => {
     const result = collect('const X = { labelKey: `共 ${count} 个标签` };');
     expect(result.entries).toHaveLength(0);
     expect(result.errors.join('\n')).toContain('模板串含插值');
+  });
+
+  it('Given `*Key` 属性是字符串拼接 When 抽取 Then 与 t() 通道同口径报错', () => {
+    const result = collect(`const X = { labelKey: '共' + count + ' 个标签' };`);
+    expect(result.entries).toHaveLength(0);
+    expect(result.errors.join('\n')).toContain('字符串拼接');
+  });
+
+  it('Given `*Key` 属性是条件表达式 When 抽取 Then 每一支都入词条，不静默丢弃', () => {
+    // 回归：branchNodes 展开成裸字面量后，若只按 TemplateLiteral/BinaryExpression 判定，
+    // 两支都会既不入词典也不报错，而英文模式下它们会原样渲染。
+    const result = collect(`const X = { labelKey: f ? '丙文案' : '丁文案' };`);
+    expect(result.errors).toEqual([]);
+    expect(result.entries.map((entry) => entry.sentence)).toEqual(['丙文案', '丁文案']);
   });
 
   it('Given <Trans> 子节点 When 抽取 Then 按同层序号串化后登记', () => {

@@ -21,6 +21,14 @@ interface DialogShellProps {
   onClose: () => void;
   /** 覆盖默认宽度（宽度刻度见 main.css .dialog-sm/.dialog-md）。 */
   widthClassName?: string;
+  /**
+   * 不 portal，直接渲染在调用处。
+   *
+   * 使用场景只有一类：调用方自身处在**原生 `<dialog>` 的 showModal() 模态**中。
+   * 模态 dialog 会让其子树之外的一切 inert，portal 到 body 的弹窗照样点不动；
+   * 只有渲染成 dialog 的后代才能交互（命令面板里的快照恢复确认即此情形）。
+   */
+  inline?: boolean;
 }
 
 /** 弹窗内可聚焦元素选择器。 */
@@ -210,7 +218,8 @@ export function DialogShell({
   children,
   footer,
   onClose,
-  widthClassName = 'dialog-sm'
+  widthClassName = 'dialog-sm',
+  inline = false
 }: DialogShellProps) {
   const { t } = useTranslation();
   const shellRef = useRef<HTMLDivElement>(null);
@@ -223,7 +232,8 @@ export function DialogShell({
 
   // Portal 到 body：.app 的 container-type: inline-size 会成为 fixed 后代的包含块
   // 并创建层叠上下文；挂到 body 后遮罩相对视口，不受 .app 内部 z-index 影响。
-  return createPortal(
+  // inline 时留在原地（见 DialogShellProps.inline：模态 dialog 之外的一切都 inert）。
+  const content = (
     <div
       className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
       onMouseDown={(event) => {
@@ -256,9 +266,9 @@ export function DialogShell({
           </div>
         )}
       </div>
-    </div>,
-    document.body
+    </div>
   );
+  return inline ? content : createPortal(content, document.body);
 }
 
 /** 文本输入弹窗（替代 window.prompt）。 */
@@ -322,7 +332,8 @@ export function ConfirmDialog({
   danger = false,
   confirmLabel,
   onConfirm,
-  onCancel
+  onCancel,
+  inline = false
 }: {
   title: string;
   message: string;
@@ -331,12 +342,15 @@ export function ConfirmDialog({
   confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** 见 DialogShellProps.inline：调用方在原生模态 dialog 内时必须置 true。 */
+  inline?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <DialogShell
       title={title}
       onClose={onCancel}
+      inline={inline}
       footer={
         <>
           <Button variant="secondary" onClick={onCancel}>
