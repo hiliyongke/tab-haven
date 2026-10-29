@@ -8,11 +8,9 @@ import { createSerialChain } from '@/core/util/concurrency';
 let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
- * 临时角标覆盖（如「整理完成」打勾）及其到期时间。
- *
- * 覆盖态自带到期时间是刻意的：SW 被回收时裸 setTimeout 会被吞掉，覆盖态若只靠
- * 定时器清除，角标会永久停在覆盖文案上。改为「到期时间 + 每次刷新时判定」后，
- * 只要之后发生任意一次刷新就会回到真实状态。
+ * 临时角标覆盖（如「整理完成」打勾）及其到期时间。覆盖态自带到期时间是刻意的：SW 被回收
+ * 时裸 setTimeout 会被吞掉，若只靠定时器清除，角标会永久停在覆盖文案上。改为「到期时间 +
+ * 每次刷新时判定」后，只要之后发生任意一次刷新就会回到真实状态。
  */
 let badgeOverride: { text: string; color: string; until: number } | undefined;
 let overrideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -30,11 +28,9 @@ export function showBadgeOverride(text: string, color: string, holdMs: number): 
 }
 
 /**
- * 角标写入串行链（多源并发刷新时防交错）。
- *
- * 与 `contextMenus` / `windowCache` 同口径：角标刷新有多个并发来源（标签事件回调、
- * 覆盖态到期回调、冷启动补刷），`setBadgeText` / `setTitle` 若交错执行，最终角标
- * 会停留在「先发起但后落地」的那次结果上，而不是最后一次输入的计算结果。
+ * 角标写入串行链（多源并发刷新时防交错）。角标刷新有多个并发来源（标签事件回调、
+ * 覆盖态到期回调、冷启动补刷），setBadgeText / setTitle 若交错执行，最终角标会停留在
+ * 「先发起但后落地」的那次结果上，而不是最后一次输入的计算结果。
  */
 const badgeChain = createSerialChain();
 
@@ -66,12 +62,12 @@ async function runRefreshBadge(): Promise<void> {
       seen.add(key);
     }
     const discarded = tabs.filter((tab) => tab.discarded).length;
-    // 显式标注 string：TS 会因开头的 early-return 把 cachedSettings.badgeMode
-    // 收窄为排除 'off' 的联合，而 await 期间它确实可能被改回 off。
+    // 显式标注 string：TS 会因开头的 early-return 把 cachedSettings.badgeMode 收窄为排除
+    // 'off' 的联合，而 await 期间它确实可能被改回 off。
     const mode: string = cachedSettings.badgeMode;
     const dupCount = dupGroups.size;
-    // 全量查询期间模式可能被改成 off：必须重新判定，否则会落入 auto 分支
-    // 在「角标已关闭」的状态下重新点亮它。
+    // 全量查询期间模式可能被改成 off：必须重新判定，否则会落入 auto 分支在「角标已关闭」
+    // 的状态下重新点亮它。
     if (mode === 'off') {
       await browser.action.setBadgeText({ text: '' }).catch(() => {});
       return;
@@ -107,7 +103,7 @@ async function runRefreshBadge(): Promise<void> {
 
 /** 刷新角标：按 badgeMode 计算当前窗口重复标签数（并发调用串行执行）。 */
 function refreshBadge(): Promise<void> {
-  // 链尾统一兜底：调用方均以 `void refreshBadge()` 触发，无人接 rejection。
+  // 链尾统一兜底：调用方均以 void refreshBadge() 触发，无人接 rejection。
   return badgeChain.enqueueSettled(runRefreshBadge, (error) => {
     logDegraded('badge', '工具栏角标更新失败', error);
   });

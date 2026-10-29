@@ -1,20 +1,8 @@
 /**
- * 浏览器级快捷键（`manifest.commands`）的**单一口径**。
- *
- * 为什么需要它：快捷键此前有两份硬编码 —— `wxt.config.ts` 的 manifest 声明与设置页 /
- * 关于页各写一份展示文案，且两处的 Mac 修饰键口径还不一致（一处 `⌃⇧F`、一处恒
- * `Ctrl Shift F`）。改了 `suggested_key` 而漏改界面，用户看到的说明就成了错的。
- *
- * 为什么不直接让 `wxt.config.ts` 引用本表：manifest 是构建期产物，`wxt.config.ts`
- * 里写的是字面量，无法在本文件里双向引用。故两边各存一份，由
- * `tests/config/commands-source.test.ts` 强制对齐 —— 复制是刻意的，漂移不是。
- *
- * `suggestedKey` 用 Chrome 的官方写法（manifest 字段值本身）；界面显示走
- * `commandKeyParts`（Mac 显示符号，其余保留原词）。
- *
- * `labelKey` 走 `core/snapshot/defaultNames` 之外的另一条纪律：它是**界面文案**
- * （不是落盘数据），必须进词典，故用属性名以 `Key` 结尾的常量表形态
- * （扫描器据此抽词，英文模式下不会露中文）。
+ * 浏览器级快捷键（manifest.commands）的单一口径。wxt.config.ts 的 manifest 声明是
+ * 构建期字面量，无法反向引用本表，两边各存一份，由 tests/config/commands-source.test.ts 强制对齐。
+ * suggestedKey 是 manifest 原值，界面显示走 commandKeyParts（Mac 转符号）。
+ * labelKey 是界面文案（非落盘数据），用 *Key 常量表形态供扫描器抽词。
  */
 
 /** Mac 的修饰键符号映射（Chrome 自己的「扩展快捷键」页用的就是这套符号）。 */
@@ -35,11 +23,7 @@ export const COMMANDS = [
 
 export type CommandSpec = (typeof COMMANDS)[number];
 
-/**
- * 把 `Ctrl+Shift+F` 拆成本平台的**分段**写法，供界面逐段渲染成按键块。
- *
- * 纯函数：平台判定由调用方传入（本层不碰 `navigator`），因此可测。
- */
+/** 把 `Ctrl+Shift+F` 拆成分段写法；平台由调用方传入（本层不碰 navigator），可测。 */
 export function commandKeyParts(suggestedKey: string, isMac: boolean): string[] {
   const parts = suggestedKey.split('+');
   if (!isMac) return parts;

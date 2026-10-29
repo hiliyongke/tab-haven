@@ -1,9 +1,6 @@
 /**
  * Punycode（RFC 3492 bootstring）解码：把 IDN 的 xn-- 前缀标签还原为 Unicode。
- *
- * 用途：WHATWG URL 的 hostname 对国际化域名返回 punycode（如 中文.cn → xn--fiq228c.cn），
- * 归组键/身份键保留 punycode 形态（比较稳定），展示标签经本模块转回可读文本。
- *
+ * WHATWG URL 的 hostname 对国际化域名返回 punycode，归组键保留该形态、展示标签经本模块转回可读文本。
  * 仅实现 decode（展示场景足够）；解码失败回退原始标签，绝不抛异常。
  */
 
@@ -78,13 +75,7 @@ function decodeLabel(input: string): string {
   return String.fromCodePoint(...output);
 }
 
-/**
- * 域名的 punycode → Unicode（逐标签解码 xn-- 前缀标签，其余原样保留）。
- *
- * 解码失败**只回退出问题的那一个标签**，不回退整条域名：整体回退时，一个畸形
- * 标签（用户输入、被截断的 host）就会把其余本可正常显示的 Unicode 标签一起打回
- * `xn--` 原文，故障范围被人为放大，且调用方无从得知发生过失败。
- */
+/** 域名的 punycode → Unicode（逐标签解码 xn-- 前缀标签）；解码失败只回退出问题的那个标签，避免一个畸形标签把其余正常标签也打回 `xn--` 原文。 */
 export function domainToUnicode(hostname: string): string {
   if (!hostname.includes('xn--')) return hostname;
   return hostname

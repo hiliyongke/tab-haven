@@ -154,4 +154,61 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
     // 未钳制时 start 被顶到 2、end=3 —— 只剩最后一行，前两行空白
     await waitFor(() => expect(mountedRows(view)).toHaveLength(3));
   });
+
+  it('根字号缩放变化后重新校准实测行高（不沿用旧 measuredSize）', async () => {
+    // 背景：measuredSize 一旦经首行实测赋值，测量 effect 的
+    // `if (measuredSize !== null) return` 就永不重测；只有把它置回 null 才会重测。
+    // 用户改浏览器/系统默认字号（resize → readScale）时，DOM 里 li 的真实高度已变，
+    // 但 itemSize 不变 —— 若丢弃实测值的 effect 依赖漏了 scale，measuredSize 会
+    // 永久停在旧行高，wrapper 定高与内容高度错位（行重叠/裁切）。
+    let rootFontSize = 16;
+    let measuredRowHeight = 40;
+    const realGetComputedStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+      const style = realGetComputedStyle(el);
+      if (el === document.documentElement) {
+        return new Proxy(style, {
+          get(target, prop) {
+            if (prop === 'fontSize') return `${rootFontSize}px`;
+            const value = Reflect.get(target, prop);
+            return typeof value === 'function' ? value.bind(target) : value;
+          }
+        });
+      }
+      return style;
+    });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      () =>
+        ({
+          height: measuredRowHeight,
+          width: 300,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({})
+        }) as DOMRect
+    );
+
+    const count = 100;
+    const renderRow = vi.fn((tab: TabRecord) => <div>row-{tab.id}</div>);
+    const view = render(
+      <VirtualRowList tabs={tabsOf(count)} itemSize={32} maxHeight={400} renderRow={renderRow} />
+    );
+    const spacer = () => view.container.querySelector<HTMLElement>('.virtual-row-scroll > div');
+
+    // 首行实测 40px（与估算 32×1 不同）→ measuredSize=40 → 占位高度 = count×40
+    await waitFor(() => expect(spacer()?.style.height).toBe(`${count * 40}px`));
+
+    // 用户把默认字号翻倍：rootFontSize 32 → scale=2，DOM 行高随之变为 80px
+    rootFontSize = 32;
+    measuredRowHeight = 80;
+    fireEvent.resize(window);
+
+    // 修复后：scale 变化触发 setMeasuredSize(null) → 重测得到新行高 80 → 占位高度 = count×80。
+    // 修复前（依赖仅 [itemSize]）：measuredSize 恒为旧的 40 → 占位高度恒为 count×40。
+    await waitFor(() => expect(spacer()?.style.height).toBe(`${count * 80}px`));
+  });
 });

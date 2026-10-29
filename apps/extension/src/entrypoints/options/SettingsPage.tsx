@@ -27,31 +27,12 @@ import { CapabilitiesGuide, PresetsPanel } from '@/ui/settings/settingPresets';
 import { ShortcutsSection } from '@/ui/settings/ShortcutsSection';
 import { ClearDataDialog } from '@/entrypoints/options/ClearDataDialog';
 
-/**
- * 设置页**编排层**：状态、写盘通道与弹窗流转。
- *
- * 已按职责拆分（自上而下单向依赖）：
- *  - `settingControls.tsx` —— 展示层控件（分区 / 行容器 / 编辑器），叶子；
- *  - `settingSections.tsx` —— 声明式配置（buildSections + SettingRow）；
- *  - `settingPresets.tsx` —— 引导层（预设画像 / 能力发现）；
- *  - 本文件 —— 只做状态编排与 JSX 组装，不再承载任何配置体。
- */
+/** 设置页编排层：状态、写盘通道与弹窗流转。展示控件在 settingControls，配置在 settingSections。 */
 
 /** 导入文件体积上限（5MB）：备份为纯 JSON，此上限已远超正常使用规模。 */
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
-/**
- * 导入事务的分区名 → 界面称呼（写盘失败提示要指出卡在哪一步）。
- *
- * 值存的是**待翻译的原文**，由 `partitionLabel` 在提示那一刻经 `t()` 翻译 ——
- * 此处直接写 `t(...)` 会让映射在模块加载期求值，那时语言尚未确定，切语言后文案
- * 不会跟着变。
- *
- * 形态与 `settingSections.tsx` 的 `COLOR_THEME_LABELS` 一致（属性名以 `Key` 结尾）：
- * 这是扫描器抽取常量表的约定（常量表不是调用点，只有 `*Key` 属性的值会被抽进词典）。
- * 早先这里是 `Record<string, string>` 且整块 `@i18n-ignore` 豁免 —— 豁免压住的只是
- * zh-linter 告警，词条进不了词典，英文模式下「折叠状态」直接露中文而 scan / check 双绿。
- */
+/** 导入事务的分区名 → 界面称呼。值存待翻译原文，由 partitionLabel 在提示那一刻 t() 翻译（直接写 t() 会在模块加载期语言未定时求值）。 */
 const PARTITION_LABELS: Record<string, { labelKey: string }> = {
   folders: { labelKey: '收藏夹' },
   pins: { labelKey: '常驻磁贴' },
@@ -121,15 +102,7 @@ export function SettingsPage() {
     };
   }, []);
 
-  /**
-   * 设置页的唯一写入通道。
-   *
-   * 失败必须在**视口内**说清楚：设置是跨会话行为契约，写盘失败时 store 不会变更，
-   * 界面会静默弹回旧值——用户只会觉得「开关点不动」，而不会知道数据根本没保存。
-   *
-   * 状态单独存放（不复用 `transferStatus`）：后者只渲染在页面底部的「数据备份」
-   * 分区里，而设置项散布在整页，把它顶到一屏之外等于没有提示。
-   */
+  /** 唯一写入通道。失败必须在视口内说清楚（设置是跨会话契约，写盘失败界面会静默弹回旧值）。 */
   const update = (key: keyof Settings, value: unknown) => {
     void tryUpdateSettings({ [key]: value } as Partial<Settings>).then((ok) => {
       setSettingsStatus(ok ? null : t('设置未保存：存储不可用，请重试'));
@@ -341,8 +314,7 @@ export function SettingsPage() {
   if (!ready) {
     return (
       /* 与正式态共用同一外壳：加载态另用一个盒子时，ready 翻转会让容器宽度与
-         上下留白同时变化。占位改用骨架屏，与侧栏列表同一套加载语言（此前是
-         一行「设置加载中…」，两处加载态观感不同）。 */
+         上下留白同时变化。占位用骨架屏，与侧栏列表同一套加载语言。 */
       <div className="mx-auto flex max-w-5xl justify-center gap-8 px-4 py-6 sm:px-6 sm:py-10">
         <div className="mx-auto min-w-0 max-w-2xl flex-1">
           <span className="sr-only" role="status">
@@ -359,11 +331,8 @@ export function SettingsPage() {
 
   return (
     /* 左目录 + 右正文：目录在 lg 以下隐藏（窄屏放不下侧栏，此时正文占满宽度）。
-       justify-center：正文列被 max-w-2xl 卡住后，剩余空间原本全部堆在右侧，
-       lg 以上空 112px、lg 以下空 180px，整页视觉左偏。 */
-    /* 去掉 justify-center：目录 160 + gap 32 + 正文 672 = 864 居中于 1024 容器，
-       剩余 160 平分两侧 → 正文列中心相对页面中心右偏 96px，宽屏下左右留白
-       80 / 272 明显不对称。居中交给正文列的 mx-auto。 */
+       不用 justify-center：目录 + gap + 正文固定宽度居中时，正文列会相对页面中心右偏、
+       左右留白不对称；居中交给正文列的 mx-auto。 */
     <div className="mx-auto flex max-w-5xl gap-8 px-4 py-6 sm:px-6 sm:py-10">
       <SettingsOutline items={outlineItems} />
       <div className="mx-auto min-w-0 max-w-2xl flex-1">

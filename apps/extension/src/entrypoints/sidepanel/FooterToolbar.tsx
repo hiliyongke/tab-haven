@@ -178,12 +178,8 @@ export function FooterToolbar(props: FooterToolbarProps) {
   });
 
   /**
-   * 底栏按钮配置表（原为 14 分支的 switch）。
-   *
-   * 为什么换成表：switch 里每个 case 自己 return 一段 JSX，新增按钮要在两处
-   * （`FOOTER_BUTTON_KEYS` 顺序表 + 分支）登记，漏一处就变成「顺序里有、界面上没有」；
-   * 表的键与顺序表同构，漏登记由编译器兜住（Record 必须穷尽）。
-   * 另：`footerLabels ? t(...) : undefined` 原先 14 处各写一遍，现在统一在渲染处判一次。
+   * 底栏按钮配置表：键与 `FOOTER_BUTTON_KEYS` 顺序表同构，漏登记由编译器兜住（Record 必须穷尽）。
+   * `footerLabels ? t(...) : undefined` 的判定统一在渲染处做一次。
    *
    * `null` = 条件不满足，本次不渲染（位置仍留在顺序里，条件恢复后回到原位）。
    */
@@ -334,8 +330,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
         </span>
         <span className="sr-only">{t('共 {{count}} 个标签', { count: tabCount })}</span>
       </span>
-      {/* gap-1：原本组间靠分隔线区分（间距 2px + 1px 线）；顺序可自定义后分组线
-          不再成立（用户可以把任意按钮拖到任意位置），改用略大的均匀间距表达「一组工具」。 */}
+      {/* gap-1：顺序可自定义（任意按钮可拖到任意位置），无法靠分隔线分组，用均匀间距表达「一组工具」。 */}
       <nav className="flex min-w-0 flex-wrap items-center gap-1" aria-label={t('侧边栏工具')}>
         {/* 按钮由 renderFooterButton 按 key 渲染、顺序来自 footerOrder：拖拽即改顺序
             （写回 settings.footerOrder）。条件不满足的按钮返回 null，自动跳过不占位。 */}

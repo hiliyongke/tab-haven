@@ -8,37 +8,14 @@ import {
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 
 /**
- * Workona 迁移器：Workona 导出 JSON → Tabs 快照族。
- *
- * 外部格式 → 内部 schema 的纯转换函数，零 chrome 依赖，恰好落在 core 层的
- * 单测主场。与 OneTab 导入（文本解析）互补，共同构成「迁移矩阵」的入口面。
- *
- * Workona 导出结构（workona.com/export/mydata 产出，字段名大小写混合）：
- *  {
- *    "Workspaces": [ { "title": "分组名", "workspaces": [ { "title": "...",
- *      "tabs": [ { "title": "...", "url": "..." } ],
- *      "resources": [ { "title": "...", "resources": [...] } ] } ] } ],
- *    "Archived Workspaces": [ ...同结构... ]
- *  }
- *
- * 转换规则：
- *  - 每个带标签的 workspace → 一份快照；
- *  - 归档 workspace 的快照 origin 为 'archive'，其余为 'manual'；
- *  - resources（站点收藏）并入同一份快照（条目级 url 字段同构）；
- *  - 仅 http(s) URL 可恢复（chrome:// 等内部页浏览器不允许以 URL 创建）；
- *  - tabs 数量受 SNAPSHOT_TABS_LIMIT 约束、快照份数受 SNAPSHOTS_LIMIT 约束；
- *    被丢弃的量一律计入结果（truncatedTabs / truncatedSnapshots），不静默截断。
+ * Workona 导出 JSON → Tabs 快照族。每个带标签的 workspace 转一份快照（归档 origin=archive，
+ * 其余 manual），resources 并入同份。仅 http(s) URL 可恢复；tabs/快照数分别受
+ * SNAPSHOT_TABS_LIMIT / SNAPSHOTS_LIMIT 约束，丢弃量计入 truncatedTabs / truncatedSnapshots。
  */
 
 /**
- * Workona 导出的结构 schema。
- *
- * 解析必须走 zod 而非 `as` 断言：这是**外部文件导入**，与备份导入同属「不信任
- * 任何输入」的边界。用 `JSON.parse(...) as WorkonaExport` + 手写 typeof 守卫时，
- * 字段形态只能靠注释维护，新增字段极易漏判。
- *
- * 一律 `.passthrough()`：只声明消费的字段，第三方导出的多余字段原样忽略
- * （这是刻意的宽松，不是漏校验 —— 真正的安全闸门在 url 的 scheme 白名单）。
+ * 外部文件导入，必须走 zod 而非 `as` 断言（不信任输入）。一律 .passthrough()：
+ * 只声明消费字段，多余字段忽略；真正的安全闸门在 url 的 scheme 白名单。
  */
 const WorkonaTabSchema = z
   .object({ title: z.string().optional(), url: z.string().optional() })

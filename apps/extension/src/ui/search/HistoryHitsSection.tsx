@@ -17,13 +17,7 @@ import { useScrollFade } from '@/ui/common/useScrollFade';
  * 刻意放在标签列表**之后**：当前标签永远是第一优先级结果，历史是回溯补充。
  */
 
-/**
- * 来源徽标（文案键 + 配色）改由 `@/ui/snapshot/snapshotOrigin` 提供。
- *
- * 本文件此前自持一份映射表：复制时「自动快照」档漂到了 `text-gray-500`
- * （在 gray-100 底上仅 3.92:1，不达 WCAG AA），而 `SnapshotRow` 的同一档早已修正为
- * gray-600。唯一口径收口后，这类对比度回退不可能再只发生在一处。
- */
+/** 来源徽标（文案键 + 配色）由 `@/ui/snapshot/snapshotOrigin` 统一提供，避免多处映射表漂移。 */
 
 interface HistoryHitsSectionProps {
   hits: readonly HistorySearchHit[];

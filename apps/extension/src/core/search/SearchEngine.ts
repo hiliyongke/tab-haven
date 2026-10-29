@@ -1,30 +1,13 @@
 import { prepare, single, type Prepared, type Result } from 'fuzzysort';
 
 /**
- * 搜索内核：标题 + URL + 中文拼音首字母的模糊匹配。
- *
- * 设计：
- *  - 索引构建时预计算 prepare（标题/URL），查询零准备；
- *  - 拼音支持：中文标题同时建「首字母串」与「全拼串」两套目标（如 "tb" 与 "taobao"
- *    都能命中 "淘宝"）。
- *    拼音词典（pinyin-pro，体积约 1MB+）**按需动态加载**——只在开启拼音搜索时由
- *    调用方预先 `preloadPinyinDictionary()`，绝不进侧边栏的初始解析。关闭拼音搜索
- *    （settings.pinyinSearch=false）时完全不加载该词典。
- *  - **引擎构造后不可变**：拼音目标只在构造期同步补齐（词典已就绪时）。
- *    曾用的「构造后异步原地补拼音」让引擎成为可变对象，React 侧无从感知变化，
- *    只能靠 `void tick;` 这类无效果语句把依赖数组凑自足（删掉它编译/lint/测试
- *    全绿，而拼音命中静默失效）。词典就绪与否改为构造前的显式输入，
- *    就绪后重建引擎即可，无需任何失效信号。
- *  - 结果排序：命中分数降序，激活标签优先；
- *  - 命中高亮：toSegments 输出纯文本命中分段（无 HTML），由渲染层负责加粗，
- *    React 自动转义，XSS 面为零。
+ * 搜索内核：标题 + URL + 中文拼音（首字母串 + 全拼串）的模糊匹配。
+ * 拼音词典 pinyin-pro 体积大，按需动态 import()（仅开启拼音搜索时预加载）。
+ * 引擎构造后不可变：拼音目标只在构造期同步补齐，词典就绪后重建引擎即可。
+ * 命中分段输出纯文本（无 HTML），由渲染层加粗，XSS 面为零。
  */
 
-/**
- * pinyin-pro 动态加载器（模块级缓存单例）。
- * 静态 import 会把整本拼音词典打进侧边栏初始包，拖垮"秒开"切换器；
- * 改为 import() 后 Vite 自动拆为独立 chunk，且仅在首次用到时下载。
- */
+/** pinyin-pro 动态加载器（模块级缓存单例），Vite 自动拆为独立 chunk，首次用到才下载。 */
 type PinyinFn = (typeof import('pinyin-pro'))['pinyin'];
 let pinyinModulePromise: Promise<typeof import('pinyin-pro')> | null = null;
 /** 已解析的词典函数；非 null 表示词典就绪，此后新建的引擎可**同步**补齐拼音目标。 */

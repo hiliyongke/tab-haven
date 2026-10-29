@@ -9,10 +9,7 @@ import { useDataStore } from '@/stores/dataStore';
 import { useLatestRef } from '@/ui/hooks/useLatestRef';
 
 /**
- * 挂起动作与 runtime 消息的消费侧。
- *
- * 从 `App.tsx` 抽出（原为单文件内约 100 行的一团 useEffect + ref）。抽出的价值在于
- * 这里藏着两个**不显眼但极易写错**的约束，集中后才有可能被单测覆盖：
+ * 挂起动作与 runtime 消息的消费侧。有两个**不显眼但极易写错**的约束：
  *
  * 1. **双通道去重**：同一动作可能经「即时 runtime 消息」与「session.onChanged 回放」
  *    两条通道到达，必须按 `at` 时间戳去重，否则一次快捷键会被消费两次

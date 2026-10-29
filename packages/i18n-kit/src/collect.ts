@@ -69,12 +69,7 @@ export interface CollectOptions {
 const resolveSuffixes = (options: CollectOptions): readonly string[] =>
   options.keySuffixes ?? DEFAULT_KEY_SUFFIXES;
 
-/**
- * 解析器配置：扫描器与 lint 必须共用同一份。
- *
- * 此前两处各持一份字面量（内容相同但互无约束），任一侧改插件或开关，另一侧
- * 都会静默漏改 —— 表现是「扫描器收进词典、lint 又判为裸露中文」这类自相矛盾。
- */
+/** 解析器配置：扫描器与 lint 必须共用同一份，否则一侧改插件/开关会漏改另一侧，出现「扫描器收进词典、lint 又判为裸露中文」的矛盾。 */
 export const parseOptions: ParserOptions = {
   sourceType: 'module',
   // errorRecovery：单个新语法不至于让整个仓库扫描失败；错误节点会被跳过。
@@ -340,6 +335,30 @@ export function collectFromFile(
     });
   };
 
+  /**
+   * 报告「含汉字的插值模板串」这类无法静态计算 key 的原文。
+   *
+   * 只有含汉字的插值模板串是事故：运行时原文随变量变化，哈希 key 无从计算；
+   * 纯语义 key 拼接（`t(\`groups.color.${c}\`)`）不含汉字，走语义 key 直通，合法。
+   * t() 与常量表（xxxKey）两条通道共用这一检测 —— 只在一侧检测时，另一侧的
+   * 插值中文会既抽不到词条、又不被 lint 判为裸露中文（markTree 把值标记为已接管），
+   * 于是 scan / check / lint 全绿，而英文模式原样显示中文。
+   */
+  const reportInterpolatedTemplate = (
+    branch: AstNode | undefined,
+    line: number | undefined
+  ): void => {
+    if (
+      branch?.type === 'TemplateLiteral' &&
+      asNodes(branch.expressions).length > 0 &&
+      HAS_ZH.test(staticPart(branch))
+    ) {
+      errors.push(
+        `${relativePath}:${line ?? '?'} 模板串含插值，无法计算 key，请改写成 t('共 {{count}} 个', { count: n })`
+      );
+    }
+  };
+
   visit(ast, (node) => {
     if (isTranslateCall(node)) {
       const args = asNodes(node.arguments);
@@ -350,17 +369,7 @@ export function collectFromFile(
           push(normalize(text), readContext(args[1]), branch.loc?.start.line);
           continue;
         }
-        // 只有**含汉字**的插值模板串才是事故：运行时原文随变量变化，哈希 key 无从计算。
-        // 纯语义 key 拼接（`t(\`groups.color.${c}\`)`）不含汉字，仍走语义 key 直通，合法。
-        if (
-          branch.type === 'TemplateLiteral' &&
-          asNodes(branch.expressions).length > 0 &&
-          HAS_ZH.test(staticPart(branch))
-        ) {
-          errors.push(
-            `${relativePath}:${branch.loc?.start.line ?? '?'} 模板串含插值，无法计算 key，请改写成 t('共 {{count}} 个', { count: n })`
-          );
-        }
+        reportInterpolatedTemplate(branch, branch.loc?.start.line);
       }
       return;
     }
@@ -370,7 +379,17 @@ export function collectFromFile(
       const key = asNode(node.key);
       const name = key?.name ?? key?.value;
       if (typeof name === 'string' && suffixes.some((suffix) => name.endsWith(suffix))) {
-        push(normalize(literalText(asNode(node.value)) ?? ''), undefined, node.loc?.start.line);
+        const value = asNode(node.value);
+        const text = literalText(value);
+        if (text !== null) {
+          push(normalize(text), undefined, node.loc?.start.line);
+        } else {
+          // 常量表的值也可能是插值模板串/条件表达式：literalText 取不到时不能静默
+          // 放过（与 t() 通道同口径），否则这类中文既漏抽词条又不报错。
+          for (const branch of branchNodes(value)) {
+            reportInterpolatedTemplate(branch, branch.loc?.start.line ?? node.loc?.start.line);
+          }
+        }
       }
       return;
     }

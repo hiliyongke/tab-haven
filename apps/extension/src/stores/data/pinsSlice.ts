@@ -20,8 +20,7 @@ export function createPinsSlice(
 ): DataSlice<'addPin' | 'removePin' | 'reorderPins' | 'openPin'> {
   return {
     addPin: async (tab) => {
-      // 三条「无法满足」的分支都必须**返回 false 并留痕**：调用方据此决定提示，
-      // 静默 return 会让 Promise 照常 resolve，界面弹出「已固定」而磁贴并未生成。
+      // 无法满足的分支必须返回 false 并留痕：静默 return 会让界面误报「已固定」。
       if (!tab.url) {
         logDegraded('dataStore', '固定失败：该标签没有网址');
         return false;
@@ -31,8 +30,7 @@ export function createPinsSlice(
         logDegraded('dataStore', '固定失败：该标签不是 http(s) 网址');
         return false;
       }
-      // 与 createFolder 同款预检：PINS_LIMIT 只在落盘 schema 生效，超限会被整批拒绝，
-      // 而内存已 set —— 界面显示已固定、重启后消失。先拦住并明说原因。
+      // PINS_LIMIT 只在落盘 schema 生效，超限会整批拒绝，而内存已 set——先拦住避免「界面显示已固定、重启后消失」。
       if (
         ctx.get().pins.length >= PINS_LIMIT &&
         !ctx.get().pins.some((p) => p.identity === pin.identity)
@@ -46,11 +44,9 @@ export function createPinsSlice(
       await ctx.writePins((current) =>
         dedupePins([...current.filter((p) => p.identity !== pin.identity), pin])
       );
-      // 同步把真实标签置为 Chrome 固定（「确保固定」语义：实时值已固定则不动，
-      // 避免快照过期时翻转方向反转——快照说未固定、实际已固定会被翻成取消固定）。
+      // 「确保固定」语义：实时值已固定则不动，避免过期快照把已固定标签反向翻成取消固定。
       await setPinnedPlatform(tab.id, true);
-      // 标签变为固定后应从临时区（站点分组）立即移入置顶区：主动刷新快照
-      // 消除对 pinned 事件回灌时序的依赖。
+      // 固定后应即时从临时区移入置顶区：主动刷新，不依赖 pinned 事件回灌时序。
       tabSyncService.requestRefresh();
       return true;
     },
@@ -64,8 +60,7 @@ export function createPinsSlice(
           await setPinnedPlatform(tab.id, false);
         }
       }
-      // 取消固定后标签应回到临时区（站点分组/未分组）显示：主动刷新快照，
-      // 不依赖 pinned 事件回灌时序，否则表现为「切一下 tab 才出现」。
+      // 取消固定后应即时回到临时区：主动刷新，不依赖 pinned 事件回灌时序。
       tabSyncService.requestRefresh();
     },
 

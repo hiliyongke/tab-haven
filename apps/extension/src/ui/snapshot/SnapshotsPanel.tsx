@@ -18,13 +18,9 @@ import { useSnapshotImport } from '@/ui/snapshot/useSnapshotImport';
 import { useSnapshotRestore } from '@/ui/snapshot/useSnapshotRestore';
 
 /**
- * 快照面板：命名快照、归档中心与 OneTab / Workona 导入。
- * 把当前窗口存为命名快照/工作区，归档（关闭并保存），从 OneTab / Workona 导入，
- * 查看本地周报（统计 + 习惯洞察）；恢复走 platform/restoreSnapshot，提示走 undoStore。
- *
- * 本文件只保留**编排**：状态、写路径 handler 与三个确认闸门。三个视图分别在
- * `SnapshotListView` / `SnapshotImportView` / `SnapshotReportView`，共用按钮在
- * `snapshotButtons` —— 原 699 行里三者互相挤占，改一条文案要在三段 JSX 间翻找。
+ * 快照面板：命名快照、归档中心与 OneTab / Workona 导入；恢复走 platform/restoreSnapshot，
+ * 提示走 undoStore。本文件只保留编排：状态、写路径 handler 与三个确认闸门；三个视图
+ * 在 SnapshotListView / SnapshotImportView / SnapshotReportView，共用按钮在 snapshotButtons。
  */
 interface SnapshotsPanelProps {
   onClose: () => void;
@@ -67,11 +63,8 @@ export function SnapshotsPanel({
   const [loadError, setLoadError] = useState(false);
 
   /**
-   * 面板自己确保数据到位。
-   *
-   * 入口层（App）已经在挂载时发起过一次 load，但面板可能被更晚打开；
-   * `load()` 自带在途去重（stores/snapshotStore 的 loadInFlight），重复调用只等同一个
-   * promise，不会二次读盘。失败则转错误态；重试 = 清掉标记让本 effect 再跑一次。
+   * 面板自己确保数据到位：入口层已在挂载时 load，但面板可能更晚打开；load() 自带在途
+   * 去重，重复调用只等同一 promise。失败转错误态；重试 = 清掉标记让本 effect 再跑。
    */
   useEffect(() => {
     if (snapshotsReady || loadError) return;
@@ -137,19 +130,15 @@ export function SnapshotsPanel({
     [snapshots]
   );
 
-  /**
-   * 响应式订阅：窗口标签与绑定标签 id（恢复预览与习惯洞察共用）。
-   * 窗口标签必须经订阅而非 getState 获取——面板打开期间窗口可能变化，
-   * tab 变化触发重渲染并刷新 detailDiff 的 memo 缓存，保证预览始终基于「此刻的窗口」。
-   */
+  /** 响应式订阅窗口标签与绑定标签 id（恢复预览与习惯洞察共用）：面板打开期间窗口可能
+   *  变化，必须经订阅而非 getState，tab 变化触发重渲染并刷新 detailDiff 缓存。 */
   const tabs = useTabStore((state) => state.tabs);
   const boundTabIds = useDataStore((state) => state.boundTabIds);
 
   /**
-   * 展开行的恢复预览 diff：以当前窗口已打开 URL 键集合为基准，
-   * 三分类（将新建 / 已存在 / 不恢复）让「恢复会带来什么」决策前可见。
-   * 依赖数组显式含 tabs：标签变化即缓存失效重算，用 getState 取值会让
-   * 窗口变化后预览 diff 停留在旧值（窗口标签量级 < 500，开销可忽略）。
+   * 展开行的恢复预览 diff：以当前窗口已打开 URL 键集合为基准，三分类（将新建/已存在/
+   * 不恢复）让「恢复会带来什么」决策前可见。依赖显式含 tabs：标签变化即重算，
+   * 用 getState 会让窗口变化后预览停留旧值。
    */
   const detailDiff = useMemo(() => {
     const detailSnap = ordered.find((snap) => snap.id === detailId);
@@ -186,12 +175,8 @@ export function SnapshotsPanel({
   };
 
   /**
-   * 按生命周期分组展示（概念收敛）：
-   * 命名快照（手动 + 工作区）/ 归档 / 关窗自动保存。
-   *
-   * 四种 origin 混排在一个列表里、只靠徽标区分时，用户无法判断
-   * 「这个对象是持续更新的、已经关闭标签的、还是系统自动兜底的」。
-   * 分组后每组语义唯一，恢复预期才能对齐。
+   * 按生命周期分组展示：命名快照（手动 + 工作区）/ 归档 / 关窗自动保存。
+   * 四种 origin 混排只靠徽标区分时用户难以判断对象语义，分组后每组语义唯一。
    */
   const groups: SnapshotGroup[] = useMemo(
     () =>
@@ -220,18 +205,11 @@ export function SnapshotsPanel({
 
   /** 保存进行中标尺：await 期间输入框仍在，Enter 连击/双击会并发提交出重复快照。 */
   const saveInFlight = useRef(false);
-  /**
-   * 恢复/删除互斥必须走 ref：restoringId 是渲染期 state，同一 tick 内的连点
-   * 读到的都是旧值 null（disabled 也要等重渲染才生效），会双双穿透 —— 表现为
-   * 同一份快照被开两批标签，或同 id 的删除并发双写。
-   * restoringId 只保留为展示态（哪一行在进行中）。
-   */
+  /** 恢复/删除互斥必须走 ref：restoringId 是渲染期 state，同 tick 内连点读到旧值 null
+   *  （disabled 也要等重渲染），会并发穿透。restoringId 只保留为展示态。 */
   const deleteInFlight = useRef(false);
-  /**
-   * 保存工作区在途标尺（与 saveInFlight 同款）：`saveSpace` 是唯一没有互斥的写
-   * 路径，双击会并发创建两份工作区快照（每次保存都新增一条，不覆盖）。
-   * `savingSpace` 只承担按钮禁用态（渲染期可读），同 tick 内的连点靠 ref 拦。
-   */
+  /** 保存工作区在途标尺（与 saveInFlight 同款）：saveSpace 每次保存都新增一条不覆盖，
+   *  双击会并发创建两份。savingSpace 只承担按钮禁用态，同 tick 连点靠 ref 拦。 */
   const saveSpaceInFlight = useRef(false);
   const [savingSpace, setSavingSpace] = useState(false);
 
@@ -326,18 +304,12 @@ export function SnapshotsPanel({
   const weekSnapCount = weekSnaps.length;
   const weekTabs = weekSnaps.reduce((sum, s) => sum + s.tabCount, 0);
 
-  /**
-   * 习惯洞察：当前窗口实时计算。tabs / boundTabIds 已在上方订阅，
-   * 洞察对象是「此刻的窗口」，面板打开期间标签关闭/打开都应反映。
-   * 周报统计块与洞察块共用一次 useMemo 各自独立，互不干扰重算。
-   */
+  /** 习惯洞察：当前窗口实时计算（tabs / boundTabIds 已在上方订阅），面板打开期间标签
+   *  关闭/打开都应反映；与周报统计块共用一次 useMemo 各自独立。 */
   const insights = useMemo(() => computeInsights(tabs, new Set(boundTabIds)), [tabs, boundTabIds]);
 
-  /**
-   * 洞察直达：从底栏入口进来时（initialView='report'）把洞察区块滚入视野。
-   * 周报统计在其上方，不滚动的话用户仍可能看到的是统计而非洞察 —— 直达要落到
-   * 真正想看的东西。只在首次进入 report 视图时做一次，之后用户手动切页签不再干预。
-   */
+  /** 洞察直达：从底栏入口进来（initialView='report'）时把洞察区块滚入视野（周报统计在上方），
+   *  只在首次进入 report 视图做一次，之后手动切页签不再干预。 */
   const insightsFocusedRef = useRef(false);
   useEffect(() => {
     if (initialView !== 'report' || insightsFocusedRef.current) return;

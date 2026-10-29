@@ -3,13 +3,10 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 
 /**
  * 全量标签 → 条目匹配索引（按 tabs 数组引用做模块级缓存）。
- *
- * N 个 FolderRow 各自建索引是 N×O(标签) 的重复劳动；索引内容只取决于 tabs
- * 引用，缓存后每次快照全局只建一次。
+ * N 个 FolderRow 各自建索引是 N×O(标签) 的重复劳动；索引内容只取决于 tabs 引用，缓存后每次快照全局只建一次。
  *
  * 与 `@/ui/tabs/pinRuntime` 的 `buildPinRuntimeIndex` 是**两套**索引，不要合并：
- * 那个按 pin 身份（去参 URL）索引到磁贴运行时，本索引按完整比较键 / 原始 URL /
- * tabId 索引到标签记录，消费方与键口径都不同。
+ * 那个按 pin 身份（去参 URL）索引到磁贴运行时，本索引按完整比较键 / 原始 URL / tabId 索引到标签记录。
  */
 export interface TabRuntimeIndex {
   byKey: Map<string, TabRecord>;
@@ -19,10 +16,8 @@ export interface TabRuntimeIndex {
 
 /**
  * 容量 2 的 LRU（队首 = 最近使用）。
- *
- * 单槽缓存不够：A/B 两个 tabs 引用**交替**命中时（如「本窗口」与「全窗口搜索」
- * 两种快照轮流传给 FolderRow）每次都未命中，索引被反复重建 —— 这正是缓存想
- * 消灭的开销。容量 2 覆盖交替场景，且不随窗口数增长。
+ * 单槽缓存不够：A/B 两个 tabs 引用**交替**命中时（如「本窗口」与「全窗口搜索」两种快照轮流传给
+ * FolderRow）每次都未命中，索引被反复重建——这正是缓存想消灭的开销。容量 2 覆盖交替且不随窗口数增长。
  */
 const INDEX_CACHE_SIZE = 2;
 const indexCache: Array<{ tabs: readonly TabRecord[]; index: TabRuntimeIndex }> = [];

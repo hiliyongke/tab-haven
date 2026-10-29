@@ -127,9 +127,7 @@ export function FixedArea() {
              文件夹卡片自己带品牌色条，见 FolderRow）。 */
           action={
             <div className="flex items-center gap-0.5">
-              {/* 概念卡常驻入口：它原本只在「一个文件夹都没有」时出现，而用户
-                  建了第一个文件夹（真正需要区分 5 种「固定」语义时）它就永久
-                  消失了 —— 需要区分的那一刻恰好没有帮助。 */}
+              {/* 概念卡常驻入口：需要区分 5 种「固定」语义的那一刻，恰是最初空态提示已消失之后。 */}
               {/* tooltip 比可访问名长：悬停要能看懂「这是什么」，读屏只需「查看概念说明」。 */}
               <RowActionButton
                 icon={Icons.infoAlert}

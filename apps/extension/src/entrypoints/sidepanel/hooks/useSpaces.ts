@@ -217,7 +217,12 @@ export function useSpaces(): {
     void useSnapshotStore
       .getState()
       .saveSpace()
-      .then(() => {
+      .then((saved) => {
+        // false = 现场无可保存标签（如只剩内部页）：store 已回执「没有可保存的当前标签」，
+        // 此时 snapshots 列表并未新增本次空间。若照常往下走，会把「最新 space」误判成
+        // 一个无关的旧工作区并激活它（activeSpaceId 悬空到别的空间），还弹出与刚才
+        // 错误提示相矛盾的「已保存工作区」。必须在此中止。
+        if (!saved) return;
         // 激活刚保存的空间（saveSpace 用当前时间戳，列表里最新即它）。
         const latest = useSnapshotStore
           .getState()

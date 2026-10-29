@@ -6,18 +6,12 @@ import { Callout } from '@/ui/common/Callout';
 import { EmptyState } from '@/ui/common/EmptyState';
 import { Icon, Icons } from '@/ui/common/Icon';
 
-/**
- * 标签列表三态展示：加载骨架 / 无标签 / 搜索无结果。
- * 空态复用通用 EmptyState（侧边栏与设置页共用）。
- */
+/** 标签列表三态展示：加载骨架 / 无标签 / 搜索无结果。空态复用通用 EmptyState。 */
 
 /**
  * 数据加载中的骨架屏（区分「同步中」与「真的没有标签」）。
- *
- * 版面不跳的关键：**不手写尺寸，直接复用真实元素的盒模型** ——
- * 分区头挂 .section-head、行挂 .row-item，padding / gap / density 全部由同一套
- * CSS 决定。骨架自己写 px/py 时，真实行的度量一变（密度档位、缩进调整）骨架
- * 就对不上，且「真实行高」取决于 density × showUrl 组合，靠常量根本同步不了。
+ * 版面不跳的关键：不手写尺寸，直接复用真实元素的盒模型（.section-head / .row-item），
+ * padding/gap/density 由同一套 CSS 决定，真实行高随 density × showUrl 变化时骨架自动跟随。
  *
  * @param density 与真实列表同档，否则切到「大字号」时骨架与真实行差 4px。
  */
@@ -51,14 +45,8 @@ export function LoadingSkeleton({ density = 'cozy' }: { density?: Density }) {
   );
 }
 
-/**
- * 窗口内没有标签的空态（教学型：说明能做什么 + 一步动作）。
- *
- * hasSnapshots 为真时追加「从快照恢复」引导块：窗口为空的最可能成因之一是
- * 崩溃/误关，此时「新建标签」不是用户想要的动作 —— 找回整窗才是。这条
- * 更相关的路只在撤销历史面板里出现（snapshots.crashGuidance）时空态看不到。
- * 两个 prop 均可选：没有快照来源的调用方保持原样。
- */
+/** 窗口内没有标签的空态（教学型）。hasSnapshots 为真时追加「从快照恢复」引导块：窗口为空
+ *  常因崩溃/误关，此时「找回整窗」比「新建标签」更相关。两 prop 均可选。 */
 export function EmptyTabs({
   hasSnapshots = false,
   onOpenSnapshots
@@ -89,9 +77,7 @@ export function EmptyTabs({
               <p className="text-3xs leading-relaxed">
                 {t('这个窗口现在是空的。如果你刚遇到崩溃或误关，可以从快照把整个窗口找回来。')}
               </p>
-              {/* 原手写按钮无 padding / min-height，命中区只有约 16px（低于 WCAG
-                  2.5.8 的 24px）。换成 accent-ghost + xs：字号与强调色不变，
-                  命中下限由变体承担。 */}
+              {/* accent-ghost + xs：命中下限由变体承担（原手写按钮命中区仅约 16px）。 */}
               <Button
                 variant="accent-ghost"
                 size="xs"
@@ -127,13 +113,8 @@ export function LoadErrorState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-/**
- * 搜索无结果空态。
- *
- * 除「清除搜索」外再给一个「在所有窗口搜索」：搜索默认只覆盖当前窗口
- * （`searchAllWindows` 默认 false），多窗口用户搜不到记得开过的标签时，
- * 只有一个「清除」出口会把「范围默认」误读成「搜索坏了 / 标签丢了」。
- */
+/** 搜索无结果空态。除「清除搜索」外再给「在所有窗口搜索」：搜索默认只覆盖当前窗口，
+ *  只有一个「清除」出口会把「范围默认」误读成「搜索坏了 / 标签丢了」。 */
 export function NoSearchResults(props: { onClear: () => void; onSearchAllWindows?: () => void }) {
   const { t } = useTranslation();
   return (

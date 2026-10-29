@@ -166,10 +166,20 @@ describe('组件一致性：收口用的语义类必须真实存在', () => {
       ['行内留白', /\.row-item\.density-tight[\s\S]{0,120}?padding-top:\s*0/],
       ['分区头', /\[data-density='tight'\]\s+\.section-head\s*\{[\s\S]{0,120}?padding-top:\s*4px/],
       ['固定区容器', /\[data-density='tight'\]\s+\.fixed-area[\s\S]{0,160}?padding-top:\s*2px/],
-      ['置顶磁贴', /\[data-density='tight'\]\s+\.pinned-tile\s*\{[\s\S]{0,80}?width:\s*32px/]
+      [
+        '磁贴条留白',
+        /\[data-density='tight'\]\s+\.pinned-strip\s*\{[\s\S]{0,120}?margin-bottom:\s*4px/
+      ]
     ];
     for (const [label, pattern] of surfaces) {
       expect(pattern.test(cssText), `超紧凑缺少「${label}」规则`).toBe(true);
     }
+  });
+
+  it('Given 超紧凑密度 When 读 main.css Then 置顶磁贴保持 36px（不得随密度缩小）', () => {
+    // 32px 磁贴会同时踩两个坑：16px 的「取消固定」角标占掉四分之一格（图标看起来没居中），
+    // 且 4+32+4 的内容高与容器盒高差 1px，Chrome 会画出常驻滚动条。
+    // 密度只收紧磁贴条的上下留白，不动磁贴本身。
+    expect(cssText).not.toMatch(/\[data-density='tight'\]\s+\.pinned-tile\s*\{[^}]*width:\s*32px/);
   });
 });

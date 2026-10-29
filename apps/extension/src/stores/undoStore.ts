@@ -45,28 +45,15 @@ interface ToastState {
   batchId: string | undefined;
   /** 自定义动作按钮（自动休眠撤销等非关闭类操作）。 */
   action?: ToastAction;
-  /**
-   * 附属信息（与回执同槽展示）：淘汰告知用。
-   *
-   * 淘汰发生在操作回执之前（appendBatch 内淘汰 → 调用方随后设「已关闭 N 个」），
-   * 若淘汰单独占一条提示，回执会立刻把它顶掉；而 key 已被记为「已提示」，
-   * 本会话内再也不会提示 —— 淘汰告知因此永久漏发。故回执把它接过来同槽展示。
-   */
+  /** 回执的补充说明；淘汰告知与写盘失败在此同槽展示，避免被后续回执顶掉。 */
   note?: string;
-  /**
-   * 语义强度：error 走 role="alert"（打断读屏、立刻播报），info 走
-   * role="status"（排队播报）。一律用 status/polite 会让失败提示与「已保存」
-   * 同权重——对依赖读屏的用户，操作失败是最不该被延后的信息。
-   */
+  /** error 用 role="alert" 立即播报，info 用 role="status" 排队播报。 */
   tone?: 'info' | 'error';
 }
 
 interface UndoState {
   batches: UndoBatch[];
-  /**
-   * 重做栈：撤销成功后压入「本次被恢复回来的条目」，结构与撤销栈相同。
-   * 生命周期与撤销栈不同——任何新的关闭批次入栈即清空（重做只对最近一次撤销有意义）。
-   */
+  /** 撤销成功后记录实际恢复的条目；任何新关闭批次入栈即清空。 */
   redoBatches: UndoBatch[];
   toast: ToastState | null;
   ready: boolean;
@@ -82,159 +69,53 @@ interface UndoState {
   undo: () => Promise<void>;
   /** 撤销指定批次（撤销历史面板用）。 */
   undoBatch: (batchId: string) => Promise<void>;
-  /**
-   * 重做最近一次撤销：把刚被恢复回来的标签再次关闭。
-   * 关闭结果会**重新入撤销栈**（可再次撤销），因此重做不会把用户锁死在某一状态。
-   */
+  /** 再次关闭刚恢复的标签；关闭结果重新入撤销栈，可再次撤销。 */
   redo: () => Promise<void>;
-  /**
-   * 外部关闭路径登记撤销（如窗口归档）。
-   * 归档必须进撤销栈：否则标签已关闭却无处可撤，恢复只能靠快照列表，违背「可信关闭」。
-   */
+  /** 登记归档等外部关闭路径，保证这些标签同样可撤销。 */
   recordClosedBatch: (
     tabs: readonly TabRecord[],
     kind: string,
     groupNameById?: ReadonlyMap<number, string | undefined>
   ) => Promise<void>;
-  /**
-   * 复用引擎（同网址唯一化）关闭的标签登记撤销（P1-1）。
-   *
-   * 该开关默认开启，标签却是在 SW 内被 `tabs.remove` 的 —— 面板拿不到标签快照，
-   * 这条默认路径也必须进撤销栈，否则与「经 Tabs 执行的关闭都可撤销」的承诺冲突。
-   * 由 SW 经既有 runtime 协议回传 UndoTabRecord 快照，本方法只负责入栈。
-   */
+  /** 登记 SW 复用引擎关闭的标签；面板拿不到快照，由 SW 回传记录。 */
   recordReuseClosed: (windowId: number, records: readonly UndoTabRecord[]) => Promise<void>;
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
-  /**
-   * 失败提示：读屏即刻播报（role="alert"），不与其他提示排队。
-   *
-   * **只用于「没有错误对象」的业务失败**：返回布尔/空结果的写路径（如删除返回
-   * false）、以及校验不通过（快照名为空）。这类失败没有可留痕的异常，
-   * 走 `notifyFailure` 只会往诊断里塞无错误的噪声。
-   */
+  /** 无异常对象的业务失败（布尔失败或校验失败）走此入口。 */
   notifyError: (message: string) => void;
-  /**
-   * 失败提示的统一出口：用户可见 + 诊断留痕。
-   *
-   * UI 层的失败此前写成 `.catch(() => notifyError(t('操作失败，请稍后重试')))`：
-   * 用户拿到一句通用文案，而错误对象被整块丢弃 —— 保存快照、导入、恢复、删除、
-   * 重命名这些写路径的失败在「导出诊断」里完全查不到。本出口保证两件事同时成立，
-   * 调用方不必在「告诉用户」与「留下线索」之间二选一。
-   *
-   * 判据只有一条：**手上有没有 error**。catch 到异常 / 被拒的 Promise 一律走
-   * 本出口；布尔结果或校验失败走 `notifyError`。
-   */
+  /** 有 error 的失败统一走此入口：用户提示与诊断留痕同时保留。 */
   notifyFailure: (scope: string, message: string, error: unknown) => void;
-  /**
-   * 淘汰提示：同一 key 在本会话内只提示一次。
-   *
-   * 两类淘汰（快照超限、撤销栈超限）都是「每次触发容量的操作都会
-   * 再淘汰一条」——批量关 50 个标签、连续保存快照都会连着触发几十次。若每次都弹
-   * toast，提示条会互相顶掉且刷屏，用户反而看不到任何一条。故按 key 合并：
-   * 同类淘汰在本会话内只提示一次（内容与数量以首次为准）。
-   */
+  /** 淘汰提示按 key 在本会话内只展示一次，避免连续淘汰刷屏。 */
   notifyEviction: (key: string, message: string) => void;
   /** 清空撤销栈（内存 + 持久化）。清除所有数据时调用——被清除的数据不参与撤销。 */
   clearBatches: () => Promise<void>;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
-/**
- * 已提示过的淘汰 key。
- *
- * 模块级而非 store 内：它是「本会话内提示过没有」的记录，不属于可序列化的 UI 状态，
- * 放进 store 会被快照测试与 setState 复位连带清掉。副作用仅是重复淘汰不再提示
- * （用户已被告知一次，容量语义没有变化）。
- */
+/** 模块级会话记录，避免 store 重置误清「已提示」状态。 */
 const notifiedEvictions = new Set<string>();
-/**
- * 已展示、等待被回执接走的淘汰告知（消息文本，按发生顺序入队）。
- *
- * 淘汰告知先于回执展示，回执随即覆盖它 —— 若不把它接进回执的 note，用户一条
- * 都看不到（且 key 已标记已提示，不会再提示第二次）。这里记文本而非布尔值：
- * 只有当「当前提示条仍是那条淘汰告知」时才并入，避免把过期很久的告知挂到
- * 之后某次不相关的回执上。
- *
- * 用队列而非单个槽位：同一操作内可能先后发生多类淘汰（快照上限与撤销栈上限），
- * 单槽会让后一条覆盖前一条，被覆盖的那条因 key 已标记而永久漏发。
- */
+/** 等待后续回执接走的淘汰告知；队列保留同次操作中的多类淘汰。 */
 const pendingEvictionToasts: string[] = [];
-/**
- * 最近一次撤销/重做栈**写盘失败**。
- *
- * 置起后由 `showToast` 转成本次回执的补充说明并清空——回执说「可撤销」而磁盘上
- * 其实没有这条记录时，用户必须当场知道。
- */
+/** 写盘失败后由下一次回执展示并清空。 */
 let undoPersistFailed = false;
-/**
- * 撤销执行互斥。
- *
- * 恢复一个批次要为每个标签走一次 `tabs.create`（几十~几百 ms）。若期间允许再次撤销，
- * 第二次调用读到的仍是「未出栈」的同一批，同一批标签会被恢复两次 —— 撤销从安全网
- * 变成制造重复标签的来源。
- *
- * 锁在 `await` 之前同步置起，因此出栈是否提前都安全；出栈刻意**不**提前到恢复之前：
- * 「恢复成功才出栈」是本 store 的核心不变量，失败项要能重新入栈供用户重试。
- */
-/**
- * 在途 load 的共享 promise：并发/重入（StrictMode 双挂载、ready 前入栈等待）
- * 共享同一次读取，避免两条 load 链各自读盘再以旧值覆盖新值。
- * 完成后自动清空——再次 load 仍重新读盘（跨重启回读语义不变）。
- */
+/** 并发 load 共享同一次读取，完成后清空以允许重新读盘。 */
 let loadInFlight: Promise<void> | null = null;
 /** 仓库 watcher 注册守卫（跨页撤销栈同步，只注册一次）。 */
 let undoWatcherStarted = false;
-/** 同上，重做栈一份：两个仓库各自整表写，各需一个 watcher。 */
+/** 重做栈独立注册一个 watcher。 */
 let redoWatcherStarted = false;
-/**
- * 已注册 watcher 的退订函数。
- *
- * 运行时刻意**不**退订：本 store 的生命周期 = 上下文生命周期（侧边栏关闭即销毁），
- * watcher 就是跨页同步通道，退订等于关掉同步。
- *
- * 只在 HMR 重载时统一执行：模块级守卫（`undoWatcherStarted` 等）随模块重载重置，
- * 旧模块实例注册的监听器却仍挂在 `storage.onChanged` 上 —— 它持有旧 store 的
- * `set`，会把旧值写回新实例的内存态（列表抖动 + 旧栈复活）。
- */
+/** HMR 时退订旧模块的 watcher，避免旧 store 回写新实例。 */
 const watcherUnsubscribers: Array<() => void> = [];
 
-/**
- * undoRepository 写盘串行链（追加顺序）。
- *
- * 撤销恢复耗时数百 ms，期间新批次仍可入栈（closeWithUndo 刻意不受
- * 执行互斥拦截）。appendBatch 与撤销出栈若各自基于自己的快照写盘，
- * 两条异步链的 `chrome.storage.set` 完成先后无保证 —— 磁盘终态可能是
- * 被「旧栈+新批」覆盖（已撤销批次重启后复活，可被再次撤销、重复恢复标签）。
- * 统一收口到本链，且写盘内容一律在链内以「磁盘基线 + 本页意图」计算（apply），
- * 既消除读-写窗口，也避免跨页整表覆盖。
- */
+/** 撤销栈写盘串行链；锁内以磁盘为基线叠加本页意图，避免异步整表覆盖。 */
 const undoPersistChain = createSerialChain();
-/**
- * redoRepository 写盘串行链（与撤销栈同构，独立一条链：两个栈的写入互不阻塞，
- * 各自整表写 + 串行即可保证终态正确）。
- *
- * 跨页锁复用 UNDO_PERSIST_LOCK：重做栈的写入与撤销栈同源（都由撤销/重做动作
- * 驱动），共用一把锁即可串行化，不新增锁名以免锁清单漂移。
- */
+/** 重做栈独立串行链；与撤销栈共用 UNDO_PERSIST_LOCK。 */
 const redoPersistChain = createSerialChain();
 
 /**
- * 入队一次撤销/重做库写盘，返回已兜底的 promise（调用方按需等待）。
- *
- * `apply` 接收锁内重读到的磁盘栈，返回本次要落盘的栈：撤销栈是整表写，
- * 两个侧边栏窗口并发入栈/出栈时「写本页内存栈」会互相覆盖（已撤销批次复活 /
- * 新批次从磁盘消失），以磁盘为基线叠加本页意图才能两边都不丢。
- *
- * 常规写入（入栈/撤销出栈）遵循 persistUndo 开关（关闭时不写库）；
- * 清库类写入（load 清历史库 / clearBatches 兜底）必须无条件执行：
- * 它们防的是「上一轮开启时留下的批次复活」，与开关无关。
- *
- * 必须返回「已兜底的 promise」而非裸 step：只把 step 接进链而返回 step，调用方
- * 拿到的是会 reject 的那一个（锁请求在上下文销毁时以 AbortError reject，撤销恢复
- * 期间关闭面板即触发）。后果是 load() 的 `ready` 永远停在 false，此后每次
- * appendBatch 都重跑一次必然失败的 load —— 撤销栈整体失效。
+ * 入队撤销/重做写盘。`apply` 在锁内基于最新磁盘栈计算终态，避免跨页整表覆盖。
+ * 常规写入受 persistUndo 控制，清库写入必须执行；返回已兜底的 promise，避免面板销毁导致 ready 卡死。
  */
 function enqueuePersist(
   chain: SerialChain,
@@ -267,9 +148,7 @@ function enqueuePersist(
 }
 
 /* @i18n-ignore-start
- * 以下中文全部是诊断文案（最终只作为 logFailure 的实参进诊断日志，不进界面），
- * 只是经 enqueuePersist 转了一手 —— zh-linter 只认「直接传给 logFailure 等诊断
- * 通道」的字面量，故在此声明块级豁免。 */
+ * 本块中文仅供诊断日志，不经界面展示。 */
 /** 撤销栈写盘（见 enqueuePersist）。 */
 function enqueueUndoPersist(
   apply: (disk: UndoBatch[]) => UndoBatch[],
@@ -301,17 +180,8 @@ function enqueueRedoPersist(
 }
 
 /**
- * 撤销/重做**双栈同写**：一次撤销要同时改两个存储键（undo 出栈 + redo 入栈），
- * 两次写入必须落在**同一个跨页锁内的同一段临界区**。
- *
- * 此前二者各走一条串行链、各拿一次 UNDO_PERSIST_LOCK：任何一次中途崩溃/写失败
- * 都会留下「undo 已出栈、redo 未入栈」——重启后是「撤销已生效但重做为空」，
- * 用户拿不回刚撤销的东西。两害相权：redo 多一条重复项（下一次关闭批次入栈即清空
- * 重做栈，不会误关标签）远轻于「撤销生效了却无法重做」，因此**先写 redo 再写
- * undo**，崩溃窗口里留下的是前者。
- *
- * 返回是否整体成功；任一写入失败或锁内抛错即 false，由调用方整体回退内存态。
- * persistUndo 关闭时不写盘，视为成功（纯会话内语义，不存在跨栈分叉）。
+ * 撤销/重做双栈在同一跨页锁内同写；先写 redo 再写 undo，失败时整体回退内存态。
+ * persistUndo 关闭时不写盘并视为成功。
  */
 function enqueueUndoRedoPersist(
   redoApply: ((disk: UndoBatch[]) => UndoBatch[]) | undefined,
@@ -349,16 +219,7 @@ function enqueueUndoRedoPersist(
 /* @i18n-ignore-end */
 
 export const useUndoStore = create<UndoState>()((set, get) => {
-  /**
-   * 撤销/重做执行互斥的唯一判据（页内）。
-   *
-   * 此前另有一个模块级 `undoInFlight` 与 store 的 `undoing` 成对置位，表达同一件事：
-   * 两份状态必须靠人肉保持同步，漏一处就出现「UI 显示执行中但实际可再次触发」。
-   * 现在只认 store 状态 —— zustand 的 `set` 同步生效，置位后立即可读。
-   *
-   * 只拦本页面：两个侧边栏窗口是各自独立的 JS 上下文，可同时撤销同一批次，
-   * 跨页面那一层由 `UNDO_EXEC_LOCK` 兜（见 runGuardedUndo）。
-   */
+  /** 页内执行互斥；跨页互斥由 UNDO_EXEC_LOCK 保证。 */
   const isExecuting = (): boolean => get().undoing || get().redoing;
 
   const scheduleToastClear = (): void => {
@@ -370,41 +231,27 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     }, durationSec * 1000);
   };
 
-  /**
-   * 提示条统一出口：把「刚展示的淘汰告知」并入本次提示的 note。
-   *
-   * 回执（「已关闭 N 个」等）一定晚于淘汰告知设置，若各自直接 set，回执会把
-   * 淘汰告知顶掉 —— 而淘汰 key 已记为已提示，本会话内不会再提示，告知就此永久
-   * 漏发。经本出口的提示都会把尚未被接走的淘汰告知带出来同槽展示。
-   */
+  /** 提示条统一出口：把刚展示的淘汰告知并入回执 note，避免被覆盖后永久漏发。 */
   const showToast = (toast: ToastState): void => {
     const current = get().toast;
-    // 写盘失败优先于淘汰告知：前者意味着「回执承诺的可撤销可能不成立」，
-    // 比后者更贴近用户当下的动作。只告知一次（置起后即清空），不刷屏。
+    // 显式 note > 写盘失败 > 淘汰告知；每项只消费一次。
     const persistNote = undoPersistFailed
       ? translate('撤销记录未能写入磁盘，重启后可能无法撤销')
       : undefined;
     undoPersistFailed = false;
-    // 只并入「当前提示条仍是那条淘汰告知」的项，且多条按发生顺序一并带出。
-    const carried = pendingEvictionToasts.filter((message) => current?.message === message);
+    // 当前提示仍是淘汰告知时带出整个队列；否则视为过期，不挂到无关回执。
+    const showingEviction =
+      current !== null && pendingEvictionToasts.some((message) => current.message === message);
+    const carried = showingEviction ? [...pendingEvictionToasts] : [];
     const note = toast.note ?? persistNote ?? (carried.length > 0 ? carried.join('；') : undefined);
-    // 无论是否并入都清空：过期的告知不得挂到之后不相关的提示上。
     pendingEvictionToasts.length = 0;
     set({ toast: note === undefined ? toast : { ...toast, note } });
     scheduleToastClear();
   };
 
   /**
-   * 撤销「快照恢复」批次（kind='restore'）的执行体。
-   *
-   * 这类批次记的是**仍开着**的标签（快照恢复是新建，不是关闭），所以撤销它
-   * 只能是「把这批标签关掉」，绝不能走常规分支的 restoreTabRecordsDetailed：
-   * 那些标签还在窗口里，重开路径会因「已打开去重」全部判为成功（count=N、
-   * 无失败），结果批次被出栈、提示「已恢复 N 个」而界面毫无变化 —— 既空转
-   * 又给了假回执。
-   *
-   * 关闭后照例生成一条普通关闭批次入栈（kind='restore-undo'）：用户仍可再撤销
-   * 它把标签开回来，与 redo 的「关闭后重新入栈」同构。
+   * 撤销快照恢复批次：这类记录对应仍打开的标签，因此撤销是关闭而非重新打开。
+   * 关闭结果生成 restore-undo 批次，允许再次撤销。
    */
   const closeRestoredBatch = async (
     batch: UndoBatch,
@@ -605,12 +452,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     });
   };
 
-  /**
-   * 撤销入口的公共护栏（undo / undoBatch 共用）：跨页锁 → 跨页复核 → 执行。
-   *
-   * 两个入口的执行体此前是逐字复制品：复核口径、提示文案、锁语义任一处要调整，
-   * 都必然只改一处而让两条撤销入口行为分叉。收敛到本函数后只此一份。
-   */
+  /** 撤销入口的公共护栏（undo / undoBatch 共用）：跨页锁 → 跨页复核 → 执行。 */
   const runGuardedUndo = async (
     batch: UndoBatch,
     onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void

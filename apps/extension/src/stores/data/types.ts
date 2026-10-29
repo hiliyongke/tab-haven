@@ -10,49 +10,32 @@ import type { MutateSessionResult } from '@/platform/storage/session';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 import type { Repositories } from '@/platform/registry';
 
-/** 拖标签/分组进入文件夹的落位结果计数。对外导出供 UI 层组织反馈文案。 */
+/** 拖标签/分组进入文件夹的落位结果计数，供 UI 组织反馈文案。 */
 export interface AddTabsToFolderResult {
   added: number;
   moved: number;
   skipped: number;
 }
 
-/**
- * 切片契约：每个切片显式声明自己提供 `DataState` 的哪些键。
- *
- * 组合根此前用 `as DataState` 收尾，而切片返回 `Partial<DataState>` —— 展开后的对象
- * 缺任何方法都不违反类型，断言又允许「缺属性」通过（目标类型可赋值给源类型即合法）。
- * 于是「忘了 spread 某个切片」「重构时漏改切片导出」这类错误编译期零告警，
- * 运行时才抛 `xxx is not a function`。改为精确 `Pick` 后完备性由编译器兜住。
- */
+/** 切片用精确 Pick 声明所提供的 DataState 键，展开完备性由编译器兜住（漏 spread 即编译报错）。 */
 export type DataSlice<K extends keyof DataState> = Pick<DataState, K>;
 
-/** 写入通知镜像所需的精简状态切片。 */
 export interface MirrorState {
   folders: FixedFolder[];
   pins: PersistentPin[];
   settings: Settings;
 }
 
-/**
- * dataStore 切片共享上下文：封装 set/get、仓库集合与写入/降级/监视器等公共逻辑。
- * 各切片（folder/pins/settings/transfer/init）只消费 ctx，不直接触碰浏览器 API 或模块级状态，
- * 从而把 890 行单体 store 拆成可独立审阅的小模块，且不改变 store 对外接口。
- */
+/** 切片共享上下文：封装 set/get、仓库与写入/降级/监视；切片只消费 ctx，不直接触碰浏览器 API。 */
 export interface DataContext {
   set: (partial: Partial<DataState>) => void;
   get: () => DataState;
   repos: Repositories;
-  /**
-   * 写入 folders 分区。直写值或 updater：
-   * updater 在写前一刻以最新内存态重算（get→算→set 之间无 await），
-   * 消除「入口取基线 → 中途 await → 旧基线整表回写」的并发互覆窗口。
-   * 复合操作（读-算-写）必须用 updater 形态。
-   */
+  /** 写 folders 分区。updater 在写前一刻以最新内存态重算（get→算→set 无 await），消除旧基线整表回写的并发互覆；读-算-写必须用 updater。 */
   writeFolders: (
     folders: FixedFolder[] | ((current: FixedFolder[]) => FixedFolder[])
   ) => Promise<void>;
-  /** 同 writeFolders 的 updater 双形态（见上）。 */
+  /** 同 writeFolders 的 updater 双形态。 */
   writePins: (
     pins: PersistentPin[] | ((current: PersistentPin[]) => PersistentPin[])
   ) => Promise<void>;
@@ -86,54 +69,21 @@ interface DataState {
   settings: Settings;
   /** 绑定到固定条目的标签 id（从临时区排除）。 */
   boundTabIds: number[];
-  /**
-   * 持久化是否已降级（会话/本地存储写入失败）。
-   * 为 true 时 UI 应提示用户数据可能未保存，而不是静默继续。
-   */
+  /** 持久化是否已降级（会话/本地存储写入失败）；true 时 UI 应提示数据可能未保存。 */
   storageDegraded: boolean;
-  /**
-   * 最近一次镜像拉取的结果分类。
-   *
-   * 与 storageDegraded 区分开：后者是「本地写入失败」，这里是「云端镜像没生效」——
-   * 本地数据完好，但换机后恢复不到。只在诊断里留痕时设置页没有任何呈现，
-   * 表现为「开启了同步，换机后什么都没有」且无从排查。
-   *
-   * 存分类而非布尔值：布尔只能表达「坏 / 不坏」，于是「分块超限」「镜像损坏」
-   * 「从未同步过」三种成因被压成同一句提示——损坏会被说成超限，而从未同步过
-   * 反而显示「已生效」。null = 本次会话尚未拉取过（已 seeded 的设备不会拉取）。
-   */
+  /** 最近一次镜像拉取结果分类（云端镜像没生效，区别于本地写失败的 storageDegraded）。存分类以区分分块超限/镜像损坏/从未同步；null = 本会话未拉取。 */
   mirrorIssue: MirrorSyncIssue | null;
-  /**
-   * 最近一次镜像**写入**是否失败。
-   *
-   * 与 `mirrorIssue` 必须分开：后者是「镜像能不能读到」（可恢复性），这里是
-   * 「本机改动有没有上传」（新鲜度）。二者可以是任意组合——写失败时云端留着
-   * 上一次的旧镜像，pull 照样成功，于是只看 pull 分类会得到「已生效」，
-   * 而其他设备根本收不到本次改动（容量超限等故障正是这个形态）。
-   */
+  /** 最近一次镜像写入是否失败。与 mirrorIssue（能否读到）分开：写失败时云端留旧镜像、pull 仍成功，只看 pull 会误判已生效。 */
   mirrorWriteFailed: boolean;
-  /**
-   * 最近一次镜像写入失败是否源于**超出同步容量上限**。
-   *
-   * 与 `mirrorWriteFailed` 分开：配额超限是确定性故障（重试只会反复撞配额并消耗
-   * 分钟级写配额），且用户可以自己处理（删掉一些固定条目）；普通写失败可能是暂时
-   * 的。压成一档时 UI 只能给「本次改动未上传」，而 `PRIVACY.md` 承诺的是
-   * 「未生效（超出同步容量上限）」。
-   */
+  /** 镜像写失败是否因超出同步容量上限。配额超限是确定性故障（重试无用）且用户可删条目自救；压成一档则 UI 无法给出 PRIVACY.md 承诺的提示。 */
   mirrorQuotaExceeded: boolean;
-  /**
-   * 导入事务是否进行中。
-   *
-   * 期间固定空间的写入会被**有意丢弃**（避免与事务的串行写交错），因此必须让 UI 可见：
-   * 否则用户拖了没反应，只会以为扩展卡了。拖拽入口据此直接拒绝并提示。
-   */
+  /** 导入事务进行中：期间固定空间写入被有意丢弃，故须让 UI 可见、拖拽入口据此拒绝。 */
   importing: boolean;
   ready: boolean;
 
-  /** 加载全部数据并订阅变更。 */
   initialize: () => Promise<void>;
 
-  /** 新建文件夹；达到上限时返回 null（返回同形态的对象会让调用方误以为已创建）。 */
+  /** 新建文件夹；达到上限时返回 null（返回同形态对象会让调用方误以为已创建）。 */
   createFolder: (name: string) => Promise<FixedFolder | null>;
   renameFolder: (folderId: string, name: string) => Promise<void>;
   deleteFolder: (folderId: string) => Promise<void>;
@@ -141,16 +91,7 @@ interface DataState {
   /** 将一组标签拖入文件夹（URL 全局唯一）。 */
   addTabsToFolder: (tabs: readonly TabRecord[], folderId: string) => Promise<AddTabsToFolderResult>;
   removeFolderItem: (folderId: string, itemId: string) => Promise<void>;
-  /**
-   * 整体写回 folders —— 排序类与删除类操作的一次性回滚入口。
-   *
-   * 固定空间是长期资产，而拖拽 4px 即激活（PointerSensor distance:4）且落点检测
-   * 永不返回空，误拖必然产生真实变更；删除文件夹/移出条目同样必须有回退点。
-   * 调用方在操作前留一份快照，成功后通过 toast 的 action 调本方法回滚。
-   *
-   * 走 writeFolders 的**直值**形态而非 updater：回滚要的是「回到这个确定的值」，
-   * 不能被并发的其他写入再算一次。
-   */
+  /** 排序/删除类操作的一次性回滚入口（操作前留快照，成功后经 toast action 调用）。走 writeFolders 直值形态而非 updater：回滚要回到确定值，不能被并发再算。 */
   restoreFolders: (snapshot: readonly FixedFolder[]) => Promise<void>;
   reorderFolderItems: (op: {
     folderId: string;
@@ -163,47 +104,27 @@ interface DataState {
   moveFolderItem: (sourceFolderId: string, itemId: string, targetFolderId: string) => Promise<void>;
   /** 打开固定条目（挂起/绑定/精确匹配/新建 四级）。 */
   openSavedItem: (item: { id: string; url?: string; pendingTabId?: number }) => Promise<void>;
-  /** 从原生组保存为固定文件夹（去重 + 建立绑定）。 */
   /** 把原生组保存为固定文件夹；无可收藏条目时返回 false（不建空夹），成功返回 true。 */
   createFolderFromNativeGroup: (name: string, groupTabs: readonly TabRecord[]) => Promise<boolean>;
   /** 将固定文件夹恢复为原生标签组，并移除已转换的固定文件夹。 */
   syncFolderToNativeGroup: (folderId: string) => Promise<boolean>;
 
-  /**
-   * 固定为常驻磁贴；返回**是否真的固定成功**。
-   *
-   * 返回值而非 `Promise<void>`：本操作存在多条「无法满足」的分支（标签无 URL、
-   * 非 http(s)、已达上限），它们过去是静默 return，而 Promise 照常 resolve ——
-   * 调用方于是照常弹出「已固定标签」，界面宣布成功而磁贴从未生成。
-   * 是否成功必须由调用方拿到，不能靠猜。
-   */
+  /** 固定为常驻磁贴；返回**是否真的固定成功**（无 URL / 非 http(s) / 已达上限等分支返回 false，供 UI 反馈）。 */
   addPin: (tab: TabRecord) => Promise<boolean>;
   removePin: (pin: PersistentPin) => Promise<void>;
   reorderPins: (sourceId: string, targetId: string, placeAfter: boolean) => Promise<void>;
   openPin: (pin: PersistentPin) => Promise<void>;
 
-  /** 设置站点分组折叠状态（持久化）。 */
   toggleSiteCollapsed: (siteKey: string, collapsed: boolean) => Promise<void>;
   updateSettings: (partial: Partial<Settings>) => Promise<void>;
-  /**
-   * updateSettings 的 UI 安全变体：吞掉失败并返回是否生效。
-   *
-   * updateSettings 在「schema 校验失败」与「落盘失败」时都 throw，而 UI 调用点
-   * 大多是 `void updateSettings(...)`——既得不到失败信号，又留下未捕获的 rejection。
-   * 失败本身已由 reportPersistenceFailure 置起 storageDegraded，这里只负责让
-   * 调用方不必层层 try/catch，也不至于产生 unhandled rejection。
-   */
+  /** updateSettings 的 UI 安全变体：校验/落盘失败时吞掉并返回是否生效（失败已置起 storageDegraded），免调用方层层 try/catch 与 unhandled rejection。 */
   tryUpdateSettings: (partial: Partial<Settings>) => Promise<boolean>;
-  /** 恢复全部设置为默认值。 */
   resetSettings: () => Promise<void>;
   /** 清除所有本地数据（不可恢复）：仓库 + 会话存储 + 跨设备镜像，内存态重置为默认。 */
   clearAllData: () => Promise<void>;
   /** 重新从存储读取设置并应用到 store（跨页面同步兜底）。 */
   refreshSettings: () => Promise<void>;
-  /**
-   * 导出完整备份（固定空间 + 设置 + 全部快照族），不包含当前打开标签或撤销栈。
-   * 异步：快照直读仓库，不依赖任何页面是否加载过 snapshotStore。
-   */
+  /** 导出完整备份（固定空间 + 设置 + 全部快照族），不含当前标签或撤销栈；快照直读仓库，不依赖页面加载过 snapshotStore。 */
   exportData: () => Promise<ExportFile>;
   /** 校验并覆盖导入备份（事务），不触碰当前打开标签。 */
   importData: (raw: unknown) => Promise<void>;

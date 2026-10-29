@@ -22,14 +22,8 @@ import { EmptyState } from '@/ui/common/EmptyState';
  *  - 浏览器最近关闭：chrome.sessions 记录的原生关闭标签/窗口，一键恢复。
  */
 
-/**
- * 批次来源标签：让用户知道这批关闭是「我手动关的」还是「归档带走的」。
- *
- * 所有批次长得一样时，用户回看历史分不清操作来源 —— 而「自动行为发生在
- * 我不知情时」正是最容易引发不信任的场景，来源必须显式。
- * 未知 kind 返回 null（不显示标签）：schema 里 kind 是自由字符串，
- * 未知来源一律不显示标签，避免显示成错误的标签。
- */
+/** 批次来源标签：区分手动/归档等来源，便于回看时认出「自动行为」。未知 kind 返回 null
+ *  （schema 里 kind 是自由字符串，未知来源不显示，避免显示成错误标签）。 */
 function kindLabel(kind: string, t: (key: string) => string): string | null {
   if (kind === 'archive') return t('窗口归档');
   // 'restore'（R8）：快照恢复新建的标签。撤销它 = 关闭这批标签，可再撤销回来。
@@ -40,14 +34,8 @@ function kindLabel(kind: string, t: (key: string) => string): string | null {
   return null;
 }
 
-/**
- * 撤销列表的整行按钮。
- *
- * 语义是「可点击的列表行」而非工具条按钮，所以需要 `w-full / 左对齐 / 行内距 /
- * 12px 正文`；Button 的尺寸刻度（dense 11 / xs 10 / sm 14）不覆盖 12px 这一档。
- * 这段 class 串此前在「Tabs 撤销」与「浏览器最近关闭」两处逐字重复，
- * 收敛到本组件后只留一份 —— 按钮尺寸刻度变更时不必再改两个地方。
- */
+/** 撤销列表的整行按钮：语义是「可点击的列表行」而非工具条按钮，故用 w-full/左对齐/12px 正文
+ *  （Button 的尺寸刻度不含 12px）。class 串收敛此处，两处撤销列表共用。 */
 function UndoRowButton({
   tooltip,
   disabled,
@@ -90,23 +78,15 @@ export function UndoHistoryPanel({
   // 经订阅而非 `useDataStore.getState()`：后者不建立订阅，用户在设置页调大上限后
   // 这行仍显示旧值 —— 而文案恰恰在引导用户去改这个设置。
   const undoStackLimit = useDataStore((state) => state.settings.undoStackLimit);
-  /**
-   * 重做栈与执行入口。
-   *
-   * 重做只有「撤销成功后 toast 上的一次性按钮」这一个出口时，toast 默认 7 秒
-   * 后消失（settings.toastDurationSec）—— 功能建成却几乎触达不到。这里补常驻出口：
-   * redoing 期间禁用，与撤销共用执行互斥（store 内以 undoing / redoing 判定）。
-   */
+  /** 重做栈与执行入口。重做原只有 toast 上的一次性按钮（7 秒后消失），这里补常驻出口；
+   *  redoing 期间禁用，与撤销共用执行互斥（store 内以 undoing/redoing 判定）。 */
   const redoBatches = useUndoStore((state) => state.redoBatches);
   const redo = useUndoStore((state) => state.redo);
   const redoing = useUndoStore((state) => state.redoing);
   const [recent, setRecent] = useState<RecentClosedEntry[] | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
-  /**
-   * 恢复互斥必须走 ref：restoringId 是渲染期 state，同一 tick 内的连击读到的
-   * 都是旧值 null（按钮的 disabled 也要等重渲染才生效），两行会同时进入执行体。
-   * restoringId 保留为展示态（哪一行在恢复中）。
-   */
+  /** 恢复互斥必须走 ref：restoringId 是渲染期 state，同 tick 连击读到旧值 null，两行会同时
+   *  进入执行体。restoringId 仅保留为展示态（哪一行在恢复中）。 */
   const restoringRef = useRef(false);
 
   useEffect(() => {
@@ -159,10 +139,8 @@ export function UndoHistoryPanel({
 
   return (
     <DialogShell title={t('撤销历史')} onClose={onClose} widthClassName="dialog-md">
-      {/* 滚动交给 DialogShell 的内容区（标题栏与底栏常驻可见），这里不再自套
-          一层 max-h + overflow —— 两层滚动容器会让滚动条出现两次、高度打架。 */}
-      {/* 不再加 pr-1：内容区 px-4 之外再多 4px，列表右边缘与标题栏 × 差 4px。
-          滚动条留白由内容区自身的 padding 承担。 */}
+      {/* 滚动交给 DialogShell 内容区，不再自套一层 max-h+overflow（两层滚动容器会让滚动条出现两次）。 */}
+      {/* 不加 pr-1：滚动条留白由内容区自身 padding 承担，否则列表右边缘与标题栏 × 错位。 */}
       <div>
         {/* 空态复用通用 EmptyState：与弹窗 / 侧栏的空态同构，文案仍取 undo.historyEmpty。 */}
         {!hasAny && <EmptyState title={t('暂无撤销记录')} />}
@@ -181,9 +159,7 @@ export function UndoHistoryPanel({
           </Callout>
         )}
 
-        {/* 栈深是「可找回」承诺的边界，但只在淘汰那一刻提示过一次（且同会话
-            只提示一次）。常驻一行让用户随时知道「保留最近 N 条」，
-            避免回溯时才发现记录已被挤掉。 */}
+        {/* 栈深是「可找回」承诺的边界，常驻一行让用户随时知道「保留最近 N 条」。 */}
         {batches.length > 0 && (
           <p className="mb-1.5 text-3xs text-gray-500">
             {t('保留最近 {{count}} 条关闭记录，可在设置中调大上限', {
@@ -195,16 +171,12 @@ export function UndoHistoryPanel({
         {batches.length > 0 && (
           <section className="mb-3">
             <div className="mb-1 flex items-center justify-between gap-2">
-              {/* 分组小标题统一口径：.group-label（11px + font-medium + tracking-wide
-                  + gray-500），与 SnapshotsPanel / CommandPalette 同源 —— 此前靠本注释
-                  维持一致，改口径必漏一处，现在由语义类保证。 */}
+              {/* 分组小标题统一走 .group-label 语义类，与 SnapshotsPanel / CommandPalette 同源。 */}
               <h3 className="group-label">
-                {/* 纯中文：品牌名嵌进中文短语（「Tabs撤销」）会在中文界面留下
-                    中英混排且缺空格的读法，英文模式下又会被整句译掉品牌词。 */}
+                {/* 纯中文：品牌名嵌进中文短语会留下中英混排且缺空格的读法。 */}
                 {t('撤销')} · {batches.length}
               </h3>
-              {/* 重做常驻出口：仅在有可重做项时出现（与「清理重复」同款条件出现模式）。
-                  文案带数量，让「这次会再关掉几个」在按下前可见。 */}
+              {/* 重做常驻出口：仅在有可重做项时出现。文案带数量，让「这次会再关掉几个」在按下前可见。 */}
               {redoBatches.length > 0 && (
                 <Button
                   variant="secondary"
@@ -222,9 +194,8 @@ export function UndoHistoryPanel({
             <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {[...batches].reverse().map((batch) => (
                 <li key={batch.id}>
-                  {/* 整行按钮收敛到 Button：命中下限 / disabled:hover 兜底与其余按钮同源。
-                      只传 tooltip 不传 label —— 行的可访问名应由可见文本（站点 + 数量 +
-                      时间）承担，aria-label 会把整段盖成一句提示。 */}
+                  {/* 整行按钮只传 tooltip 不传 label —— 可访问名由可见文本承担，aria-label 会把整段
+                      盖成一句提示。 */}
                   <UndoRowButton
                     tooltip={t('恢复该批次关闭的标签')}
                     onClick={() => void undoBatch(batch.id)}
@@ -241,8 +212,7 @@ export function UndoHistoryPanel({
                       </Chip>
                     )}
                     <span className="shrink-0 text-2xs text-gray-500">
-                      {/* 撤销历史是「刚刚发生」的场景，读「12/3 14:07」比读「刚刚」
-                            慢一拍；1 小时内走相对文案，之外走日期自适应格式。 */}
+                      {/* 撤销历史是「刚刚发生」的场景：1 小时内走相对文案，之外走日期自适应格式。 */}
                       {minutesSince(batch.createdAt) < 1
                         ? t('刚刚')
                         : minutesSince(batch.createdAt) < 60

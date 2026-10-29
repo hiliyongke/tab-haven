@@ -17,8 +17,7 @@ export interface ColorSwatchOption {
  * 互斥单选色板（主题色 / 分组色）。
  *
  * 语义走 `role="radiogroup"` + `role="radio"` + `aria-checked`：
- * 此前用原生 `<input type="radio">`，而 CSS 的选中态是按 `[aria-checked='true']`
- * 写的 —— 原生 radio 不输出该属性，选中环一直没生效（选了哪个色号看不出来）。
+ * CSS 选中态按 `[aria-checked='true']` 写，故不用原生 radio（它不输出该属性，选中环不显示）。
  *
  * 与 `SegmentedChip` 同族（同为互斥单选的一排小控件），只是形态是色块：
  * 视觉 20px / 命中 24px 由 `.theme-swatch` 的 ::after 保证。

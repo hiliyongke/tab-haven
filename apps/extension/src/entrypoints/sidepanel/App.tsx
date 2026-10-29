@@ -86,10 +86,7 @@ import { useTabDragHandlers } from '@/ui/hooks/useTabDragHandlers';
 const INIT_RETRY_DELAY_MS = 1000;
 /** 自动重试次数上限（含首次）。用尽即转错误态，交回用户手动重试。 */
 const INIT_MAX_ATTEMPTS = 2;
-/**
- * 首启引导延迟弹出时长：数据就绪后先让用户看到真实列表，避免模态遮罩第一时间
- * 盖住被介绍的对象。
- */
+/** 首启引导延迟：数据就绪后先让用户看到真实列表，避免遮罩盖住被介绍对象。 */
 const TOUR_AUTO_OPEN_DELAY_MS = 900;
 
 export default function App() {
@@ -133,26 +130,20 @@ export default function App() {
   const snapshots = useSnapshotStore((state) => state.snapshots);
 
   const [quickRegrouping, setQuickRegrouping] = useState(false);
-  /**
-   * 批量动作（休眠全部 / 唤醒全部 / 清理重复）：状态 + 执行 + 反馈闭环整块在
-   * `useBatchTabActions`，App 只把三个回调接到底栏与命令面板。
-   */
+  /** 批量动作闭环整块在 useBatchTabActions，App 只把三个回调接到底栏与命令面板。 */
   const { batchBusy, discardInactive, wakeAll, closeDuplicates } = useBatchTabActions({
     t,
     boundTabIds,
     discardTab,
     closeWithUndo
   });
-  /**
-   * 弹层互斥收在 usePanelLayers：历史 / 命令面板 / 快照面板是同一时刻只开一层的
-   * 三个覆盖层，快照面板的初始视图随「打开」一起指定（不再单独存一份）。
-   */
+  /** 弹层互斥收在 usePanelLayers：三个覆盖层同时只开一层，快照初始视图随「打开」指定。 */
   const { layer, openHistory, openPalette, openSnapshots, closeLayer } = usePanelLayers();
   const showHistory = layer.kind === 'history';
   const showPalette = layer.kind === 'palette';
   const showSnapshots = layer.kind === 'snapshots';
   const snapshotView = layer.kind === 'snapshots' ? layer.view : 'list';
-  // 工作区切换（C1）：编排逻辑抽在 hook，App 只消费结果。
+  // 工作区切换：编排逻辑抽在 hook，App 只消费结果。
   const {
     spaces,
     activeSpaceId,
@@ -164,7 +155,6 @@ export default function App() {
     exitSpace,
     saveAsSpace
   } = useSpaces();
-  // 其他窗口分段（A4）的 hook 在 useSearchController 之后调用（依赖 isFiltering）。
   const handleOtherWindowFocus = useCallback((tab: TabRecord) => {
     void activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
   }, []);
@@ -855,15 +845,23 @@ export default function App() {
     // 存不进去就中止重排，绝不裸奔执行（与归档同款纪律：保存失败不关标签）。
     setQuickRegrouping(true);
     void (async () => {
+      let snapshotSaved: boolean;
       try {
         // 名字是落盘数据（会进导出备份），必须用常量而不是 t()：否则英文界面
         // 保存的是译文、中文界面是中文，同一批数据出现两种名字。
-        await useSnapshotStore.getState().saveCurrentWindow(DEFAULT_SNAPSHOT_NAMES.regroup);
+        snapshotSaved = await useSnapshotStore
+          .getState()
+          .saveCurrentWindow(DEFAULT_SNAPSHOT_NAMES.regroup);
       } catch (error) {
         logFailure('sidepanel', '重排前保存现场快照失败，已取消重排', error);
         notifyError(t('无法保存重排前的现场快照，已取消重排（标签与分组未改动）'));
         return;
       }
+      // saveCurrentWindow 返回 false = 现场无可保存标签（如只剩 chrome:// 内部页），
+      // 此时 store 已给出可见回执，且**没有**任何回退快照。必须中止重排：
+      // 快速整理是不可撤销的破坏性动作，注释承诺「存不进去就中止，绝不裸奔执行」，
+      // 忽略这个布尔返回值会让空现场下的分组被打散重建且无从恢复。
+      if (!snapshotSaved) return;
       const count = await regroupTempArea(plan.ungroupTabIds, plan.plans);
       // 快速整理直接打散并重建浏览器原生组：显式请求快照刷新，让整理结果
       // 立即呈现（与事件驱动刷新共用 signal 合并，不会重复查询）。
@@ -1013,7 +1011,11 @@ export default function App() {
         void useSnapshotStore
           .getState()
           .saveCurrentWindow()
-          .then(() => notify(t('已保存快照')))
+          // false = 现场无可保存标签：store 已给出可见回执，不能再补一条「已保存快照」
+          // 的假成功提示（两条矛盾的提示同时出现，用户无从判断到底存没存）。
+          .then((saved) => {
+            if (saved) notify(t('已保存快照'));
+          })
           .catch((error: unknown) =>
             useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
           ),
@@ -1024,7 +1026,10 @@ export default function App() {
           .getState()
           .saveSpace()
           // 与 useSpaces 同口径：动作是「保存为工作区」，反馈不能说「已保存快照」。
-          .then(() => notify(t('已保存工作区')))
+          // 同样只有 saved=true 才提示：false 时 store 已回执「没有可保存的当前标签」。
+          .then((saved) => {
+            if (saved) notify(t('已保存工作区'));
+          })
           .catch((error: unknown) =>
             useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
           ),

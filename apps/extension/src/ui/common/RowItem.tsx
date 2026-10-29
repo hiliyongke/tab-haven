@@ -13,11 +13,9 @@ import { Favicon } from '@/ui/common/Favicon';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { activatableRowProps } from '@/ui/domContract';
 
-/** 拖拽容器接入点：listeners / style / className 会合并到 RowItem 内部 div，
- *  ref 转发到该 div。供 dnd-kit useSortable 接入。
- *  键盘拖拽走主按钮：KeyboardSensor 要求 keydown 目标即 activator 本体，
- *  因此 activatorRef/buttonAttributes/buttonListeners 挂到主按钮上，
- *  容器 listeners 只承担指针拖拽（整行可拖），与按钮键盘监听互不重复激活。 */
+/** 拖拽容器接入点：listeners/style/className 合并到内部 div、ref 转发到该 div（供 dnd-kit
+ *  useSortable）。键盘拖拽走主按钮（KeyboardSensor 要求 keydown 目标即 activator），
+ *  容器 listeners 只承担指针拖拽，与按钮键盘监听不重复激活。 */
 export interface RowItemContainer {
   ref?: (node: HTMLElement | null) => void;
   listeners?: object | undefined;
@@ -31,17 +29,10 @@ export interface RowItemContainer {
 }
 
 /**
- * 通用行视觉（标签行 / 固定条目行复用）：
- * drag-grip + 主按钮（favicon + title + secondary + trailing）+ badges + hover 操作组。
- * 排序用 dnd-kit：sortable 由调用方通过 `container` 接入到内部 div。
- *
- * memo 化的意义：RowItem 是数量最多的叶子（每个标签一行），父级任一次重渲染都会
- * 波及全部行。memo 让「props 未变的行」直接跳过 reconcile。
- *
- * 生效前提（调用方必须满足，否则 memo 100% 失效）：
- *  1. `badges` / `actions` / `secondary` / `trailing` 等 ReactNode 必须 memo 化；
- *  2. `container` 必须 memo 化 —— dnd-kit 的 useSortable 每次渲染都返回全新对象，
- *     直接透传会让每一行都无法命中 memo（历史问题，已在 TabRow 内用标量依赖修正）。
+ * 通用行视觉（标签行 / 固定条目行复用）：drag-grip + 主按钮 + badges + hover 操作组；
+ * 排序用 dnd-kit，sortable 由调用方经 `container` 接入到内部 div。
+ * memo 让「props 未变的行」跳过 reconcile（行是最多的叶子）。生效前提：`badges`/`actions`/
+ * `secondary`/`trailing` 及 `container` 必须 memo 化，否则 memo 失效。
  */
 export const RowItem = memo(
   forwardRef<
@@ -113,9 +104,8 @@ export const RowItem = memo(
     ref
   ) {
     const className =
-      // rounded-md(6px) 而非 rounded(4px)：行、分区头(6px)、磁贴(8px) 是列表里
-      // 三种并排出现的「可按元素」，圆角必须收敛到两档（6 / 8），否则悬停底色
-      // 出现时会表现为圆角毛刺。行与分区头统一到 6px，磁贴/卡片保留 8px 一档。
+      // rounded-md(6px)：行、分区头(6px)、磁贴(8px) 三种「可按元素」的圆角须收敛到两档，
+      // 否则悬停底色出现时会有圆角毛刺。
       'group relative flex items-center gap-1 rounded-md pl-1.5 pr-1.5 py-0.5 text-xs transition-base row-item' +
       (density === 'tight' ? ' density-tight' : '') +
       (density === 'cozy' ? ' density-cozy' : '') +
@@ -123,8 +113,7 @@ export const RowItem = memo(
       (isActive ? ' is-active' : '') +
       (isMediaPlaying ? ' is-media-playing' : '') +
       // 休眠态不再整体降透明：整行 opacity-60 会把标题压到约 2.7:1（AA 要 4.5:1），
-      // 而休眠恰恰是最需要看清标题的时候。改走 .is-discarded 语义类，只淡化 favicon
-      // 并把标题降到仍达标的灰阶（语义由雪花徽标承载）。
+      // 改走 .is-discarded 语义类只淡化 favicon 与标题到达标灰阶。
       (isDiscarded ? ' is-discarded' : '') +
       (isSplitCompanion ? ' is-split-companion' : '') +
       (isHighlighted ? ' is-highlighted' : '') +
@@ -133,27 +122,19 @@ export const RowItem = memo(
       (isDropRejected ? ' is-drop-rejected' : '') +
       (indent ? ' has-indent' : '') +
       (container?.className ? ' ' + container.className : '');
-    // 层级缩进：以 .row-item 的 pl-1.5(6px) 为首级，之后每级恒定 +16px。
-    // 公式为 `8 + indent*16` 时：indent=1 得 24px，而 indent=0 走 class 的 6px，
-    // 首级步长变成 18px、后续 16px；min(…,48) 又让 depth≥3 全部塌陷到同一层。
-    // 上限放宽到 70px（4 级）以保留可辨性。
-    //
-    // 仅在 indent 为真时下发内联样式：内联 padding-left 优先级高于样式表，
-    // 无条件下发会让 .row-item[data-split-role] 的 4px 补偿失效（分屏竖线自身占 2px）。
+    // 层级缩进：pl-1.5(6px) 为首级，之后每级 +16px。仅在 indent 为真时下发内联样式：
+    // 无条件下发会让 .row-item[data-split-role] 的 4px 补偿失效。
     const style = indent
       ? ({
-          // 缩进改为变量驱动：来源树 4 级固定吃掉 70px，与面板宽度无关，
-          // 320px 下面板行内容区从 308px 降到 238px。窄档由 CSS 覆盖步长与上限。
+          // 变量驱动：来源树 4 级固定吃掉 70px，窄档由 CSS 覆盖步长与上限。
           paddingLeft: `min(calc(6px + var(--indent-step) * ${indent}), var(--indent-max))`,
           ...container?.style
         } as CSSProperties)
       : container?.style;
     const { t } = useTranslation();
 
-    // 同时支持两种 ref 来源：外部传入的 ref（forwardRef）和 dnd-kit 的 setNodeRef。
-    // 必须 useCallback 固定引用：callback ref 引用变化时 React 每轮渲染都先
-    // ref(null) 再 ref(node)，会把 dnd-kit 的 setNodeRef 反复拆装
-    // （MeasuringStrategy.Always 下拖拽中的行重渲染触发额外重测）。
+    // 同时支持 forwardRef 与 dnd-kit 的 setNodeRef；必须 useCallback 固定引用：
+    // callback ref 变化时 React 每轮都先 ref(null) 再 ref(node)，会反复拆装 setNodeRef。
     const containerRef = container?.ref;
     const setRef = useCallback(
       (node: HTMLDivElement | null) => {
@@ -176,12 +157,10 @@ export const RowItem = memo(
           type="button"
           ref={container?.activatorRef}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          /* 列表级键盘漫游（↑↓ / Home / End）的定位锚点：容器靠此属性把焦点
-             在相邻行之间移动，避免 100 个标签就有上百个 Tab 停靠点。 */
+          /* 列表级键盘漫游的定位锚点：容器靠此属性在相邻行间移焦，避免上百个 Tab 停靠点。 */
           {...activatableRowProps}
-          /* 激活挂在真按钮上而不是外层 div：div 承载 onClick 时它既不可聚焦
-             也无角色（可访问树里是普通容器），且点击行内空白/徽章区也会激活
-             —— 鼠标的可执行区域比键盘大一圈。 */
+          /* 激活挂真按钮而非外层 div：div 承载 onClick 时不可聚焦也无角色，且点击行内空白/徽章
+             区也会激活（鼠标可执行区域比键盘大一圈）。 */
           onClick={onClick}
           onAuxClick={onAuxClick}
           onMouseEnter={onMouseEnter}
@@ -193,7 +172,7 @@ export const RowItem = memo(
           {...(container?.buttonAttributes || {})}
         >
           {/* 拖拽手柄悬停时覆盖 favicon 原位（零布局占位）：整行鼠标可拖、键盘走 Space，
-            grip 仅为视觉提示；底色用 --row-bg 与行底一致，浮现时自然盖住 favicon。 */}
+            grip 仅视觉提示；底色用 --row-bg 与行底一致，浮现时盖住 favicon。 */}
           <span className="row-favicon relative inline-flex shrink-0 items-center">
             {faviconFallback || (
               <Favicon pageUrl={faviconPageUrl} title={faviconTitle} size={faviconSize} />
@@ -216,10 +195,8 @@ export const RowItem = memo(
           <span className="row-badges inline-flex shrink-0 items-center">{badges}</span>
         ) : null}
         {actions ? (
-          /* 行内操作按钮区禁止成为指针拖拽起点（display:contents 不产生额外盒子）：
-             拖拽监听挂在整行容器（RowItem 外层 div），PointerSensor 距离 4px 即可激活，
-             在此区域内按下并轻微移动会把一次点击吞成拖拽 → 关闭/固定/静音等按钮
-             “点一下没反应”。与 SectionHead 的 .section-head-actions 同一拦截方案。 */
+          /* 行内操作区禁止成为指针拖拽起点：拖拽监听挂整行容器，PointerSensor 距离 4px 即激活，
+             在此区按下并轻微移动会把点击吞成拖拽。与 SectionHead 的 .section-head-actions 同方案。 */
           <span
             className="contents"
             onPointerDown={(event) => event.stopPropagation()}

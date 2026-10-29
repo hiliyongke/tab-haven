@@ -56,13 +56,8 @@ export function createFolderSlice(
 > {
   return {
     createFolder: async (name) => {
-      // 上限预检：FOLDERS_LIMIT 只在**落盘 schema** 生效时，超限会被 zod 整批拒绝，
-      // 而内存已经 set 过 —— 表现为「界面显示已创建、重启后凭空消失」，且只有一条
-      // 泛化的存储降级横幅。写之前就拦住，并给出**可操作**的说明。
-      //
-      // 返回 null 而非一个有 id 的文件夹：失败分支与成功分支返回同形态时，调用方
-      // 无从判断创建是否生效，拿到的 folder.id 会指向一个从未落盘的文件夹
-      // （继续往里加条目 / 跳转都指向空）。与同文件 addPin 等「返回是否生效」同口径。
+      // FOLDERS_LIMIT 只在落盘 schema 生效，超限会被整批拒绝而内存已 set——写前拦住并给出可操作说明。
+      // 返回 null 而非带 id 的文件夹：同形态返回会让调用方拿到一个从未落盘的 folder.id 继续操作。
       if (ctx.get().folders.length >= FOLDERS_LIMIT) {
         ctx.reportPersistenceFailure(
           'dataStore',
@@ -80,9 +75,8 @@ export function createFolderSlice(
     },
 
     deleteFolder: async (folderId) => {
-      // 用 `?? []` 兜住「文件夹不在列表里」会让整条删除**空转一遍还返回成功**：
-      // 绑定清理 0 条、写库 0 变更，界面显示已删除而文件夹还在。
-      // 找不到目标即状态不一致（调用方只可能传列表里的 id），必须可观测。
+      // 找不到目标即状态不一致（调用方只可能传列表里的 id），必须可观测：
+      // 否则空转一遍还返回成功，界面显示已删除而文件夹还在。
       const folder = ctx.get().folders.find((f) => f.id === folderId);
       if (!folder) {
         logDegraded('dataStore', `删除文件夹失败：id ${folderId} 不在当前文件夹列表中`);
@@ -107,8 +101,7 @@ export function createFolderSlice(
     },
 
     addTabsToFolder: async (tabs, folderId) => {
-      // 导入事务进行中：写 folders 会被丢弃，而下面的 mutateSession 却会照常执行 ——
-      // 结果是指向不存在条目的脏绑定。直接跳过整条路径，避免「提示成功但没变化」。
+      // 导入事务进行中：写 folders 会被丢弃，而 mutateSession 照常执行会产生脏绑定。整条跳过。
       if (ctx.isImporting()) {
         logDegraded('dataStore', '导入事务进行中，本次拖入固定空间已跳过');
         return { added: 0, moved: 0, skipped: tabs.length } satisfies AddTabsToFolderResult;
@@ -127,16 +120,13 @@ export function createFolderSlice(
         return { added: 0, moved: 0, skipped: tabs.length };
       }
 
-      // 纯计算推迟到写入前一刻，以最新基线重算（updater 内 get→算→set 无间隙）。
-      // 旧顺序（入口取基线 → await mutateSession → 旧基线整表回写）在并发间隙会
-      // 覆盖期间发生的其他 folders 变更（重命名被回滚、另一次拖入丢失）。
-      // 绑定建边顺序随之调整为「先写 folders、后建绑定」：绑定引用已写入的条目 id，
-      // 两分区无法真原子，残留窗口由 reconcileWithTabs 最终一致兜底。
+      // 纯计算推迟到写入前一刻以最新基线重算（updater 内 get→算→set 无间隙）：
+      // 入口取基线 → await → 旧基线整表回写会在并发间隙覆盖期间的 folders 变更。
+      // 顺序为「先写 folders、后建绑定」：两分区无法真原子，残留窗口由 reconcileWithTabs 兜底。
       let computed: ReturnType<typeof computeAddTabsToFolder> | null = null;
       let baseline: FixedFolder[] = [];
       await ctx.writeFolders((current) => {
-        // 目标文件夹在并发间隙被删除时整单放弃：core 纯函数对不存在的 folderId
-        // 会把条目静默丢弃（先移除后无处追加），切片层必须兜底。
+        // 目标文件夹在并发间隙被删除时整单放弃：core 纯函数对不存在的 folderId 会静默丢弃条目。
         if (!current.some((folder) => folder.id === folderId)) return current;
         computed = computeAddTabsToFolder(current, candidates, folderId);
         baseline = current;

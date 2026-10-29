@@ -6,13 +6,7 @@ import { dropFeedbackClass, type DropOutcome } from '@/ui/dnd/dropPolicy';
  * 分区外壳：`section-card` 的 class 组合、`SectionHead`、折叠闸门与落点反馈
  * 的唯一出口。
  *
- * 此前有两个实现（`CategoryModule` 负责「只接收拖入」的模块壳、`GroupCard` 负责
- * 「自身可排序」的分区卡），二者都渲染 `<section class="section-card"> + SectionHead`，
- * 但能力已经漂移：`is-accented` / `is-sorting` / `--accent` / `aria-controls`
- * 只有 GroupCard 有。`CategoryModule` 的 props 却早已暴露 `accent` ——
- * 传进来只画色条不加 `is-accented`，计数胶囊不染色、相邻分区间距还会从 4px 变 3px。
- *
- * 现在两者都只是本组件的接线层：
+ * 两种接线形态都是本组件的薄壳：
  * - `GroupCard` 注入 `useSortable` 的 ref / transform / listeners；
  * - `CategoryModule` 注入 droppable 的 ref / isOver / outcome。
  * 分区视觉只有这一处可改。

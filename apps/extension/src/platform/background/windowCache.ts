@@ -26,9 +26,8 @@ const WINDOW_TABS_FLUSH_DEBOUNCE_MS = 800;
 const skipAutoSaveWindowIds = new Map<number, number>();
 
 /**
- * 跳过标记有效期。归档 → 关窗正常在秒级完成；若窗口未随归档关闭
- * （tabs.remove 部分失败），标记不得残留到该窗口未来的手动关闭，
- * 否则误跳过一次正当的关窗自动保存。
+ * 跳过标记有效期。归档 → 关窗正常在秒级完成；若窗口未随归档关闭（tabs.remove 部分失败），
+ * 标记不得残留到该窗口未来的手动关闭，否则误跳过一次正当的关窗自动保存。
  */
 const SKIP_AUTO_SAVE_TTL_MS = 30_000;
 
@@ -50,21 +49,16 @@ function parseSkipMarkers(raw: unknown, now: number): SkipMarkerRecord[] {
   );
 }
 
-/**
- * 跳过标记的 session 镜像 key。
- *
- * 纯内存标记在「归档 sendMessage → 实际关窗」之间若 SW 被回收即丢失，
- * 关窗会重复写入一条同内容 auto 快照；镜像到 session 后 SW 重启也能命中。
- */
-/** 跳过标记 read-modify-write 串行链（多窗口连续归档时防交错丢标记）。 */
+/** 跳过标记 read-modify-write 串行链（多窗口连续归档时防交错丢标记）。
+ * 纯内存标记在「归档 sendMessage → 实际关窗」之间若 SW 被回收即丢失，会重复写入一条
+ * 同内容 auto 快照；镜像到 session 后 SW 重启也能命中。 */
 const skipMarkerChain = createSerialChain();
 
 /** 标记「下一次关闭该窗口时跳过自动保存」（内存 + session 镜像双写，带 TTL）。 */
 export function markSkipAutoSave(windowId: number): Promise<void> {
   // 链尾统一兜底：任何一次 reject 都会让此后每个 markSkipAutoSave 不再 resolve，
-  // 而归档流程正等着它的 sendResponse —— 表现为每次归档都挂满 ack 超时才降级。
-  // 失败一律经诊断留痕（内存标记此刻已置位，SW 不回收则语义不变，但 session
-  // 镜像丢失必须可观测，否则「关窗重复写一条 auto 快照」无从定位）。
+  // 而归档流程正等着它的 sendResponse —— 每次归档都挂满 ack 超时才降级。
+  // session 镜像丢失必须可观测（否则「关窗重复写一条 auto 快照」无从定位）。
   return skipMarkerChain.enqueueSettled(
     async () => {
       const now = Date.now();
@@ -99,8 +93,7 @@ async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
       inSession = hit;
     } catch (error) {
       // 按未命中处理（不阻断关窗快照），但必须留痕：session 镜像存在的理由正是
-      // 内存标记会随 SW 重启丢失，读失败 + 内存已丢 ⇒ 归档已保存的窗口会被
-      // 再写一条重复快照，而归因时完全无从下手。
+      // 内存标记会随 SW 重启丢失，读失败 + 内存已丢 ⇒ 已归档窗口会被再写一条重复快照。
       logDegraded(
         'window-cache',
         `窗口 ${windowId} 跳过自动保存标记读取失败，按未命中处理（可能产生重复关窗快照）`,
@@ -112,16 +105,9 @@ async function consumeSkipAutoSave(windowId: number): Promise<boolean> {
 }
 
 /**
- * 每窗口最近一次激活的标签 id（onActivated 维护）。
- * 「新建标签位置 = 激活标签之后」的定位锚点：onCreated 时新标签已被 Chrome
- * 激活，直接 query active 只会查到它自己，必须用激活前的记录。
- */
-/**
- * 已关闭窗口集合（值为标记到期时间）：在途 refresh 完成时窗口若已关闭，
- * 缓存写回会复活幽灵键。
- *
- * 采用「到期时间 + 读时惰性清理」而非定时器删除：SW 被回收时裸 setTimeout 会被
- * 吞掉，集合会在 SW 存活期内随每次关窗单调增长。
+ * 已关闭窗口集合（值为标记到期时间）：在途 refresh 完成时窗口若已关闭，缓存写回会复活幽灵键。
+ * 采用「到期时间 + 读时惰性清理」而非定时器删除：SW 被回收时裸 setTimeout 会被吞掉，
+ * 集合会在 SW 存活期内随每次关窗单调增长。
  */
 const removedWindowIds = new Map<number, number>();
 /** 已关闭窗口标记的保留时长（覆盖在途 refresh 的防抖 + 查询往返，之后即失效）。 */
@@ -147,6 +133,8 @@ function isWindowRemoved(windowId: number): boolean {
   return true;
 }
 
+/** 每窗口最近一次激活的标签 id。「新建标签位置 = 激活标签之后」的定位锚点：onCreated 时
+ * 新标签已被 Chrome 激活，直接 query active 只会查到它自己，必须用激活前的记录。 */
 const lastActiveTabIds = new Map<number, number>();
 
 /** 记录窗口最后激活的标签（供「回到上一个标签」类动作在关闭后定位）。 */
@@ -165,19 +153,14 @@ function flushWindowTabs(): void {
   const sessionArea = browser.storage?.session;
   if (!sessionArea) return;
   void sessionArea.set({ [WINDOW_TABS_KEY]: memWindowTabs }).catch((error) => {
-    // session 写失败的直接后果是：SW 被回收后该窗口的关窗自动快照**没有源数据**，
-    // 快照会静默缺内容。过去这里吞错不留痕，「快照为什么少了标签」无从查起。
+    // session 写失败 ⇒ SW 被回收后该窗口的关窗自动快照没有源数据，快照会静默缺内容。
     logDegraded('window-cache', '窗口缓存落盘失败：SW 回收后关窗快照会缺少本次内容', error);
   });
 }
 
 /**
- * 窗口标签 + 原生组 → 轻量快照条目。
- *
- * 采集口径（仅 http(s)、静音状态、组标题/颜色）的唯一实现是
- * `platform/snapshot/snapshots` 的 `collectSnapshotTabs`：关窗自动保存、定时自动
- * 快照、面板手动保存三处此前各写一份，新增字段（或改掉「内部页不入库」这类
- * 规则）必然只改一处，表现为「定时保存的快照没有分组」这类无从解释的差异。
+ * 窗口标签 + 原生组 → 轻量快照条目。采集口径的唯一实现是 snapshots 的 collectSnapshotTabs：
+ * 关窗自动保存、定时自动快照、面板手动保存三处共用，避免各自一份导致口径漂移。
  */
 function collectTabs(
   rawTabs: readonly Parameters<typeof mapTab>[0][],
@@ -190,11 +173,8 @@ function collectTabs(
 }
 
 /**
- * 查询某窗口的原生组；失败返回 undefined 并留痕。
- *
- * 刻意**不**退化成空数组：空数组等价于「该窗口没有组」，下游会拿它构建一份
- * 残缺缓存去覆盖上一份完整缓存，关窗快照的分组信息就此永久丢失且零痕迹。
- * 「查询失败」必须能与「确实没有组」区分开，由调用方决定要不要保留旧缓存。
+ * 查询某窗口的原生组；失败返回 undefined 并留痕。刻意不退化成空数组：空数组等价于
+ * 「该窗口没有组」，下游会拿它构建残缺缓存覆盖完整缓存，关窗快照的分组信息就此丢失。
  */
 async function queryWindowGroups(windowId: number): Promise<TabGroupRecord[] | undefined> {
   try {
@@ -214,25 +194,22 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
     logDegraded('window-cache', `窗口 ${windowId} 标签查询失败，跳过本次缓存更新`, error);
     return;
   }
-  // 无痕窗口不得进缓存：缓存的唯一用途是「关窗时生成可恢复快照」，而无痕标签的
-  // URL 与标题一旦落进快照就与定时自动快照的刻意排除（listNormalWindowIds）相反。
-  // 窗口类型无法从标签事件里拿到，但标签自带 incognito —— 这是零额外 IPC 的判定点。
+  // 无痕窗口不得进缓存：缓存的唯一用途是「关窗时生成可恢复快照」，无痕标签的 URL 与标题
+  // 一旦落进快照就与定时自动快照的刻意排除（listNormalWindowIds）相反。窗口类型无法从标签
+  // 事件拿到，但标签自带 incognito —— 这是零额外 IPC 的判定点。
   if (rawTabs.some((raw) => raw.incognito === true)) return;
   const groups = await queryWindowGroups(windowId);
-  // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会
-  // 以空数组/残余数据复活已清理的键（驻留到浏览器重启）。丢弃即可。
+  // 在途刷新与关窗竞态：查询返回前窗口已被关闭时，把结果写回缓存会复活已清理的键。丢弃即可。
   if (isWindowRemoved(windowId)) return;
   if (groups === undefined && memWindowTabs[String(windowId)] !== undefined) {
-    // 组查询失败时宁可保留上一份**完整**缓存，也不用缺分组信息的新数据覆盖它：
-    // 缓存的用途是「SW 被回收后仍能生成关窗快照」，稍旧但完整的数据价值更高；
-    // 组查询失败是瞬时故障，下一个标签事件（防抖后）即自愈。
+    // 组查询失败时宁可保留上一份完整缓存，也不用缺分组信息的新数据覆盖它：稍旧但完整的
+    // 数据价值更高；组查询失败是瞬时故障，下一个标签事件（防抖后）即自愈。
     return;
   }
   const list = collectTabs(rawTabs, groups ?? []);
   memWindowTabs[String(windowId)] = list;
-  // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置 =
-  // 激活标签之后」在第一次新建时拿不到锚点会静默失效；查询结果中的激活标签
-  // 即最近一次锚点（仅缺省时补种，之后由 onActivated 维护）。
+  // SW 冷启动锚点补种：lastActiveTabIds 是纯内存态，SW 回收后「新建标签位置」在第一次
+  // 新建时拿不到锚点会静默失效；查询结果中的激活标签即最近一次锚点（仅缺省时补种）。
   if (!lastActiveTabIds.has(windowId)) {
     const active = rawTabs.find((tab) => tab.active);
     if (typeof active?.id === 'number') lastActiveTabIds.set(windowId, active.id);
@@ -242,12 +219,9 @@ async function refreshWindowTabs(windowId: number): Promise<void> {
 }
 
 /**
- * 重新扫描某窗口的防抖窗口（毫秒）。
- *
- * 该值是「关窗自动快照内容滞后」的主要来源之一：关窗瞬间读到的缓存最多滞后
- * 「本防抖 + 落盘防抖」，最后几百毫秒的开关标签会丢进/带进快照。
- * 从 600ms 收紧到 250ms：事件合并收益仍在，滞后上限明显收窄。
- * 与 WINDOW_TABS_FLUSH_DEBOUNCE_MS 是两段独立的延迟，调参须同时看两者。
+ * 重新扫描某窗口的防抖窗口（毫秒）。该值是「关窗自动快照内容滞后」的主要来源之一：
+ * 关窗瞬间读到的缓存最多滞后「本防抖 + 落盘防抖」。与 WINDOW_TABS_FLUSH_DEBOUNCE_MS
+ * 是两段独立的延迟，调参须同时看两者。
  */
 const WINDOW_REFRESH_DEBOUNCE_MS = 250;
 
@@ -270,8 +244,8 @@ async function initWindowTabsCache(): Promise<void> {
     if (sessionArea) {
       const rec = await sessionArea.get(WINDOW_TABS_KEY);
       const val = rec[WINDOW_TABS_KEY];
-      // 缓存必须过 schema：session 中的脏条目会让该窗口的关窗快照在
-      // persistSnapshot 校验处整体失败（快照丢失而非只丢坏条目）。
+      // 缓存必须过 schema：session 中的脏条目会让该窗口的关窗快照在 persistSnapshot
+      // 校验处整体失败（快照丢失而非只丢坏条目）。
       const parsed = WindowTabsCacheSchema.safeParse(val);
       if (parsed.success) {
         memWindowTabs = parsed.data;
@@ -280,8 +254,7 @@ async function initWindowTabsCache(): Promise<void> {
         logDegraded('window-cache', 'session 窗口缓存数据损坏，已丢弃并从空态重建');
       }
     }
-    // 窗口类型/无痕口径与定时自动快照、自动分组共用 `listNormalWindowIds`：
-    // 三条快照路径此前各自一份判定，无痕窗口只会在「关窗」这条路上被写进持久快照。
+    // 窗口类型/无痕口径与定时自动快照、自动分组共用 listNormalWindowIds，避免各自一份判定。
     const windowIds = await listNormalWindowIds();
     for (const windowId of windowIds) {
       await refreshWindowTabs(windowId);

@@ -8,15 +8,10 @@ import { useModalA11y } from '@/ui/dialog/Dialog';
 const TOTAL = 3;
 
 /**
- * 三步引导文案（中文原文）。
- *
- * `onboarding.step${step}Title / Body` 是运行时拼接，静态扫描拿不到完整 key，
- * 英文模式会露中文；改为按步号取原文，运行时再按原文算哈希查词典。
- *
- * 属性名以 `Key` 结尾是**扫描器的抽取约定**（见 packages/i18n-kit/src/collect.ts）：
- * 常量表里的原文最终经 `t()` 渲染，但不是调用点，只有 `*Key` 属性会被抽进词典。
- * 靠 `@i18n-ignore-start/end` 豁免 zh-linter 只能压住告警，词条始终不进
- * 词典（英文模式露中文，而 scan / check 双绿）—— 所以必须走 `*Key` 通道。
+ * 三步引导文案（中文原文）。`onboarding.step${step}Title/Body` 运行时拼接会让静态扫描拿不到
+ * 完整 key（英文露中文），故改为按步号取原文再查词典。属性名以 `Key` 结尾是扫描器的抽取
+ * 约定（见 packages/i18n-kit/src/collect.ts）：常量表原文不是 t() 调用点，只有 `*Key` 属性
+ * 会被抽进词典；靠 `@i18n-ignore-start/end` 只压告警、词条不进词典，所以必须走 `*Key` 通道。
  */
 const ONBOARDING_STEPS = [
   {
@@ -29,20 +24,15 @@ const ONBOARDING_STEPS = [
   },
   {
     titleKey: '敲几下键盘直达任意标签',
-    // 必须点出 ⌘P：命令面板是全产品最高效的入口（一步执行休眠 / 存快照 / 导出），
-    // 引导里漏掉它等于把最高效的路径藏起来。
+    // 必须点出 ⌘P：命令面板是全产品最高效的入口，漏掉它等于把最高效的路径藏起来。
     bodyKey:
       '按 ⌘K / Ctrl+K 聚焦搜索，输入标题、网址或拼音首字母，↑↓ 选择、回车切换；按 ⌘P / Ctrl+P 打开命令面板，一步执行休眠、存快照、导出备份。'
   }
 ] as const;
 
 /**
- * 首启交互式引导：仅首次展示（settings.onboarded=false）。
- * 三步讲清核心价值（列表已就绪 / 固定空间 / 键盘直达）+ 功能发现清单，
- * 完成后调用 onDone 写回 onboarded 标记，不再出现。
- *
- * Esc 走 onDismiss（仅本次会话关闭、不落盘）：误按 Esc 不会永久失去引导，
- * 下次打开面板仍会再展示，直到用户显式「跳过 / 完成」。
+ * 首启交互式引导：仅首次展示（settings.onboarded=false），完成后 onDone 写回标记不再出现。
+ * Esc 走 onDismiss（仅本次会话关闭、不落盘）：误按 Esc 不会永久失去引导。
  */
 export function OnboardingTour({
   onDone,
@@ -52,24 +42,20 @@ export function OnboardingTour({
   onDone: () => void;
   /** Esc 关闭（不写回 onboarded 标记）。 */
   onDismiss: () => void;
-  /**
-   * 可选：终步的「立即导出备份」。
-   * 不传则只显示提示文案（保持组件在无导出能力场景下可用）。
-   */
+  /** 可选：终步的「立即导出备份」；不传则只显示提示文案。 */
   onExport?: () => void;
 }) {
   const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const last = step === TOTAL;
-  // step 恒在 1..TOTAL（只由本组件的按钮推进），回退首步仅用于收掉下标访问的 undefined。
+  // step 恒在 1..TOTAL，回退首步仅用于收掉下标访问的 undefined。
   const current = ONBOARDING_STEPS[step - 1] ?? ONBOARDING_STEPS[0];
   const panelRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  // 与弹窗族统一：焦点陷阱 + 关闭后焦点恢复；
-  // 不加遮罩点击关闭，避免误点直接写回 onboarded 标记。
+  // 与弹窗族统一：焦点陷阱 + 关闭后焦点恢复；不加遮罩点击关闭，避免误点写回 onboarded 标记。
   useModalA11y(panelRef, onDismiss);
 
-  // 原生 <dialog> 默认 hidden，必须显式 showModal() 才会显示并进入真正的模态。
+  // 原生 <dialog> 默认 hidden，必须显式 showModal() 才显示并进入真正的模态。
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
@@ -79,8 +65,7 @@ export function OnboardingTour({
     };
   }, []);
 
-  // Portal 到 body：与 DialogShell 同层（z-stack 50 档），脱离 .app 的
-  // container-type 层叠上下文。
+  // Portal 到 body：与 DialogShell 同层（z-stack 50 档），脱离 .app 的 container-type 层叠上下文。
   return createPortal(
     <div
       className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -88,16 +73,12 @@ export function OnboardingTour({
     >
       <dialog
         ref={panelRef}
-        /* dialog-sm + px-4 py-3：与弹窗族同一宽度刻度（min(400px,90vw)，自带 vw 兜底）
-           与同一内边距。原 max-w-[calc(100%-16px)] 是任意值，且 sm:max-w-sm 依赖
-           640px 断点 —— 侧边栏视口 ≤500px，该断点永不命中（死代码）。 */
-        /* m-auto 而非 m-0：与命令面板同因 —— 原生 <dialog> 经 showModal() 后脱离
-           文档流，居中靠浏览器默认的 margin:auto，写 m-0 会让它贴到左上角。 */
+        /* dialog-sm + px-4 py-3：与弹窗族同一宽度刻度与内边距（侧边栏 ≤500px，sm:max-w-sm 断点永不命中）。 */
+        /* m-auto 而非 m-0：原生 <dialog> 经 showModal() 后居中靠浏览器默认 margin:auto，m-0 会贴左上角。 */
         className="dialog-sm modal-panel modal-surface relative m-auto px-4 py-3"
         aria-labelledby={titleId}
         onCancel={(event) => {
-          // Esc 已由 useModalA11y preventDefault 并走 onDismiss；此分支只兜底
-          // 原生 cancel 事件路径（防御性），同样走 onDismiss 不落盘。
+          // Esc 已由 useModalA11y 走 onDismiss；此分支兜底原生 cancel 事件，同样不落盘。
           event.preventDefault();
           panelRef.current?.close();
           onDismiss();
@@ -123,8 +104,7 @@ export function OnboardingTour({
           </div>
         )}
 
-        {/* 终步的备份提醒：数据只存在本机，卸载即清除 —— 在用户最有耐心看完的
-            引导终局给出一次导出机会，而不是等他踩到损失后才发现没有出口。 */}
+        {/* 终步的备份提醒：数据只存在本机，卸载即清除 —— 在用户最有耐心看完的终局给一次导出机会。 */}
         {last && (
           <Callout
             tone="plain"
@@ -146,8 +126,7 @@ export function OnboardingTour({
         )}
 
         <div className="mt-5 flex items-center justify-between">
-          {/* 命中下限（min-h-6 / px-2）与 disabled:hover 兜底交给 ghost 变体；
-              11px 字号走 dense 档，不再用 className 压 xs 的 text-2xs。 */}
+          {/* 命中下限与 disabled:hover 兜底交给 ghost 变体；11px 字号走 dense 档。 */}
           <Button variant="ghost" size="dense" className="hover:text-gray-600" onClick={onDone}>
             {t('跳过')}
           </Button>
@@ -169,11 +148,8 @@ export function OnboardingTour({
           </div>
         </div>
 
-        {/* 进度点：可点击跳步（向导常见交互）。改用 button 并补 aria-label，
-            读屏用户可获得「转到第 n 步」而非被 aria-hidden 整块吞掉。
-            tour-dot 透明扩区把 6px 视觉高度撑到 ≥24px 命中（WCAG 2.5.8）。
-            刻意不换成 Button / IconButton：两者都有 min-h-6，会把 6px 的圆点撑成
-            24px 实心块（min-height 压过 h-1.5），且本处既无图标也无文字。 */}
+        {/* 进度点：用 button + aria-label（读屏得「转到第 n 步」）；tour-dot 透明扩区把 6px 撑到
+            ≥24px 命中。刻意不用 Button/IconButton：它们 min-h-6 会把 6px 圆点撑成 24px 实心块。 */}
         <div className="mt-4 flex justify-center gap-1">
           {Array.from({ length: TOTAL }, (_, i) => (
             <button

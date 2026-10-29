@@ -14,10 +14,7 @@ export type { AddTabsToFolderResult, DataState };
 /**
  * 固定空间数据 store：文件夹、常驻磁贴、设置、折叠状态。
  * 持久化经 DataRepository（chrome.storage.local + zod + 坏数据隔离）。
- *
- * 该文件为组合根：共享的写入/降级/镜像/监视器逻辑集中在 `data/context.ts`，
- * 业务动作按领域拆为 `data/{init,folder,pins,settings,transfer}Slice.ts`，
- * 对外 `useDataStore` 接口与单体时代完全一致。
+ * 组合根：共享写入/降级/镜像/监视器逻辑在 `data/context.ts`，业务动作按领域拆为各 Slice。
  */
 export const useDataStore = create<DataState>()((set, get) => {
   const repos = getRepositories();
@@ -43,7 +40,6 @@ export const useDataStore = create<DataState>()((set, get) => {
     ...createSettingsSlice(ctx),
     ...createTransferSlice(ctx)
   };
-  // 刻意不加 `as DataState`：各切片以精确 `DataSlice<...>` 声明自己提供哪些键，
-  // 展开后的完备性由编译器兜住；加断言会让「漏挂某个切片」退化为运行时
-  // `xxx is not a function`。
+  // 刻意不加 `as DataState`：各切片的 `DataSlice<...>` 声明自身提供的键，
+  // 完备性由编译器兜住；加断言会让「漏挂某切片」退化为运行时 `xxx is not a function`。
 });

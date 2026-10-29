@@ -7,18 +7,11 @@ import { siteResolver } from '@/core/site/SiteResolver';
 /**
  * 临时区视图模型：把标签镜像派生为侧边栏可渲染的 section 列表。
  *
- * section 顺序（行为规格）：
- *   固定标签区（置顶）→ 原生标签组 → 网站聚合组 → 未分组。
+ * section 顺序：固定标签区（置顶）→ 原生标签组 → 网站聚合组 → 未分组。
  * 固定空间的排除（文件夹挂起/绑定）由 excludedTabIds 传入（数据层接入后填充）。
  */
 
-/**
- * 语言分区 siteKey 的前缀（构造与反解的唯一口径）。
- *
- * 此前 `Sections` 用模板串拼出 `lang-${code}`，`AutoGrouping` 再靠「前缀 + 不含点」
- * 把字符串**反解**回「这是语言分区」——两处无共享常量，改前缀或新增分区类型
- * 必然漏改。构造与解析都收口到本模块后，判定只剩 `parseLangSiteKey(...) !== undefined`。
- */
+/** 语言分区 siteKey 的前缀：构造与反解的唯一口径，判定用 `parseLangSiteKey(...) !== undefined`。 */
 export const LANG_SITE_KEY_PREFIX = 'lang-';
 
 /** 语言分区的成组下限：单标签语言组没有组织意义（与站点阈值语义不同，故独立成常量）。 */
@@ -365,9 +358,8 @@ function buildSitePlan({
     const byRecency = latestAccessed(b.tabs) - latestAccessed(a.tabs);
     return byRecency !== 0 ? byRecency : (a.tabs[0]?.index ?? 0) - (b.tabs[0]?.index ?? 0);
   });
-  // 「已吸收候选者」与「每个站点组的标签 id 集合」预先算好：原实现在
-  // siteGroups.map 内对每个组遍历全部 candidates 再做 group.tabs.some(...)，
-  // 是 O(站点组 × 候选组 × 标签) 的三层嵌套。预建 Set 后降为 O(站点组 × 候选组)。
+  // 「已吸收候选者」与「每个站点组的标签 id 集合」预先算好：预建 Set 把
+  // O(站点组 × 候选组 × 标签) 的三层嵌套降为 O(站点组 × 候选组)。
   const absorbedCandidates = candidates.filter((candidate) =>
     absorbedGroupIds.has(candidate.groupId)
   );

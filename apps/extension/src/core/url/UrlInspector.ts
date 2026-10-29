@@ -1,10 +1,5 @@
 /**
- * URL 检视：把标签页的 URL 输入规约为统一的检视结果。
- *
- * 单一入口，职责分离为两步（内部实现）：
- *  1. 规约（normalize）：解析 URL、判定协议、归一化 hostname；
- *  2. 分类（classify）：按业务语义给出类别。
- *
+ * URL 检视：把标签页 URL 规约为统一检视结果（先规约 normalize、后分类 classify）。
  * 本模块是整个产品 URL 判定的唯一事实来源（复用引擎、聚合、清理共用）。
  */
 
@@ -15,20 +10,13 @@ interface UrlInspection {
   category: UrlCategory;
   /** 同 URL 比较键：导航中取 pendingUrl，否则取已提交 URL。 */
   comparisonKey: string;
-  /** 已提交 URL（可能为空串）。 */
   committedUrl: string;
 }
 
 /**
- * http(s) 绝对 URL 的前缀判定（全仓唯一实现）。
- *
- * 此前同一条正则被抄在 10 个文件里（快照收集、图标、角标、搜索、导入 schema…），
- * 改口径必然漏改，表现为「同一个 URL 在快照里算网页、在导入里算不安全」。
- *
- * 与下面的 `isWebUrl` 分工不同，不要互相替换：本函数是**严格前缀判定**，用于
- * 外部输入白名单（导入的备份、地址栏直开）——`https:example.com` 这类不带 `//`
- * 的写法不该被放行去 `tabs.create`；`isWebUrl` 是**解析后协议判定**，用于浏览器
- * 已给出的 URL 分类，输入形态由浏览器保证。
+ * http(s) 绝对 URL 的严格前缀判定（全仓唯一实现），用于外部输入白名单（导入备份、地址栏直开）：
+ * `https:example.com` 这类不带 `//` 的写法不该放行去 `tabs.create`。
+ * 与 `isWebUrl`（解析后协议判定，输入形态由浏览器保证）分工不同，不要互相替换。
  */
 const HTTP_SCHEME_PREFIX = /^https?:\/\//i;
 
@@ -61,15 +49,8 @@ const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' }
 
 /**
  * 归约为比较键：只动 authority（主机名小写 + 剥离默认端口），其余原样保留。
- *
- * 为什么必须归一：比较键是重复判定、复用引擎、固定空间去重的唯一口径，
- * 而这些 URL 有三个来源——浏览器 API（已是规范形）、**用户手输**（omnibox `pin:`）、
- * **导入的备份文件**。后两者完全可能出现 `HTTPS://A.COM/P` 这类写法，
- * 不归一的结果是「明明是同一个页面却判成两个」，即重复标签检测静默漏判。
- *
- * 为什么只动 authority：路径 / 查询 / 片段参与页面身份——`/a` 与 `/a/`
- * 在部分站点确为不同资源，剥离查询参数更会把带追踪参数的链接与裸链接混为一谈。
- * 这两类刻意保留（等价类矩阵见 `tests/core/url/url-normalize.test.ts`）。
+ * 必须归一：比较键来源含用户手输（omnibox `pin:`）与导入备份，可能是 `HTTPS://A.COM/P`，不归一会让重复标签检测静默漏判。
+ * 只动 authority 是因为路径 / 查询 / 片段参与页面身份（`/a` 与 `/a/` 可能是不同资源），刻意保留。
  */
 function toComparisonKey(raw: string): string {
   try {
@@ -83,17 +64,7 @@ function toComparisonKey(raw: string): string {
   }
 }
 
-/**
- * 提取 URL 的主机名；无 URL / 无法解析 / 解析出空主机时返回 `undefined`。
- *
- * 唯一事实来源在此：各调用点自写 `new URL(url).hostname` 时，多份副本口径容易漂移。
- *
- * 刻意返回 `undefined` 而不是空串：空串是一个「长得像主机名」的合法字符串，
- * 一旦流入分组键、白名单匹配或展示文案，就凭空多出一个名为空的站点
- * （多个无法解析的 URL 会被当成同一个 '' 站点聚合在一起）；
- * 而调用方用 `if (host)` 判断时，也分不清「没解析出来」和「解析出空串」。
- * 无主机就是无主机，用类型表达而不是用哨兵值表达。
- */
+/** 提取 URL 的主机名；无 URL / 无法解析 / 空主机时返回 `undefined`（不用空串，避免凭空多出「空站点」且 `if (host)` 无法区分）。 */
 export function hostnameOf(url: string | undefined): string | undefined {
   if (!url) return undefined;
   try {
@@ -104,11 +75,8 @@ export function hostnameOf(url: string | undefined): string | undefined {
 }
 
 /**
- * 检视一个标签的 URL。判定优先级：
- *  1. 导航中（pending 存在且为 web 页）→ web，比较键取 pending；
- *  2. 已提交为空白起始页 → blank-start（等待真实导航）；
- *  3. 已提交为 web 页 → web；
- *  4. 其余（内部页/无法解析）→ internal。
+ * 检视一个标签的 URL 并按优先级分类：pending 为 web 页则 web（比较键取 pending）；
+ * 否则按已提交 URL 判定 blank-start / web / internal。
  */
 export function inspectUrl(
   committedUrl: string | undefined,
@@ -140,11 +108,7 @@ export function inspectUrl(
   return { category: 'internal', comparisonKey: pending || committed, committedUrl: committed };
 }
 
-/**
- * 快捷判定：返回可参与复用/聚合的网页比较键。
- * 非 web 页（内部页/空白起始页）返回 null，供调用方直接跳过。
- * 复用引擎、重复清理、固定空间共用此单一判定。
- */
+/** 快捷判定：返回可参与复用/聚合的网页比较键；非 web 页（内部页/空白起始页）返回 null，供调用方跳过。 */
 export function webComparisonKey(
   committedUrl: string | undefined,
   pendingUrl: string | undefined

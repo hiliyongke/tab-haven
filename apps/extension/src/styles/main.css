@@ -1535,8 +1535,8 @@ button:not([disabled]) {
   cursor: grab;
   /* 默认透明边框占位，避免 hover 时布局抖动；
      底色/边框取 favicon 主色或域名强调色（--tile-accent，与站点组圆点同源），未取到色回退中性灰 */
-  border: 1px solid color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 22%, transparent);
-  background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tile-accent, var(--c-gray-400)) 14%, transparent);
+  background: color-mix(in srgb, var(--tile-accent, var(--c-gray-100)) 10%, transparent);
   transition:
     transform var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out),
@@ -1687,7 +1687,14 @@ button:not([disabled]) {
   /* 两行封顶（4 + 36 + 6 + 36 + 4 = 86px）：20+ 枚磁贴时磁贴区会把固定空间与主列表挤出首屏 */
   max-height: 86px;
   overflow-y: auto;
+  /* 隐藏滚动条：磁贴条是横向排布的可滚区，chrome 在内容高与盒高差 1px 时也会
+     画一条常驻竖条（见上条注释），视觉上像「多出来一根线」。滚动仍可用（滚轮/触控板），
+     「下面还有」由 .scroll-fade 的底部渐隐表达。 */
+  scrollbar-width: none;
   overscroll-behavior: contain;
+}
+.pinned-grid::-webkit-scrollbar {
+  display: none;
 }
 .pinned-tile .pinned-unpin {
   position: absolute;
@@ -1775,18 +1782,10 @@ button:not([disabled]) {
   padding-top: 4px;
   padding-bottom: 0;
 }
-/* 磁贴只在指针设备上收小：触屏档的磁贴是 56px 宽 + 名称（见 @media (hover: none)），
-   压回 32px 会让「无 tooltip 时靠名称辨识」的兜底失效。
-   .pinned-unpin 角标 top:-4px 依赖 .pinned-grid 的 4px 顶部内距，这里不动它。 */
-@media (hover: hover) {
-  [data-density='tight'] .pinned-tile {
-    width: 32px;
-    height: 32px;
-  }
-  [data-density='tight'] .pinned-grid {
-    max-height: 78px;
-  }
-}
+/* 磁贴不随密度缩小：36px 是「16px 图标 + 4px 内距 + 16px 取消固定角标」的平衡点，
+   压到 32px 后 16px 角标占掉四分之一格，且 4+32+4 与容器高度只差 1px ——
+   浏览器按 41 计算内容高、按 40 计算盒高，常驻滚动条就出现了。
+   超紧凑档只收紧条本身的上下留白（见 [data-density='tight'] .pinned-strip）。 */
 /* 宽松密度：增加行内边距，信息更舒展 */
 .row-item.density-cozy {
   padding-top: 6px;
@@ -1830,6 +1829,16 @@ button:not([disabled]) {
 [data-density='large'] .section-head .title {
   font-size: 0.875rem;
 }
+/* 模块标题（收藏夹 / 站点分组 / 浏览器置顶）此前与分区标题同为 12px/600/gray-600，
+   两级视觉完全等价 —— 模块之间的边界只能靠 14px 间距勉强表达，读起来像同一层。
+   模块头是「容器标签」，降一档为 11px/600 + 字距 + 更浅的灰；
+   分区头（github.com 这类）保持 12px/600 —— 层级变成「标签 → 内容」。 */
+.module-shell > .section-head .title {
+  font-size: var(--text-3xs);
+  letter-spacing: 0.04em;
+  color: var(--c-gray-500);
+}
+
 /* 刚放下的一瞬间：指针仍停在落点行上，纯 :hover 会让把手残留不消，
    观感像「拖完卡住」。抑制到指针再次移动（那才是真正的重新悬停）。 */
 body.dnd-just-dropped .row-item .drag-grip {

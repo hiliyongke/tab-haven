@@ -12,11 +12,8 @@ interface OmniSuggestion {
 }
 
 /**
- * 转义建议描述中的 XML 标记字符。
- *
- * Chrome 把 omnibox 的 description 当作受限 XML 解析（支持 `<url>` / `<match>` / `<dim>`），
- * 而文件夹名与固定条目标题可来自**导入的备份文件**——含 `<url>` 之类片段时会被
- * 当成样式指令解析，轻则吞掉文案，重则把普通文本渲染成可点击链接的观感。
+ * 转义建议描述中的 XML 标记字符：Chrome 把 omnibox 的 description 当受限 XML 解析
+ * （支持 <url>/<match>/<dim>），而标题可来自导入的备份文件，含标记片段会被误当样式指令。
  */
 function escapeSuggestionText(text: string): string {
   return text.replace(/[<>&]/g, (char) =>
@@ -41,9 +38,8 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     queryAllWindowTabs()
   ]);
   const out: OmniSuggestion[] = [];
-  // 已打开标签直达并置顶：地址栏的高频意图是「切回去」而非再开一个。
-  // 当前激活标签排最后（用户正看着它）；上限 OMNIBOX_TAB_SUGGESTIONS 条，
-  // 给下方建议留展示位（地址栏下拉总共只有 8 行左右）。
+  // 已打开标签直达并置顶（地址栏高频意图是「切回去」）；当前激活标签排最后，
+  // 上限 OMNIBOX_TAB_SUGGESTIONS 条给下方建议留展示位。
   if (q) {
     const matchedTabs = tabs
       .filter(
@@ -74,7 +70,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
     }
   }
   for (const pin of pins) {
-    // 非 http(s) 的固定图标不给建议（同时下方回车路径也会再校验一次）。
+    // 非 http(s) 的固定图标不给建议（回车路径还会再校验一次）。
     if (!isOpenableUrl(pin.url)) continue;
     const host = hostnameOf(pin.url);
     if (!q || host?.includes(q) || pin.title.toLowerCase().includes(q)) {
@@ -97,8 +93,7 @@ async function queryOmnibox(text: string): Promise<OmniSuggestion[]> {
 async function handleOmniboxEnter(text: string, disposition?: string): Promise<void> {
   const raw = text.trim();
   const foreground = disposition === 'newForegroundTab';
-  // 已打开标签直达：重新取窗口归属（建议生成后标签可能已跨窗口移动），
-  // 标签已关闭时兜底开面板。
+  // 已打开标签直达：重新取窗口归属（建议生成后标签可能已跨窗口移动），标签已关闭则兜底开面板。
   if (raw.startsWith('tab:')) {
     const tabId = Number(raw.slice('tab:'.length));
     if (Number.isInteger(tabId)) {
@@ -109,7 +104,7 @@ async function handleOmniboxEnter(text: string, disposition?: string): Promise<v
           return;
         }
       } catch {
-        // 标签在建议生成后已被关闭：落到开面板兜底
+        // 标签已被关闭：落到开面板兜底
       }
     }
     await openSidePanel().catch(() => undefined);
@@ -128,8 +123,7 @@ async function handleOmniboxEnter(text: string, disposition?: string): Promise<v
   }
   if (raw.startsWith('pin:')) {
     const url = raw.slice('pin:'.length).trim();
-    // 必须再校验一次：用户可以直接敲 `t pin:javascript:...` 而不选建议，
-    // 建议列表的过滤拦不住手输内容。
+    // 必须再校验：用户可直接敲 `pin:javascript:...` 而不选建议，建议列表的过滤拦不住手输内容。
     if (isOpenableUrl(url)) await createTabsWithUrls([url], undefined, foreground);
     return;
   }

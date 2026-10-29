@@ -4,15 +4,13 @@ import { queryWindowGroups, queryCurrentWindowTabs } from '@/platform/tabs';
 import { logDegraded, logFailure } from '@/platform/diagnostics';
 
 /**
- * 标签同步服务：把浏览器标签事件统一为"快照刷新"信号。
+ * 标签同步服务：把浏览器标签事件统一为「快照刷新」信号。
  *
- * 调度模型（全新设计，节流 + 合并）：
+ * 调度模型（节流 + 合并）：
  *  - signal：任何标签/分组事件（或显式请求）产生刷新信号；
- *  - 首事件立即触发查询（leading edge）；
- *  - 查询进行中/窗口内的后续事件仅标记 pending（合并，避免事件风暴）；
+ *  - 首事件立即触发查询（leading edge）；查询进行中/窗口内的后续事件仅标记 pending（合并）；
  *  - 查询结束且存在 pending 时，等待节流窗口（40ms）后再查一次（trailing）；
  *  - 每次广播带递增代数（generation），订阅方据此判断新鲜度。
- *
  * 快照的真相源始终是浏览器（每次查询），本服务不缓存中间状态。
  */
 
@@ -25,14 +23,11 @@ interface TabSnapshot {
 }
 
 const THROTTLE_MS = 40;
-/** 发声标签存在时的校准轮询间隔：Chrome 对 audible 置 false 存在秒级时滞，轮询将其收敛上限压至该值。 */
+/** 发声标签存在时的校准轮询间隔：Chrome 对 audible 置 false 存在秒级时滞，轮询将收敛上限压至该值。 */
 const AUDIBLE_POLL_MS = 2000;
 /**
- * 只有这些字段变化才需要重新查询快照。
- *
- * `tabs.onUpdated` 不过滤的话，favicon 单独更新、直播/计时器类站点的高频标题
- * 刷新都会触发一次全窗口查询 —— 一个不断改标题的页面能让扩展持续空转。
- * favicon 刻意不在列表里：它必定与 title/url/status 之一同时变化。
+ * 只有这些字段变化才需要重新查询快照。favicon 单独更新、直播/计时器类站点的高频标题刷新
+ * 都会触发一次全窗口查询。favicon 刻意不在列表里：它必定与 title/url/status 之一同时变化。
  */
 const RELEVANT_UPDATE_KEYS = [
   'title',
@@ -51,46 +46,31 @@ const RELEVANT_UPDATE_KEYS = [
 /** 连续失败时的退避倍数上限（40ms → 最长约 1.3s），避免失败场景下持续空转。 */
 const MAX_BACKOFF_FACTOR = 32;
 /**
- * 连续失败的重试次数上限。
- *
- * 退避间隔封了顶但次数不封顶时，`tabs.query` 的**确定性**失败（权限被策略禁用、
- * windowId 异常、polyfill 缺失）会以 ~1.3s 的间隔永久轮询：每次都往诊断环形缓冲
- * 写一条（上限 100 条），很快把其它真实故障全挤出导出文件。与 SyncMirror 同口径
- * —— 确定性失败不该靠重试解决。用尽后停止自动重试，但**不**永久禁用：
- * 任何新的标签事件 / 显式 requestRefresh 仍会触发一次尝试（成功后 failures 归零）。
+ * 连续失败的重试次数上限。退避间隔封了顶但次数不封顶时，tabs.query 的确定性失败（权限被
+ * 禁用、windowId 异常等）会以 ~1.3s 间隔永久轮询，很快把其它真实故障挤出诊断缓冲。
+ * 用尽后停止自动重试，但不永久禁用：任何新标签事件 / 显式 requestRefresh 仍会触发一次尝试。
  */
 const MAX_RETRY_ATTEMPTS = 8;
 
 export class TabSyncService {
   private generation = 0;
   /**
-   * 全部活跃 start 会话的刷新信号（由 start 注册、cleanup 注销）。
-   *
-   * 必须是集合而非单值：sidepanel / options 可各自挂载一个 start 会话，
-   * 只保留最后一个会让 requestRefresh() 打到「别人的」会话 —— 发起请求的页面
-   * 收不到这次刷新（表现为「点了没反应，切一下标签才对」），而不展示列表的那个
-   * 页面反而白跑一次全窗口查询。
+   * 全部活跃 start 会话的刷新信号。必须是集合而非单值：sidepanel / options 可各自挂载一个
+   * start 会话，只保留最后一个会让 requestRefresh() 打到「别人的」会话。
    */
   private readonly activeSignals = new Set<() => void>();
 
   /**
-   * 显式请求一次快照刷新（幂等）：供「直接改写浏览器标签/组结构」的写操作
-   * （如固定文件夹转原生组）完成后调用，确保 UI 立即反映，不依赖
-   * tabs/tabGroups 事件被派发到本上下文的时序（事件驱动的 refresh 照常生效，
-   * 两者经 signal 的 querying/timer 合并机制天然去重，不会重复查询）。
-   *
-   * 广播到全部活跃会话：调用方不知道自己关心的是哪一个，而多余的一次刷新会被
-   * 各会话内部的 querying/timer 合并掉，成本可忽略。
+   * 显式请求一次快照刷新（幂等）：供「直接改写浏览器标签/组结构」的写操作完成后调用，
+   * 确保 UI 立即反映，不依赖事件被派发到本上下文的时序。广播到全部活跃会话。
    */
   requestRefresh(): void {
     for (const signal of [...this.activeSignals]) signal();
   }
 
   start(onSnapshot: (snapshot: TabSnapshot) => void): () => void {
-    // 每次 start 拥有独立的运行态闭包，互不污染：
-    // React StrictMode（开发模式）会挂载→清理→再挂载，若 stopped 是单例字段，
-    // 第一次清理置 true 会让第二次（真正生效的）监听器在 run() 内直接 return，
-    // 表现为"侧边栏首帧后不再响应任何 tab 变化"。改为局部变量即可根治。
+    // 每次 start 拥有独立的运行态闭包，互不污染：React StrictMode（开发模式）会挂载→清理→
+    // 再挂载，若 stopped 是单例字段，第一次清理置 true 会让第二次监听器在 run() 内直接 return。
     let stopped = false;
     let pending = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -103,8 +83,7 @@ export class TabSyncService {
     const run = async () => {
       querying = true;
       try {
-        // 先查标签再带 windowId 查组：省掉 queryWindowGroups 内部那次
-        // 只为拿 windowId 的重复全窗口查询（每次刷新 3 次 API 调用降为 2 次）。
+        // 先查标签再带 windowId 查组：省掉 queryWindowGroups 内部那次只为拿 windowId 的重复查询。
         const tabs = await queryCurrentWindowTabs();
         const groups = await queryWindowGroups(tabs[0]?.windowId);
         if (stopped) return;
@@ -115,9 +94,8 @@ export class TabSyncService {
         try {
           onSnapshot({ tabs, groups, windowId: tabs[0]?.windowId, generation: this.generation });
         } catch (error) {
-          // 订阅方渲染回调异常不是查询失败：若与查询同处一个 try，会被计入
-          // failures 并按指数退避反复重试，形成「错误来源在订阅方、却按查询
-          // 失败空转」的循环。单独捕获留痕，不污染退避状态。
+          // 订阅方渲染回调异常不是查询失败：若与查询同处一个 try，会被计入 failures 并按
+          // 指数退避反复重试。单独捕获留痕，不污染退避状态。
           logDegraded('tab-sync', '快照订阅方处理异常', error);
         }
       } catch (error) {
@@ -125,8 +103,7 @@ export class TabSyncService {
         // 必须进诊断导出：查询持续失败时面板会静默停在旧数据上，无从排查。
         logDegraded('tab-sync', '标签快照刷新失败', error);
         if (failures === MAX_RETRY_ATTEMPTS) {
-          // 熔断必须显式告知：否则「面板一直停在旧数据」会被当成偶发卡顿，
-          // 而实际是重试已停止、且诊断缓冲里全是同一条重复日志。
+          // 熔断必须显式告知：否则「面板一直停在旧数据」会被当成偶发卡顿。
           logFailure(
             'tab-sync',
             `标签快照刷新连续失败 ${MAX_RETRY_ATTEMPTS} 次，已停止自动重试（标签事件/手动刷新仍会重试）`
@@ -134,11 +111,8 @@ export class TabSyncService {
         }
       } finally {
         querying = false;
-        // stopped 时不得再排新的 timer：清理已跑完却仍挂上定时器，
-        // 会在 stop 之后发起一次无人接收的孤儿查询。
-        // 失败时即使无 pending 也排兜底重试（指数退避，上限 ~1.3s）：否则
-        // 浏览器启动早期打开面板撞上瞬时失败，会停在空态直到下一次标签事件。
-        // 重试次数封顶：确定性失败（权限被禁用等）不该无限空转。
+        // stopped 时不得再排新的 timer。失败时即使无 pending 也排兜底重试（指数退避）：
+        // 否则浏览器启动早期打开面板撞上瞬时失败，会停在空态直到下一次标签事件。重试次数封顶。
         if (!stopped && (pending || (failures > 0 && failures < MAX_RETRY_ATTEMPTS))) {
           pending = false;
           const factor = failures > 0 ? Math.min(2 ** failures, MAX_BACKOFF_FACTOR) : 1;
@@ -159,14 +133,10 @@ export class TabSyncService {
     };
 
     /**
-     * 发声校准轮询（仅当窗口存在 audible 标签时启用，2s 间隔）。
-     *
-     * 根因：页面停止发声后，Chrome 对 tabs.Tab.audible 的置 false 与
-     * `tabs.onUpdated(changeInfo.audible)` 派发存在可达秒级的内部时滞（与网页是否
-     * 释放 AudioContext 相关）。扩展没有比事件更快的信号，但纯事件驱动会让
-     * 「暂停后绿点/播放提示迟迟不消失」的时长完全不可预期。这里用低频轮询把
-     * 收敛上限压到 ~2s：有发声标签才轮询，静止（无 audible）即自动停表，无播放
-     * 场景零开销。事件正常时轮询经 signal 合并机制几乎不产生额外查询。
+     * 发声校准轮询（仅当窗口存在 audible 标签时启用，2s 间隔）。页面停止发声后，Chrome 对
+     * tabs.Tab.audible 的置 false 与 onUpdated 派发存在可达秒级的内部时滞。扩展没有比事件更快
+     * 的信号，纯事件驱动会让「暂停后绿点迟迟不消失」的时长不可预期。这里用低频轮询把收敛上限
+     * 压到 ~2s：有发声标签才轮询，静止即自动停表，无播放场景零开销。
      */
     const syncAudiblePolling = (tabs: readonly TabRecord[]) => {
       const hasAudible = tabs.some((tab) => tab.audible);
@@ -189,8 +159,7 @@ export class TabSyncService {
       browser.tabs.onAttached,
       browser.tabs.onDetached
     ];
-    // onReplaced 并非全平台可用（Firefox 无此事件）：不加守卫直接 addListener
-    // 会抛错导致整个 start() 失败、同步完全失效。
+    // onReplaced 并非全平台可用（Firefox 无此事件）：不加守卫直接 addListener 会抛错导致整个 start() 失败。
     if (browser.tabs.onReplaced) events.push(browser.tabs.onReplaced);
     // onUpdated 带 changeInfo，单独注册以便按字段过滤（见 RELEVANT_UPDATE_KEYS）。
     const onUpdated = (_tabId: number, changeInfo?: object): void => {

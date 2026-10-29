@@ -36,11 +36,9 @@ import {
 /** dnd-kit sensor 配置：必须模块级稳定对象引用。 */
 const POINTER_SENSOR_CONFIG = { activationConstraint: { distance: 4 } } as const;
 /**
- * KeyboardSensor：焦点落在拖拽 activator 上时，Space 抓取 + 方向键移动 + Space 放置。
- * keyboardCodes 刻意排除 Enter：KeyboardSensor 默认把 Space/Enter 都当抓取键，而
- * 行主按钮（标签行/固定条目行）既是键盘拖拽 activator 又是激活/打开按钮 —— Enter
- * 若被拖拽拦截（keydown preventDefault 吞掉合成 click），键盘用户将永远无法用 Enter
- * 激活标签或打开条目。保留 Space 完成拖拽语义，Enter 交还给按钮的点击行为。
+ * KeyboardSensor：Space 抓取 + 方向键移动 + Space 放置。keyboardCodes 刻意排除 Enter：
+ * 行主按钮既是键盘拖拽 activator 又是激活/打开按钮，Enter 若被拖拽拦截（preventDefault
+ * 吞掉合成 click），键盘用户将无法用 Enter 激活标签。保留 Space 拖拽，Enter 交还点击。
  */
 const KEYBOARD_SENSOR_CONFIG = {
   coordinateGetter: sortableKeyboardCoordinates,
@@ -52,36 +50,25 @@ const KEYBOARD_SENSOR_CONFIG = {
 };
 
 /**
- * 投放目标测量：拖拽期间持续重测。
- *
- * 默认 WhileDragging 只在拖拽开始测一次，而排序时其余行会因让位 transform 持续位移
- * （transition 期间位置一直在变），旧矩形与实际位置错位 —— 表现为「落点飘、
- * 要停一会儿才命中、指针得偏一点才成」。Always 让矩形始终跟随真实布局。
- * 代价是拖拽期间每帧重测，但侧边栏行数有限（超 200 行的分区已走虚拟化、不参与排序），
- * 不构成性能问题。
+ * 投放目标测量：拖拽期间持续重测（Always）。默认 WhileDragging 只测一次，而排序时其余行
+ * 因让位 transform 持续位移，旧矩形与实际位置错位导致落点飘；Always 让矩形跟随真实布局。
+ * 代价是每帧重测，但侧边栏行数有限（超 200 行的分区已虚拟化、不参与排序）。
  */
 const DROPPABLE_MEASURING = {
   droppable: { strategy: MeasuringStrategy.Always }
 } as const;
 
 /**
- * 关闭拖拽自动滚动。
- *
- * 默认在容器上下 20% 触发滚动：侧边栏可见区 400–600px 时触发带达 80–120px，
- * 恰好罩住列表的首两行与末两行。要把标签拖到最前/最后，指针必然进入该区域，
- * 列表随即持续滚动、落点漂移 —— 正是「首尾位置要试很多次才成功」的成因。
- * 同屏拖拽本就无需滚动；跨屏移动改用 Alt+↑/↓ 键盘重排。
+ * 关闭拖拽自动滚动：默认在容器上下 20% 触发滚动，触发带恰好罩住列表首末两行，
+ * 拖到最前/最后时指针必进入该区域导致持续滚动、落点漂移。同屏拖拽无需滚动；
+ * 跨屏移动改用 Alt+↑/↓ 键盘重排。
  */
 const AUTO_SCROLL_CONFIG = { enabled: false } as const;
 
 /**
- * 拖拽碰撞检测：优先取指针实际所在的最深层投放目标（解决拖分组头/标签到固定空间时
- * closestCenter 可能误判为最近 section 的问题）；指针不在任何投放目标内时回退最近中心
- * （同列表排序仍按中心距离计算插入位）。
- *
- * 导出供测试直接驱动：这是纯函数式的落点判定，决定了「拖到哪算哪」，
- * 但它藏在 DndContext 内部、无法从组件外部触发，不导出就没有任何回归保护。
- * 拖拽是本应用最核心的交互，落点算错是最容易被用户感知为「坏了」的问题。
+ * 拖拽碰撞检测：优先取指针实际所在的最深层投放目标（避免拖分组头/标签到固定空间时
+ * closestCenter 误判为最近 section）；指针不在任何目标内时回退最近中心（同列表排序
+ * 仍按中心距离算插入位）。导出供测试直接驱动：它藏在 DndContext 内部无法从外部触发。
  */
 export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]): Collision[] {
   const activeData = args.active.data.current as DragData | undefined;
@@ -102,15 +89,10 @@ export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]):
     return closestCenter({ ...args, droppableContainers: cardContainers });
   }
 
-  // 磁贴层级（常驻磁贴）：横向排列，用中心距离判断，避免 pointerWithin 对磁贴间空隙敏感。
-  //
-  // 但**只在指针仍处于磁贴区内**（磁贴本体或整条）时才这样判定。一旦指针离开，
-  // 必须放行到行层级，否则「磁贴拖回标签区取消固定」与「拖到收藏夹 → 明确拒绝」
-  // 永远没有落点可命中 —— 契约里写了、碰撞层却到不了，能力形同虚设。
-  //
-  // 放行时**只认指针精确命中的目标**，不做 closestCenter 兜底：磁贴拖拽的离开
-  // 动作本身就是「取消固定」这种有副作用的结果，用「离得最近的行」去接会让指针
-  // 从磁贴条滑到下方空白时凭空取消固定 —— 误触代价远高于「拖到空白不响应」。
+  // 磁贴层级：横向排列用中心距离判断，避免 pointerWithin 对磁贴间空隙敏感。
+  // 只在指针仍处于磁贴区内才这样判定，一旦离开必须放行到行层级，否则「拖回标签区
+  // 取消固定」「拖到收藏夹」永远无落点可命中。放行时只认指针精确命中、不做 closestCenter
+  // 兜底：离开动作有副作用，用「最近的行」去接会让指针滑到空白时凭空取消固定。
   if (activeType === DragType.Pin) {
     const pinContainers = args.droppableContainers.filter((container) => {
       const type = (container.data.current as { type?: string } | undefined)?.type;
@@ -136,12 +118,9 @@ export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]):
     });
     return sorted;
   }
-  // 指针落在列表空白/边界外：只在「同级且同容器」的行目标里取最近中心。
-  // 两层限定缺一不可：
-  //  - 不限定层级，外层容器（fixed-area / pinned-strip）面积大、中心更贴近指针，
-  //    会把拖放截胡成「拖入固定空间」；
-  //  - 不限定容器，相邻分区的行会被跨列表命中（未分组区首行紧挨上一个站点组，
-  //    指针略偏上就落到隔壁分区），表现为「某分区的首尾拖不动」。
+  // 指针落在列表空白/边界外：只在「同级且同容器」的行目标里取最近中心。两层限定缺一不可：
+  // 不限定层级，外层容器面积大、中心更贴近指针会截胡成「拖入固定空间」；
+  // 不限定容器，相邻分区的行会被跨列表命中（指针略偏就落到隔壁分区）。
   const activeContainer = activeData?.type === DragType.Tab ? activeData.containerKey : undefined;
   const rowContainers = args.droppableContainers.filter((container) => {
     const data = container.data.current as DragData | undefined;
@@ -172,17 +151,9 @@ function dragLabel(data: DropTargetData | undefined): string {
 }
 
 /**
- * 构建读屏播报配置（导出供测试驱动）。
- *
- * dnd-kit 内置指令与公告是英文，中文界面下读屏用户会听到与界面语言不一致的
- * 提示。这里注入 i18n 文案（指令 + 抓取/移动/放置/取消）。
- *
- * 播报与落点反馈同源：命中结构性不可投放的位置时播报「该位置不能放置」，
- * 而不是先说「移动到 X」、松手后再无事发生 —— 读屏用户看不到禁用态，
- * 语言是唯一的信息来源。
- *
- * 导出理由同 dragCollisionDetection：这些回调藏在 DndContext 内部，
- * 不导出就没有任何回归保护。
+ * 构建读屏播报配置（导出供测试驱动）：dnd-kit 内置指令与公告是英文，这里注入 i18n 文案。
+ * 播报与落点反馈同源：命中结构性不可投放位置时播报「该位置不能放置」，而非先说「移动到 X」
+ * 松手后无事发生——读屏用户看不到禁用态，语言是唯一信息来源。
  */
 export function buildDragAccessibility(t: Translate): {
   screenReaderInstructions: ScreenReaderInstructions;
@@ -262,14 +233,10 @@ export function buildDragOverlay(data: DragData): ReactNode {
 }
 
 /**
- * 标记「刚放下」：给 body 打一个一次性标记，指针下次移动即自动清除。
- *
- * 松手瞬间指针仍停在落点那一行，纯 `:hover` 会让拖拽把手继续显示——
- * 观感上像"拖完卡住了"，也与「把手只在 hover 时出现」的预期不符。
- * 打上标记后把手先隐藏，指针一动就恢复（此时已是真正的重新悬停）。
+ * 标记「刚放下」：给 body 打一个一次性标记，指针下次移动即自动清除。松手瞬间指针仍停在
+ * 落点那行，纯 :hover 会让把手继续显示（像"拖完卡住了"）；打标记后把手先隐藏，指针一动恢复。
  */
-/** 当前挂起的「刚放下」清理器：键盘拖拽（Space 放置）不产生指针移动，
- *  监听器会残留到下一次指针移动才批量清——每次标记前先清掉前一次的。 */
+/** 挂起的「刚放下」清理器：键盘拖拽不产生指针移动，监听器会残留——每次标记前先清掉前一次。 */
 let pendingJustDroppedClear: (() => void) | null = null;
 
 /** 导出供测试驱动（清理器残留是一类只在键盘拖拽下才出现的缺陷）。 */
@@ -340,8 +307,6 @@ export function DndRoot({
       autoScroll={AUTO_SCROLL_CONFIG}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      // 不声明用不到的事件参数：此前 `void event;` 只是为了让未使用参数的告警
-      // 消失，是一行没有任何效果的语句。
       onDragCancel={() => handleDragCancel()}
     >
       {children}

@@ -7,7 +7,6 @@ import { isMissingGroupErrorMessage, tabGroups } from '@/platform/tabGroups';
 
 /**
  * tabs 平台适配层：chrome API 映射与查询。
- *
  * platform 层是唯一允许触碰 browser.* 的层；core/stores 只消费 TabRecord。
  * 事件 → 快照的调度在 platform/sync/TabSyncService，本模块不持有事件逻辑。
  */
@@ -16,13 +15,7 @@ import { isMissingGroupErrorMessage, tabGroups } from '@/platform/tabGroups';
 type ChromeTab = Browser.tabs.Tab;
 type ChromeTabGroup = Browser.tabGroups.TabGroup;
 
-/**
- * Chrome 在 `tabs.Tab` 上返回的、wxt 生成类型未收录的字段。
- *
- * 这些字段没有公开类型，读取必然要断言；但此前每一处都各写一遍
- * `as unknown as { xxx?: T }`，字段新增或改名要改多处。断言集中到 `extrasOf`
- * 这一处，字段清单也随之前后一致。
- */
+/** Chrome 在 tabs.Tab 上返回的、wxt 生成类型未收录的字段。断言集中到 extrasOf 这一处。 */
 interface ChromeTabExtras {
   /** 分屏视图 id（Chrome 140+）；未分屏时为 0，不是 undefined。 */
   splitViewId?: unknown;
@@ -35,8 +28,7 @@ const extrasOf = (tab: ChromeTab): ChromeTabExtras => tab as unknown as ChromeTa
 /** chrome.tabs.Tab → TabRecord 领域映射。 */
 export function mapTab(tab: ChromeTab): TabRecord {
   const extras = extrasOf(tab);
-  // chrome 140+ 会给每条标签返回 splitViewId，未分屏时为 0（非 undefined）。
-  // 仅正整数表示真实拆分视图，其余归一化为 undefined。
+  // 仅正整数表示真实拆分视图，chrome 未分屏时返回 0（非 undefined）。
   const splitViewId =
     typeof extras.splitViewId === 'number' && extras.splitViewId > 0
       ? extras.splitViewId
@@ -59,10 +51,8 @@ export function mapTab(tab: ChromeTab): TabRecord {
     groupId: tab.groupId ?? NO_GROUP,
     splitViewId,
     lastAccessed: tab.lastAccessed,
-    // 与 lastAccessed 同源（chrome 的 tabs.Tab.lastAccessed 语义就是「最近一次
-    // 成为活动标签」），但两者在面板侧命运不同：lastAccessed 会被 mergeSnapshotTabs
-    // 冻结成排序键，lastActivatedAt 保持实时，供滞留预警 / keeper 判定等
-    // 时间口径消费。只透传一个会让「排序稳定」与「时间准确」互相打架。
+    // 与 lastAccessed 同源但命运不同：lastAccessed 会被 mergeSnapshotTabs 冻结成排序键，
+    // lastActivatedAt 保持实时，供滞留预警 / keeper 判定等时间口径消费。
     lastActivatedAt: tab.lastAccessed,
     autoDiscardable: tab.autoDiscardable,
     openerTabId: tab.openerTabId,
@@ -87,24 +77,15 @@ export async function queryCurrentWindowTabs(): Promise<TabRecord[]> {
   return queriedTabs.map(mapTab).sort((a, b) => a.index - b.index);
 }
 
-/**
- * 查询**指定窗口**的全部标签并按 index 排序（映射与排序同 queryCurrentWindowTabs）。
- *
- * 存在理由：恢复类操作的目标窗口未必是侧边栏所在窗口（快照可恢复到另一窗口），
- * 之后要按「恢复前/后差了哪些 tabId」记账时，按当前窗口查会一个都匹配不到。
- */
+/** 查询指定窗口的全部标签并按 index 排序。恢复类操作的目标窗口未必是侧边栏所在窗口。 */
 export async function queryWindowTabs(windowId: number): Promise<TabRecord[]> {
   const queriedTabs = await browser.tabs.query({ windowId });
   return queriedTabs.map(mapTab).sort((a, b) => a.index - b.index);
 }
 
 /**
- * 查询当前窗口全部原生标签组。
- *
- * 已知 windowId 时直接传入：否则内部要再跑一次全窗口 tabs.query 只为拿 windowId，
- * 每次快照刷新就浪费一次全量查询（TabSyncService 高频路径）。
- * tabGroups 能力检测：不支持该 API 的浏览器每次查询必抛错，会让调用方
- * （TabSyncService）进入永久失败退避，面板停在首帧。
+ * 查询当前窗口全部原生标签组。已知 windowId 时直接传入，避免内部再跑一次全量 tabs.query。
+ * tabGroups 能力检测：不支持该 API 的浏览器每次查询必抛错，会让调用方进入永久失败退避。
  */
 export async function queryWindowGroups(windowId?: number): Promise<TabGroupRecord[]> {
   if (!browser.tabGroups?.query) return [];
@@ -118,12 +99,7 @@ export async function queryWindowGroups(windowId?: number): Promise<TabGroupReco
   return groups.map(mapTabGroup);
 }
 
-/**
- * 读取单个标签（锚点定位 / `onReplaced` 后取新标签等场景）。
- *
- * 读取失败返回 undefined 而非抛错：这类调用点几乎都是「拿不到就跳过」的
- * 尽力而为路径（标签可能在查询与读取之间被关闭），让调用方不必各写一份 catch。
- */
+/** 读取单个标签。读取失败返回 undefined 而非抛错（这类调用点几乎都是「拿不到就跳过」的路径）。 */
 export async function getTab(tabId: number): Promise<TabRecord | undefined> {
   try {
     return mapTab(await browser.tabs.get(tabId));
@@ -157,14 +133,9 @@ export async function closeTabs(tabIds: readonly number[]): Promise<number[]> {
   return closedIds;
 }
 
-/**
- * 切换静音。翻转基准取浏览器实时值而非传入快照：
- * 传入值来自 40ms 节流的渲染快照，用户刚在浏览器界面改过时会翻转错方向。
- */
+/** 切换静音。翻转基准取浏览器实时值而非传入快照：传入值来自节流的渲染快照，可能已过期。 */
 export async function toggleMute(tabId: number, currentlyMuted: boolean): Promise<void> {
   try {
-    // 翻转基准以浏览器实时值为准：调用方传入的是渲染快照（40ms 节流 +
-    // 事件回灌延迟），用户在浏览器原生界面刚改过状态时快照过期会翻转错方向。
     const live = await browser.tabs.get(tabId).catch(() => undefined);
     const base = live?.mutedInfo?.muted ?? currentlyMuted;
     await browser.tabs.update(tabId, { muted: !base });
@@ -175,9 +146,8 @@ export async function toggleMute(tabId: number, currentlyMuted: boolean): Promis
 }
 
 /**
- * 切换标签固定状态，返回是否成功。
- * 调用方（行内固定按钮等）据此给真实反馈：平台层吞错 + UI 无条件提示成功，
- * 会在 Chrome 实际失败（标签已关闭 / 系统页面不可固定）时造成「提示已固定、实际没变」。
+ * 切换标签固定状态，返回是否成功。平台层吞错 + UI 无条件提示成功会在实际失败时
+ * 造成「提示已固定、实际没变」，故调用方据此给真实反馈。
  */
 export async function togglePinned(tabId: number, currentlyPinned: boolean): Promise<boolean> {
   try {
@@ -193,13 +163,7 @@ export async function togglePinned(tabId: number, currentlyPinned: boolean): Pro
   }
 }
 
-/**
- * 「确保固定」语义：把标签置为目标固定状态（true 固定 / false 取消）。
- *
- * 与 togglePinned 的翻转语义不同：调用方意图是「确保固定/确保取消固定」时，
- * 翻转基准若取过期快照会方向反转（快照说未固定、实际已固定 → 翻转反而取消固定，
- * 且无后续校正）。以浏览器实时值为准，仅在不一致时才写。
- */
+/** 「确保固定」语义：置为目标固定状态。与 togglePinned 的翻转语义不同，以浏览器实时值为准，仅在不一致时才写。 */
 export async function setPinned(tabId: number, pinned: boolean): Promise<boolean> {
   try {
     const live = await browser.tabs.get(tabId).catch(() => undefined);
@@ -222,8 +186,7 @@ export async function setGroupCollapsed(groupId: number, collapsed: boolean): Pr
   }
 }
 
-/** 新建空白标签（空态「新建标签页」入口）。
- *  不指定 windowId —— 浏览器默认在当前窗口打开，正是该入口的语义。 */
+/** 新建空白标签。不指定 windowId —— 浏览器默认在当前窗口打开。 */
 export async function createPlainNewTab(): Promise<TabRecord> {
   return mapTab(await browser.tabs.create({}));
 }
@@ -260,7 +223,7 @@ export async function updateTabUrl(tabId: number, url: string): Promise<boolean>
 /**
  * 将标签移动到窗口内的指定扁平索引（拖拽重排写回原生顺序用）。
  * index 为目标窗口内位置（0 起、连续）；跨固定/未固定边界由 Chrome 处理。
- * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态，不视为错误）。
+ * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态）。
  */
 export async function moveTab(tabId: number, index: number, windowId?: number): Promise<boolean> {
   try {
@@ -274,11 +237,9 @@ export async function moveTab(tabId: number, index: number, windowId?: number): 
 }
 
 /**
- * 批量移动标签到窗口内指定扁平索引（拖拽整个分区/站点组时用）。
- *
- * Chrome 的 tabs.move 接受 id 数组，按传入顺序原子地落到 index 起的连续位置，
- * 组内相对顺序得以保持——这正是「整组搬家」所需的语义，无需逐个 move 再补偿位移。
- * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态，不视为错误）。
+ * 批量移动标签到窗口内指定扁平索引（拖拽整个分区/站点组时用）。tabs.move 接受 id 数组，
+ * 按传入顺序原子地落到 index 起的连续位置，组内相对顺序得以保持——正是「整组搬家」所需的语义。
+ * 返回是否成功（拖拽期间标签被关闭时失败，属正常竞态）。
  */
 export async function moveTabs(tabIds: readonly number[], index: number): Promise<boolean> {
   if (tabIds.length === 0) return false;
@@ -291,11 +252,7 @@ export async function moveTabs(tabIds: readonly number[], index: number): Promis
   }
 }
 
-/**
- * 依据“侧边栏展示顺序”计算把 source 放到 target 之前/之后时应去的原生索引。
- * 通过重建扁平有序列表（排除 source 后按 index 排序，再在目标位插入）得到目标位置，
- * 该位置即可作为 chrome.tabs.move 的 index（窗口内标签索引连续 0..n-1）。
- */
+/** 依据侧边栏展示顺序计算把 source 放到 target 之前/之后时应去的原生索引（窗口内标签索引连续 0..n-1）。 */
 export function computeReorderIndex(params: {
   tabs: readonly TabRecord[];
   sourceId: number;
@@ -314,14 +271,8 @@ export function computeReorderIndex(params: {
 
 /**
  * 计算把 source 整组搬到 target 组之前/之后时，组内首个标签应去的原生索引。
- *
- * 站点组 / 语言组这类「虚拟分区」没有原生 groupId，无法用 tabGroups.move；
- * 但它们的展示顺序由组内标签的 index 决定（见 SiteGrouping 的 groups.sort），
- * 因此把整组标签连续地落到目标组的前面或后面，即可真正改变分区顺序并持久化
- * 到浏览器——不需要额外的顺序存储，也不会与自动归类冲突。
- *
- * 算法与 computeReorderIndex 同构：先剔除整组 source 消除自身占位，
- * 再在剩余有序列表里取 target 组的首/末位置作为落点。
+ * 站点组 / 语言组这类「虚拟分区」没有原生 groupId，无法用 tabGroups.move；但它们的展示顺序
+ * 由组内标签的 index 决定，因此把整组标签连续地落到目标组的前/后即可改变分区顺序并持久化。
  * 返回 -1 表示目标组已不存在（拖拽期间被关闭/解散），调用方应静默放弃。
  */
 export function computeGroupMoveIndex(params: {
@@ -376,10 +327,8 @@ export async function duplicateTab(tabId: number): Promise<boolean> {
 }
 
 /**
- * 将若干标签归入一个原生组（固定文件夹 → 原生组桥接用）。
- *
- * 传入 `groupId` 表示加入既有组（拖拽跨组投放用），缺省表示新建组。
- * 返回组 id；失败返回 undefined。
+ * 将若干标签归入一个原生组（固定文件夹 → 原生组桥接用）。传入 groupId 表示加入既有组，
+ * 缺省表示新建组。返回组 id；失败返回 undefined。
  */
 export async function groupTabs(
   tabIds: readonly number[],
@@ -398,16 +347,12 @@ export async function groupTabs(
 }
 
 /**
- * 等待标签被真正归入目标组（确定式收敛）。
- *
- * Chrome 在 `tabs.group()` resolve 后，成员 tab 的 `groupId` 与组元数据的
- * 可见性仍存在几十到几百 ms 的收敛窗口：此刻立即 query 可能仍拿到「未入组」
- * 的旧值。扩展没有比事件更快的数据源，但可以在写操作后**主动等到状态可见**
- * 再刷新一次 UI —— 把「切一下 tab 才显示」这类不可预期延迟变为确定性的收敛。
- *
- * best-effort：超时未收敛不抛错（标签中途被关闭等情况），由事件驱动最终兜底。
+ * 等待标签被真正归入目标组（确定式收敛）。Chrome 在 tabs.group() resolve 后，成员 tab 的
+ * groupId 可见性仍存在几十到几百 ms 的收敛窗口：此刻立即 query 可能仍拿到旧值。写操作后
+ * 主动等到状态可见再刷新 UI，把「切一下 tab 才显示」的延迟变为确定性的收敛。
+ * best-effort：超时未收敛不抛错，由事件驱动最终兜底。
  */
-/** 收敛轮询次数与间隔（合计约 1.2s）：再长就盖不住「切一下 tab 才显示」的观感。 */
+/** 收敛轮询次数与间隔（合计约 1.2s）。 */
 const GROUP_ASSIGN_MAX_ATTEMPTS = 6;
 const GROUP_ASSIGN_POLL_MS = 200;
 
@@ -427,9 +372,7 @@ export async function waitForTabGroupAssignment(
       if (live.every((tab) => (tab.groupId ?? NO_GROUP) === groupId)) return;
       lastError = undefined;
     } catch (error) {
-      // 单次查询失败视为未收敛，继续下一次尝试；但要带出循环：
-      // 「每次都查询失败」与「已收敛」在调用方本无法区分，全程失败必须留痕，
-      // 否则分组写入的收敛等待会变成一条永不报警的死路径。
+      // 单次查询失败视为未收敛继续尝试；但全程失败必须留痕，否则收敛等待变成一条死路径。
       lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -444,16 +387,9 @@ export async function waitForTabGroupAssignment(
 }
 
 /**
- * 「组已不存在」判定：Chrome 的报错文案为 `No group with id: N`。
- *
- * 组在查询与写入之间被解散属于**预期内竞态**（用户手动解散、成员被移走、
- * 并发建组导致空组被浏览器回收），不是故障。这类失败按 quiet 记录，
- * 不写进扩展错误页（Chrome 会收集扩展上下文的 warning/error 级 console 输出）。
- *
- * 已知边界：判据是**英文报错文案**，非英语运行环境下可能不命中。因此它只用于
- * 决定「要不要 quiet 记录」这一层降噪，绝不用于判断组是否真的消失——后者的
- * 权威判定是 `groupExists` 的三态（查询失败一律报 `failed`，不会塌缩成
- * 「组不存在」）。判定的唯一实现放在 `platform/tabGroups`，避免多处各写一份正则。
+ * 「组已不存在」判定：Chrome 的报错文案为 `No group with id: N`。这类失败按 quiet 记录，
+ * 不写进扩展错误页。判据是英文报错文案，非英语环境可能不命中，故只用于降噪，不用于判断
+ * 组是否真的消失（权威判定是 groupExists 的三态）。唯一实现在 platform/tabGroups。
  */
 const isMissingGroupError = isMissingGroupErrorMessage;
 
@@ -494,12 +430,8 @@ export async function recolorGroup(groupId: number, color: string): Promise<void
 }
 
 /**
- * 原生组是否仍存在（用于区分「已解散」与「解散失败」，以及写入前的目标校验）。
- *
- * 返回三态而非布尔：查询本身可能因瞬时故障（SW 唤醒中 / IPC 超时 / API 不可用）
- * 抛错，把它塌缩成 `false` 会让调用方判成「组已不存在」并据此清理记账 ——
- * 而组其实还在、成员也没被移出，于是成为永久孤儿组（关闭自动分组开关时
- * 永不再解散）。与 `removeGroup` 的三态返回同口径。
+ * 原生组是否仍存在。返回三态而非布尔：查询本身可能因瞬时故障抛错，塌缩成 false 会让
+ * 调用方判成「组已不存在」并据此清理记账，而组其实还在，成为永久孤儿组。
  */
 export async function groupExists(groupId: number): Promise<'exists' | 'missing' | 'failed'> {
   try {
@@ -515,13 +447,8 @@ export async function groupExists(groupId: number): Promise<'exists' | 'missing'
 
 /**
  * 解散原生组：把组内全部标签移出分组（标签保留不关闭，空组由浏览器自动回收）。
- * chrome.tabGroups 无 remove API，ungroup 是唯一标准做法。
- *
- * 返回解散结果，让调用方能区分三种情形（区分是必需的，否则调用方会把
- * 「组已不存在」当成失败而无限重试）：
- *  - 'removed'：组存在且已解散（含组内无成员的自然空组）；
- *  - 'missing'：组已不存在（用户手动解散）——调用方应清理记录，不应重试；
- *  - 'failed'：真实失败（查询或 ungroup 报错）——可重试。
+ * 三态：'removed' 组存在且已解散；'missing' 组已不存在（应清理记录而非重试）；
+ * 'failed' 真实失败（可重试）。
  */
 export async function removeGroup(groupId: number): Promise<'removed' | 'missing' | 'failed'> {
   let members: ChromeTab[];
@@ -548,7 +475,7 @@ export async function removeGroup(groupId: number): Promise<'removed' | 'missing
   }
 }
 
-/** 移动原生组到指定索引（组排序，P1⑤）。返回是否成功（组可能已解散）。 */
+/** 移动原生组到指定索引（组排序）。返回是否成功（组可能已解散）。 */
 export async function moveGroup(groupId: number, index: number): Promise<boolean> {
   try {
     await tabGroups.move(groupId, { index });
@@ -599,12 +526,7 @@ export async function activateTabAcrossWindows(tab: {
   await activateTab(tab.id);
 }
 
-/**
- * 监听浏览器多选高亮变化，返回注销函数。
- *
- * 收敛到 platform 的原因与其余 chrome API 一致：入口层直连 `browser.tabs.*`
- * 会让「platform 是唯一触碰浏览器的层」这条约定出现例外，且注销逻辑散落各处。
- */
+/** 监听浏览器多选高亮变化，返回注销函数。 */
 export function onTabHighlighted(handler: (tabIds: readonly number[]) => void): () => void {
   const listener = (info: { tabIds: number[] }): void => handler(info.tabIds);
   browser.tabs.onHighlighted.addListener(listener);
@@ -612,18 +534,16 @@ export function onTabHighlighted(handler: (tabIds: readonly number[]) => void): 
 }
 
 /**
- * 监听任意窗口的标签增删/更新（多窗口分段的数据刷新信号）。
- * 事件不携带窗口过滤——Chrome 的 tabs 事件本身是全局的，消费方自行判断
- * 是否与自己有关（onUpdated 高频，消费方必须自行节流）。
+ * 监听任意窗口的标签增删/更新（多窗口分段的数据刷新信号）。事件不携带窗口过滤——
+ * Chrome 的 tabs 事件本身是全局的，消费方自行判断是否相关（onUpdated 高频，消费方须自行节流）。
  */
 export function onAllTabsChanged(handler: () => void): () => void {
   const listener = (): void => handler();
   browser.tabs.onCreated.addListener(listener);
   browser.tabs.onRemoved.addListener(listener);
   browser.tabs.onUpdated.addListener(listener);
-  // 跨窗口移动（拖拽把标签拖到另一个窗口）也要刷新，否则分段归属陈旧。
-  // 这两个事件在部分环境（含测试用的 fake-browser）未实现且会抛错，
-  // 属可选增强：订阅失败不影响主路径，故整体吞掉。
+  // 跨窗口移动也要刷新，否则分段归属陈旧。这两个事件在部分环境（含 fake-browser）未实现
+  // 且会抛错，属可选增强：订阅失败不影响主路径，故整体吞掉。
   try {
     browser.tabs.onAttached?.addListener(listener);
     browser.tabs.onDetached?.addListener(listener);
@@ -645,9 +565,7 @@ export function onAllTabsChanged(handler: () => void): () => void {
 
 /**
  * 解析「恢复」类操作的目标窗口：优先回到记录中的原窗口，原窗口已关闭则退回当前聚焦窗口。
- *
- * 撤销/快照恢复必须回到当初关掉标签的那个窗口。只记录「关了什么」而不记录
- * 「从哪关的」，用户切到另一个窗口再撤销时标签会被恢复到错误的窗口里。
+ * 只记录「关了什么」而不记录「从哪关的」，用户切到另一个窗口再撤销时标签会恢复到错误的窗口。
  */
 export async function resolveRestoreWindowId(preferred?: number): Promise<number | undefined> {
   if (preferred !== undefined) {
@@ -656,9 +574,8 @@ export async function resolveRestoreWindowId(preferred?: number): Promise<number
   }
   const focused = await browser.windows.getLastFocused().catch(() => undefined);
   if (focused?.id !== undefined) return focused.id;
-  // 两个查询都拿不到结果（窗口 API 不可用）时，只能相信记录值。
-  // 此时若窗口确实已不存在，标签创建会失败并进入 failed 明细（用户可见、可重试），
-  // 不会退化成「点了撤销什么都没发生」的静默失败。
+  // 两个查询都拿不到结果（窗口 API 不可用）时只能相信记录值。此时若窗口确实已不存在，
+  // 标签创建会失败并进入 failed 明细（用户可见、可重试），不会退化成静默失败。
   return preferred;
 }
 
@@ -669,9 +586,8 @@ export async function queryAllWindowTabs(): Promise<TabRecord[]> {
 }
 
 /**
- * 批量新建标签并导航（「打开文件夹全部条目」/「恢复快照」等显式打开场景用）。
- * 每个 URL 先申请复用豁免再创建——显式打开不应被 uniqueUrlTabs 复用引擎合并；
- * 返回实际创建成功的标签数。
+ * 批量新建标签并导航（「打开文件夹全部条目」/「恢复快照」等显式打开场景用）。每个 URL 先申请
+ * 复用豁免再创建——显式打开不应被 uniqueUrlTabs 复用引擎合并；返回实际创建成功的标签数。
  */
 export async function createTabsWithUrls(
   urls: readonly string[],
@@ -683,9 +599,8 @@ export async function createTabsWithUrls(
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     target = win?.id;
   }
-  // 与 RestoreEngine / restoreSnapshot 同口径：每条都要「发放豁免（一次 runtime
-  // 往返）→ create」，严格串行的总耗时随条目数线性放大（「打开文件夹全部条目」
-  // 常一次开几十条）。限流后约为 1/并发度，单条失败照旧跳过。
+  // 与 RestoreEngine / restoreSnapshot 同口径：每条「发放豁免 → create」，严格串行会随条目数
+  // 线性放大（常一次开几十条）。限流后约为 1/并发度，单条失败照旧跳过。
   const results = await mapWithConcurrency(urls, DEFAULT_CONCURRENCY, async (url) => {
     try {
       if (target !== undefined) await grantReuseAllowance(target, url);

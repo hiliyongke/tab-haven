@@ -322,8 +322,7 @@ const IS_MAC = /mac/i.test(globalThis.navigator?.platform ?? '');
  * 与侧边栏内快捷键分开列：这组可以在浏览器扩展快捷键页自行修改，
  * 写死默认值会让改了键的用户以为产品文档是错的。
  *
- * 键位与说明同源于 `core/commands`（与 manifest 的口径由守卫对齐）：此前这里恒
- * 显示 `Ctrl Shift F`，Mac 用户看到的是与系统不符的写法。
+ * 键位与说明同源于 `core/commands`（与 manifest 的口径由守卫对齐），按 Mac/非 Mac 分别渲染。
  */
 const GLOBAL_SHORTCUTS: { labelKey: string; keys: string[] }[] = COMMANDS.map((command) => ({
   labelKey: command.labelKey,
@@ -471,9 +470,7 @@ function FactItem({ title, body }: { title: string; body: string }) {
 }
 
 /**
- * 快捷键卡片：分组标题 + 键位行（侧边栏内 / 浏览器级全局共用）。
- *
- * 两处此前是逐字复制的同一段 JSX，只有标题与脚注不同 —— 改键帽间距要改两遍。
+ * 快捷键卡片：分组标题 + 键位行（侧边栏内 / 浏览器级全局共用同一段 JSX，仅标题与脚注不同）。
  */
 function ShortcutList({
   title,
@@ -526,8 +523,7 @@ export function AboutPage() {
           <p className="mt-1 text-sm text-gray-600">{t('本地优先、无账号、无云端的标签工作台')}</p>
         </div>
         {version && (
-          /* 版本胶囊此前是 text-gray-500（gray-500 在 gray-100 底上仅 3.92:1，
-             不达 AA）；收口到 Chip 后随中性档统一为 gray-600。 */
+          /* 版本胶囊走 Chip 中性档（gray-600，满足 AA）：gray-500 在 gray-100 底上仅 3.92:1。 */
           <Chip cjk size="md">
             {t('版本 {{version}}', { version })}
           </Chip>

@@ -27,22 +27,12 @@ import { resolveDrop, type DropRejectCode } from '@/ui/dnd/dropPolicy';
 import { CREATE_FOLDER_REQUEST_EVENT } from '@/ui/fixed/events';
 
 /**
- * 拖拽分发 hook：把 dnd-kit 的 onDragEnd 按 DragData 类型分派到
- * 排序 / 跨容器投放 / 建文件夹 / 固定等逻辑。
- *
- * 设计：所有 handler 都是事件驱动（仅在拖拽结束时调用），不订阅渲染期数据，
- * 一律经 store getState 读取最新状态，因此引用稳定（useCallback 空/少量依赖），
- * 不会导致下游 memo 组件失效。排序所需的分区成员由拖拽数据自带的 tabIds 提供，
- * 因此本 hook 不接收渲染期的分区列表。
- *
- * **可行性判定不在本文件**：能放下什么、放不下为什么，统一由 `ui/dnd/dropPolicy`
- * 回答。这里只负责「执行」与「拒绝时把原因翻译成人话」——判定一旦散落回分发层，
- * 就会重新出现「落点亮着却不动」「拖了完全没反应」两难。
- *
- * 落位说明：本文件是 hook（无渲染职责），与 useListNavigation / useRowRoving 等
- * 同处 `ui/hooks`。它**不放在 `ui/dnd/`**：`src/ui/dnd/**` 有独立的覆盖率阈值档，
- * 本文件 580 余行且当前几乎无测试，并入会把该档均值从约 90% 压到 45%、直接击穿
- * 门禁（详见 vitest.config.ts 的阈值注释）。
+ * 拖拽分发 hook：把 dnd-kit 的 onDragEnd 按 DragData 类型分派到排序 / 跨容器投放 /
+ * 建文件夹 / 固定等逻辑。所有 handler 事件驱动、经 store getState 读取最新状态，
+ * 引用稳定（useCallback 少量依赖），不导致下游 memo 失效；分区成员由拖拽数据自带
+ * 的 tabIds 提供，故不接收渲染期分区列表。
+ * 可行性判定不在本文件：能放下什么、放不下为什么统一由 ui/dnd/dropPolicy 回答，
+ * 这里只负责执行与拒绝文案。落位 ui/hooks 而非 ui/dnd：后者有独立覆盖率阈值档。
  */
 export function useTabDragHandlers() {
   const { t } = useTranslation();
@@ -84,17 +74,10 @@ export function useTabDragHandlers() {
   );
 
   /**
-   * 落点方向：**由 dnd-kit 的 sortable index 判定，不做几何比较。**
-   *
-   * dnd-kit 已基于 SortableContext 的 items 顺序算出 active / over 的 index，
-   * 插入位动画也是据此绘制的。直接复用它，落点与所见必然一致。
-   *
-   * 另用矩形中心比一次（纵向比 Y、横向磁贴比 X）等于把落点算了两遍：
-   * 一套按 items 顺序、一套按屏幕矩形。两者不一致就表现为「动画显示在 A、
-   * 实际落到 B」，以及需要停留一下 / 偏一点才命中。
-   *
-   * 后移（to > from）→ 落到 over 之后；前移（to < from）→ 落到 over 之前。
-   * 这与 arrayMove(items, from, to) 一致：over 总被挤到源的相邻位。
+   * 落点方向由 dnd-kit 的 sortable index 判定，不做几何比较：dnd-kit 已按 SortableContext
+   * items 顺序算出 active/over 的 index，插入位动画也据此绘制，复用它落点与所见一致；
+   * 另用矩形中心比等于算两遍，不一致会「动画在 A、落到 B」。
+   * 后移（to > from）落 over 之后，前移落之前，与 arrayMove(items, from, to) 一致。
    */
   const isPlaceAfter = useCallback(
     (event: DragEndEvent, activeData?: DragData, overData?: DropTargetData): boolean => {
@@ -120,11 +103,8 @@ export function useTabDragHandlers() {
   );
 
   /**
-   * 排序类操作的一次性回滚。
-   *
-   * 拖拽 4px 即激活、落点检测三级回退后永不返回空（见 DndRoot），误拖必然落地；
-   * 故排序必须可撤销 —— 否则用户在长列表里一次手抖就永久改掉了顺序。
-   * 操作前留一份 folders 快照，成功后在 toast 上给一次「撤销」。
+   * 排序类操作的一次性回滚：误拖必然落地（拖拽 4px 即激活、落点检测永不返回空），
+   * 故排序必须可撤销。操作前留 folders 快照，成功后 toast 给一次「撤销」。
    */
   const withFolderUndo = useCallback(
     (message: string, mutate: () => Promise<void>) => {
@@ -225,11 +205,8 @@ export function useTabDragHandlers() {
   }, []);
 
   /**
-   * 拖入文件夹的落位反馈。
-   *
-   * 纯「移动」场景（无新增、无跳过）用简洁文案「已移入文件夹」；
-   * 其余场景才用逐项计数的 fixed.dropResult —— 否则最常见的「拖 1 个标签进文件夹」
-   * 会弹出「新增 0 个，移动 1 个，跳过 0 个」这种把内部计数泄漏给用户的别扭文案。
+   * 拖入文件夹的落位反馈：纯「移动」场景（无新增/跳过）用简洁文案，其余才用逐项计数，
+   * 否则最常见的「拖 1 个标签进文件夹」会弹出「新增 0，移动 1，跳过 0」的别扭文案。
    */
   const notifyDropResult = useCallback(
     (result: AddTabsToFolderResult) => {
@@ -248,15 +225,10 @@ export function useTabDragHandlers() {
   );
 
   /**
-   * 分区头排序：把 source 分区整体搬到 target 分区之前/之后。
-   *
-   * 落点用 computeGroupMoveIndex 统一计算（先剔除 source 整组再定位），
-   * 「用移动前的快照索引 + 方向猜前后」会带来 off-by-N，须先剔除 source 整组再定位。
-   *
-   * 两类分区的落库路径不同，但都必须落到底层真实顺序，否则下一次派生就会被覆盖：
-   *  - 双方都是原生组 → chrome.tabGroups.move，由浏览器维护组序；
-   *  - 虚拟分区（站点组 / 语言组，无 groupId）及混合场景 → 整组标签连续 move。
-   *    其展示顺序由组内标签 index 决定，整组搬家即真正改变分区顺序并持久。
+   * 分区头排序：把 source 分区整体搬到 target 之前/之后。落点用 computeGroupMoveIndex
+   * 统一计算（先剔除 source 整组再定位，否则 off-by-N）。两类分区落库路径不同但都必须
+   * 落到底层真实顺序：双方原生组走 chrome.tabGroups.move；虚拟分区及混合场景整组连续
+   * move（展示顺序由组内标签 index 决定，整组搬家即真正改序并持久）。
    */
   const handleSectionReorder = useCallback(
     (activeData: SectionDragData, overData: SectionDragData, placeAfter: boolean) => {
@@ -342,14 +314,9 @@ export function useTabDragHandlers() {
         useUndoStore.getState().notifyFailure('drag', t('操作失败，请稍后重试'), error);
 
       /**
-       * 每种动作一个处理器：原先 14 个 case 的执行体全写在下面的 switch 里，
-       * `onDragEnd` 因此有 240 行、无法单看一类动作。抽成具名函数后 switch 只剩
-       * 分派，每个处理器只回答「这一类投放要做什么」。
-       *
-       * 形态刻意是「switch + 具名函数」而不是动作表：`DropAction` 是判别联合，
-       * 只有 switch 能让 TypeScript 把 `action` 收窄到具体 kind（查表需要一次
-       * 类型断言才能把键与载荷对应起来，那是本仓禁止的类型逃逸）。穷尽性由
-       * 末尾的 `never` 检查兜住。
+       * 每种动作一个处理器，switch 只负责分派。用「switch + 具名函数」而非动作表：
+       * DropAction 是判别联合，只有 switch 能让 TS 把 action 收窄到具体 kind，
+       * 穷尽性由末尾的 never 检查兜住。
        */
 
       const reorderTabs = (): void => {
@@ -432,9 +399,8 @@ export function useTabDragHandlers() {
         void dataStore
           .addPin(tab)
           .then((ok) => {
-            // addPin 内部有多条「无法满足」的分支（无 URL / 非 http(s) / 已达上限）。
-            // 它们过去静默 return 而 Promise 照常 resolve，于是这里无条件弹
-            // 「已固定标签」—— 界面宣布成功、磁贴却从未生成。按返回值区分。
+            // addPin 内部「无法满足」分支（无 URL / 非 http(s) / 已达上限）会 resolve(false)，
+            // 按返回值区分成功/失败提示。
             if (ok) notify(t('已固定标签'));
             else notifyError(t('这个标签无法固定为常驻磁贴'));
           })

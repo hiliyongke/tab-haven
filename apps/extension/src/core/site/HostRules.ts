@@ -1,8 +1,6 @@
 /**
  * 主机规则：把规范化主机名归类，供 SiteResolver 决定归组键的形态。
- *
- * 规则依据：
- *  - 本地主机（localhost / *.localhost）与 IP 地址：带端口整体作为归组键；
+ *  - 本地主机（localhost / *.localhost）与 IP：带端口整体作为归组键；
  *  - 托管公共后缀清单：这些"事实公共后缀"（github.io、vercel.app 等）不在
  *    Public Suffix List 数据中（实测 tldts 7.4 不覆盖），归组键取三级域。
  */

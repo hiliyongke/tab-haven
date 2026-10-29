@@ -50,8 +50,8 @@ export function PaletteOption({
           <span className="block truncate text-3xs leading-snug text-gray-500">{cmd.hint}</span>
         )}
       </span>
-      {/* py-px + leading-none：徽章高度由显式行高决定，不再随继承行高浮动。
-          「当前」徽章走 Chip：accent + sm 与原先手写的 class 集合完全一致。 */}
+      {/* py-px + leading-none：徽章高度由显式行高决定，不随继承行高浮动。
+          「当前」徽章走 Chip：accent + sm。 */}
       {cmd.current && (
         <Chip tone="accent" cjk size="sm" className="shrink-0 py-px leading-none">
           {t('当前')}

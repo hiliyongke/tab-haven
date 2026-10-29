@@ -1,29 +1,9 @@
 import type { TabRecord } from '@/core/tab-types';
 
 /**
- * 同 URL 保留者排序 —— **全应用唯一的 keeper 口径**（单一事实来源）。
- *
- * 每组保留「最近激活」的一个（lastActivatedAt 最新；平局：激活 > 固定 > 位置靠前 > id 大）。
- *
- * 消费方（两处必须同口径，UI 文案亦按此描述）：
- *  - 复用引擎（platform/reuse）：「同一网址只保留一个标签」开启时，新建标签导航到
- *    已存在网址，对「既有」集合选保留者，激活它并关闭其余副本；
- *  - 一键清理重复（core/dup/DuplicateIndex 的 KeeperPolicy）：每网址保留一个。
- *
- * 用户预期是「留最近用过的那个」，两处给出不同保留项即为缺陷（IA-3）——
- * 因此 KeeperPolicy 直接复用本函数，不再各自实现一套排序。
- *
- * 纯决策层，不触碰 browser.*。
- */
-
-/**
- * 从一组同 URL 标签中选出保留者。
- * 「最新的一个」：lastActivatedAt 最大；平局依次比激活 / 固定 / 位置靠前 / id 大。
- *
- * 取 `lastActivatedAt` 而非 `lastAccessed`：后者在面板侧被 mergeSnapshotTabs
- * **冻结**在标签首次出现的时刻，用它排序会让本函数与后台复用引擎（直查浏览器实时值）
- * 对同一组标签选出不同的保留者，正是本模块存在的理由要消灭的分叉（IA-3）。
- * 仅当 `lastActivatedAt` 缺失时回退 `lastAccessed`（合成记录），真实路径两者都在。
+ * 同 URL 保留者排序：全应用唯一的 keeper 口径（复用引擎与一键清理共用）。
+ * 留「最近激活」的一个：lastActivatedAt 最大；平局依次比 激活 > 固定 > 位置靠前 > id 大。
+ * 用 lastActivatedAt 而非面板侧被冻结的 lastAccessed，避免两处对同一组标签选出不同保留者。
  */
 export function rankForKeep(tabs: readonly TabRecord[]): TabRecord | undefined {
   return [...tabs].sort((a, b) => {

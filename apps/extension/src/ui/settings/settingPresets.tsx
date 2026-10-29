@@ -60,11 +60,7 @@ export function PresetsPanel() {
   const { t } = useTranslation();
   const settings = useDataStore((state) => state.settings);
   /**
-   * 套用/撤销的结果就地展示。
-   *
-   * 此前经 `onApplied` 冒泡到设置页的 `transferStatus`，而后者只渲染在页面底部
-   * 的「数据备份」分区里 —— 在页面顶部点预设，反馈出现在一屏之外，与「没生效」
-   * 无法区分。结果属于这张卡的动作，就留在卡里。
+   * 套用/撤销的结果就地展示：反馈属于这张卡的动作，就留在卡里，不冒泡到页面底部的备份分区。
    */
   const [status, setStatus] = useState<string | null>(null);
   const tryUpdateSettings = useDataStore((state) => state.tryUpdateSettings);
@@ -141,8 +137,7 @@ export function PresetsPanel() {
               <span className="flex w-full items-center justify-between gap-1">
                 <span className="text-sm font-medium text-gray-800">{t(preset.nameKey)}</span>
                 {active && (
-                  /* 两处「使用中」徽章必须同构：此前只有「自定义」那一处被收口，
-                     激活预设的这一处仍手写同一套 class 串。 */
+                  /* 两处「使用中」徽章必须同构，都走 Chip。 */
                   <Chip
                     tone="accent"
                     cjk
@@ -224,8 +219,7 @@ export function CapabilitiesGuide() {
   };
   return (
     <Section title={t('你能做什么')}>
-      {/* 走 Row：与设置项同一套行布局（窄屏堆叠、控件撑满），此前手写行不参与断点，
-          窗口拉窄时按钮被挤成两行而相邻设置行不会。 */}
+      {/* 走 Row：与设置项同一套行布局（窄屏堆叠、控件撑满），断点行为一致。 */}
       {CAPABILITIES.map((cap) => (
         <Row
           key={cap.titleKey}

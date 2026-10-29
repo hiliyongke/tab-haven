@@ -69,6 +69,16 @@ describe('collectFromFile: 常量表与 Trans', () => {
     expect(sentences(`const X = [{ keys: '聚焦搜索' }];`)).toEqual([]);
   });
 
+  it('Given `*Key` 属性是含中文的插值模板串 When 抽取 Then 报错而非静默漏抽', () => {
+    // 回归（白纸审查）：常量表的值同样会进 t() 渲染。旧实现只调 literalText，
+    // 对插值模板串返回 null 后 push('') 被过滤 —— 既抽不到词条，lint 又因
+    // markTree 把值标记为「已接管」而不报裸露中文，scan/check/lint 三绿，
+    // 但这句中文在英文模式原样显示。必须与 t() 通道同口径报错。
+    const result = collect('const X = { labelKey: `共 ${count} 个标签` };');
+    expect(result.entries).toHaveLength(0);
+    expect(result.errors.join('\n')).toContain('模板串含插值');
+  });
+
   it('Given <Trans> 子节点 When 抽取 Then 按同层序号串化后登记', () => {
     expect(sentences(`const a = <Trans>已选 <Slot content={count} /> 个标签</Trans>;`)).toEqual([
       '已选 <1></1> 个标签'

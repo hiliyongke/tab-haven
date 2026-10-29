@@ -20,12 +20,8 @@ export function pinIdentity(rawUrl: string): string | null {
 }
 
 /**
- * 能否再新增一枚磁贴（数量预检的唯一口径）。
- *
- * 上限常量取自 schema 层（`PINS_LIMIT`），不在调用方各抄一份字面量：上限只存在于
- * 「导出 schema + 本函数」两处时，写路径绕过预检就会产出超限数据 —— 该数据导出时
- * 不校验、导入时被 `.max(PINS_LIMIT)` **整批拒绝**，用户只看到「备份文件无效」。
- * 写路径（store 与右键菜单）一律先过本函数。
+ * 新增磁贴的数量预检（唯一口径）。所有写路径必须先过此函数：超限数据导出时不校验、
+ * 导入时被 .max(PINS_LIMIT) 整批拒绝，用户只会看到「备份文件无效」。
  */
 export function canAddPin(pinCount: number): boolean {
   return pinCount < PINS_LIMIT;

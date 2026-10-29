@@ -30,14 +30,7 @@ import { isHttpUrl } from '@/core/url/UrlInspector';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 
-/**
- * 把「本次快照恢复新建出来的标签」记为一批可撤销项。
- *
- * 采用**前后差分**而不是「恢复后按条件筛选」：后者会把窗口里原本就在的标签一并
- * 误判成「恢复出来的」，撤销时就会把它们全部关掉 —— 那比「恢复不可撤销」更糟。
- * 差分取「恢复后多出来的 tabId」，是唯一精确且不必改动 platform 层契约的做法
- * （restoreSnapshot 目前只返回数量，改返回值会影响其公开契约与既有测试）。
- */
+/** 把恢复新建的标签记为可撤销项：用前后差分（恢复后多出的 tabId），避免误把原有标签当恢复产物。 */
 async function recordRestoreForUndo(
   beforeIds: ReadonlySet<number>,
   windowId: number
@@ -48,26 +41,15 @@ async function recordRestoreForUndo(
     if (created.length === 0) return;
     await useUndoStore.getState().recordClosedBatch(created, 'restore');
   } catch (error) {
-    // 记录失败不得影响恢复结果本身（恢复已成功，用户只是少了一个反悔入口）——
-    // 但**不留痕**是不行的：同文件 200 行外的归档路径对完全同类的失败做了
-    // logFailure，本处若静默，用户点「撤销」看到「没有可撤销的操作」时，
-    // 诊断导出里查不到任何原因。
+    // 记录失败不影响恢复结果本身，但必须留痕。
     logFailure('snapshotStore', '快照恢复的撤销登记失败，本次恢复无法一键撤销', error);
   }
 }
 
-/**
- * 捕获恢复前的窗口标签 id 集合（差分基线）。
- *
- * 抽出来的理由：restore / restoreSelected 此前把这段（含「拿不到就不记账」的
- * 取舍注释）逐字复制两份。该逻辑失效的后果是「撤销会关掉用户原有标签」——
- * 高危语义有两份拷贝，意味着将来只修其中一份时，另一份保留危险版本。
- */
+/** 捕获恢复前现场（差分基线）。读不到就返回 undefined 不记账：那等于把用户原有标签当恢复产物，撤销会误关。 */
 async function captureWindowTabIds(
   windowId: number | undefined
 ): Promise<ReadonlySet<number> | undefined> {
-  // 拿不到恢复前现场就**不记账**：那等价于「窗口里所有标签都是新建的」，
-  // 之后的撤销会把用户原有标签一并关掉 —— 比「这次恢复不可撤销」糟得多。
   if (windowId === undefined) return undefined;
   return queryWindowTabs(windowId)
     .then((tabs) => new Set(tabs.map((tab) => tab.id)))
@@ -77,17 +59,8 @@ async function captureWindowTabIds(
     });
 }
 
-/**
- * 注册淘汰提示：快照超限时最旧的快照会被移除，必须给出可见提示，
- * 否则用户以为一直留着，实际最早的那些已经没了。
- *
- * 重要性高于撤销栈那类：撤销栈深度是**已披露且用户可调**的设置，而这里的两条
- * 上限（maxAutoSnapshots / snapshotLimit）若不告知，用户只在打开快照列表时
- * 才发现旧快照不见了。
- */
+/** 注册淘汰提示：快照超限移除最旧的，经 notifyEviction 合并（连续导入 Workona 会连续淘汰，逐次提示会刷屏）。 */
 setSnapshotEvictionListener((count) => {
-  // 走 notifyEviction 合并：逐份导入 Workona（每份各走一次 persistSnapshot）会
-  // 连续淘汰，逐次提示会互相顶掉且刷屏。同类淘汰本会话内只提示一次。
   useUndoStore.getState().notifyEviction(
     'snapshots',
     translate('快照已达上限，最早的 {{count}} 份已被移除（可在设置中调整快照保留数量）', {
@@ -96,10 +69,7 @@ setSnapshotEvictionListener((count) => {
   );
 });
 
-/**
- * 快照 store：命名快照的读取、保存、恢复、删除、重命名，以及归档与 OneTab 导入。
- * 数据经 snapshotsRepository 落盘，store 仅持有内存态供 UI 渲染。
- */
+/** 快照 store：命名快照的读取、保存、恢复、删除、重命名，以及归档与 OneTab/Workona 导入。 */
 
 interface SnapshotState {
   snapshots: Snapshot[];
@@ -107,24 +77,15 @@ interface SnapshotState {
 
   /** 拉取快照列表（面板启动时调用）。 */
   load: () => Promise<void>;
-  /**
-   * 把当前窗口标签存为命名快照（name 留空则自动命名）。
-   * 返回是否真的落盘了：空现场返回 false（失败原因由 notifyError 承载）。
-   */
+  /** 存当前窗口为命名快照。返回是否落盘：空现场返回 false（失败原因由 notifyError 承载）。 */
   saveCurrentWindow: (name?: string) => Promise<boolean>;
-  /** 把当前窗口标签存为轻量「工作区」快照（复用快照能力，OQ-3 最小版）。返回值同 saveCurrentWindow。 */
+  /** 存当前窗口为轻量工作区快照。返回值同 saveCurrentWindow。 */
   saveSpace: (name?: string) => Promise<boolean>;
   /** 归档当前窗口：保存并关闭全部标签，返回保存标签数。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
-  /** 从 OneTab 导出文本导入为快照，返回导入标签数。 */
+  /** 从 OneTab 文本导入为快照，返回导入标签数。 */
   importOneTab: (text: string, name?: string) => Promise<number>;
-  /**
-   * 从 Workona 导出 JSON 批量导入为快照族。
-   * 返回 { 导入快照数, 导入标签数, 识别但跳过的 workspace 数, 截断量, 失败原因 }。
-   *
-   * reason 与备份导入同口径：失败必须可解释（体积超限 / JSON 损坏 / 结构不匹配），
-   * 不能让三种完全不同的失败都表现为「导入 0 条」。
-   */
+  /** 从 Workona JSON 批量导入快照族，返回 { 快照数, 标签数, 跳过数, 截断量, 失败原因 }。 */
   importWorkona: (text: string) => Promise<{
     snapshots: number;
     tabs: number;
@@ -135,45 +96,24 @@ interface SnapshotState {
   }>;
   deleteSnapshot: (id: string) => Promise<void>;
   renameSnapshot: (id: string, name: string) => Promise<void>;
-  /**
-   * 恢复指定快照，返回新建标签数与降级标志；可指定目标窗口（缺省取聚焦窗口）。
-   *
-   * **快照不存在时抛错**，不返回 `{ count: 0 }`：返回成功形状会让调用方提示
-   * 「已恢复 0 个标签」，把「没执行」说成「执行了但结果为空」。所有调用点都在
-   * try/catch 或 `.catch` 里，抛出即走既有的失败出口（提示 + 诊断留痕）。
-   */
+  /** 恢复快照。快照不存在时抛错（不返回成功形状，避免把「没执行」说成「恢复 0 个」）。 */
   restore: (id: string, windowId?: number) => Promise<RestoreSnapshotResult>;
-  /** 把当前窗口最新现场写回既有空间快照（原地更新，空间切换用）。返回是否写入成功。 */
+  /** 把当前窗口最新现场写回既有空间快照（原地更新）。返回是否写入成功。 */
   updateSpace: (id: string) => Promise<boolean>;
-  /**
-   * 选择性恢复：只恢复勾选的条目，返回新建标签数与降级标志。
-   * 勾选集为空返回 0（调用方前置条件，非失败）；快照不存在与 restore 同口径抛错。
-   * 其余语义与 restore 一致（缺失才新建、分组还原、结束后按差分登记可撤销批次）。
-   */
+  /** 选择性恢复：空勾选返回 0；快照不存在抛错。语义同 restore。 */
   restoreSelected: (
     id: string,
     selectedTabs: readonly SnapshotTab[]
   ) => Promise<RestoreSnapshotResult>;
-  /** 内存态重置（清除所有数据时调用：已删除的快照不应继续出现在列表里）。 */
+  /** 内存态重置（清除所有数据时调用）。 */
   reset: () => void;
 }
 
 /** 仓库 watcher 注册守卫（load 可重入，监听器只注册一次）。 */
 let watcherStarted = false;
-/**
- * 在途 load 的共享 promise（与 undoStore 同模式）。
- *
- * 缺了它时 StrictMode 双挂载 / 多入口并发会各自发起一次全量读盘：快照族是本项目
- * 最大的读（200 份 × 1000 条 × base64 favicon），重复读既放大启动耗时，也多出
- * 一次「以旧值覆盖新值」的窗口。完成后自动清空，下次 load 仍重新读盘。
- */
+/** 在途 load 的共享 promise：StrictMode 双挂载/多入口并发只发起一次全量读盘。 */
 let loadInFlight: Promise<void> | null = null;
-/**
- * watcher 退订函数（见 undoStore 的同名约定）。
- *
- * 运行时刻意不退订（本 store 生命周期 = 上下文生命周期，watcher 即跨页同步通道）；
- * 只在 HMR 重载时统一执行，否则旧模块实例的监听器会把旧列表写回新实例。
- */
+/** watcher 退订函数：仅在 HMR 重载时统一执行，防旧实例监听器把旧列表写回新实例。 */
 const watcherUnsubscribers: Array<() => void> = [];
 
 export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
@@ -182,24 +122,12 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
 
   load: async () => {
     loadInFlight ??= (async () => {
-      // 先注册 watcher 再 read：read 完成到 watch 注册之间的 background 写入
-      // （关窗自动保存直写仓库）若无人接收，内存列表会一直少一条直到下次变更。
-      // 守卫：load 会被 StrictMode 与多入口重复调用，每次都注册会让同一次仓库变更
-      // 被回放 N 次（列表抖动 + 重复渲染）。
+      // 先注册 watcher 再 read：read 完成到注册之间的 background 写入需有人接收。
       if (!watcherStarted) {
         watcherStarted = true;
-        // 回显守卫：本页面自身写入触发的回放内容相同，直接跳过。
-        //
-        // 用 structuralSignature 而非裸 JSON.stringify：快照族上限为
-        // SNAPSHOTS_LIMIT(200) × SNAPSHOT_TABS_LIMIT(1000)，且每条标签自带
-        // favIconUrl（大量站点是 base64 data URL，占单条数据绝大部分体积）。
-        // 裸 stringify 会在**每次** storage 变更（关窗自动保存 / 定时快照）对
-        // 整族做两次全量序列化——即 tabStore 判定过的「大标签量下每次事件的固定热点」。
-        // structuralSignature 会跳过 favIconUrl，代价是「仅 favicon 变化」时延迟
-        // 一次刷新（见 core/util/signature 的模块注释），下次真实变更即自愈。
-        // 该守卫只影响内存回放的时机，不参与任何写盘，跳过不会造成数据丢失。
         watcherUnsubscribers.push(
           snapshotsRepository.watch((value) => {
+            // 回显守卫：structuralSignature 跳过 favIconUrl，避免大标签量下每次变更全量序列化两遍。
             if (structuralSignature(value) === structuralSignature(get().snapshots)) return;
             set({ snapshots: value });
           })
@@ -207,9 +135,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       }
       const before = get().snapshots;
       const snapshots = await snapshotsRepository.read();
-      // 反向窗口：read 在途期间 background 写入（关窗自动保存），watcher 回放
-      // 已把新值放进内存（引用变化）——此时以 watcher 交付为准，read 到的
-      // 启动时刻旧值不得回写覆盖，只补 ready 标记。
+      // read 在途期间 watcher 已回放新值（引用变化）时以内存为准，不覆盖回旧值。
       if (get().snapshots !== before) {
         set({ ready: true });
         return;
@@ -225,12 +151,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const tabs = await queryCurrentWindowTabs();
     const groups = await queryWindowGroups(tabs[0]?.windowId);
     const snapTabs = collectSnapshotTabs(tabs, groups);
-    // 空现场不落盘：一条 tabCount=0 的快照既不可恢复，又占掉一个命名快照名额
-    // （SNAPSHOTS_LIMIT），与 replaceSpaceSnapshot（platform/snapshot/snapshots.ts）
-    // 对空现场的明确拒绝同口径 —— 两条保存路径对同一现场的判定必须一致。
-    // 必须给可见回执：静默 return 会让用户以为保存成功了。
-    // 返回值承载同一事实：调用方（如「保存并关闭」类串联动作）据此中止后续步骤，
-    // 不必去读 toast 猜结果。
+    // 空现场不落盘：tabCount=0 的快照不可恢复又占名额，须给可见回执。
     if (snapTabs.length === 0) {
       useUndoStore.getState().notifyError(translate('没有可保存的当前标签'));
       return false;
@@ -239,9 +160,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       name: name ?? '',
       fallbackName: DEFAULT_SNAPSHOT_NAMES.manual,
       origin: 'manual',
-      // windowId 必须取实际采集窗口：标签来自 currentWindow 查询，而
-      // getLastFocused 在多窗口场景可能指向另一个窗口，记录与实际
-      // 内容不一致会让未来「恢复回原窗口」的逻辑直接出错。
+      // windowId 取实际采集窗口：getLastFocused 在多窗口场景可能指向另一窗口。
       windowId: tabs[0]?.windowId,
       tabs: snapTabs
     });
@@ -288,30 +207,21 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
         const next = await persistSnapshot(snapshot);
         set({ snapshots: next });
       } catch (error) {
-        // 保存失败绝不关闭标签：归档的语义是「保存 + 关闭」，
-        // 只完成后者会变成一次不可撤销的丢标签事故。此处中止，标签保持打开。
+        // 保存失败绝不关闭标签：归档是「保存 + 关闭」，只完成后者会变成不可撤销的丢标签事故。
         logFailure('snapshotStore', '归档保存失败，已中止关窗，标签保持打开', error);
         throw error;
       }
     }
-    // 只关闭已保存的可恢复标签：chrome:// 等内部页无法入档，保留在原窗口（不静默丢失）。
-    // 用 flatMap 直接产出已收窄的 id，而不是「filter 之后再用 `tab.id!` 断言」：
-    // 断言只是让编译器闭嘴，一旦 filter 条件被改动，undefined 会静默混进 tabs.remove。
+    // 只关闭已保存的可恢复标签（http(s)）；内部页保留在原窗口。
     const closableIds = tabs.flatMap((tab) =>
       typeof tab.id === 'number' && isHttpUrl(tab.url) ? [tab.id] : []
     );
-    // 若关闭后窗口将随之关闭（全部标签都已保存），提前请求跳过本次关窗自动保存，
-    // 避免 background 再写一条同内容的 auto 快照。
+    // 全部标签已保存（关窗）时提前请求跳过本次关窗自动保存，避免再写一条同内容 auto 快照。必须 ack。
     if (windowId !== undefined && closableIds.length > 0 && closableIds.length === tabs.length) {
-      // 必须 ack：SW 休眠唤醒慢于 tabs.remove 的事件派发时，fire-and-forget 会让
-      // 关窗事件先于标记落账执行，auto 快照照写（同一批标签出现 archive+auto 两条）。
       await sendMessageWithAck({ type: 'skip-auto-save-once', windowId });
     }
     if (closableIds.length > 0) {
-      // 先关闭拿到实际成功 id，再按真实结果登记撤销：tabs.remove 整体失败时
-      // （任一 id 在查询与关闭之间失效会整体 reject 或部分失败），若已把
-      // 全部 closable 标签入栈，撤销会把从未关闭的标签再开一份——撤销从安全网
-      // 变成重复标签制造机。与 closeWithUndo 的口径保持一致。
+      // 先关闭拿到实际成功 id，再按真实结果登记撤销，避免把从未关闭的标签再开一份。
       const closedIds = await closeTabs(closableIds);
       const closing = tabs.filter(
         (tab) => typeof tab.id === 'number' && closedIds.includes(tab.id)
@@ -322,7 +232,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
           .getState()
           .recordClosedBatch(closing, 'archive', groupNameById)
           .catch((error) => {
-            // 撤销登记失败不阻断归档（快照已经落盘，数据不会丢），但必须留痕。
+            // 撤销登记失败不阻断归档（快照已落盘），但必须留痕。
             logFailure('snapshotStore', '归档撤销登记失败，本次归档仅能从快照恢复', error);
           });
       }
@@ -357,10 +267,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
         reason: result.reason
       };
     }
-    // 逐份落盘：每份各自走 persistSnapshot 的跨页锁 + trimSnapshotsWithEvicted 裁剪。
-    // 刻意不整批塞进一次写入——快照族上限（SNAPSHOTS_LIMIT）由裁剪函数按
-    // 「保留最新」语义收敛，一次性合并写入会在超上限时丢掉整批中较旧的份，
-    // 而逐份写入让每份都经同一语义收敛（与用户手动逐条保存的最终态一致）。
+    // 逐份落盘：每份都经 persistSnapshot 的裁剪语义收敛，与逐条手动保存的最终态一致。
     let latest: Snapshot[] | undefined;
     for (const snapshot of result.snapshots) {
       latest = await persistSnapshot(snapshot);
@@ -377,8 +284,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   deleteSnapshot: async (id) => {
-    // 读-改-写基于仓库最新值 + 跨页锁串行化：面板打开期间 background 可能写入
-    // 关窗自动快照，锁外 RMW 交错仍会把它们覆盖丢失（锁与 persistSnapshot 同一把）。
+    // 锁内 RMW：面板打开期间 background 可能写入关窗快照，锁外会覆盖丢失。
     const next = await withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
       const current = await snapshotsRepository.read();
       const updated = current.filter((snap) => snap.id !== id);
@@ -392,8 +298,6 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   renameSnapshot: async (id, name) => {
     const trimmed = name.trim();
     if (!trimmed) {
-      // 入口（SnapshotsPanel）已先拦并提示，这里守住第二道：
-      // 静默 return 会让「改了名却没生效」在诊断里完全不留痕迹。
       logDegraded('snapshotStore', '重命名快照收到空名称，已忽略');
       return;
     }
@@ -408,34 +312,16 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   /**
-   * 恢复快照。
-   *
-   * 恢复会一次性**新建**整批标签，必须可反悔 —— 否则用户只能手动一个个关。
-   *
-   * 采用方案 B：恢复完成后，把本次新建出来的标签记为一批「可关闭项」入撤销栈
-   * （kind='restore'）。「撤销本次恢复」= 关闭这批标签，由 undoStore 的 restore
-   * 分支执行（撤销栈的常规分支是「重新打开」，对本批次不适用 —— 它们根本没被关掉）；
-   * 关闭后生成的普通关闭批次仍可再被撤销，于是能再开回来。
-   *
-   * 为什么不是方案 A（独立的一次性「撤销本次恢复」入口）：那需要新建一套与撤销栈
-   * 平行的状态机，且无法享受既有的跨页锁、持久化与重做栈。方案 B 复用全部既有管线。
-   *
-   * 注意 kind 在 schema 里是 z.string()（models.ts:259），新增 'restore' 无需改 schema。
+   * 恢复快照：把本次新建的标签记为可关闭批次（kind='restore'），由 undoStore 的 restore
+   * 分支关闭它们实现「撤销本次恢复」。差分取目标窗口，避免跨窗恢复时匹配不到新建项。
    */
   restore: async (id, windowId) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
     if (!snap) {
-      // 找不到快照只有两种成因（已被另一页面删除 / 列表未加载），无论哪种都不能
-      // 表达成「恢复成功、新建 0 个」：调用方会据此提示「已恢复 0 个标签」，
-      // 用户无从判断是快照本身为空还是压根没执行 —— 成功形状承载失败是最难查的
-      // 一种谎报。抛出后由调用方既有的失败出口接管（用户提示 + 诊断留痕）。
+      // 找不到快照不能返回成功形状（会把「没执行」说成「恢复 0 个」）。抛出由调用方失败出口接管。
       logDegraded('snapshotStore', `快照 ${id} 不存在，恢复未执行`);
       throw new Error(`snapshot-not-found:${id}`);
     }
-    // 差分必须落在恢复的**目标窗口**上：restoreSnapshot 在 windowId 缺省时恢复到
-    // 最近聚焦窗口，而侧边栏所在窗口未必是它 —— 按当前窗口取「恢复前现场」，
-    // 跨窗恢复时会一个新建项都匹配不到。resolveRestoreWindowId 与 restoreSnapshot
-    // 的窗口解析口径一致（指定优先，缺省回退最近聚焦）。
     const targetWindowId = await resolveRestoreWindowId(windowId);
     const beforeIds = await captureWindowTabIds(targetWindowId);
     const result = await restoreSnapshot(snap, windowId);
@@ -451,7 +337,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     const snapTabs = collectSnapshotTabs(tabs, groups);
     const result = await replaceSpaceSnapshot(id, snapTabs, tabs[0]?.windowId);
     set({ snapshots: result.snapshots });
-    // false = 空间已不存在或现场为空（未覆盖），调用方必须据此决定后续步骤。
+    // false = 空间已不存在或现场为空（未覆盖），调用方据此决定后续步骤。
     return result.replaced;
   },
 
@@ -461,15 +347,11 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       logDegraded('snapshotStore', `快照 ${id} 不存在，选择性恢复未执行`);
       throw new Error(`snapshot-not-found:${id}`);
     }
-    // 空勾选不是失败：调用方（勾选面板）本就不会在空集时发起，此处不抛错、
-    // 也不谎报执行过 —— 返回 0 即「本次没有新建任何标签」的真实结果。
+    // 空勾选不是失败：返回 0 即「本次没有新建任何标签」的真实结果。
     if (selectedTabs.length === 0) return { count: 0, degraded: false };
-    // 撤销账本与整份恢复完全同口径：勾选恢复同样是一次可新建上百标签的破坏性
-    // 动作，既不走影响面确认也不登记撤销会与 restore 不对称，是安全网缺口。
+    // 撤销账本与整份恢复同口径：勾选恢复同样登记可撤销批次。
     const targetWindowId = await resolveRestoreWindowId(undefined);
     const beforeIds = await captureWindowTabIds(targetWindowId);
-    // 部分快照：勾选条目 + 同步重算 tabCount（满足 schema refine 约束），
-    // 之后完全复用整份恢复管线（豁免/并发创建/分组还原语义不变）。
     const result = await restoreSnapshot(buildPartialSnapshot(snap, selectedTabs));
     if (result.count > 0 && beforeIds && targetWindowId !== undefined) {
       await recordRestoreForUndo(beforeIds, targetWindowId);
@@ -480,8 +362,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   reset: () => set({ snapshots: [], ready: false })
 }));
 
-// HMR 重载时退订 watcher（见 watcherUnsubscribers 的注释）：模块级守卫会随重载
-// 重置，而旧监听器仍挂着并把旧列表写回新实例。
+// HMR 重载时退订 watcher：模块级守卫随重载重置，旧监听器会把旧列表写回新实例。
 import.meta.hot?.dispose(() => {
   for (const unsubscribe of watcherUnsubscribers) unsubscribe();
   watcherUnsubscribers.length = 0;

@@ -9,47 +9,33 @@ import { tabGroups } from '@/platform/tabGroups';
 
 /**
  * 标签恢复引擎：把撤销记录（或未来的快照记录）重建为真实标签。
- *
- * 行为规格：
- *  - 按原位置顺序逐个恢复（加法语义：不关闭任何现有标签）；
- *  - 每个恢复 URL 先申请复用豁免（防止被自动复用合并）；
- *  - 恢复固定状态、静音状态；
- *  - 原分组存在则回原组；已删除则按组名重建。
- *
+ * 行为：按原位置顺序逐个恢复（加法语义：不关闭任何现有标签）；每个恢复 URL 先申请复用豁免；
+ * 恢复固定/静音状态；原分组存在则回原组，已删除则按组名重建。
  */
 
 /** 恢复结果：成功条数 + 失败条目（失败项需保留在撤销栈中供用户重试）。 */
 interface RestoreResult {
   /**
-   * 本次真正新建的标签数。
-   * 「目标窗口已打开同 URL」的按已恢复计入而不新建（用户意图是「这个页面要在」，
-   * 重复新建一个才是制造垃圾），但批次内的同 URL 记录一律照数恢复 —— 撤销要还回
-   * 用户实际关掉的数量。
+   * 本次真正新建的标签数。「目标窗口已打开同 URL」的按已恢复计入而不新建，但批次内的同 URL
+   * 记录一律照数恢复 —— 撤销要还回用户实际关掉的数量。
    */
   count: number;
-  /** 本次未恢复成功的记录（与入参顺序无关，按恢复顺序追加）。 */
+  /** 本次未恢复成功的记录（按恢复顺序追加）。 */
   failed: UndoTabRecord[];
   /**
-   * 「目标窗口已打开同 URL」而未真正新建的记录。
-   *
-   * 它们对撤销是成功（页面确实在），但对**重做**不是：重做按 URL 反查并关闭，
-   * 若把它们压进重做栈，被关掉的是用户本来就开着、从未被本次撤销恢复出来的
-   * 那个标签 —— 安全网反过来制造误关。调用方入重做栈时必须排除这批。
+   * 「目标窗口已打开同 URL」而未真正新建的记录。它们对撤销是成功（页面确实在），但对重做
+   * 不是：重做按 URL 反查并关闭，若压进重做栈，被关掉的是用户本来就开着、与本次撤销无关的
+   * 那个标签。调用方入重做栈时必须排除这批。
    */
   skippedAlreadyOpen: UndoTabRecord[];
-  /**
-   * 查询目标窗口已打开页面失败，本次按「不去重」继续（宁可多建也不拒绝恢复）。
-   * 置起即意味着**可能多建了副本**，由调用方告知用户，不阻断流程。
-   */
+  /** 查询目标窗口已打开页面失败，本次按「不去重」继续（宁可多建也不拒绝恢复）。置起即意味着
+   * 可能多建了副本，由调用方告知用户，不阻断流程。 */
   degraded: boolean;
 }
 
 /**
- * 取窗口内已打开页面的比较键集合（去重判定的唯一口径）。
- *
- * 查询失败返回 `degraded: true`：此时按「不去重」继续（宁可多开一个标签，也不能
- * 因为读不到状态而拒绝恢复），但必须让调用方知道本次可能多建了副本 —— 静默按空集
- * 处理会让「撤销了一下多出一堆重复标签」变成无从解释的现象。
+ * 取窗口内已打开页面的比较键集合（去重判定的唯一口径）。查询失败返回 degraded: true：
+ * 按「不去重」继续（宁可多开一个标签），但必须让调用方知道本次可能多建了副本。
  */
 async function openKeysInWindow(
   windowId: number
@@ -62,9 +48,7 @@ async function openKeysInWindow(
       if (key) keys.add(key);
     }
   } catch (error) {
-    // 与 snapshots.restoreSnapshot 同口径：去重查询失败会走「不去重」分支，
-    // 本轮可能多建副本。degraded 已传导给调用方，但错误对象本身也必须留痕，
-    // 否则「撤销了一下多出一堆重复标签」在诊断导出里查不到成因。
+    // 与 snapshots.restoreSnapshot 同口径：去重查询失败会走「不去重」分支，本轮可能多建副本。
     logDegraded('undo', `查询窗口 ${windowId} 已打开页面失败，按无重复恢复（可能多建副本）`, error);
     return { keys, degraded: true };
   }
@@ -75,29 +59,22 @@ async function openKeysInWindow(
 type RestoreOutcome = 'created' | 'skipped' | 'failed';
 
 /**
- * 恢复一批撤销记录，返回成功数量与失败明细。
- *
- * 明细是「撤销可重试」的前提：只返回数量时，调用方无法判断哪些条目实际未恢复，
- * 只能整批丢弃或整批保留（前者丢数据、后者重复开标签）。
+ * 恢复一批撤销记录，返回成功数量与失败明细。明细是「撤销可重试」的前提：只返回数量时，
+ * 调用方无法判断哪些条目实际未恢复，只能整批丢弃或整批保留。
  */
 export async function restoreTabRecordsDetailed(
   records: readonly UndoTabRecord[],
   windowId: number
 ): Promise<RestoreResult> {
   const restored = [...records].sort((a, b) => a.index - b.index);
-  // 已打开去重：与快照恢复（snapshots.restoreSnapshot）同口径。
-  // 不做这一步的话，用户手动重开某页后再撤销，必定收获一个重复标签。
+  // 已打开去重：与快照恢复同口径。不做这一步，用户手动重开某页后再撤销，必定收获一个重复标签。
   const { keys: openKeys, degraded } = await openKeysInWindow(windowId);
-  // 豁免发放未获确认的聚合标志：并发任务内改不到外层的 `degraded`，先记账后合并。
-  // 不发这个标志的话，豁免没发下去（新标签会被复用引擎合并掉）而界面仍报
-  // 「已恢复 N 个」——与契约（reuseAllowance 注释「由调用方决定要不要计入 degraded」）不符。
+  // 豁免发放未获确认的聚合标志：并发任务内改不到外层的 degraded，先记账后合并。不发这个标志
+  // 的话，豁免没发下去（新标签会被复用引擎合并）而界面仍报「已恢复 N 个」。
   let allowanceDegraded = false;
 
-  // 有限并发而非严格串行：每条记录都要走「发放豁免（一次 runtime 往返）→
-  // tabs.create → 静音/分组」三段 await，严格串行下 100 条就是 300 次串行往返，
-  // 用户感知为「点了恢复卡住」。限流后总耗时约为 1/并发度。
-  // 结果按输入顺序收集（见 mapWithConcurrency）：restored 已按 index 排好，
-  // 顺序即用户期望的标签落位顺序。
+  // 有限并发而非严格串行：每条记录都要走「发放豁免 → create → 静音/分组」三段 await，
+  // 严格串行下 100 条就是 300 次串行往返。结果按输入顺序收集，顺序即用户期望的落位顺序。
   const outcomes = await mapWithConcurrency(
     restored,
     DEFAULT_CONCURRENCY,
@@ -107,16 +84,14 @@ export async function restoreTabRecordsDetailed(
 
       const recordKey = webComparisonKey(record.url, undefined);
       if (recordKey !== null && openKeys.has(recordKey)) {
-        // 目标窗口已有同 URL：视为已恢复，不再新建一个副本。
-        // 必须与「新建成功」区分开：重做会按 URL 反查并关闭，把这条算作新建
-        // 会让重做关掉用户本来就开着、与本次撤销无关的那个标签。
+        // 目标窗口已有同 URL：视为已恢复，不再新建副本。必须与「新建成功」区分开：重做会按 URL
+        // 反查并关闭，把这条算作新建会让重做关掉用户本来就开着、与本次撤销无关的那个标签。
         return 'skipped';
       }
 
       try {
-        // 豁免复用：新恢复的标签不允许被重复复用引擎合并掉。
-        // 返回值 = 是否获确认：未获确认时新标签可能被复用引擎合并，本次「已恢复」
-        // 是假的，必须计入 degraded 由调用方降级提示（不能只报「已恢复 N 个」）。
+        // 豁免复用：新恢复的标签不允许被复用引擎合并。未获确认时新标签可能被合并，本次「已恢复」
+        // 是假的，必须计入 degraded。
         const granted = await grantReuseAllowance(windowId, record.url);
         if (!granted) allowanceDegraded = true;
 
@@ -136,17 +111,15 @@ export async function restoreTabRecordsDetailed(
         }
 
         if (!record.pinned && record.groupId !== NO_GROUP) {
-          // 旧 groupId 在浏览器重启后可能已被复用为无关组：入组前校验组标题，
-          // 与记录不符即视为原组已失效，走按名重建——否则标签会误入他组。
-          // （批次未记录 groupName 时无从校验，保持原样直接尝试入组。）
+          // 旧 groupId 在浏览器重启后可能已被复用为无关组：入组前校验组标题，与记录不符即走
+          // 按名重建——否则标签会误入他组。（批次未记录 groupName 时无从校验，保持原样直接尝试入组。）
           let reuseGroupId = true;
           if (record.groupName) {
             try {
               const existing = await tabGroups.get(record.groupId);
               reuseGroupId = existing.title === record.groupName;
             } catch (error) {
-              // 「组不存在」是预期内（重启后旧组已消失），但其它失败必须是可观测的：
-              // 一律静默会让「标签恢复后分组丢了」在诊断里查不到原因。
+              // 「组不存在」是预期内（重启后旧组已消失），但其它失败必须可观测。
               logDegraded('undo', `校验原组 ${record.groupId} 失败，改按组名重建分组`, error, {
                 quiet: true
               });
@@ -167,19 +140,16 @@ export async function restoreTabRecordsDetailed(
               const newGroupId = await browser.tabs.group({ tabIds: [createdId] });
               await tabGroups.update(newGroupId, { title: record.groupName });
             } catch (error) {
-              // 组重建失败：保持未分组（不阻断恢复），但必须留痕 —— 否则用户看到
-              // 「已恢复 N 个」而分组其实丢了，诊断导出里却一条线索都没有。
+              // 组重建失败：保持未分组（不阻断恢复），但必须留痕。
               logDegraded('undo', `按名重建分组「${record.groupName}」失败，标签保持未分组`, error);
             }
           }
         }
-        // 刻意**不**把新恢复的 URL 加回 openKeys：撤销是「把关掉的还回来」，
-        // 同一批次里出现两条同 URL 是合法的（用户确实关了两个同 URL 标签）。
-        // 若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
+        // 刻意不把新恢复的 URL 加回 openKeys：撤销是「把关掉的还回来」，同一批次里出现两条同
+        // URL 是合法的。若在此去重，撤销会静默少还标签，而 toast 仍报关闭时的条数。
         return 'created';
       } catch (error) {
         // 单个标签恢复失败不影响同一批次中的其余标签；记录明细供调用方保留重试。
-        // 明细只解决「哪些没恢复」，不解决「为什么」——错误对象必须进诊断。
         logDegraded('undo', `恢复标签失败：${record.url ?? '(无 URL)'}`, error);
         return 'failed';
       }

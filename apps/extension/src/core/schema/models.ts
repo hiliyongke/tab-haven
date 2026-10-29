@@ -18,59 +18,25 @@ import {
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
  *
- * 设计：数据带格式版本（key 后缀 v<n>），读取经 safeParse 校验，
- * 坏数据隔离（不扩散）由 DataRepository 统一处理。
+ * 数据带格式版本（key 后缀 v<n>），读取经 safeParse 校验，坏数据隔离由 DataRepository 处理。
  *
- * 所有**集合**都有显式体积上限。持久化数据有两个来源：用户操作与
- * 导入的备份文件——后者可被任意构造。无上限的数组会让「导入一个 JSON」
- * 变成内存与遍历成本的攻击面（例如白名单匹配器对每个标签 O(n) 遍历白名单，
- * 超大 whitelist 会放大自动休眠的每次判定）。上限取远超正常使用规模的值，
- * 只拦异常数据，不影响正常用户。
+ * 体积上限只加在**外部输入侧**（导出 / 导入 / 同步镜像）：备份文件可被任意构造，无上限数组会让
+ * 「导入一个 JSON」变成内存与遍历攻击面。落盘侧仓库 schema（platform/registry.ts）刻意**不带**
+ * `.max()`——读盘收严会把存量超限用户的真实数据判坏而整表清空。落盘收敛由 store 裁剪完成
+ * （见 stores/data/initSlice.ts）。自由文本同理不逐串限长，由 storage 配额天然封顶。
  *
- * 自由文本字段（标题、URL、名称等）刻意**不加**逐字符串上限：registry 仓库
- * schema 一旦收严，存量超限用户的真实数据会在读盘时被判为坏数据而清空
- * （与 initSlice 注释同口径——上限只加在「外部输入」侧的集合层）。自由文本的
- * 实际体积由 storage 配额（local 10MB / sync 8KB 每项）天然封顶。
- *
- * **「所有集合都有上限」的准确口径**（上一句容易被读成「每个 `.array()` 都有
- * `.max()`」，实现并非如此，此处补明）：集合上限加在**外部输入侧**——导出文件
- * （`ExportFileSchema` / `ExportFileImportSchema`）、导入、同步镜像入口。
- * 落盘侧仓库 schema（`platform/registry.ts` 里 `XxxSchema.array()`）刻意**不带**
- * `.max()`：读盘路径一旦收严，存量超限用户的真实数据会被判为坏数据而整表清空，
- * 那是一次读操作导致的数据丢失。落盘侧的收敛由 store 裁剪完成
- * （理由见 `stores/data/initSlice.ts` 的注释），不在校验层做第二遍。
- *
- * **本文件不是「全仓 schema」**，落盘 schema 另有若干处在 platform 侧
- * （只做登记、不迁移——它们各自绑定具体的存储键与读写口径，迁进来反而割裂）：
- *   - `platform/registry.ts:117` 自动建组 id 列表、`:123` 自动休眠批次（带上限）；
- *   - `platform/storage/session.ts:20` 会话态（绑定关系 / 独立标签 id）；
- *   - `platform/storage/SyncMirror.ts:57` 同步镜像信封（只校验信封，内容交给
- *     各自的 schema 在读取端校验）；
- *   - `platform/diagnostics.ts:42` 诊断日志条目；
- *   - `platform/reuse/persistedLedger.ts:14` 复用额度台账；
- *   - `platform/background/windowCache.ts:17` 关窗快照缓存。
- * 新增持久化数据时先问「它会不会进导出备份」：会 → 落本文件；不会 → 就近定义
- * 并在此登记。
+ * 本文件只收「会进导出备份」的数据；会话态、同步镜像信封、诊断日志等落盘 schema 就近定义在各自
+ * platform 模块（各自绑定存储键与读写口径，迁入反而割裂）。
  */
 
-/** 单文件夹条目数上限。 */
 export const FOLDER_ITEMS_LIMIT = 500;
-/** 固定文件夹数量上限。 */
 export const FOLDERS_LIMIT = 200;
-/** 常驻磁贴数量上限。 */
 export const PINS_LIMIT = 200;
-/** 折叠站点记录条数上限。 */
 export const SITE_COLLAPSE_LIMIT = 2_000;
-/** 休眠白名单条目上限。 */
 const DISCARD_WHITELIST_LIMIT = 500;
-/** hostname / 域名字符串长度上限（DNS 标签总长上限 253）。 */
+/** DNS 主机名总长上限 253。 */
 export const HOST_MAX_LENGTH = 253;
-/**
- * 图标 URL 长度上限（仅作用于**导入侧**，见 ImportFaviconUrlSchema）。
- *
- * 基础 schema 不加此上限：运行时 Chrome 给出的 favIconUrl 可能是体积较大的
- * `data:image/...`，在读盘路径上封顶会把本机已写入的合法数据判成坏数据而丢条目。
- */
+/** 仅作用于导入侧：运行时 favIconUrl 可能是大体积 data:image/，读盘封顶会误伤已写入的合法数据。 */
 const FAVICON_URL_MAX_LENGTH = 2_048;
 /** 单个撤销批次的标签条目上限。 */
 export const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
@@ -81,17 +47,7 @@ export const SNAPSHOT_TABS_LIMIT = 1_000;
 /** 快照族总条数上限（含归档与自动快照）。 */
 export const SNAPSHOTS_LIMIT = 200;
 
-/**
- * 条目标题的长度上限（超出部分截断，不是判坏）。
- *
- * 口径必须落在 schema 层：右键「加入文件夹」的标题取自
- * `info.selectionText || info.linkUrl`，是**网页可控**的任意长字符串，不限长就构成
- * 一条由网页内容驱动的存储放大面。
- *
- * 刻意用「截断」而非 `.max()` 拒绝：标题不是身份字段，超长不该把整个条目（进而整个
- * 文件夹数组）判成坏数据——那会触发逐元素恢复、把用户真正在意的条目丢进隔离区。
- * 截断与 `identity` 的归一化同属「写前收敛」这一档处理。
- */
+/** 超出部分截断而非判坏：标题非身份字段，超长不该让整份文件夹数组被判坏、把在意条目丢进隔离区。 */
 export const FOLDER_ITEM_TITLE_MAX = 512;
 
 export const FixedFolderItemSchema = z.object({
@@ -115,20 +71,12 @@ export type FixedFolder = z.infer<typeof FixedFolderSchema>;
 
 /**
  * 常驻磁贴（顶部固定区里的一枚磁贴）。
- *
- * 术语警告：`TabRecord.pinned`（浏览器原生「固定标签」）与本类型是**两回事** ——
- * 磁贴是本产品持久化的资产，浏览器固定标签是浏览器标签条上的状态。两者共用
- * `pin` 词根，读代码时勿互相替代；`ui/fixed/` 目录下两类组件同时存在。
+ * 术语警告：`TabRecord.pinned`（浏览器原生「固定标签」）与本类型是**两回事**——磁贴是
+ * 本产品持久化的资产，浏览器固定标签是标签条状态；`ui/fixed/` 下两类组件同时存在，勿混用。
  */
 export const PersistentPinSchema = z.object({
   id: z.string(),
-  /**
-   * 身份标识（主机名归一化，见 core/fixed/PinIdentity）。
-   *
-   * 归一化必须在 schema 层完成：`dedupePins` 按 identity 判重，备份导入与同步
-   * 镜像都不经过 UI，落盘时若带着 `WWW.Example.COM` 这类原样值，与运行时
-   * `pinIdentity()` 产出的 `example.com` 不等 —— 同站点磁贴会重复留存且永不合并。
-   */
+  /** 必须在 schema 层归一化：dedupePins 按 identity 判重，导入/镜像不经过 UI，未归一化的落盘值会让同站点磁贴永不合并。 */
   identity: z.string().max(HOST_MAX_LENGTH).transform(normalizeHostname),
   url: z.string(),
   title: z.string(),
@@ -136,29 +84,17 @@ export const PersistentPinSchema = z.object({
 });
 export type PersistentPin = z.infer<typeof PersistentPinSchema>;
 
-/**
- * 折叠站点记录（hostname 集合）。
- *
- * 与白名单同口径：归一化在 schema 层完成，否则备份里 `WWW.Example.com.` 这类
- * 条目永不命中折叠态（读出来的是未归一化值，比对的是归一化值）。
- */
+/** 折叠站点记录（hostname 集合）。归一化在 schema 层完成，否则备份里未归一化条目永不命中折叠态。 */
 export const SiteCollapseSchema = z
   .array(z.string().max(HOST_MAX_LENGTH))
   .transform((hosts) => [
     ...new Set(hosts.map(normalizeHostname).filter((host) => host.length > 0))
   ])
-  // 上限与去重都必须在归一化**之后**生效：写在 transform 之前时，`WWW.a.com` 与
-  // `a.com.` 会各占一份额度（归一化后是同一站点），且数组内留重复项放大折叠比对。
+  // 上限与去重必须在归一化之后：否则同一站点多种写法各占额度、重复项放大比对。
   .pipe(z.array(z.string()).max(SITE_COLLAPSE_LIMIT));
 export type SiteCollapseState = z.infer<typeof SiteCollapseSchema>;
 
-/**
- * 网站聚合阈值的默认值（未显式传参时的成组下限）。
- *
- * schema 是这一语义的唯一权威来源，但纯函数侧（aggregateBySite / buildSitePlan）
- * 此前各手抄一份字面量 `2`：改默认值时改一处漏两处，就会得到「设置里显示 3、
- * 纯函数按 2 聚合」的分叉，且只在调用方没传 threshold 时才生效，最难复现。
- */
+/** 聚合阈值默认值，schema 与纯函数（aggregateBySite / buildSitePlan）共用，避免两处默认值分叉。 */
 export const DEFAULT_AGGREGATION_THRESHOLD = 2;
 
 /**
@@ -169,8 +105,7 @@ export const DEFAULT_AGGREGATION_THRESHOLD = 2;
  */
 export const SettingsSchema = z.object({
   themePreference: z.enum(['system', 'light', 'dark']).default('system'),
-  /** 主题色预设：plain 纯净（默认，无底色跟随 Chrome 明暗）/ forest 石墨绿 / ocean 雾霾蓝 / violet 暮山紫 / sunset 暖阳橙 / mono 中性灰。 */
-  // 色号取自 `@/core/theme/colorThemes` 的唯一来源，避免与主题应用/设置页各写一份。
+  /** 主题色预设（色号唯一来源 core/theme/colorThemes）：plain 默认无底色 / forest / ocean / violet / sunset / mono。 */
   colorTheme: z.enum(COLOR_THEME_IDS).default('plain'),
   /** 语言覆盖（BCP-47）。仅约束长度与格式。 */
   language: z.string().min(2).max(32).optional(),
@@ -182,31 +117,16 @@ export const SettingsSchema = z.object({
   // —— 外观 appearance ——
   /** 顶部常驻磁贴条（固定空间）显示开关。 */
   showPinnedStrip: z.boolean().default(true),
-  /**
-   * 列表密度：`tight` 超紧凑 / `compact` 紧凑 / `cozy` 宽松 / `large` 大字号。
-   *
-   * 四档行内上下留白依次是 0 / 2 / 6 / 10px（见 main.css 的 .density-*）：
-   * 相邻档位差 2–4px，切换时行高变化肉眼可辨。`tight` 只在用户显式选择时生效 ——
-   * 单行高度会低于 24px 的推荐目标尺寸，属「用可点面积换信息密度」的取舍。
-   */
+  /** 列表密度：tight 超紧凑 / compact 紧凑 / cozy 宽松 / large 大字号。tight 行高低于 24px 推荐尺寸，属「用可点面积换信息密度」的取舍。 */
   density: z.enum(['tight', 'compact', 'cozy', 'large']).default('cozy'),
   /** 标签行标题下方显示完整网址。 */
   showUrl: z.boolean().default(false),
-  /** 底部工具区文字模式：新装默认开启，图标旁显示功能名称（窄面板自动退回纯图标；
-   *  熟悉后可关闭。默认仅图标 + 悬停提示会让新用户面对一排不可辨识的按钮）。 */
+  /** 底栏文字标签，新装默认开（窄面板自动退回纯图标）：仅图标 + 悬停提示会让新用户面对一排不可辨识的按钮。 */
   footerLabels: z.boolean().default(true),
   /**
-   * 底栏按钮顺序（存按钮 id 列表，用户拖拽调整后写回）。
-   *
-   * 空数组 = 用内置默认顺序。渲染时未知 id 忽略、不在列表里的按钮按默认顺序
-   * 追加到末尾 —— 这样版本升级新增按钮时，老用户的自定义顺序不会让新按钮消失。
-   * 用 `z.string()` 而非 enum：顺序里残留已删除的 id 时不该让整份设置解析失败。
-   *
-   * 归一化（过滤未知 id → 去重 → 按默认顺序补全）落在 schema 层，与
-   * `discardWhitelist` 同口径：备份与同步镜像都不经过设置页，只在渲染侧
-   * 补全时，落盘值仍是外部可控的原始数组（可注入任意长）。
-   * 过滤而非拒绝，保留「旧版本残留 id 不炸」的语义；补全后长度恒为
-   * `FOOTER_BUTTON_KEYS.length`，后面的 `.max()` 是这一不变量的兜底断言。
+   * 底栏按钮顺序（按钮 id 列表，拖拽后写回）。空数组 = 内置默认顺序；未知 id 忽略、缺失按默认补全（升级新增不消失）。
+   * 用 z.string() 而非 enum：残留已删 id 不该让整份设置解析失败。归一化在 schema 层（备份/镜像不经过设置页），
+   * 补全后长度恒为 FOOTER_BUTTON_KEYS.length，.max() 是该不变量的兜底断言。
    */
   footerOrder: z
     .array(z.string())
@@ -241,13 +161,7 @@ export const SettingsSchema = z.object({
   actionClickMode: z.enum(['panel', 'regroup']).default('panel'),
   /** 撤销栈深度（FIFO 淘汰上限）。 */
   undoStackLimit: z.number().int().min(5).max(50).default(DEFAULT_UNDO_STACK_LIMIT),
-  /**
-   * 自动保存（关窗 + 定时快照）：默认开启 —— 这是纯保护性能力（只保存、
-   * 不改动任何标签），且「关窗后标签全丢」是最大痛点，出厂不保护等于放弃安全网。
-   * 容量由 maxAutoSnapshots（10 条滚动保留）约束，不会无限增长。
-   *
-   * 注意：默认值只在存储中尚无该键时生效，用户改过之后读的是其存储值。
-   */
+  /** 自动保存（关窗 + 定时快照）：默认开启，纯保护性能力（只保存、不改标签），容量由 maxAutoSnapshots 约束。默认值仅在存储尚无该键时生效。 */
   autoSaveSnapshots: z.boolean().default(true),
   /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
   autoSnapshotIntervalMin: z.number().int().min(5).max(720).default(30),
@@ -261,26 +175,15 @@ export const SettingsSchema = z.object({
   rowActionsVisible: z.boolean().default(false),
   /** 搜索是否包含中文拼音首字母匹配。 */
   pinyinSearch: z.boolean().default(true),
-  /**
-   * 时间线搜索：搜索同时命中快照与归档条目。
-   * 默认开启——快照数据已在本地，索引是纯本地计算，「找回上次看过的页面」
-   * 是全产品最大的场景缺口；索引量受 HISTORY_SNAPSHOT_LIMIT（最近 20 份）
-   * 约束，不会随快照积累拖垮搜索性能。搜索框内有开关可临时关闭。
-   */
+  /** 时间线搜索：搜索同时命中快照与归档条目。默认开启（快照已在本地、索引纯本地计算），索引量受 HISTORY_SNAPSHOT_LIMIT 约束不拖垮性能。 */
   searchHistory: z.boolean().default(true),
   /** 撤销记录跨重启持久化（关闭后仅会话内可撤销）。 */
   persistUndo: z.boolean().default(true),
   /** 同一网址只保留一个标签：新开已存在则切到最近访问的既有标签，其余（含新建）关闭。 */
   uniqueUrlTabs: z.boolean().default(true),
   /**
-   * 自动休眠白名单：这些域名（hostname）永不被自动休眠（手动休眠不受限）。
-   * 字符串按 hostname 长度封顶，条数另行限制——白名单匹配器对每个标签
-   * O(n) 遍历此列表，无上限会放大每次休眠判定。
-   *
-   * 归一化必须在 schema 层完成（与 `noCachePatterns` 同口径）：备份导入、
-   * 同步镜像、直接写 storage 都不经过设置页的编辑器，若只在 UI 输入处归一化，
-   * 落盘的就是 `HTTPS://WWW.Example.com/path` 这类原样字符串，而匹配端
-   * 再归一化一次时结果未必与 UI 一致 —— 表现为「白名单里明明有，还是被休眠了」。
+   * 自动休眠白名单：这些 hostname 永不被自动休眠（手动休眠不受限）。
+   * 归一化必须在 schema 层：备份/镜像/直写 storage 都不经设置页，只在 UI 归一化会让落盘值与匹配端口径不一致（名单里有却仍被休眠）。
    */
   discardWhitelist: z
     .array(z.string().max(HOST_MAX_LENGTH))
@@ -288,8 +191,7 @@ export const SettingsSchema = z.object({
     .transform((hosts) => [
       ...new Set(hosts.map(normalizeWhitelistHost).filter((host) => host.length > 0))
     ])
-    // 上限与去重同样后置于归一化（与 SiteCollapseSchema 同口径）：否则同一站点的
-    // 多种写法各占一份额度，重复项还会放大白名单匹配的 O(n) 遍历。
+    // 上限与去重同样后置于归一化（同 SiteCollapseSchema）：否则同一站点多种写法各占额度。
     .pipe(z.array(z.string()).max(DISCARD_WHITELIST_LIMIT)),
   /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
   searchAllWindows: z.boolean().default(false),
@@ -307,18 +209,14 @@ export const SettingsSchema = z.object({
   noCacheEnabled: z.boolean().default(false),
   /**
    * 禁缓存站点列表：纯域名（含子域）/ 域名+路径前缀 / 完整 URL 前缀，三种形态。
-   *
-   * 归一化必须在 schema 层完成（而非只在 UI 编辑器）：这些字符串最终会被编译成
-   * DNR 动态规则的 urlFilter / regexFilter，而备份导入与设置同步同样经过本 schema。
-   * 非法项（含 DNR 通配/锚定语法）在此丢弃，使「能读出的 pattern」恒等于
-   * 「可安全编译的 pattern」。
+   * 归一化必须在 schema 层完成：这些串会被编译成 DNR 动态规则，备份导入与同步同样经过本 schema；
+   * 非法项（含 DNR 通配/锚定语法）在此丢弃，使「能读出的 pattern」恒等于「可安全编译的 pattern」。
    */
   noCachePatterns: z
     .array(z.string().min(1).max(NO_CACHE_PATTERN_MAX_LENGTH))
     .default([])
-    // 与 SiteCollapseSchema / discardWhitelist 同口径：先归一化 + 去重，上限与
-    // 去重都作用于归一化**之后**的值。写在 transform 之前时，`a.com` 与 `A.COM`
-    // 各占一份额度、归一化后重复，既浪费额度又编译出重复的 DNR 规则。
+    // 同 SiteCollapseSchema / discardWhitelist：先归一化 + 去重，上限作用于归一化之后的值，
+    // 否则 a.com 与 A.COM 各占一份额度、归一化后重复，编译出重复的 DNR 规则。
     .transform((patterns) => [
       ...new Set(
         patterns
@@ -333,59 +231,25 @@ export const SettingsSchema = z.object({
   tipSeen: z.boolean().default(false),
   /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
   conceptsSeen: z.boolean().default(false),
-  /**
-   * 是否把文件夹、常驻磁贴与设置镜像到浏览器账号同步通道（chrome.storage.sync）。
-   *
-   * **默认关闭**。开启后这些数据会经由浏览器厂商的同步通道离开本机——
-   * 与「本地优先」的定位相悖，故必须显式开关，不能让用户无感知地上传。
-   * 关闭时 `dataStore` 不调度镜像，并在关闭动作发生时清除已上传的镜像。
-   */
+  /** 是否把文件夹、磁贴与设置镜像到 chrome.storage.sync。默认关闭：数据会经浏览器厂商通道离开本机，与「本地优先」相悖，须显式开启；关闭时清除已上传镜像。 */
   syncMirrorEnabled: z.boolean().default(false),
-  /**
-   * 当前激活的工作区（origin=space 快照的 id；缺省 = 未激活，面板为「全部标签」态）。
-   * 仅是 id 引用：工作区被删除后该值失效，消费方须按「找不到即视为未激活」容错。
-   *
-   * 术语：本文件与全仓统一称「工作区」（UI 文案同词）。「固定空间」是另一个概念
-   * （FixedArea，装常驻文件夹与磁贴的固定区），二者不要混用。
-   */
+  /** 当前激活的工作区（origin=space 快照的 id；缺省 = 未激活）。仅是 id 引用，删除后失效，消费方须按「找不到即视为未激活」容错。术语「工作区」≠「固定空间」（FixedArea），勿混用。 */
   activeSpaceId: z.string().optional(),
-  /**
-   * 面板展示其他窗口的分段（只读 + 聚焦/关闭，当前窗口的全部交互不变）。
-   * 默认关闭：产品口径是「只管理当前窗口」，读取其他窗口必须由用户显式开启，
-   * 与 searchAllWindows 的默认关闭口径保持一致。
-   */
+  /** 面板展示其他窗口的分段（只读 + 聚焦/关闭）。默认关闭（「只管理当前窗口」口径），与 searchAllWindows 一致。 */
   showOtherWindows: z.boolean().default(false)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
-/**
- * 列表密度档位（从 schema 派生）。
- *
- * UI 各处（RowItem / TabRow / SectionList / 骨架屏）此前各写一遍
- * `'compact' | 'cozy' | 'large'`，加一档要改 6 处、漏一处就是类型对不上但运行正常的
- * 半失效状态。统一从这里取。
- */
+/** 列表密度档位（从 schema 派生，避免 UI 各处手写联合类型导致加档漏改）。 */
 export type Density = Settings['density'];
 
-/**
- * 默认设置：直接由 `SettingsSchema` 派生，不再手抄一份字段。
- *
- * 手抄的代价是「加设置忘了改默认值」——默认值散落两处，schema 校验通过但
- * 「恢复默认设置」会把新字段写成 undefined，属静默数据损坏。
- * 派生后 schema 是默认值的唯一来源，`language` 等可选字段也自动保持缺省语义。
- *
- * **约定（新增设置项必须遵守）**：`SettingsSchema` 中每个字段都必须带 `.default()`，
- * 否则 `SettingsSchema.parse({})` 会在模块加载期抛错，使所有入口（sidepanel / options /
- * background）导入即崩溃。新增字段时务必补 `.default()`，并跑 `models.test.ts` 的
- * 解析断言守住这条约束。
- */
+/** 由 SettingsSchema 派生（手抄会让加设置忘改默认值静默损坏数据）。每个字段都必须带 .default()，否则 parse({}) 在加载期抛错、所有入口导入即崩溃；新增字段务必补 .default()。 */
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
 
 /** 撤销栈条目：恢复标签所需的最小五元组。 */
 export const UndoTabRecordSchema = z.object({
   url: z.string(),
-  // index / groupId 必须是整数：它们是浏览器 API 的位置与组 id，小数只会让
-  // 恢复动作以静默失败告终（与 UndoBatch.windowId 同口径）。
+  // index / groupId 必须是整数（浏览器 API 的位置与组 id），小数会让恢复静默失败。
   index: z.number().int(),
   pinned: z.boolean(),
   muted: z.boolean(),
@@ -397,19 +261,10 @@ export type UndoTabRecord = z.infer<typeof UndoTabRecordSchema>;
 
 export const UndoBatchSchema = z.object({
   id: z.string(),
-  /**
-   * 批次类别（'restore' 等）。
-   *
-   * 刻意保持 `z.string()` 而非 enum：新类别随时可加，枚举会让旧备份里的未知
-   * 类别把整条记录判坏。只做长度封顶——备份可注入任意长字符串。
-   */
+  /** 批次类别（'restore' 等）。用 `z.string()` 而非 enum：未知类别不应判坏整条记录；只长度封顶防注入。 */
   kind: z.string().min(1).max(32),
   createdAt: z.number(),
-  /**
-   * 关闭发生时的窗口 id（缺省即未记录来源窗口）。
-   * 撤销必须回到原窗口：只记录「关了什么」而不记录「从哪关的」，用户切到另一个
-   * 窗口再撤销时，标签会被恢复到错误的窗口。
-   */
+  /** 关闭发生时的窗口 id（缺省即未记录）。撤销必须回到原窗口，否则切到别的窗口撤销会恢复到错误窗口。 */
   windowId: z.number().int().optional(),
   entries: z.array(UndoTabRecordSchema).max(UNDO_BATCH_ENTRIES_LIMIT)
 });
@@ -438,20 +293,8 @@ export const SnapshotTabSchema = z.object({
   muted: z.boolean().default(false),
   /** 快照时所在原生组标题（未分组时缺省；恢复时按名并入或重建）。 */
   groupTitle: z.string().optional(),
-  /**
-   * 快照时所在原生组颜色（Chrome 色名字符串，重建组时还原）。
-   *
-   * 非法色名**降级为缺省**而非判坏：该值只用于重建组时的取色，一条
-   * `groupColor: "banana"` 若让整条 SnapshotTab 校验失败，会连带 `snapshots`
-   * 数组失败、整份备份被拒（与 `favIconUrl` / `url` 的「归一化而非判坏」
-   * 同口径——一条畸形装饰数据不该把整份备份判死）。运行时来源恒为 Chrome
-   * 自身的 `group.color`，降级不会误伤本机数据；被降级掉的是构造出来的备份文件。
-   */
-  // 只需末尾一层 `.optional()`：transform 之后的 schema 不再是 optional，键会变成
-  // 必填（值可为 undefined），波及所有构造该对象字面量的调用点。降级逻辑不变。
-  // 内层那层 `.optional()` 是死代码——外层 ZodOptional 遇到 `undefined` 直接短路，
-  // 内层永远走不到，却多包一层 Effects（且让「键缺失」与「显式 undefined」
-  // 的输出签名变得难以推断）。
+  /** 快照时原生组颜色（Chrome 色名，重建时还原）。非法色名降级为缺省而非判坏：畸形装饰数据不该让整份备份失败。 */
+  // 只在末尾加 .optional()：内层 optional 是死代码（外层遇 undefined 直接短路），且 transform 后 schema 不再 optional。
   groupColor: z.string().transform(toGroupColor).optional()
 });
 export type SnapshotTab = z.infer<typeof SnapshotTabSchema>;
@@ -468,37 +311,19 @@ export const SnapshotSchema = z
     tabCount: z.number().int().nonnegative(),
     tabs: z.array(SnapshotTabSchema).max(SNAPSHOT_TABS_LIMIT)
   })
-  // tabCount 与 tabs.length 冗余，入库时锁定一致性：备份导入可构造
-  // tabCount=0 但 tabs 非空（或反之）的数据，UI 角标/列表计数与恢复条数会漂移。
+  // tabCount 与 tabs.length 冗余，入库锁定一致性：导入可构造两者不等的数据，让 UI 计数与恢复条数漂移。
   .refine((snapshot) => snapshot.tabCount === snapshot.tabs.length, {
     message: 'tabCount must equal tabs.length'
   });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
-/**
- * 导出文件格式版本号。
- *
- * 必须在**第一个公开版本**就带上：格式一旦发布且无版本号，后续每次加字段都只能靠
- * 「猜字段是否存在」来兼容。带版本号后，导入端只需比对字面量——**相同才收，
- * 不同即拒**，不按版本分发、不做跨版本升格解析。
- *
- * Tabs不做跨版本兼容：备份格式随主版本演进，旧备份交给对应版本的扩展导入，
- * 而不是让当前版本去猜旧结构。
- */
+/** 导出格式版本号。首个公开版本就带上，避免后续加字段只能猜字段是否存在；导入端只比对字面量，不做跨版本升格。 */
 export const EXPORT_FILE_VERSION = 1;
 
 /**
- * 导出文件格式。
- *
- * 完整备份 = 固定空间 + 固定图标 + 折叠态 + 设置 + 全部快照族
- * （manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区）。
- *
- * `version` 是必填字面量：缺省即判为「格式不符」并拒绝导入。此处**不做**容错缺省
- * —— 缺省兜底会让无版本号的任意 JSON 都能按当前版本解析通过，等于把单一格式口径
- * 开了一道后门，也让「版本不同即拒绝」的承诺失真。
- *
- * 导入端另有 `ExportFileImportSchema`（本 schema 的图标加固副本，见下）：
- * 备份里的 `favIconUrl` 只接受 `data:image/` / `chrome://` / `chrome-extension://`。
+ * 导出格式 = 固定空间 + 图标 + 折叠态 + 设置 + 全部快照族。
+ * version 是必填字面量、不做容错缺省：兜底会让无版本号的任意 JSON 按当前版本解析通过。
+ * 导入端另有 ExportFileImportSchema（图标加固副本，favIconUrl 只接受 data:image/、chrome://、chrome-extension://）。
  */
 export const ExportFileSchema = z.object({
   format: z.literal('tabs.export'),
@@ -515,31 +340,13 @@ export const ExportFileSchema = z.object({
 export type ExportFile = z.infer<typeof ExportFileSchema>;
 
 /**
- * 导入侧（备份文件）favicon 的 scheme 白名单。
- *
- * `favIconUrl` 有两个来源：
- *  1. 运行时由浏览器给出 —— Chrome 返回的几乎都是 `http(s)://` 站点图标；
- *  2. 备份文件 —— 可被任意构造。
- * 渲染图标会让扩展页对该地址发起一次图片请求，因此来源 2 的任意 http(s)
- * 等于「备份文件可指定扩展向任意站点发请求」。故**只在导入侧**收紧。
- *
- * 位置选择（导入专用 schema，而不是基础 schema）：基础 schema 同时用于运行时
- * 读盘（`DataRepository.read`），在那里收紧会让运行时写入的 http(s) 图标在下次
- * 读盘时被判为坏数据而清空/隔离 —— 那正是要避免的误伤。校验仍然落在 zod 层
- * （而非 UI 输入处），因此经备份导入的每一条数据都无法绕过。
- *
- * 归一化而非判坏：图标不是业务数据，越界的图标降级为「回退首字母」，
- * 好过把整条条目（连同网址与标题）一起丢掉。
+ * 导入侧 favicon scheme 白名单。渲染图标会发起图片请求，备份里任意 http(s) 等于「备份可指定扩展向任意站点发请求」，
+ * 故只在导入侧收紧（基础 schema 也用于运行时读盘，收紧会误伤本机写入的 http(s) 图标）。
+ * 校验在 zod 层，导入数据无法绕过；越界图标降级为回退首字母而非判坏。
  */
 const IMPORT_FAVICON_SCHEME = /^(?:data:image\/|chrome:\/\/|chrome-extension:\/\/)/i;
 
-/**
- * 导入侧图标字段：长度封顶 + scheme 白名单归一化。
- *
- * 超长或非白名单 scheme（含任意 http(s)）一律归一为 `undefined`，而不是让校验
- * 失败：用 `.max()` 硬失败会让「一个畸形图标」升级为「整份备份导入被拒」，
- * 图标是装饰性数据，丢图标远好过让用户无法恢复备份。
- */
+/** 导入侧图标字段：长度封顶 + scheme 白名单归一化。超长/非白名单一律归一为 `undefined` 而非判坏——图标是装饰数据，不能让一个畸形图标升级为整份备份被拒。 */
 export const ImportFaviconUrlSchema = z
   .string()
   .transform((value) =>
@@ -548,17 +355,9 @@ export const ImportFaviconUrlSchema = z
   .optional();
 
 /**
- * 导入侧网址字段：scheme 白名单归一化（只放行 `http:` / `https:`）。
- *
- * 备份的 `url` 最终会被拿去 `tabs.create` / 渲染成可点击条目，因此只接受网页
- * scheme：`javascript:` / `data:text/html` / `file:` / `chrome://*` 一律降级为
- * 安全占位 `about:blank`。
- *
- * 与图标同口径「归一化而非判坏」：一条畸形网址不该把整份备份判死（那才是最糟的
- * 数据事故）。归一为占位而非丢弃条目，还有一层原因——快照有
- * `tabCount === tabs.length` 的一致性校验，丢条目会让该校验失衡并把整份备份拒掉。
- *
- * 只作用于导入专用 schema：运行时读盘走原 schema，不会误伤本机已写入的数据。
+ * 导入侧网址字段：只放行 `http:` / `https:`，其余（`javascript:` / `data:` / `file:` / `chrome://`）降级为占位。
+ * 备份的 `url` 会被拿去 `tabs.create` / 渲染成可点击条目。归一为占位而非丢弃条目：快照有
+ * `tabCount === tabs.length` 校验，丢条目会让其失衡并拒掉整份备份。只作用于导入专用 schema。
  */
 /** 网址被判为不安全时的占位值：不可执行脚本、不指向内部页。 */
 const UNSAFE_URL_PLACEHOLDER = 'about:blank';
@@ -566,38 +365,24 @@ export const ImportUrlSchema = z
   .string()
   .transform((value) => (isHttpUrl(value) ? value : UNSAFE_URL_PLACEHOLDER));
 
-/** 导入专用条目 schema：收紧 favIconUrl 与 url，其余字段与运行时同口径。 */
-// 文件夹条目的 url 在运行时本就可选（挂起条目没有 url），导入侧必须保持可选，
-// 否则 safeExtend 覆盖后会把「无 url 的挂起条目」判成坏数据。
+/** 导入专用条目：收紧 favIconUrl 与 url，其余同运行时。url 必须保持可选：挂起条目本就没有 url，覆盖成必填会把它们判成坏数据。 */
 const ImportFixedFolderItemSchema = FixedFolderItemSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema.optional()
 });
-/**
- * 外部输入专用的固定文件夹 schema（备份导入 + 同步镜像共用）。
- *
- * 命名 `Inbound*` 而非 `Import*` 的理由：收紧的适用面是「一切外部可控输入」，
- * 不止备份文件——同步镜像经浏览器账号通道回来，同样不在本机信任边界内。
- * 两处共用这一个 schema，避免「备份入口降级、镜像入口原样落盘」的口径分叉。
- *
- * 基础 `FixedFolderSchema` 保持宽松（运行时读盘用它），收紧绝不并入基础 schema：
- * 见 `IMPORT_FAVICON_SCHEME` 上方注释里「位置选择」一节。
- */
+/** 外部输入专用的固定文件夹 schema（备份导入 + 同步镜像共用）。命名 `Inbound*`：适用面是一切外部可控输入，同步镜像同样不在信任边界内；共用避免口径分叉。基础 schema 保持宽松（读盘用）。 */
 export const InboundFixedFolderSchema = FixedFolderSchema.safeExtend({
   items: z.array(ImportFixedFolderItemSchema).max(FOLDER_ITEMS_LIMIT)
 });
 /**
- * 外部输入专用的常驻磁贴 schema：图标与网址受上述约束，且 identity 由**归一化后的 url**
- * 重算——外部输入里的 identity 是外来数据，若与 url 不一致（如 url 已被降级为
- * `about:blank` 而 identity 仍指向原站），`dedupePins` 会按这个失真身份判重，
- * 产出点开是新标签页的磁贴。
+ * 外部输入专用磁贴 schema：identity 由归一化后的 url 重算。外来 identity 若与 url 不一致
+ * （url 已降为 about:blank 而 identity 仍指向原站），dedupePins 会按失真身份判重，产出点开是新标签页的磁贴。
  */
 export const InboundPersistentPinSchema = PersistentPinSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema
 }).transform((pin) => {
-  // url 被降级为占位时 pinIdentity 返回 null：保留原 identity（去重仍需它），
-  // 不去写空串——空串会让全部降级磁贴塌缩成一个。
+  // url 降为占位时 pinIdentity 返回 null：保留原 identity（去重仍需它），写空串会让全部降级磁贴塌缩成一个。
   const identity = pinIdentity(pin.url);
   return identity === null ? pin : { ...pin, identity };
 });
@@ -610,11 +395,7 @@ const ImportSnapshotSchema = SnapshotSchema.safeExtend({
   tabs: z.array(ImportSnapshotTabSchema).max(SNAPSHOT_TABS_LIMIT)
 });
 
-/**
- * 导入专用导出文件 schema：与导出结构同形，分区内条目改用受图标约束的版本。
- * 只被 `parseExportFile` 使用；导出侧仍走 `ExportFileSchema`（原样写出图标，
- * 保证「导出 → 导入」不丢失运行时图标之外的信息）。
- */
+/** 导入专用导出 schema：与导出同形，分区内条目改用受图标约束版本。只被 parseExportFile 使用；导出侧仍走 ExportFileSchema（原样写图标，保证导出→导入不丢信息）。 */
 const ExportFileImportSchema = ExportFileSchema.safeExtend({
   fixedFolders: z.array(InboundFixedFolderSchema).max(FOLDERS_LIMIT),
   persistentPins: z.array(InboundPersistentPinSchema).max(PINS_LIMIT),
@@ -622,15 +403,9 @@ const ExportFileImportSchema = ExportFileSchema.safeExtend({
 });
 
 /**
- * 导出文件统一读取口径：单一格式，不匹配即拒绝（不静默降级）。
- * 当前只识别 `EXPORT_FILE_VERSION`；版本不同即拒绝，避免跨版本数据被误读。
- *
- * 失败时区分「版本不匹配」与「文件本身有问题」：版本不匹配是**可解释的**
- * （用户手上这份由另一个版本的 Tabs 导出），提示必须指向可操作的下一步，
- * 而不是笼统一句「导入失败」。
- *
- * 解析走导入专用 schema：其中的 `favIconUrl` 会被 scheme 白名单归一化
- * （任意 http(s) 图标 → undefined，渲染时回退为首字母方块）。
+ * 导出文件统一读取口径：单一格式，不匹配即拒（不静默降级），只认 EXPORT_FILE_VERSION。
+ * 失败区分「版本不匹配」（由另一版本 Tabs 导出，可解释）与「文件本身有问题」，提示须指向可操作下一步。
+ * 解析走导入专用 schema：favIconUrl 经 scheme 白名单归一化（任意 http(s) 图标 → undefined）。
  */
 export function parseExportFile(
   raw: unknown

@@ -1,19 +1,8 @@
 /**
- * 存储键与闹钟名的唯一声明处（**全仓**）。
- *
- * 此前这些字面量散落在 8 个模块里各自 `const XXX_KEY = 'tabs...'`：新增一个键要
- * 先想清楚该放哪个文件，而 PRIVACY.md §3 的「存储键 ↔ 文档」双向比对
- * （`scripts/privacy-check.mjs`，只扫 `src/platform/**`）虽然仍能扫到，但**清单
- * 本身没有一处可枚举的入口** —— 想知道「我们到底存了哪些键」只能靠文档反查。
- *
- * 收口后：新增键只在此处加一行，键清单一眼可尽。
- *
- * 刻意**不收**的两类：
- *  - `registry.ts` 里随 schema 内联的仓库键（键与它的 schema / 默认值同处一行，
- *    拆开反而让「这个键装什么数据」要跨文件确认）；
- *  - 主题镜像键 `tabs:theme` / `tabs:theme-hue`（`theme-init.ts` 必须在渲染前
- *    同步执行、不能 import 任何模块，故在 `ThemeApplier.ts` 保留一份字面量，
- *    两侧一致性由 `tests/config/theme-mirror-keys.test.ts` 守卫）。
+ * 存储键与闹钟名的唯一声明处（全仓）。`check:privacy` 的「存储键 ↔ PRIVACY.md」比对只扫 `src/platform/**`。
+ * 刻意不收两类：registry.ts 随 schema 内联的仓库键（拆开反而要跨文件确认）；
+ * 主题镜像键 `tabs:theme` / `tabs:theme-hue`（theme-init.ts 须在渲染前同步执行、不能 import 模块，
+ * 故在 ThemeApplier.ts 保留字面量，一致性由 tests 守卫）。
  */
 
 /** 关窗快照的窗口标签缓存（chrome.storage.session，SW 回收后仍能取到）。 */

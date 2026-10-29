@@ -10,9 +10,6 @@ import { logDegraded } from '@/platform/diagnostics';
  * 就绪后翻转本信号，消费方的引擎 memo 自然重建（引擎引用变化即重算），
  * 不需要任何「失效计数器」。
  *
- * 曾经的形态：引擎构造后异步原地补拼音 + UI 侧 `void tick;` 死语句把依赖数组
- * 凑自足。那行语句删掉后编译、lint、测试全绿，而拼音命中静默失效——
- * 典型的补丁式修复。现形态里「能不能拼音」是构造入参，无从被静默吞掉。
  *
  * @param enabled 设置项 `pinyinSearch`：关闭时既不加载词典，也恒返回 false。
  */

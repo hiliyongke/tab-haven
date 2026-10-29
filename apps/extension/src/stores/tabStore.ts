@@ -28,17 +28,13 @@ interface TabState {
   groups: readonly TabGroupRecord[];
   currentWindowId: number | undefined;
   /**
-   * 是否已收到首帧标签快照。
-   *
-   * 初始 tabs=[] 有两种含义：同步尚未开始（首次查询在途/失败退避），或当前窗口
-   * 真的没有标签。协调逻辑（reconcileWithTabs）不能把「未同步」误当成「无标签」：
-   * 否则挂载早期会把磁盘上全部 item↔tab 绑定判定失效清空（与 folders 未加载
-   * 是同一类初始化竞态，见 dataStore ready 守卫）。收到任意一次成功快照后为 true。
+   * 是否已收到首帧标签快照。初始 tabs=[] 有两种含义：同步未开始，或当前窗口真的没有标签。
+   * 协调逻辑不能把「未同步」误当成「无标签」，否则挂载早期会清空磁盘上的 item↔tab 绑定。
+   * 收到任意一次成功快照后为 true。
    */
   tabSyncReady: boolean;
   /** 当前浏览器高亮（多选区）的标签 id 集合，与 tabs.onHighlighted 同步。 */
   highlightedIds: ReadonlySet<number>;
-  /** 切换标签（点击行为）。 */
   activateTab: (tabId: number) => Promise<void>;
   /** 关闭标签，返回实际成功的标签 id（撤销联动由调用方编排）。 */
   closeTabs: (tabIds: readonly number[]) => Promise<number[]>;
@@ -46,24 +42,22 @@ interface TabState {
   /** 切换固定，返回是否成功（供 UI 按真实结果反馈）。 */
   togglePinned: (tab: TabRecord) => Promise<boolean>;
   setGroupCollapsed: (groupId: number, collapsed: boolean) => Promise<void>;
-  /** 在当前窗口新建标签。 */
   createNewTab: () => Promise<void>;
   /** 复制单个标签（对标浏览器原生右键「复制标签页」），返回是否成功。 */
   duplicateTab: (tabId: number) => Promise<boolean>;
   /** 冻结（休眠）单个标签以释放内存，返回是否成功。 */
   discardTab: (tabId: number) => Promise<boolean>;
   setHighlighted: (tabIds: readonly number[]) => void;
-  /** 记录单个标签探测到的语言。 */
   setLanguage: (tabId: number, lang: string) => void;
   /** 批量记录语言探测结果（一次 set，避免 N 个标签触发 N 轮全量重渲染）。 */
   setLanguages: (entries: readonly (readonly [number, string])[]) => void;
   renameGroup: (groupId: number, title: string) => Promise<void>;
   recolorGroup: (groupId: number, color: string) => Promise<void>;
-  /** 移动原生组到指定索引（组排序）。返回是否成功（组可能已解散）。 */
+  /** 移动原生组到指定索引（组排序），返回是否成功（组可能已解散）。 */
   moveGroup: (groupId: number, index: number) => Promise<boolean>;
   /** 乐观重排：拖拽松手后立即本地生效，不等浏览器事件回灌（详见实现处注释）。 */
   applyReorder: (sourceId: number, targetIndex: number) => void;
-  /** 整组乐观重排（分区头拖拽）：同理，把一组标签整体落到目标索引。 */
+  /** 整组乐观重排（分区头拖拽）：把一组标签整体落到目标索引。 */
   applyGroupReorder: (sourceTabIds: readonly number[], targetIndex: number) => void;
   /** 启动同步服务（组件挂载时调用一次）；返回清理函数。 */
   startTabSync: () => () => void;
@@ -151,14 +145,9 @@ export const useTabStore = create<TabState>()((set, get) => ({
   },
 
   /**
-   * 乐观重排：拖拽松手后立即在本地生效，不等浏览器事件回灌。
-   *
-   * 真相源仍在浏览器 —— 写失败或期间有并发变化时，下一次快照会按真实顺序校正回来，
-   * 因此这里不需要回滚逻辑。没有这一步，松手后要等
-   * `tabs.move → 浏览器事件 → 快照广播 → React 重渲染` 的整段往返，
-   * 那几十到几百毫秒的空窗正是「拖完像没反应、于是再拖一次」的来源。
-   *
-   * index 必须重新连续分配：显示顺序按 `index` 排序，直接拼接会留下空洞。
+   * 乐观重排：拖拽松手后立即本地生效，不等浏览器事件回灌。真相源仍在浏览器，
+   * 写失败或有并发变化时下一次快照会按真实顺序校正回来，因此无需回滚。
+   * index 必须重新连续分配：显示顺序按 index 排序，直接拼接会留下空洞。
    */
   applyReorder: (sourceId, targetIndex) => {
     set((state) => {
@@ -175,8 +164,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
   },
 
   /**
-   * 整组乐观重排：分区头拖拽时把一组标签整体落到目标索引。
-   * 与 applyReorder 同理（同一套「剔除 → 插入 → 重排 index」流程，只是 source 是一组）。
+   * 整组乐观重排：与 applyReorder 同理（剔除 → 插入 → 重排 index），只是 source 是一组。
    * 组内相对顺序按当前 index 保持，与浏览器批量 move 的行为一致。
    */
   applyGroupReorder: (sourceTabIds, targetIndex) => {
@@ -203,16 +191,13 @@ export const useTabStore = create<TabState>()((set, get) => ({
       if (snapshot.generation <= lastAppliedGeneration) return;
       lastAppliedGeneration = snapshot.generation;
       set((state) => {
-        // 镜像增量合并（细节见 mergeSnapshotTabs）：语言按 id 保留（URL 变化需重探测）；
-        // lastAccessed 对既有标签冻结——浏览器每次激活都会刷新该时间戳，照单全收
-        // 会让「最近访问」排序随每次切换标签全量重排。冻结后排序只在「新页面打开」
-        // （新 id 首次出现）时一次性纳入，其余操作零重排。
-        // 只有 lastAccessed 被冻结：lastActivatedAt 保持实时，供滞留预警与
-        // keeper 判定这类「真实最近激活时刻」的口径消费（见 core/tab-types）。
+        // 镜像增量合并（见 mergeSnapshotTabs）：语言按 id 保留（URL 变化需重探测）；
+        // lastAccessed 对既有标签冻结——浏览器每次激活都刷新该时间戳，照单全收会让
+        // 「最近访问」排序随每次切换标签全量重排。冻结后仅新页面首次出现时纳入排序。
+        // lastActivatedAt 保持实时，供滞留预警与 keeper 判定消费（见 core/tab-types）。
         const tabs = mergeSnapshotTabs(state.tabs, snapshot.tabs);
         // 内容守卫：事件空转（广播内容与本态一致）时跳过 set，避免顶层全量重渲染。
-        // mergeSnapshotTabs 对未变化标签保持原引用，此处 O(n) 指针比较即可——
-        // 不必再对全量 tabs 做两次 JSON.stringify（大标签量下是每次事件的固定热点）。
+        // mergeSnapshotTabs 对未变化标签保持原引用，此处 O(n) 指针比较即可。
         const sameTabs =
           tabs.length === state.tabs.length && tabs.every((tab, i) => tab === state.tabs[i]);
         const sameGroups =

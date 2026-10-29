@@ -10,21 +10,15 @@ import { AUTO_SNAPSHOT_ALARM } from '@/platform/storage/keys';
 import { listNormalWindowIds } from '@/platform/windows';
 
 /**
- * 定时自动快照。
- *
- * 关窗自动保存只能兜住「关窗」这一条路径；崩溃、强制退出、长时间不关机的场景下
- * 它永远不会触发，因此必须补一条周期性触发，否则自动保存的承诺存在结构性缺口。
- *
- * 边界（须在设置页明示）：
- *  - alarms 是浏览器托管调度，不保证精确触发，也不保证 SW 每次都能被唤起；
- *  - 内容未变化时跳过写入，避免生成一串完全相同的噪音快照并快速耗尽 maxAutoSnapshots。
+ * 定时自动快照。关窗自动保存只兜住「关窗」这一条路径；崩溃、强制退出、长时间不关机的
+ * 场景下它永远不触发，因此必须补一条周期性触发。
+ * 边界：alarms 是浏览器托管调度，不保证精确触发，也不保证 SW 每次都被唤起；内容未变化
+ * 时跳过写入，避免生成一串相同噪音快照并快速耗尽 maxAutoSnapshots。
  */
 
-/** 现场指纹：定时快照的去重依据（URL 集合 + 顺序）。
- *
- * 与 `core/util/signature` 的 `structuralSignature` **不是同一件事**：那个是
- * 「整份数据的结构签名」（用于判断持久化内容是否真的变了，含 favicon 摘要处理），
- * 这里只比 URL 序列。改名前的 `signatureOf` 与它同词根，容易被误选。
+/**
+ * 现场指纹：定时快照的去重依据（URL 集合 + 顺序）。与 core/util/signature 的
+ * structuralSignature 不是同一件事：那个是整份数据的结构签名，这里只比 URL 序列。
  */
 function urlSetFingerprint(tabs: readonly SnapshotTab[]): string {
   return tabs.map((tab) => tab.url).join('|');
@@ -39,12 +33,12 @@ async function latestAutoSignature(): Promise<string | null> {
   return latest ? urlSetFingerprint(latest.tabs) : null;
 }
 
-/** 采集某窗口可恢复的标签（口径见 `collectSnapshotTabs`，全仓唯一实现）。 */
+/** 采集某窗口可恢复的标签（口径见 collectSnapshotTabs，全仓唯一实现）。 */
 async function collectWindowTabs(windowId: number): Promise<SnapshotTab[]> {
   const [rawTabs, rawGroups] = await Promise.all([
     browser.tabs.query({ windowId }),
-    // 与 windowCache 同口径：查询失败不得伪装成「该窗口没有组」——那样这份自动
-    // 快照会静默丢掉全部分组信息，用户只会以为快照本来就没分组。
+    // 与 windowCache 同口径：查询失败不得伪装成「该窗口没有组」——那样这份自动快照会
+    // 静默丢掉全部分组信息，用户只会以为快照本来就没分组。
     tabGroups.query({ windowId }).catch((error) => {
       logDegraded('auto-snapshot', `窗口 ${windowId} 原生组查询失败，本次快照不含分组信息`, error);
       return [];
@@ -65,10 +59,9 @@ export async function runAutoSnapshot(): Promise<void> {
     const settings = await settingsRepository.read();
     if (!settings.autoSaveSnapshots) return;
 
-    // 与 windowCache / autoGroup 共用 `listNormalWindowIds`：三条快照路径此前各判一次
-    // 「哪些窗口算普通窗口」，无痕窗口只会在其中一条路上被写进持久快照。
-    // 查询失败不能退化成空数组：那样本轮会「静默什么都不保存」，
-    // 与「所有窗口都没有可保存标签」在表现上完全一致，自动保存的缺口无从察觉。
+    // 与 windowCache / autoGroup 共用 listNormalWindowIds（窗口类型/无痕口径一致）。
+    // 查询失败不能退化成空数组：那样本轮会「静默什么都不保存」，与「所有窗口都没有
+    // 可保存标签」在表现上完全一致，自动保存的缺口无从察觉。
     const windowIds = await listNormalWindowIds().catch((error) => {
       logDegraded('auto-snapshot', '窗口列表查询失败，本轮未保存任何窗口', error);
       return [] as number[];
@@ -110,10 +103,8 @@ export async function runAutoSnapshot(): Promise<void> {
 }
 
 /**
- * 按设置创建/清除定时闹钟。
- *
- * 周期直接使用用户设置值：alarms 的 periodInMinutes 最小为 1，而设置项下限是 5，
- * 不存在被浏览器静默抬升为 1 分钟的情况（那样会造成远超预期的写入与 SW 唤醒）。
+ * 按设置创建/清除定时闹钟。周期直接用用户设置值：alarms 的 periodInMinutes 最小为 1，
+ * 而设置项下限是 5，不存在被浏览器静默抬升为 1 分钟的情况。
  */
 export async function syncAutoSnapshotAlarm(settings: Settings): Promise<void> {
   try {

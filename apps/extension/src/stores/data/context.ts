@@ -16,38 +16,26 @@ import type { MutateSessionResult } from '@/platform/storage/session';
 import type { DataContext, DataState, MirrorState } from './types';
 
 /**
- * dataStore 共享上下文构造器。
- *
- * 把 890 行单体 store 里的「管道」逻辑（合并写入 / 降级上报 / 镜像调度 / 绑定同步 /
- * 跨页设置回放 / 分区 watcher）集中于此，供各业务切片通过 `ctx` 消费；
- * 同时在此持有导入事务互斥与 watcher 挂起两个模块级标志，避免切片间循环依赖。
+ * dataStore 共享上下文构造器：把合并写入 / 降级上报 / 镜像调度 / 绑定同步 / 跨页设置回放 /
+ * 分区 watcher 集中于此，供各切片通过 `ctx` 消费；并持有导入事务互斥与 watcher 挂起两个模块级标志，
+ * 避免切片间循环依赖。
  */
 let importing = false;
 let watchersSuspended = false;
 /** 清空事务进行中：与导入事务互斥（导入进行中点清空会把已清空的存储回填）。 */
 let clearing = false;
 /**
- * 导入期间「写入被丢弃」已留痕的分区（本会话内只留一次）。
- *
- * 导入事务持续数百 ms，期间拖拽/排序会连续触发 writeFolders —— 每条都打一次降级
- * 日志会在环形缓冲里堆出上百条同文案记录，把真正的故障挤出缓冲（诊断导出是本项目
- * 唯一的排障通道）。先例见 crossPageLock 的 degradeWarned 与 undoStore 的
- * notifiedEvictions：这类「同一原因重复发生」的告知按原因合并一次即可。
+ * 导入期间「写入被丢弃」已留痕的分区（本会话内只留一次）：导入事务持续数百 ms，
+ * 期间连续拖拽触发大量 writeFolders，逐次留痕会用同一句文案刷满诊断缓冲、把真故障挤出去。
  */
 const importDropLogged = new Set<string>();
-/**
- * 已注册 watcher 的退订函数。
- *
- * 运行时刻意不退订：本 store 的生命周期 = 上下文生命周期，watcher 即跨页同步通道。
- * 只在 HMR 重载时统一执行——模块级守卫（settingsWatcherStarted 等）随重载重置，
- * 旧模块实例的监听器却仍挂着并把旧值写回新实例的内存态。
- */
+/** 已注册 watcher 的退订函数。运行时不退订（watcher 即跨页同步通道），只在 HMR 重载时统一执行。 */
 const watcherUnsubscribers: Array<() => void> = [];
 
 /**
  * 有「写入成功」路径的分区各自的降级记账 scope。
- * 其余调用点（设置、折叠态、镜像恢复等）用 'dataStore' 上报，没有对应的成功回调，
- * 因此置起后不会自行复位 —— 那正是我们要的：设置没写成功就不能假装恢复了。
+ * 其余调用点（设置、折叠态、镜像恢复等）用 'dataStore' 上报，没有成功回调、不会自行复位——
+ * 这正是所需：设置没写成功就不能假装恢复。
  */
 const FOLDERS_SCOPE = 'fixed-folders';
 const PINS_SCOPE = 'persistent-pins';
@@ -61,17 +49,13 @@ export function buildDataContext(
   get: () => DataState,
   repos: Repositories
 ): DataContext {
-  // 写入工具：闭包内定义，用 set/get 访问 store，避免模块级声明顺序依赖（no-use-before-define）。
+  // 写入工具在闭包内定义，用 set/get 访问 store，避免模块级声明顺序依赖。
   // 写合并保留 DataRepository.write 的 boolean 语义，便于写失败时上报降级。
-  // 落盘经跨页锁：background 右键菜单对同一分区的 RMW（锁内重读再合并）
-  // 与面板「末值落盘」交错时会互相覆盖（静默丢条目），双方共用一把锁串行化。
+  // 落盘经跨页锁：background 右键菜单的 RMW 与面板「末值落盘」交错会互相覆盖（静默丢条目）。
   /**
    * 落盘通道：写「本页内存算好的整表」，锁只负责与增量写方串行化。
-   *
-   * 不能改成「锁内以磁盘为基线重算」：合并窗口内可能排了多次变更
-   * （createFolder → addTabsToFolder），磁盘此时还没有前一次的结果，拿它当基线
-   * 会让后一次变更算在旧表上，把排队中的改动直接抹掉（已实测会丢条目绑定）。
-   * 内存才是含全部排队变更的权威基线；并发上下文的写入由 value watcher 回放进来。
+   * 不能改成「锁内以磁盘为基线重算」：合并窗口内可能排了多次变更（createFolder → addTabsToFolder），
+   * 磁盘此时还没有前一次结果，拿它当基线会把排队中的改动抹掉。
    */
   const writeFoldersCoalesced = createCoalescedWriter<FixedFolder[], boolean>({
     write: (value) => withCrossPageLock(FOLDERS_RMW_LOCK, () => repos.folders.write(value))
@@ -82,21 +66,16 @@ export function buildDataContext(
 
   /**
    * 镜像写结果回执：失败置起降级横幅、成功清掉。
-   *
-   * 镜像走浏览器账号通道，失败时本地数据**不受影响** —— 正因如此它极易被做成静默，
-   * 而用户会一直以为同步在生效。这里让它与本地落盘失败共用同一条「持久化失败必须
-   * 可见」的纪律（只是 scope 独立，不会被其它分区的写成功连坐清除）。
+   * 镜像走浏览器账号通道，失败时本地数据不受影响，正因如此极易被做成静默——
+   * 这里让它与本地落盘失败共用「持久化失败必须可见」的纪律（scope 独立，不被其它分区连坐清除）。
    */
   syncMirror.setMirrorResultHandlers({
     onFailure: (message, reason) => {
       reportPersistenceFailure(SYNC_MIRROR_SCOPE, message);
-      // 同步状态行必须反映写结果：配额超限等故障下云端仍留着旧镜像，
-      // pull 分类保持 'ok'，只靠它会显示「已生效」，而本次改动其实没上传。
+      // 同步状态行须反映写结果：配额超限等故障下云端仍留旧镜像，pull 分类保持 'ok' 会显示「已生效」。
       if (!get().mirrorWriteFailed) set({ mirrorWriteFailed: true });
-      // 配额超限与「普通写失败」必须可区分：前者是确定性的（重试只会反复撞配额
-      // 并消耗分钟级写配额），UI 要显示「未生效（超出同步容量上限）」而不是
-      // 一句「本次改动未上传」。容量是可由用户处理的事（删掉一些固定条目），
-      // 把两种成因压成一档等于让用户无从下手。
+      // 配额超限是确定性故障（重试只会撞配额），UI 要显示「未生效（超出同步容量上限）」，
+      // 且这是用户可自行处理的（删固定条目），不能与普通写失败压成一档。
       const quotaExceeded = reason === 'quota';
       if (get().mirrorQuotaExceeded !== quotaExceeded) set({ mirrorQuotaExceeded: quotaExceeded });
     },
@@ -109,25 +88,21 @@ export function buildDataContext(
 
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
   const scheduleMirror = (state: MirrorState): void => {
-    // 开关即闸门：未开启时一次 sync 写入都不发。无条件镜像会让用户在
-    // 完全无感知的情况下把完整收藏 URL 推上浏览器账号通道。
+    // 开关即闸门：未开启时一次 sync 写入都不发，否则会在用户无感知下把收藏 URL 推上账号通道。
     if (!state.settings.syncMirrorEnabled) return;
     syncMirror.schedule({ folders: state.folders, pins: state.pins, settings: state.settings });
   };
 
   /**
-   * 处于降级状态的持久化分区。
-   *
-   * 按分区记账（而非一个全局布尔）是必需的：`storageDegraded` 只有一个，
-   * 但写入路径有四条（folders / pins / 会话绑定 / 设置等）。若「任一分区写成功就复位
-   * 全局标志」，一次 settings 写失败会被随后一次 folders 写成功悄悄抹掉 —— 用户看到
-   * 横幅消失，实际设置从未保存。记账后只有**所有**分区都恢复，横幅才消失。
+   * 处于降级状态的持久化分区。按分区记账（而非全局布尔）是必需的：写入路径有四条，
+   * 若「任一分区写成功就复位全局标志」，一次 settings 写失败会被随后 folders 写成功悄悄抹掉。
+   * 记账后只有**所有**分区都恢复，横幅才消失。
    */
   const degradedScopes = new Set<string>();
 
   /**
-   * 持久化失败统一上报：置起 storageDegraded 供 UI 提示，并写入诊断日志。
-   * 禁止在写入失败后继续展示成功——「界面显示成功但重启即丢失」是信任事故。
+   * 持久化失败统一上报：置起 storageDegraded 供 UI 提示并写入诊断日志。
+   * 写入失败后禁止继续展示成功——「界面显示成功但重启即丢失」是信任事故。
    */
   function reportPersistenceFailure(scope: string, message: string): void {
     degradedScopes.add(scope);
@@ -136,8 +111,7 @@ export function buildDataContext(
   }
 
   /**
-   * 某分区写入成功：只清除它自己的降级记录。
-   * 仍保留「成功即复位」的语义（quota 抖动恢复后告警要消失），但不再连坐其他分区。
+   * 某分区写入成功：只清除它自己的降级记录（quota 抖动恢复后告警要消失），但不连坐其他分区。
    */
   function clearDegraded(scope: string): void {
     if (!degradedScopes.delete(scope)) return;
@@ -151,12 +125,8 @@ export function buildDataContext(
   }
 
   /**
-   * 复位镜像失败态（关闭同步 / 清空数据时调用）。
-   *
-   * 镜像的降级计数只由写成功回调（`onSuccess`）复位，而**关闭同步后不再有任何
-   * 镜像写入**——那条回调永远不会到来。若不在此显式复位，「镜像写入失败」的
-   * 降级横幅与 `mirrorWriteFailed` 会永久粘住，而此时本地数据其实完好、用户
-   * 也已经明确关掉了同步：提示既过时又错配。
+   * 复位镜像失败态（关闭同步 / 清空数据时调用）：镜像降级只由 onSuccess 复位，关闭同步后不再有
+   * 镜像写入、该回调永不到来，不显式复位会让横幅与 mirrorWriteFailed 永久粘住。
    */
   function resetMirrorFailure(): void {
     clearDegraded(SYNC_MIRROR_SCOPE);
@@ -167,33 +137,28 @@ export function buildDataContext(
   async function writeFolders(
     arg: FixedFolder[] | ((current: FixedFolder[]) => FixedFolder[])
   ): Promise<void> {
-    // 导入事务进行中：高频拖拽写入挂起，避免与导入的串行写交错、把导入结果覆盖回旧值。
-    // 内存态由 importData 统一提交，此处直接放弃落盘与镜像。
+    // 导入事务进行中：高频拖拽写入挂起，避免与导入的串行写交错覆盖导入结果；内存态由 importData 统一提交。
     if (importing) {
-      // 丢弃必须可观测：否则表现为「拖了没反应」，且诊断里查不到原因。
-      // 但同一原因本会话内只留一次（见 importDropLogged）：导入期间拖拽是连续的，
-      // 逐次留痕会用同一句文案刷满诊断环形缓冲，把真故障挤出去。
+      // 丢弃必须可观测，但同一原因本会话只留一次（见 importDropLogged），否则刷满诊断缓冲。
       if (!importDropLogged.has(FOLDERS_SCOPE)) {
         importDropLogged.add(FOLDERS_SCOPE);
         logDegraded('dataStore', '导入事务进行中，本次固定空间写入已丢弃（内存态不更新）');
       }
       return;
     }
-    // updater 形态在执行这一刻取最新基线重算：get→算→set 无 await 间隙（单线程），
-    // 入口基线过期互覆的窗口归零；跨页交错由落盘通道的 FOLDERS_RMW_LOCK 串行化。
+    // updater 形态在执行这一刻取最新基线重算：get→算→set 无 await 间隙，入口基线过期互覆窗口归零。
     const folders = typeof arg === 'function' ? arg(get().folders) : arg;
     // 先更新内存态（UI 即时响应），storage 落盘合并为最终值。
     set({ folders });
     const ok = await writeFoldersCoalesced(folders);
-    // 落盘失败不回滚内存态（重排/新增等高频操作回滚会造成界面跳动），
-    // 但必须置起降级标志，让 UI 明确告知「可能未保存」而不是假装成功。
+    // 落盘失败不回滚内存态（高频操作回滚会造成界面跳动），但必须置起降级标志。
     if (ok === false) {
       reportPersistenceFailure(FOLDERS_SCOPE, '固定文件夹写入失败，重启后可能丢失本次改动');
     } else {
       // 写入成功证明该分区已恢复（如 quota 抖动后回到可用）。
       clearDegraded(FOLDERS_SCOPE);
     }
-    // 本地落盘失败时不镜像：否则会把未落盘的内存态推上 sync，造成 local/sync 终态不一致。
+    // 本地落盘失败时不镜像：否则把未落盘的内存态推上 sync，造成 local/sync 终态不一致。
     if (ok !== false) scheduleMirror(get());
   }
 
@@ -230,9 +195,8 @@ export function buildDataContext(
     if (ok !== false) scheduleMirror(get());
   }
 
-  // 跨页面设置同步：设置页与侧边栏各自持有独立 dataStore 实例，
-  // 通过 storage.onChanged 感知其他页面写入的设置并实时应用（否则改完设置需重开面板才生效）。
-  // 另提供 refreshSettings（重新读存储）与 settings-synced 广播消息作为双保险。
+  // 跨页面设置同步：设置页与侧边栏各自持有独立 dataStore 实例，通过 storage.onChanged
+  // 感知其他页面写入的设置并实时应用；另提供 refreshSettings 与 settings-synced 广播作为双保险。
   const syncSettingsFromStorage = async (): Promise<void> => {
     // 导入事务进行中：内存态由事务统一提交，watcher 不得插手。
     if (watchersSuspended) return;
@@ -243,8 +207,7 @@ export function buildDataContext(
         set({ settings: next });
       applyTheme(next.themePreference, next.colorTheme);
     } catch (error) {
-      // 读取失败保持当前状态。必须走诊断管道而非 console.warn：后者无法被
-      // 「导出诊断」读到，设置回读失败会变成不可观测的静默降级。
+      // 读取失败保持当前状态，且必须走诊断管道而非 console.warn（后者无法被「导出诊断」读到）。
       logDegraded('dataStore', '设置回读失败，保持当前设置', error);
     }
   };
@@ -260,10 +223,8 @@ export function buildDataContext(
   };
 
   /**
-   * 数据分区 watcher（folders / pins / collapse）。
-   *
-   * 守卫是必需的：`initialize` 失败时会回滚 `initialized` 允许重入，若无守卫则
-   * 每次重试都再注册三个监听器 —— 同一次变更被回放 N 次，表现为界面闪烁与重复写盘。
+   * 数据分区 watcher（folders / pins / collapse）。守卫是必需的：initialize 失败会回滚 initialized
+   * 允许重入，若无守卫每次重试都再注册三个监听器，同一次变更被回放 N 次（界面闪烁 + 重复写盘）。
    */
   const startValueWatchers = (): void => {
     if (valueWatchersStarted) return;
@@ -329,9 +290,7 @@ export function buildDataContext(
   };
 }
 
-// HMR 重载时退订 watcher（见 watcherUnsubscribers 的注释）：模块级守卫（模块被
-// 替换后新实例自带全新副本，故此处不必复位）会随重载重置，旧监听器却仍挂在
-// storage.onChanged 上并把旧值写回新实例。
+// HMR 重载时退订 watcher：模块级守卫随重载重置，旧监听器却仍挂在 storage.onChanged 上并写回旧值。
 import.meta.hot?.dispose(() => {
   for (const unsubscribe of watcherUnsubscribers) unsubscribe();
   watcherUnsubscribers.length = 0;

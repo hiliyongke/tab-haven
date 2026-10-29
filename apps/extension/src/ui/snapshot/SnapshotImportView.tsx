@@ -80,8 +80,7 @@ export function SnapshotImportView({
         </Button>
         {/* 改走 Button：手写版少了 disabled:* 全族，且字号/圆角与其余按钮
             不在同一套刻度上。 */}
-        {/* 内容为空时禁用：此前点下去会把「什么都没粘贴」报成
-            「该快照没有可恢复的标签」—— 用户以为导入成功却拿到空快照。 */}
+        {/* 内容为空时禁用：否则会把「什么都没粘贴」报成「该快照没有可恢复的标签」。 */}
         <Button variant="primary" size="xs" disabled={text.trim().length === 0} onClick={onImport}>
           {t('导入')}
         </Button>

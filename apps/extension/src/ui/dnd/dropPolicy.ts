@@ -1,19 +1,8 @@
 /**
- * 拖拽投放契约：**唯一**决定「什么能放到哪里」的地方。
- *
- * 拖拽有三个消费方，过去它们各自判断投放能力，必然漂移：
- *  1. 落点视觉（GroupCard / FixedArea / PinnedStrip / FolderItemRow）—— 决定高不高亮；
- *  2. 松手执行（ui/hooks/useTabDragHandlers）—— 决定做不做、做什么；
- *  3. 拒绝反馈 —— 决定提示什么。
- * 「高亮了却不动」「没高亮却真的动了」全部源于 1 与 2 用了两套判断。
- *
- * 这里把判断收敛成两级：
- *  - `classifyDrop`：纯结构判定（源类型 × 落点类型），与设置无关。视觉层用它，
- *    因此「亮不亮」与「放不放得进去」永远同源。
- *  - `resolveDrop`：结构判定 + 全局闸门（导入事务 / 排序开关 / 视图语义 / 虚拟化）。
- *    执行层用它，被闸门拦下的动作必定附带原因，不再静默。
- *
- * 分层：ui 层纯函数，零 chrome / DOM / React。
+ * 拖拽投放契约：唯一决定「什么能放到哪里」的地方。三个消费方（落点视觉、松手执行、
+ * 拒绝反馈）过去各自判断必然漂移，导致「高亮了却不动」「没高亮却真的动了」。
+ * 判断收敛成两级：classifyDrop 纯结构判定（源类型 × 落点类型，视觉层用），
+ * resolveDrop 结构判定 + 全局闸门（执行层用，被闸门拦下必带原因）。ui 层纯函数，零 DOM。
  */
 
 import {
@@ -147,9 +136,8 @@ function classifySectionDrop(active: SectionDragData, over: DropTargetData): Dro
   const folderId = folderIdOf(over);
   if (folderId !== undefined) return accept({ kind: 'move-tabs-to-folder', folderId });
   if (isFixedArea(over)) return accept({ kind: 'create-folder' });
-  // 磁贴区是「单个常用页面」的集合，整组塞进去会破坏它的粒度语义。
-  // 注意：碰撞检测把分组拖拽限制在卡片层级（cardContainers），所以 Pin 本身
-  // 到不了这里，真正可达的是整条 `pinned-strip`。
+  // 磁贴区是单标签粒度，整组塞进去会破坏语义；碰撞检测限制在卡片层级，
+  // 真正可达的是整条 pinned-strip 而非单个 Pin。
   if (over.type === DragType.Pin || isPinnedStrip(over)) return reject('section-to-pin');
   // 标签行同理不在分组的候选集里：落到这里只可能是契约被单独调用，按兜底处理。
   return reject('unsupported');
@@ -212,15 +200,9 @@ function classifyPinDrop(active: PinDragData, over: DropTargetData): DropOutcome
 }
 
 /**
- * 结构判定：只看「源类型 × 落点类型」，不看任何开关。
- *
- * 视觉层必须用这个而不是 `resolveDrop`：设置闸门会让整个界面同时变成不可投放，
- * 而「这个位置本来就不收」才是需要提前画出来的。
- *
- * 实现按**拖起的类型**分成五个单职责函数：原先全挤在一个函数里时 35 个 if
- * 层层嵌套，改一条落点规则要在 240 行的上下文里定位；分拆后每个函数只回答
- * 「这一类东西能放到哪里」，`switch (active.type)` 由 TypeScript 收窄成具体
- * 的 data 形态，各函数内无需再判 `active.type`。
+ * 结构判定：只看「源类型 × 落点类型」，不看开关（视觉层用，设置闸门会让整个界面
+ * 同时变不可投放，而「这里本来不收」才需要提前画出来）。按拖起的类型分五个单职责
+ * 函数，switch 由 TypeScript 收窄成具体 data 形态，各函数内无需再判 active.type。
  */
 export function classifyDrop(active: DragData, target: DropTarget): DropOutcome {
   const over = target.data;
@@ -236,9 +218,7 @@ export function classifyDrop(active: DragData, target: DropTarget): DropOutcome 
       return classifyFolderDrop(active, over);
     case DragType.Pin:
       return classifyPinDrop(active, over);
-    // 未登记的拖拽类型：返回类型是不可空的 DropOutcome，漏了 default 分支会
-    // 隐式返回 undefined —— 落点视觉与松手执行两侧都按「没有结果」处理，
-    // 表现为拖过去既不亮也不动，且没有任何一处能看出原因。
+    // 未登记的拖拽类型：漏 default 会隐式返回 undefined，落点两侧都当「没有结果」处理。
     default:
       return reject('unsupported');
   }
@@ -246,9 +226,7 @@ export function classifyDrop(active: DragData, target: DropTarget): DropOutcome 
 
 /**
  * 会写固定空间（folders / pins）的动作：导入事务期间必须整体拒绝。
- *
- * 不含 `join-group` / `unpin-tab`：它们只改浏览器侧（标签组归属、固定位），
- * 不参与备份事务的串行写，拦下来没有依据。
+ * 不含 join-group / unpin-tab：它们只改浏览器侧，不参与备份事务的串行写。
  */
 const WRITES_FIXED_SPACE: ReadonlySet<DropAction['kind']> = new Set([
   'move-tabs-to-folder',
@@ -263,10 +241,8 @@ const WRITES_FIXED_SPACE: ReadonlySet<DropAction['kind']> = new Set([
 ]);
 
 /**
- * 完整判定：结构 + 全局闸门。执行层用这个，被拒时必定带回原因。
- *
- * 闸门顺序固定，保证同一个拒绝只对应一个原因（提示不会互相覆盖）：
- * 导入事务 → 排序开关 → 视图模式 → 虚拟化。
+ * 完整判定：结构 + 全局闸门，执行层用，被拒时必定带回原因。
+ * 闸门顺序固定保证同一拒绝只对应一个原因：导入事务 → 排序开关 → 视图模式 → 虚拟化。
  */
 export function resolveDrop(active: DragData, target: DropTarget, ctx: DropContext): DropOutcome {
   const base = classifyDrop(active, target);
@@ -292,12 +268,9 @@ export function resolveDrop(active: DragData, target: DropTarget, ctx: DropConte
 }
 
 /**
- * 落点反馈 class：三态一一对应判定结果，供所有 droppable 共用。
- * `noop` 不给反馈——拖回原位没有变化，画个高亮反而像「放进去会做事」。
- *
- * 入参必须是 `classifyDrop` 的结果，不要传 `resolveDrop`：设置闸门（排序开关 /
- * recency / 导入事务）是全局状态，叠进视觉会让整块界面同时变灰。落点只说
- * 「这里收不收这类东西」，全局闸门留给松手时的统一提示。
+ * 落点反馈 class：三态对应判定结果，供所有 droppable 共用。noop 不给反馈（拖回原位
+ * 没有变化，画高亮反像「会做事」）。入参必须是 classifyDrop 的结果而非 resolveDrop：
+ * 设置闸门是全局状态，叠进视觉会让整块界面同时变灰。
  */
 export function dropFeedbackClass(isOver: boolean, outcome: DropOutcome | undefined): string {
   if (!isOver || !outcome) return '';

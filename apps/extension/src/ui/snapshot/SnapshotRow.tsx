@@ -40,7 +40,7 @@ interface SnapshotRowProps {
 }
 
 /**
- * diff 条目的匹配键（与原先 map 内 `find` 的比较条件一致：url 与 title 同时相等）。
+ * diff 条目的匹配键（url 与 title 同时相等）。
  *
  * 分隔符用 `\u0000`：URL 与标题都可含任意可见字符，用可见分隔符会出现
  * 「a + bc」与「ab + c」撞键，把不存在的条目判成已存在。
@@ -75,10 +75,8 @@ export function SnapshotRow({
   /**
    * 展开清单的 diff 查表：把 willCreate / existing 预建成 Set，行内查表 O(1)。
    *
-   * 原实现在 `snap.tabs.map` 内对两个数组各做一次线性 find —— 复杂度
-   * O(条目数 × diff 条目数)：快照上限 30 份、单份数百条标签时，展开一份即数万次
-   * 比较，连点展开/收起会明显掉帧。预建 Set 后与 diff 规模无关。
-   * 键用 diffEntryKey（url + title），与原先 find 的判定完全等价。
+   * 预建 Set 把行内查表从 O(条目数 × diff 条目数) 降到 O(1)：单份数百条标签时，
+   * 朴素双循环展开一份即数万次比较，连点展开/收起会掉帧。键为 diffEntryKey（url + title）。
    */
   const diffIndex = useMemo(() => {
     if (!diff) return undefined;
@@ -189,8 +187,8 @@ export function SnapshotRow({
              不可分；改为静默中性、hover/focus 转红（与 .row-action.is-danger
              同口径），并扩到 28px 命中区。
              危险态走 .row-action.is-danger 统一入口：手写 hover:bg-red-50 /
-             hover:text-red-600 是同一语义的第二份实现，改一处漏一处；且此前
-             另加的 text-gray-400 把静默态压到 2.68:1（低于非文本的 3:1）。 */}
+             hover:text-red-600 是同一语义的第二份实现，改一处漏一处；静默态若加
+             text-gray-400 会压到 2.68:1（低于非文本的 3:1）。 */}
           <RowActionButton
             icon={Icons.trash}
             label={t('删除')}

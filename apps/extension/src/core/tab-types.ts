@@ -1,8 +1,6 @@
 /**
  * 领域层最小 Tab 类型（与 chrome.tabs.Tab 结构兼容的子集）。
- *
- * core 层零 chrome 依赖：platform/tabs 负责把 chrome.tabs.Tab 映射为
- * TabRecord；其余各层只消费 TabRecord。
+ * core 层零 chrome 依赖：platform/tabs 负责把 chrome.tabs.Tab 映射为 TabRecord，其余各层只消费它。
  */
 export interface TabRecord {
   id: number;
@@ -27,26 +25,22 @@ export interface TabRecord {
   splitViewId?: number;
   /**
    * 最后访问时间戳（ms），用于「最近访问」**排序**。
-   *
-   * 面板侧该值被 `mergeSnapshotTabs` **冻结**在「标签首次出现」的时刻（见下方
-   * 合并注释），语义是「排序键」，不是「真实最近激活时刻」。
+   * 面板侧该值被 `mergeSnapshotTabs` 冻结在「标签首次出现」的时刻（见下方合并注释），
+   * 语义是「排序键」，不是「真实最近激活时刻」。
    */
   lastAccessed?: number;
   /**
    * 浏览器**实时**的最近激活时间戳（ms），不冻结（`mergeSnapshotTabs` 不保留旧值）。
    *
-   * 两个时间戳并存的理由：它们回答的是两个不同的问题，任何一侧被另一侧顶替
-   * 都会产生缺陷 ——
-   *  - `lastAccessed` 冻结是**排序稳定性**的要求：浏览器每次激活/导航都刷新它，
-   *    照单全收会让「最近访问」分区与行随每次切换标签全量重排；
-   *  - 但冻结值对**时间判定**是错的：滞留预警（7 天未激活）与 keeper 判定
-   *    （留最近用过的）问的是「真实最近一次激活在什么时候」。用冻结值会把
-   *    「8 天前打开、刚刚才切过的标签」判成「8 天没动过」，并与后台复用引擎
-   *    （直查浏览器实时值）口径分叉 —— 两处对同一组标签选出不同的保留者。
+   * 两值并存因为它们回答两个不同问题：
+   *  - `lastAccessed` 冻结是**排序稳定性**要求：浏览器每次激活/导航都刷新它，照单全收会让
+   *    「最近访问」分区与行随每次切换标签全量重排；
+   *  - 但冻结值对**时间判定**是错的：滞留预警与 keeper 判定问的是「真实最近一次激活在什么时候」，
+   *    用冻结值会把「8 天前打开、刚刚才切过的标签」判成「8 天没动过」，并与后台复用引擎
+   *    （直查浏览器实时值）口径分叉——两处对同一组标签选出不同的保留者。
    *
-   * 因此分工固定：**排序消费 `lastAccessed`（冻结），时间判定消费
-   * `lastActivatedAt`（实时）**。回退到 `lastAccessed` 只在 `lastActivatedAt`
-   * 缺失时发生（非 chrome 来源的合成记录），不影响任何真实路径。
+   * 分工固定：**排序消费 `lastAccessed`（冻结），时间判定消费 `lastActivatedAt`（实时）**。
+   * 回退到 `lastAccessed` 只在 `lastActivatedAt` 缺失时发生（非 chrome 来源的合成记录）。
    */
   lastActivatedAt?: number;
   /** 是否允许被浏览器自动休眠（chrome.tabs.autoDiscardable）。 */
@@ -124,11 +118,10 @@ const TAB_FIELDS = [
 ] as const satisfies readonly (keyof TabRecord)[];
 
 /**
- * 完备性断言：satisfies 只保证「列出的都是合法字段」，不能保证「全部字段都已列出」。
- *
+ * 完备性断言：satisfies 只保证「列出的都是合法字段」，不保证「全部字段都已列出」。
  * 断言直接挂在函数类型上：漏登记字段时标注退化为 `never`，箭头函数赋值即编译失败。
- * （曾写成 `const x: … = true; void x;`——那条 void 语句不产生任何效果，删掉它
- * 编译、lint、测试全绿，而完备性约束静默失效。）
+ * （曾写成 `const x: … = true; void x;`——那条 void 语句不产生任何效果，删掉它编译、lint、
+ * 测试全绿，而完备性约束静默失效。）
  */
 const sameTabFields: Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> extends never
   ? (a: TabRecord, b: TabRecord) => boolean
@@ -142,19 +135,13 @@ const sameTabFields: Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> exten
 /**
  * 快照合并：把浏览器新快照并入面板侧镜像（tabStore 订阅 TabSyncService 时调用）。
  *
- * 面板侧在 chrome.tabs.Tab 之外维护两类「镜像增量信息」，快照广播不含它们，
- * 需按 id 从上一帧保留：
- *  - language：面板异步探测的结果。仅 URL 未变时保留（已导航则需重新探测）；
- *  - lastAccessed（排序冻结）：浏览器会在每次激活/导航时刷新该时间戳，
- *    若照单全收，「最近访问」排序会随每次切换标签全量重排（分区与行不停跳动）。
- *    这里对既有标签冻结旧值——排序只在「新页面打开」（新 id 首次出现）时
- *    一次性纳入：新标签以最新时间戳就位，其余标签保持既有相对顺序。
+ * 面板侧在 chrome.tabs.Tab 之外维护两类「镜像增量信息」，快照广播不含它们，需按 id 从上一帧保留：
+ *  - language：面板异步探测的结果，仅 URL 未变时保留（已导航则需重新探测）；
+ *  - lastAccessed（排序冻结）：浏览器每次激活/导航都刷新它，照单全收会让「最近访问」分区与行
+ *    随每次切换标签全量重排。这里对既有标签冻结旧值——新标签以最新时间戳就位，其余保持相对顺序。
  *
- * 背景侧（自动休眠 / 复用合并）不经过此函数：它们直接查询浏览器拿实时
- * lastAccessed，不受冻结影响。
- *
- * `lastActivatedAt` 刻意**不冻结**（没有 `prev.lastActivatedAt` 的保留分支）：
- * 它是给时间判定用的实时值，冻结它就退化成第二个 `lastAccessed`。
+ * 背景侧（自动休眠 / 复用合并）不经过此函数：它们直查浏览器拿实时 lastAccessed。
+ * `lastActivatedAt` 刻意**不冻结**：它是给时间判定用的实时值，冻结就退化成第二个 `lastAccessed`。
  */
 export function mergeSnapshotTabs(
   prevTabs: readonly TabRecord[],

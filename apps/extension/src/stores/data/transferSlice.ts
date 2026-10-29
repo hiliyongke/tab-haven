@@ -22,13 +22,7 @@ import { isExportableUrl, readBookmarkBar } from '@/platform/bookmarks';
 import type { DataContext, DataSlice } from './types';
 import type { FixedFolder, FixedFolderItem } from '@/core/schema/models';
 
-/**
- * 按名把条目并入固定空间：同名文件夹已存在则追加，否则新建。
- *
- * 唯一实现：两处导入路径（书签栏的具名文件夹、散落条目的「书签导入」兜底文件夹）
- * 曾各写一遍 find/map/append —— 任何一侧漏改（如去重口径、新建时的模型字段）
- * 都会让两条路径的落库形态分叉，而这种分叉只在导入结果里可见。
- */
+/** 按名把条目并入固定空间：同名文件夹追加，否则新建（书签栏与散落条目两处导入共用）。 */
 function mergeFolderByName(
   current: readonly FixedFolder[],
   name: string,
@@ -46,15 +40,7 @@ function mergeFolderByName(
   return { next: [...current, { ...createFolderModel(name), items: [...items] }], created: true };
 }
 
-/**
- * 单分区回滚：吞掉异常，只回报是否还原成功。
- *
- * 回滚本身是 `withCrossPageLock` 内的整表写，锁请求在上下文销毁（面板在回滚途中
- * 关闭）时以 AbortError reject 并向外透传。若让这个异常冒出回滚循环，后续分区
- * 一个都不会回滚 —— 存储里留下「一半导入值 + 一半旧值」的半套数据，与
- * `PRIVACY.md` 承诺的「整体回滚，不会留下半套数据」相反，且用户拿到的是锁错误
- * 而非可解释的导入失败。失败分区名由调用方收集后统一上报。
- */
+/** 单分区回滚：吞掉锁异常（AbortError 等）只回报成败，避免中断整个回滚链留下半套数据。 */
 async function safeRollback(step: {
   name: string;
   rollback: () => Promise<boolean>;
@@ -74,13 +60,7 @@ export function createTransferSlice(
   ctx: DataContext
 ): DataSlice<'exportData' | 'importData' | 'importBookmarksFromBar'> {
   return {
-    /**
-     * 导出为完整备份：固定空间 + 设置 + 全部快照族。
-     *
-     * 快照直读仓库而非内存桥：导出入口在设置页，而设置页从不加载 snapshotStore——
-     * 走内存桥会静默导出 `snapshots: []`，用户拿这份备份恢复时快照全丢。
-     * 直读仓库同时拿到最新值（面板打开期间 background 可能写入关窗自动快照）。
-     */
+    /** 导出完整备份。快照直读仓库：设置页不加载 snapshotStore，走内存桥会静默导出空数组。 */
     exportData: async () => ({
       format: 'tabs.export' as const,
       version: EXPORT_FILE_VERSION,
@@ -92,23 +72,13 @@ export function createTransferSlice(
       snapshots: await ctx.repos.snapshots.read()
     }),
 
-    /**
-     * 导入为事务：五个分区（文件夹 / 固定图标 / 折叠态 / 设置 / 快照族）全部落盘成功后才切换内存态。
-     *
-     * 必须串行写 + 失败回滚，不能用 Promise.all 并发写只看是否 reject：
-     * DataRepository.write 以 boolean 表达失败，并发写法会让「部分分区写成功」也
-     * 整体提示导入成功，用户以为已完成备份迁移。任一分区写失败即把已写入的分区
-     * 还原为导入前的值。
-     */
+    /** 事务化导入：五个分区全部落盘成功才切内存态；任一分区写失败即回滚已写入的分区。 */
     importData: async (raw) => {
-      // 互斥：并发导入（或导入期间拖拽重排走 coalesced 通道）会让分区写交错，
-      // 回滚只能回到「对方的中间态」。导入是低频重操作，直接拒绝重入。
+      // 互斥：并发导入或与清空事务并发会让分区写交错、回滚只能回到对方中间态。
       if (ctx.isImporting()) throw new Error('import-in-progress');
-      // 与清空事务互斥：清空进行中导入，导入事务会把已清空的存储回填（反之亦然）。
       if (ctx.isClearing()) throw new Error('clear-in-progress');
       const parsed = parseExportFile(raw);
       if (!parsed.success) {
-        // 版本不匹配单独抛出：UI 要给出「请用导出时的版本导入」的可操作提示。
         throw new Error(
           parsed.reason === 'version-mismatch' ? 'export-version-mismatch' : 'invalid-tabs-export'
         );
@@ -116,18 +86,13 @@ export function createTransferSlice(
       const data = parsed.data;
 
       ctx.setImporting(true);
-      // 同步到 store 状态：导入期间固定空间写入会被丢弃，UI 必须能看见这个状态，
-      // 否则拖拽「没反应」无从解释（见 DataState.importing）。
       ctx.set({ importing: true });
-      // 导入期间挂起 watcher 回写：storage.onChanged 在写入方本页同样触发，
-      // 若放任其回写内存，会出现「UI 已显示导入后数据、随后写入失败回滚」的窗口。
+      // 导入期间挂起 watcher 回写：storage.onChanged 会在本页同样触发，避免回滚窗口的内存抖动。
       ctx.setWatchersSuspended(true);
       try {
-        // 丢弃导入开始前已排队/在途的合并写入（携带旧数据），避免其与导入的串行写交错、
-        // 把导入结果覆盖回旧值。cancelWrites 返回时写入器已空闲，后续读 before / 串行写均安全。
+        // 丢弃已排队/在途的合并写入，避免与导入的串行写交错把结果覆盖回旧值。
         await ctx.cancelWrites();
-        // 回滚值一律直读磁盘：内存态可能已被 watcher 或另一页面改写，
-        // 用内存值回滚会把别人的数据反向覆盖到磁盘（回滚本身变成数据丢失）。
+        // 回滚值直读磁盘：内存态可能已被 watcher 或另一页面改写，用它回滚等于反向丢数据。
         const [beforeFolders, beforePins, beforeCollapse, beforeSettings, beforeSnapshots] =
           await Promise.all([
             ctx.repos.folders.read(),
@@ -143,9 +108,7 @@ export function createTransferSlice(
           settings: beforeSettings,
           snapshots: beforeSnapshots
         };
-        // 备份文件可被任意构造：含重复 identity 的 pin / 重复 URL 条目若原样提交，
-        // 会立即渲染出重复磁贴与重复条目（其余路径均做去重，导入必须同口径）。
-        // 顺序保持原序，按「全空间首见保留」清理，与固定空间的唯一性不变量一致。
+        // 备份可被任意构造：重复 identity/URL 按「全空间首见保留」清理，与固定空间唯一性一致。
         const importedPins = dedupePins(data.persistentPins);
         const seenKeys = new Set<string>();
         const importedFolders = data.fixedFolders.map((folder) => ({
@@ -158,17 +121,9 @@ export function createTransferSlice(
             return true;
           })
         }));
-        // 会「替用户做出授权动作」的开关一律不随备份迁移：备份文件可被任意构造，
-        // 保留用户当下的选择——要开必须是一次显式操作。
-        //  - syncMirrorEnabled：为 true 时导入即会在 500ms 后把全部固定 URL 推上
-        //    浏览器账号通道，用户完全无感知；
-        //  - noCacheEnabled：为 true 时导入即会让 noCachePatterns 编译出的 DNR
-        //    规则立即生效（platform/background/noCache）。用户此前授予的
-        //    <all_urls> optional 权限是给**自己点开的那个开关**用的，备份里的
-        //    true 等于绕过这次授权动作，与同步开关同性质。
-        // 而 noCachePatterns 列表照常导入：它在 schema 层已归一化（DNR 通配/锚定
-        // 这类非法语法在解析时被丢弃），开关关闭时这份列表完全无副作用，是纯配置
-        // 数据——排除它会让用户「攒了很久的站点清单」在换机后凭空消失。
+        // 会「替用户做出授权动作」的开关不随备份迁移（要开必须显式操作）：
+        // syncMirrorEnabled=true 会静默把固定 URL 推上云；noCacheEnabled=true 会让 DNR 规则立即生效。
+        // noCachePatterns 列表照常导入（schema 层已归一化，开关关闭时无副作用）。
         const importedSettings: Settings = {
           ...data.settings,
           syncMirrorEnabled: before.settings.syncMirrorEnabled,
@@ -180,10 +135,7 @@ export function createTransferSlice(
           write: () => Promise<boolean>;
           rollback: () => Promise<boolean>;
         }[] = [
-          // folders / pins 同样必须走各自的 RMW 锁：导入事务持续数百 ms，期间
-          // background 的右键菜单加条目（contextMenus.addEntryToFolder）与面板的
-          // coalesced 写都在锁内做 read→合并→write，锁外整表写会被它们覆盖丢失
-          // （反之亦然）。与下方 snapshots 同一口径。
+          // 各分区走各自 RMW 锁：导入期间 background 右键写入/面板 coalesced 写都在锁内 RMW。
           {
             name: 'folders',
             write: () =>
@@ -215,9 +167,6 @@ export function createTransferSlice(
             rollback: () =>
               withCrossPageLock(SETTINGS_RMW_LOCK, () => ctx.repos.settings.write(before.settings))
           },
-          // 快照可能体积较大，放在最后：前面任一分区失败时不必先写再回滚大数据块。
-          // 快照分区必须走 SNAPSHOTS_RMW_LOCK：导入事务持续数百 ms，期间 background
-          // 的关窗自动保存/定时快照在锁内 RMW，锁外整表写会把它们覆盖丢失（反之亦然）。
           {
             name: 'snapshots',
             write: () =>
@@ -238,14 +187,10 @@ export function createTransferSlice(
             done.push(step);
             continue;
           }
-          // 回滚已写入的分区；回滚本身失败仅告警（尽力而为），但必须在错误信息中如实告知。
+          // 回滚已写入分区；回滚本身失败仅告警（尽力而为），但须在错误信息中如实告知。
           const rollbackFailures: string[] = [];
           for (const written of done) {
-            // 每个 rollback 都必须包异常保护：其内部是 withCrossPageLock，锁请求在
-            // 上下文销毁（回滚途中关闭面板）时以 AbortError reject，且该错误会向外
-            // 透传。不接住它，循环就在第一个分区处中断——剩余分区不再回滚（留下半套
-            // 数据，与「整体回滚」的承诺相反），抛出的也变成不可解释的锁错误而非
-            // 下面的 import-write-failed。
+            // 每个 rollback 包异常保护：锁请求在面板关闭时以 AbortError reject，不中断回滚链。
             const restored = await safeRollback(written);
             if (!restored) rollbackFailures.push(written.name);
           }
@@ -261,22 +206,13 @@ export function createTransferSlice(
           pins: importedPins,
           collapsedSites: data.siteCollapse,
           settings: importedSettings,
-          // 整表替换后旧结论不再成立：mirrorIssue 是「上一次镜像拉取」的分类
-          // （已生效 / 未生效 / 超出容量…），导入换了整份数据，继续显示它会把
-          // 导入前的状态挂到导入后的数据上。与 settingsSlice 清空数据时的
-          // 复位口径一致（清空即无结论，等下一次拉取重新给出）。
+          // 整表替换后旧镜像结论不再成立，复位等下一次拉取重新给出。
           mirrorIssue: null
         });
-        // 绑定整表失效：备份整表替换了 folders，而会话绑定（item id → tab id）的
-        // 有效性只校验「item 与 tab 都还存在」，不校验 URL 是否仍匹配（见
-        // core/fixed/Reconcile 的 reconcileBindings）。导入后同 id 的条目可能已指向
-        // 另一个网址，残留绑定会把无关标签从临时区排除（表现为「标签凭空消失」），
-        // 且点击该条目会激活一个内容不相干的标签。清空后由下一次
-        // reconcileWithTabs 按 URL 精确重建。
+        // 绑定整表失效：备份替换了 folders，同 id 条目可能指向另一个网址，残留绑定会把无关标签
+        // 从临时区排除/点击激活不相干标签。清空后由 reconcileWithTabs 按 URL 精确重建。
         const rebound = await mutateSession(() => ({ itemTabBindings: {} }));
         ctx.applyBindings(rebound);
-        // 快照属于 snapshotStore 的内存态：本 store 不持有，交由其自行感知仓库变更
-        // （snapshotStore.load 已 watch 仓库，写入后会自动同步列表与角标）。
         applyTheme(importedSettings.themePreference, importedSettings.colorTheme);
         ctx.scheduleMirror(ctx.get());
         ctx.broadcastSettingsSynced();
@@ -291,16 +227,12 @@ export function createTransferSlice(
       const bar = await readBookmarkBar();
       let foldersCreated = 0;
       let itemsImported = 0;
-      // updater：readBookmarkBar 的 await 期间基线可能已变（并发文件夹操作），
-      // 合并必须以写前一刻的最新 folders 重放，否则整表回写会覆盖那些变更。
+      // updater：readBookmarkBar 的 await 期间基线可能已变，合并以写前一刻最新 folders 重放。
       await ctx.writeFolders((current) => {
         const seen = new Set<string>();
         for (const folder of current) {
           for (const item of folder.items) {
-            // 无 URL 的条目（挂起项）没有可比较的键，不能用空串**假装**有一个：
-            // 空串会让所有无 URL 的已有条目共用一个 key，等于宣称它们彼此重复，
-            // 也让「已存在」判定出现一条永远匹配不上、却占着位子的假记录。
-            // 跳过即可 —— 它们本来就无法与书签 URL 比对。
+            // 无 URL 条目（挂起项）没有可比较的键，跳过——空串会让它们共用一个 key 被误判重复。
             const key = item.url ? (webComparisonKey(item.url, undefined) ?? item.url) : undefined;
             if (key) seen.add(key);
           }
@@ -319,8 +251,7 @@ export function createTransferSlice(
         };
         let next = current;
         for (const spec of bar.folders) {
-          // 只导入 http(s) 条目：书签栏可能含 javascript:/data: 等书签，
-          // 落为固定项后点击即在标签上下文执行脚本（与导出侧白名单同一原则）。
+          // 只导入 http(s)：javascript:/data: 落为固定项后点击即执行脚本（与导出侧白名单同源）。
           const leaves = uniqueLeaves(spec.leaves.filter((leaf) => isExportableUrl(leaf.url)));
           if (leaves.length === 0) continue;
           const items = leaves.map((leaf) =>

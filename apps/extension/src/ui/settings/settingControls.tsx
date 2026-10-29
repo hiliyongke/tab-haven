@@ -30,8 +30,7 @@ function SectionCount({ count }: { count?: number }) {
   if (count === undefined) return null;
   return (
     // 裸数字对读屏是孤立量词；可见数字 aria-hidden，改播完整语义。
-    // 视觉走 .count-pill：与侧栏分区头的计数是同一个「计数胶囊」语义，
-    // 不再单独维护一套描边矩形（此前两处计数长得不一样）。
+    // 视觉走 .count-pill：与侧栏分区头的计数共用同一「计数胶囊」语义。
     <>
       <span aria-hidden="true" className="count-pill">
         {count}
@@ -65,7 +64,7 @@ export function Section({
     <section id={id} className="mb-6 scroll-mt-6 sm:mb-8">
       {/* px-4：与卡片内 Row 的 px-4 同线（16px），也让本标题与「快速预设」卡内
           标题（其 section 自带 p-4）处在同一条竖线上 —— 两者差 16px 会错开。 */}
-      {/* section-title：与关于页共用同一套标题排版（此前两页各写一份常量）。 */}
+      {/* section-title：与关于页共用同一套标题排版。 */}
       <h2 className="section-title mb-3 flex items-center gap-2 px-4">
         <span>{title}</span>
         <SectionCount count={count} />
@@ -183,7 +182,7 @@ export function WhitelistEditor({
         <ul className="flex max-w-full flex-wrap justify-start gap-1 sm:max-w-60 sm:justify-end">
           {value.map((entry) => (
             <li key={entry}>
-              {/* 描边 Chip：可移除标签的视觉只有一个来源（此前与计数胶囊各写一串）。 */}
+              {/* 描边 Chip：可移除标签的视觉只有这一个来源。 */}
               <Chip tone="outline" className="flex items-center gap-1 px-1.5 py-0.5">
                 {entry}
                 {/* 刻意保留裸 button：.whitelist-remove 已用 inset -6px 把 12px 图标

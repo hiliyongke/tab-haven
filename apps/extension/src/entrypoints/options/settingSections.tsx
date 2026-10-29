@@ -18,10 +18,8 @@ import {
 } from '@/ui/settings/settingControls';
 
 /**
- * 设置页的**配置层**：声明式描述设置行（`buildSections`）与统一渲染器（`SettingRow`）。
- *
- * 与 `settingControls.tsx`（展示层控件）分层的原因见该文件头注释 —— render 闭包
- * 引用编辑器组件，同文件会成环。本文件只被 `SettingsPage.tsx` 引用。
+ * 设置页的配置层：声明式描述设置行（buildSections）与统一渲染器（SettingRow）。
+ * 与 settingControls.tsx（展示控件）分层，避免 render 闭包与编辑器组件循环引用。
  */
 
 /** Settings 中类型为 boolean 的键（Toggle 行专用）。 */
@@ -147,10 +145,8 @@ export function SettingRow({
     );
   }
 
-  // 整行的存废交由 render 结果决定：custom 行里有一类「状态行」（如同步状态），
-  // 在**没有依据**时必须返回 null（不把猜测当事实），此时若仍渲染 Row，就会留下
-  // 「同步状态」标题 + 空白值的常驻哑行——默认关闭同步时每个用户都看得到。
-  // 判 null 而非判空：ReactNode 允许 0 / '' 等合法空渲染，只有 null 表示「不渲染」。
+  // custom 行的存废由 render 决定：判 null 而非判空（0/'' 是合法空渲染，null 才表示不渲染），
+  // 否则「同步状态」这类无依据的行会留下标题 + 空白值的常驻哑行。
   const rendered = spec.render({ settings, update, t });
   if (rendered === null) return null;
 
@@ -162,13 +158,9 @@ export function SettingRow({
 }
 
 /**
- * 色号 → 展示文案（中文原文，取值会原样传进 `t()`）。
- * 色值取自 `@/core/theme/colorThemes` 的唯一来源，此处只补 UI 文案。
- * 用 `Record<ColorTheme, { labelKey: string }>` 约束，新增色号时漏配文案会直接编译报错。
- *
- * 属性名以 `Key` 结尾是扫描器的抽取约定（常量表不是调用点，只有 `*Key` 属性会被
- * 抽进词典）。用 `@i18n-ignore-start/end` 豁免 zh-linter 只压住告警，
- * 词条不会进词典，英文模式下色号名会露中文而 scan / check 双绿。
+ * 色号 → 展示文案（色值取自 core/theme/colorThemes 唯一来源，此处只补 UI 文案）。
+ * Record<ColorTheme, { labelKey }> 约束：新增色号漏配文案即编译报错。
+ * 属性名以 Key 结尾是扫描器抽取约定（常量表只有 *Key 属性会被抽进词典）。
  */
 const COLOR_THEME_LABELS: Record<ColorTheme, { labelKey: string }> = {
   forest: { labelKey: '石墨绿' },
@@ -179,47 +171,22 @@ const COLOR_THEME_LABELS: Record<ColorTheme, { labelKey: string }> = {
   plain: { labelKey: '纯净（默认）' }
 };
 
-/**
- * 同步镜像状态。
- *
- * 镜像拉取失败不能只进诊断日志，否则呈现为「用户以为开着同步，换机后什么都没有」。
- * 这里把「镜像不可用」做成一行只读状态：仅在开关开启时出现 —— 关着同步的用户
- * 看到一句关于镜像的警告只会困惑（对他们而言镜像本就不存在）。
- */
-/**
- * 同步状态的取值：镜像**拉取**结果（`MirrorSyncIssue`）与「本次**写入**失败」。
- *
- * 写失败不是拉取结果的一种（二者可任意组合：写失败时云端仍留着上一次的旧镜像，
- * pull 照样成功），但它与拉取结果互斥地决定呈现哪一句，故在此合成单一状态枚举。
- */
+/** 同步状态取值：镜像拉取结果（MirrorSyncIssue）与本次写入失败（可任意组合，故合成单一枚举）。 */
 type MirrorSyncState = MirrorSyncIssue | 'write-failed';
 
-/**
- * 导出供行为规格测试直接渲染：五态映射必须逐态可断言
- * （见 tests/ui/mirror-sync-status.test.tsx）。
- */
+/** 同步镜像状态（仅开关开启时出现；写侧失败按原因区分「超出容量上限」与「本次改动未上传」）。 */
 export function MirrorSyncStatus({ t }: { t: Translate }) {
   const enabled = useDataStore((s) => s.settings.syncMirrorEnabled);
   const issue = useDataStore((s) => s.mirrorIssue);
   const writeFailed = useDataStore((s) => s.mirrorWriteFailed);
   const quotaExceeded = useDataStore((s) => s.mirrorQuotaExceeded);
 
-  // 本次会话没拉取过镜像（已 seeded 的设备不拉取，因为本地即权威）时通常不渲染：
-  // 没有依据却显示「已生效」是把猜测当事实。写失败是例外——它是本次会话的真实
-  // 结果，必须呈现，否则「开了同步但其他设备收不到」仍是静默的。
+  // 没拉取过镜像（已 seeded 的设备本地即权威）时不渲染：没有依据却显示「已生效」是把猜测当事实。
   if (!enabled) return null;
-  // 写侧失败也要分原因：**容量**预检命中时说「超出同步容量上限」，否则说
-  // 「本次改动未上传」。写侧已用与 pull 同一把尺子拦截，若「超出容量上限」只由
-  // pull 的 chunk 计数触发，超配额的用户看到的就是「本次改动未上传」—— 与
-  // PRIVACY.md §4 的对外口径不一致（用户据此会以为重试就能成功）。
   const writeState: MirrorSyncState = quotaExceeded ? 'chunk-limit' : 'write-failed';
   const state: MirrorSyncState | null = writeFailed ? writeState : issue;
   if (state === null) return null;
-  // 五态必须给五句不同的话：布尔只能表达「坏/不坏」，于是「镜像损坏」会被说成
-  // 「超出容量上限」，而「从未同步过」反而显示「已生效」。
-  // 用 Record 而非三元链：三元链的最后一态是「其他」兜底，将来 MirrorSyncIssue
-  // 新增取值会静默归到「镜像损坏或已过期」这一句；Record 的键集由类型约束，
-  // 漏配即编译报错（而不是静默落到错误文案）。
+  // 五态给五句不同的话，用 Record 而非三元链：新增 MirrorSyncIssue 取值漏配即编译报错。
   const texts: Record<MirrorSyncState, string> = {
     'write-failed': t('未生效（本次改动未上传）：其他设备不会收到这份数据'),
     ok: t('已生效'),
@@ -233,27 +200,18 @@ export function MirrorSyncStatus({ t }: { t: Translate }) {
   // 只有「真的不生效」才标红：'none' 与 'local' 都是中性说明，不是故障。
   const failed = state === 'write-failed' || state === 'chunk-limit' || state === 'unreadable';
   return (
-    // 长句说明走 11px（text-3xs）：10px 仅用于图标内文与徽角（见 main.css 字号刻度）
     <span className={failed ? 'text-3xs text-red-600' : 'text-3xs text-gray-500'}>{text}</span>
   );
 }
 
-/**
- * 构建设置分组配置（声明式描述设置行，渲染由 SettingRow 统一完成）。
- *
- * 放在模块顶层而非常量/组件内：配置约 370 行，含大量 t() 调用与 render 闭包。
- * 配置体量大且含大量 t() 调用，故按依赖参数化后由组件 memo 调用。
- * 现在按依赖参数化（t 与 sidePanelSide 是运行时值），由组件调用一次即可。
- */
+/** 构建设置分组配置（声明式描述设置行，渲染由 SettingRow 统一完成）。id 与文案解耦（id 是稳定 DOM 锚点）。 */
 export function buildSections(
   t: Translate,
   sidePanelSide: string
 ): { id: string; titleKey: string; specs: SettingSpec[] }[] {
   return [
     {
-      // id 是稳定的 DOM 锚点，必须与文案解耦：文案改用中文原文后，若继续拿
-      // titleKey 当 id，锚点会随文案/语言变化而失效（如 #settings.advanced
-      // 变成 #高级与恢复，分享链接与目录跳转全部断掉）。
+      // id 是稳定 DOM 锚点，与文案解耦：拿 titleKey 当 id 会随文案/语言变化失效。
       id: 'settings.appearance',
       titleKey: '外观与布局',
       specs: [
@@ -272,10 +230,6 @@ export function buildSections(
           labelKey: '主题色',
           hintKey: '强调色与深色底色随所选色号变化',
           render: ({ settings, update, t }) => (
-            /* 色板复用 ColorSwatchGroup：色值取自 core/theme/colorThemes 的单一来源，
-               以 --swatch 变量注入（.theme-swatch 用 var(--swatch) 取），
-               不在 JSX 里写字面色值。选中态为「白色内环 + 品牌外环」双层
-               （gray-500 外环落在不同色块上仅 1.02–1.77:1，sunset 上几乎不可见）。 */
             <ColorSwatchGroup
               label={t('主题色')}
               value={settings.colorTheme}
@@ -312,8 +266,6 @@ export function buildSections(
           kind: 'select',
           key: 'density',
           labelKey: '列表密度',
-          /* 四档只改行高，不改字号（大字号档除外）—— 用户选之前得知道会变什么，
-             否则「宽松」与「超紧凑」只能靠逐个试。 */
           hintKey: '只影响标签行的高矮：超紧凑单屏显示更多行，大字号会同时放大标题与网址',
           options: [
             { value: 'tight', label: t('超紧凑') },
@@ -360,23 +312,15 @@ export function buildSections(
         {
           kind: 'custom',
           labelKey: '语言',
-          // settings 来自 SettingRow 注入的 render 参数（配置已外提为模块级函数，
-          // 不能再捕获组件作用域的 settings 变量）。
           render: ({ settings: currentSettings, update, t }) => (
             <Select
-              // 显示值必须与「实际生效语言」一致：settings.language 缺省时界面语言
-              // 由浏览器语言决定（i18n 初始化），硬编码兜底 'zh-CN' 会让英文
-              // 环境的用户看到下拉框显示「简体中文」而界面实为英文。
-              // 运行时 i18n.language 已被 SettingsSync 对齐为设置值，两者互补。
+              // 显示值与实际生效语言一致：缺省时由浏览器语言决定，硬编码兜底 zh-CN 会让英文用户看到「简体中文」。
               value={currentSettings.language ?? i18n.language}
               onChange={(v) => update('language', v)}
               options={[
-                // 语言名用该语言自己的写法（autonym），与当前界面语言无关——
-                // 这样中文用户看到「简体中文」、英文用户看到「English」，切换前后
-                // 都能认出自己的语言。写死字面量会绕过 t()，英文模式下不生效。
+                // 语言名用该语言自己的写法（autonym），与当前界面语言无关。
                 { value: 'zh-CN', label: t('简体中文') },
-                // 'English' 不含汉字，落「语义 key 直通」分支，不进词典也不需要译文：
-                // 语言名本就该以该语言自身写法呈现。
+                // 'English' 不含汉字，走语义 key 直通，不需要译文。
                 { value: 'en', label: t('English') }
               ]}
               ariaLabel={t('语言')}
@@ -447,8 +391,6 @@ export function buildSections(
       ]
     },
     {
-      // P0-3：原 21 项「进阶功能」平铺区按语义三分（休眠与内存 / 分组与搜索 / 高级与恢复），
-      // 低频的「高级与恢复」默认折叠（collapsible），搜索时由 forceOpen 自动展开。
       id: 'settings.memory',
       titleKey: '休眠与内存',
       specs: [
@@ -559,8 +501,6 @@ export function buildSections(
       ]
     },
     {
-      // 低频分区：通知开关、角标模式、容量与开发者项集中在此。
-      // 不再折叠（曾用 details 抽屉）：侧栏目录已提供直达导航，折叠只会隐藏内容。
       id: 'settings.advanced',
       titleKey: '高级与恢复',
       specs: [
@@ -601,13 +541,7 @@ export function buildSections(
           hintKey: '输入 t 加关键词，直达标签与收藏夹条目'
         },
         {
-          /**
-           * 跨设备镜像开关。
-           *
-           * 必须走 custom 行进入 buildSections 的规格数组：手写在 SettingsPage 里的
-           * Toggle 不进搜索索引（只匹配 spec.labelKey / spec.hintKey），
-           * 一个会影响「数据是否被上传到浏览器账号通道」的开关就搜不到。
-           */
+          // 用 custom 行进入规格数组：手写的 Toggle 不进搜索索引（只匹配 spec.labelKey/hintKey）。
           kind: 'custom',
           labelKey: '跨设备同步',
           hintKey:
@@ -717,9 +651,7 @@ export function buildSections(
           ]
         },
         {
-          // snapshotLimit 在 trimSnapshotsWithEvicted 中生效于非自动快照（命名快照 /
-          // 归档 / 工作区的保留上限），关窗自动保存由 maxAutoSnapshots 独立收敛。
-          // 不设 visible：它约束的是「非自动快照」，与 autoSaveSnapshots 开关无关。
+          // snapshotLimit 约束「非自动快照」（命名/归档/工作区），关窗自动保存由 maxAutoSnapshots 独立收敛，故不设 visible。
           kind: 'select',
           key: 'snapshotLimit',
           labelKey: '手动快照保留上限',

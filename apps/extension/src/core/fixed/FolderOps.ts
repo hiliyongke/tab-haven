@@ -3,17 +3,10 @@ import { pinIdentity } from '@/core/fixed/PinIdentity';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { newId } from '@/core/util/id';
 
-/**
- * 固定空间纯函数集：不触碰 chrome API，只做数据变换。
- *
- * 职责一句话：给定 folders / pins 的当前值，产出下一版值（不落盘、不绑 session）。
- * 分两组：单文件夹/单数组的元素级操作，与覆盖整个 folders 数组的意图级转移。
- */
+/** 固定空间纯函数集：只做 folders/pins 的数据变换，不落盘、不绑 session。 */
 
-/** 从全部文件夹中移除与 URL 相同的条目（URL 全局唯一约束，行为规格 C-3）。 */
+/** 从全部文件夹中移除与 URL 相同的条目（URL 全局唯一）。用比较键归一，裸字符串比较会漏判大小写差异。 */
 export function removeItemsWithUrl(folders: FixedFolder[], url: string): FixedFolder[] {
-  // 与全局去重同一归一化口径：裸字符串比较会把 `HTTPS://A.COM` 与
-  // `https://a.com` 判成两个 URL，唯一性约束（C-3）静默失效。
   const key = webComparisonKey(url, undefined);
   return folders.map((folder) => ({
     ...folder,
@@ -53,13 +46,7 @@ export function createFolder(name: string): FixedFolder {
   };
 }
 
-/**
- * 把数组元素移到目标前/后（不可变；source/target 不存在或相同则原样返回）。
- * 三个 reorder 场景（文件夹条目/文件夹/pin）共用此实现。
- *
- * 契约：no-op 时返回**同一引用**（reorderFolderItems 据此判断未变化并跳过重渲染），
- * 调用方不得原地修改返回值（zustand set 语义下满足）。
- */
+/** 元素移到目标前/后（元素/文件夹/pin 三处 reorder 共用）。no-op 时返回同一引用，供下游判断是否需重渲染。 */
 function moveElement<T>(options: {
   items: T[];
   sourceId: string;
@@ -73,7 +60,6 @@ function moveElement<T>(options: {
   if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return items;
 
   const next = [...items];
-  // sourceIndex 有效，splice 必返回一个元素。
   const moved = next.splice(sourceIndex, 1)[0]!;
   const adjustedTarget = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
   next.splice(adjustedTarget + (placeAfter ? 1 : 0), 0, moved);
@@ -159,22 +145,9 @@ export function pinFromTab(input: {
   };
 }
 
-/* ------------------------------------------------------------------------- *
- * 以下是「整个 folders 数组」层面的意图 → 状态转移。
- *
- * 原在 core/commands/folderCommands.ts，与上面的「单文件夹 / 单数组」操作分处
- * 两个目录，但两者都是「输入 folders → 输出下一版 folders」的纯函数，边界说不清。
- * 现合并进本模块：固定空间的纯计算只有一处入口，新增操作不必先判断该放哪个目录。
- * ------------------------------------------------------------------------- */
-
 /**
- * 固定条目的身份键：web 页取完整比较键（查询串与锚点参与身份），
- * 非 web 页降级为原样 URL。
- *
- * 无 URL（挂起条目）时返回 null 而非空串：空串会让所有无 URL 条目撞成同一个键，
- * 于是「第二个挂起条目」会被判为重复项、从**全部文件夹**里静默删除。
- * `FixedFolderItemSchema.url` 是可选的 —— 导入的备份文件可以合法地不含它。
- * 返回 null 让去重逻辑显式跳过这些条目（无法判身份就不参与身份去重）。
+ * 固定条目身份键：web 页取完整比较键，非 web 页降级为原样 URL。
+ * 无 URL（挂起/导入条目）返回 null 而非空串——空串会让所有无 URL 条目撞成同键被误删。
  */
 export function fixedItemKey(url: string | undefined): string | null {
   if (!url) return null;
@@ -228,13 +201,7 @@ export function computeMoveFolder(
   return reorderFolders(folders, op.sourceId, op.targetId, op.placeAfter);
 }
 
-/**
- * 跨文件夹移动条目（纯）。
- *
- * URL 全局唯一约束下的语义：目标文件夹已存在同 URL 条目时，源条目被**丢弃**
- * （保留目标那份），而不是「不插入也不删除」——后者会让同一 URL 长期存在两份副本，
- * 与固定空间的唯一性不变量冲突。
- */
+/** 跨文件夹移动条目。目标已存在同 URL 条目时丢弃源条目（保留目标那份），维护 URL 全局唯一。 */
 export function computeMoveFolderItem(
   folders: FixedFolder[],
   op: { sourceFolderId: string; itemId: string; targetFolderId: string }
@@ -287,19 +254,14 @@ interface ComputeAddTabsToFolderResult {
   targetDuplicates: number;
 }
 
-/**
- * 把一组候选标签合并进目标文件夹的纯计算。
- * 与原 dataStore.addTabsToFolder 的文件夹数组推导完全等价，仅产出、不落盘、不触碰 session。
- */
+/** 把候选标签合并进目标文件夹的纯计算（只产出 folders 与统计，不落盘/不绑 session）。 */
 export function computeAddTabsToFolder(
   currentFolders: FixedFolder[],
   candidates: ReadonlyMap<string, AddTabsToFolderInput>,
   folderId: string
 ): ComputeAddTabsToFolderResult {
   const comparisonKeys = new Set(candidates.keys());
-  // 不变量自检：目标文件夹不存在时整单放弃。否则候选/跨文件夹条目会被从
-  // 源文件夹移除后无处追加（下方追加只在 folder.id === folderId 分支发生），
-  // 表现为「条目被删了但没加到任何地方」的静默丢数据。
+  // 目标文件夹不存在时整单放弃，否则条目从源移除后无处追加（静默丢数据）。
   if (!currentFolders.some((folder) => folder.id === folderId)) {
     return {
       next: currentFolders,
@@ -317,13 +279,9 @@ export function computeAddTabsToFolder(
   for (const folder of currentFolders) {
     for (const item of folder.items) {
       const key = fixedItemKey(item.url);
-      // 无 URL 条目（挂起条目 / 导入数据）判不出身份：既不登记为已存在，也不参与去重。
-      // 否则它们会共享同一个空键，第二个及之后的条目被当成重复项删除。
-      if (key === null) continue;
+      if (key === null) continue; // 无身份条目不参与去重，否则会共享空键被误删
       if (existingByKey.has(key)) {
-        // 清扫范围必须收敛到本次候选：URL 全局唯一不变量下，跨文件夹重复条目
-        // 属于历史遗留脏数据，但一次无关拖入不应顺带删除其他文件夹既有的重复
-        // 条目（误删面远超单次操作）。只清扫与本次候选同 key 的重复项。
+        // 只清扫与本次候选同 key 的重复项，不顺带删其他文件夹的历史重复（收敛误删面）。
         if (comparisonKeys.has(key)) duplicateItemIds.add(item.id);
       } else {
         existingByKey.set(key, { folderId: folder.id, item });
@@ -342,16 +300,14 @@ export function computeAddTabsToFolder(
     else moved += 1;
   }
 
-  // 重复（多文件夹同 URL）条目在全部文件夹中移除；跨/同文件夹的候选条目按规则保留或移除。
   const foldersWithoutCandidates = currentFolders.map((folder) => ({
     ...folder,
     items: folder.items.filter((item) => {
       if (duplicateItemIds.has(item.id)) return false;
       const key = fixedItemKey(item.url);
-      // 无身份条目原样保留：它们不可能是任何候选的重复项。
-      if (key === null) return true;
+      if (key === null) return true; // 无身份条目不可能是候选的重复项
       if (!comparisonKeys.has(key)) return true;
-      // 同文件夹内已存在的条目保持原位（重复拖入同文件夹不应把它移到末尾）。
+      // 同文件夹内已存在的条目保持原位（重复拖入不应把它移到末尾）。
       return folder.id === folderId && selectedExisting.get(key)?.id === item.id;
     })
   }));

@@ -2,17 +2,9 @@ import { SNAPSHOT_TABS_LIMIT } from '@/core/schema/models';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 
 /**
- * 时间线搜索索引构建：把快照条目映射进 SearchEngine 的可搜目标。
- *
- * 合成 id 方案：真实 tab id 为非负整数，快照条目用**负数区间**编码，
- * 两类 id 永不冲突。id 编码规则（由 `decodeHistoryId` 用同一公式反解）：
- *
- *   id = -(index + 1)，index = snapshotIndex * HISTORY_TABS_PER_SNAPSHOT + tabIndex
- *
- * 其中 snapshotIndex 是**按创建时间降序**的快照序号（0 = 最新），tabIndex 是快照内
- * 条目序号。条目身份完全由 id 编码承载，解码端无需任何映射表存储。
- *
- * 索引上限：只索引最近 N 份快照（默认 20 份），防快照积累后搜索耗时线性增长。
+ * 时间线搜索索引：把快照条目映射进 SearchEngine。快照条目用负数区间编码（真实 tab id 非负）：
+ * id = -(index + 1)，index = snapshotIndex(按时间降序) * HISTORY_TABS_PER_SNAPSHOT + tabIndex。
+ * 只索引最近 N 份快照，防搜索耗时随快照积累线性增长。
  */
 
 /** 时间线索引覆盖的最近快照份数上限（性能护栏）。 */

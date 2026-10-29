@@ -1,12 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-/**
- * 目录约定。
- *
- * 三个路径都可覆盖（其它项目不一定叫 `src/`）：命令行传 `--src` / `--dict` /
- * `--locales`，未传则取下列默认值。
- */
+/** 目录约定。三个路径都可覆盖（其它项目不一定叫 `src/`）：命令行传 `--src` / `--dict` / `--locales`。 */
 export interface KitPaths {
   /** 项目根 */
   root: string;
@@ -58,10 +53,8 @@ export function readJson(file: string): Record<string, string> {
 
 /**
  * 写 JSON（临时文件 + rename，保证原子性）。
- *
- * 词典是**资产**，不是缓存：一次写到一半的失败（磁盘满 / 权限 / 中断）若留下截断
- * 的文件，此后每次 `readJson` 都会 JSON.parse 失败，整包译文就此损坏且无从回溯。
- * tmp + rename 让「写成功」与「文件完整」成为同一件事（rename 在同一分区内是原子的）。
+ * 词典是**资产**不是缓存：写到一半失败留下截断文件后，每次 `readJson` 都会 JSON.parse 失败，
+ * 整包译文就此损坏且无从回溯。tmp + rename 让「写成功」与「文件完整」成为同一件事。
  */
 export function writeJson(file: string, data: Record<string, string>): void {
   mkdirSync(dirname(file), { recursive: true });

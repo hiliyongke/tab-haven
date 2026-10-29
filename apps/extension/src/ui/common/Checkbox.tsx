@@ -8,9 +8,8 @@ import { useControlId } from '@/ui/common/controlId';
  *  - 禁用态同口径（50% 透明度 + 非手型光标）；
  *  - 可访问名只给 `ariaLabel` 一个入口，不与可见文案各写一份。
  *
- * 尺寸、勾选项色（accent-color）与收缩行为收在 main.css 的 `.checkbox`：
- * 此前调用点写的是 `accent-[var(--c-brand-500)]` 任意值，绕开了 @theme 的
- * `--color-accent-*` 刻度，换主题时不会跟着走。
+ * 尺寸、勾选项色（accent-color）与收缩行为收在 main.css 的 `.checkbox`，
+ * 走 @theme 的 `--color-accent-*` 刻度，换主题才能跟着走。
  */
 export function Checkbox({
   checked,

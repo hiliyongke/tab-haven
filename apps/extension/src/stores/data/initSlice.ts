@@ -21,33 +21,24 @@ import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 
 /**
  * 页面实例级初始化守卫：StrictMode 双执行 / 多入口重复调用只初始化一次。
- *
- * 与 store 的 `ready` **不是同一件事，不要合并**：本标志在 `initialize` 开头
- * （await 之前）置起，表达的是「已经开始」；`ready` 在全部分区加载完成后置起，
- * 表达的是「已经完成」。加载在途期间二者是 `true / false` —— 若改用 `ready`
- * 当入口守卫，在途期间的重入会再发起一轮并发加载。
- *
- * 复位不变量：失败分支必须把二者一并复位（`initialized = false` + `ready: false`），
- * 否则面板永久停在 Loading 骨架屏。
+ * 与 `ready` 不是同一件事：本标志在 initialize 开头（await 前）置起＝「已开始」，
+ * ready 在全部加载完成后置起＝「已完成」。若用 ready 当入口守卫，在途重入会再发起一轮并发加载。
+ * 失败分支必须把二者一并复位（initialized=false + ready:false），否则面板永久停在 Loading 骨架屏。
  */
 let initialized = false;
 
 /**
  * 按**原始对象**的键集合，从已解析值里挑出对应字段。
- *
- * 用途：镜像里的设置是外部输入，缺失的字段不该参与覆盖（保持本地现值）。
- * 而 `SettingsSchema` 每个字段都带 `.default()`，safeParse 的产出恒为全字段对象，
- * 无法从它本身判断「镜像到底给了哪些键」，只能回看原始载荷。
+ * 镜像设置是外部输入，缺失字段不该参与覆盖（保持本地现值）。而 SettingsSchema 每字段带
+ * `.default()`，safeParse 恒产出全字段对象，无法据此判断「镜像给了哪些键」，只能回看原始载荷。
  */
 function pickExplicitKeys<T extends object>(raw: unknown, parsed: T): Partial<T> {
   if (raw === null || typeof raw !== 'object') return {};
-  // 遍历 **parsed 的键**（键名受 `keyof T` 约束）而不是把 parsed 降格成
-  // `Record<string, unknown>` 再去索引：后者用一个 `as unknown as` 把「键」与
-  // 「T 的字段」之间的关联一并抹掉，此后字段名写错也检查不出来。
-  // 外部键名无法被类型证明属于 T，故只把**键名**这一处放宽。
+  // 遍历 parsed 的键（受 `keyof T` 约束）而非降格成 Record<string, unknown> 再索引：
+  // 后者用 `as unknown as` 抹掉「键 ↔ T 字段」关联，字段名写错检查不出来。
+  // 外部键名无法被证明属于 T，故只放宽键名这一处。
   const given = new Set(Object.keys(raw));
-  // 直接以 `Partial<T>` 为目标类型：收尾再 `as Partial<T>` 会把上面辛苦保住的
-  // 「键与 T 字段的关联」一次性抹掉，此后值类型写错也检查不出来。
+  // 直接以 `Partial<T>` 为目标类型，收尾不再 `as`（会抹掉上面保住的值类型关联）。
   const out: Partial<T> = {};
   for (const key of Object.keys(parsed) as Array<keyof T>) {
     if (given.has(String(key))) out[key] = parsed[key];
@@ -55,10 +46,7 @@ function pickExplicitKeys<T extends object>(raw: unknown, parsed: T): Partial<T>
   return out;
 }
 
-/**
- * 初始化切片：加载全部分区、按 seeded 标志从同步通道镜像恢复（仅首次启动），
- * 订阅设置与分区 watcher。失败时回滚守卫以允许重试。
- */
+/** 初始化切片：加载全部分区、按 seeded 标志从同步镜像恢复（仅首次启动）、订阅 watcher；失败回滚守卫以允许重试。 */
 export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
   return {
     initialize: async () => {
@@ -82,27 +70,18 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
         /** 最近一次镜像拉取的分类；未拉取（已 seeded / 开关关闭）时为 null。 */
         let mirrorIssue: MirrorSyncIssue | null = null;
         if (!seeded && settings.syncMirrorEnabled) {
-          // 新设备首次启动：从浏览器同步通道镜像恢复（本地有数据时以本地为准）。
-          // 开关关闭时不拉取——「不上传」与「不下载」必须同开同关，
-          // 否则关掉同步的用户在换机时仍会被旧镜像回灌。
+          // 新设备首次启动：从同步通道镜像恢复（本地有数据以本地为准）。
+          // 开关关闭时不拉取——「不上传」与「不下载」必须同开同关，否则关同步的用户换机仍被旧镜像回灌。
           let mirrorParseOk = true;
           const mirror = await syncMirror.pull();
-          // 拉取为空不等于「从未同步过」：分块数超限、镜像损坏同样返回空，
-          // 但它们意味着换机恢复不到数据 —— 必须让设置页呈现出来。
-          // 记下 pull 的分类（ok / none / chunk-limit / unreadable）随最终状态一起落地：
-          // 单独先 set 一次会让 store 出现一次「只有状态、没有数据」的中间态。
-          // 分类本身即复位机制：成功时是 'ok'，不会出现「提示永久粘住」。
+          // 拉取为空不等于「从未同步」：分块超限、镜像损坏同样返回空，但换机恢复不到，须让设置页呈现。
+          // 记下分类（ok/none/chunk-limit/unreadable）随最终态一起落地，避免「只有状态没数据」的中间态；
+          // 分类本身即复位机制：成功时是 'ok'，提示不会永久粘住。
           mirrorIssue = syncMirror.readLastPullIssue();
           if (mirror) {
-            // 镜像来自浏览器账号通道，属外部可控输入（与备份文件同级）：集合必须
-            // 带体积上限，否则一份异常镜像就能把本地库撑到远超正常使用规模。
-            // 注意口径：上限只加在「外部输入」侧，不加进 registry 的仓库 schema ——
-            // 后者一旦收紧，存量超限用户的真实数据会在读盘时被判为坏数据而清空。
-            //
-            // 同理用导入侧的 Inbound* schema：镜像与备份文件同属外部可控输入，
-            // url / favIconUrl 必须与备份入口同款收紧（javascript: / file: 归一为
-            // about:blank，favicon 只放行 data:image/chrome/chrome-extension），
-            // 否则「备份里被拒的内容经镜像落盘」这条绕行通道就一直开着。
+            // 镜像是外部可控输入（与备份文件同级），集合须带体积上限，否则异常镜像会撑爆本地库。
+            // 上限只加在外部输入侧，不加进 registry 仓库 schema——否则存量超限用户读盘时会被判坏数据清空。
+            // 同理用 Inbound* schema：url / favIconUrl 与备份入口同款收紧，堵住「备份被拒内容经镜像落盘」的绕行通道。
             const parsedFolders = InboundFixedFolderSchema.array()
               .max(FOLDERS_LIMIT)
               .safeParse(mirror.folders);
@@ -111,31 +90,24 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
               .safeParse(mirror.pins);
             const parsedSettings = SettingsSchema.safeParse(mirror.settings);
             /**
-             * 只取镜像**显式给出**的设置键。
-             *
-             * `SettingsSchema` 每个字段都带 `.default()`，因此 safeParse 的产出
-             * **恒为全字段对象** —— 直接把它展开到磁盘值上，等于整表覆盖：并发页
-             * 刚写入、而镜像里没有的字段会被镜像的默认值悄悄抹掉。
-             * （`settingsSlice` 的 `{ ...disk, ...partial }` 之所以成立，是因为那里的
-             * partial 是真·局部更新；这里的 parsed 不是。）
+             * 只取镜像**显式给出**的设置键。SettingsSchema 每字段带 `.default()`，safeParse 恒产出全字段对象，
+             * 直接展开到磁盘等于整表覆盖：并发页刚写入、而镜像里没有的字段会被默认值抹掉。
              */
             if (parsedSettings.success) {
               settingsPatch = pickExplicitKeys(mirror.settings, parsedSettings.data);
             }
-            // 单边解析失败：该分区跳过恢复，且不置 seeded ——
-            // 置位会让它永久失去重试机会（与 stores/data/mirrorRestore 同口径）。
+            // 单边解析失败：该分区跳过恢复且不置 seeded（置位会永久失去重试机会）。
             mirrorParseOk = parsedFolders.success && parsedPins.success && parsedSettings.success;
             if (parsedFolders.success && folders.length === 0)
               effectiveFolders = parsedFolders.data;
             if (parsedPins.success && pins.length === 0) effectivePins = parsedPins.data;
             if (parsedSettings.success) effectiveSettings = parsedSettings.data;
           }
-          // 镜像恢复写入失败不阻断启动（本地数据仍在），但必须留痕，否则「新设备没恢复出来」无从排查。
+          // 镜像恢复写失败不阻断启动（本地数据仍在），但必须留痕，否则「新设备没恢复出来」无从排查。
           let restoreWritesOk = true;
           if (effectiveFolders !== folders) {
-            // 跨页锁 + 锁内重读：镜像恢复是整表写，与另一上下文（另一侧边栏窗口 /
-            // background 右键写入）并发时锁外写会互相覆盖；锁内发现本地已有数据
-            // 说明并发上下文刚写过，以本地为准放弃覆盖（内存同步为读到的值）。
+            // 跨页锁 + 锁内重读：整表写与另一上下文并发时锁外会互相覆盖；
+            // 锁内发现本地已有数据说明并发上下文刚写过，以本地为准放弃覆盖。
             const ok = await withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
               const disk = await ctx.repos.folders.read();
               if (disk.length > 0) {
@@ -163,15 +135,13 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
               restoreWritesOk = false;
             }
           }
-          // 结构签名而非引用比较：`SettingsSchema.safeParse` 恒产出新对象，
-          // 内容相同也会走进写盘分支 —— 平白多一次 storage 写与主题重放。
+          // 结构签名而非引用比较：safeParse 恒产出新对象，内容相同也会走进写盘，平白多一次 storage 写与主题重放。
           if (structuralSignature(effectiveSettings) !== structuralSignature(settings)) {
-            // settings 没有「本地为空」判据（默认值恒存在），且必须与 settingsSlice
-            // 的「锁内重读 → 合并 → 写」同口径：否则本分支的整对象覆盖会抹掉并发页
-            // 刚写入、而镜像里没有的字段。
+            // settings 无「本地为空」判据，须与 settingsSlice 同口径「锁内重读 → 合并 → 写」，
+            // 否则整对象覆盖会抹掉并发页刚写入、而镜像里没有的字段。
             const ok = await withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
               const disk = await ctx.repos.settings.read();
-              // 以磁盘为基线、只覆盖镜像**显式给出**的字段（镜像里缺的保持本地现值）。
+              // 以磁盘为基线、只覆盖镜像显式给出的字段。
               const merged = SettingsSchema.safeParse({ ...disk, ...settingsPatch });
               if (!merged.success) return false;
               const written = await ctx.repos.settings.write(merged.data);
@@ -183,16 +153,11 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
               restoreWritesOk = false;
             }
           }
-          // 恢复失败必须**同时**降级状态分类：pull 的分类只说明「镜像读得到」，
-          // 而用户关心的是「换机能不能恢复」。解析失败或落盘失败时镜像同样没生效，
-          // 若仍沿用 pull 给的 'ok'，设置页会显示「已生效」而本地一条都没恢复 ——
-          // 正是本次要消除的「失效被当成生效」。
+          // 恢复失败必须同时降级分类：pull 分类只说明「镜像读得到」，解析/落盘失败时镜像同样没生效，
+          // 沿用 'ok' 会显示「已生效」而本地一条未恢复（失效被当成生效）。
           if (mirror && (!mirrorParseOk || !restoreWritesOk)) mirrorIssue = 'unreadable';
-          // 本地 folders/pins 均非空 → 本轮一条数据都没恢复出来（本地为准放弃覆盖）。
-          // 此时 pull 的 'ok' 只说明「镜像读得到」，沿用它会让设置页显示「已生效」，
-          // 而用户关心的是「换机能不能恢复」。
-          // 归为 'local' 而不是 'none'：'none' 的文案是「尚未生成镜像」，而此处云端
-          // 镜像**确实存在**（只是本机以本地为准），说「尚未生成」与事实相反。
+          // 本地 folders/pins 均非空 → 本轮一条未恢复（以本地为准放弃覆盖）。归类 'local' 而非 'none'：
+          // 云端镜像确实存在（只是本机以本地为准），'none' 的「尚未生成镜像」与事实相反。
           if (
             mirror &&
             mirrorParseOk &&
@@ -201,16 +166,13 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
             effectivePins === pins
           )
             mirrorIssue = 'local';
-          // seeded 必须在恢复数据全部落盘成功之后写：若先置位而回写失败，
-          // 下次启动不再拉取镜像，新设备的恢复数据永久丢失。pull 为 null
-          // （通道不可用/镜像损坏）或镜像解析失败时同样不置位——保持下次
-          // 启动重试的机会。
+          // seeded 必须在恢复数据全部落盘成功后才写：先置位而回写失败，下次启动不再拉取镜像，
+          // 恢复数据永久丢失。pull 为 null 或解析失败同样不置位，保持下次重试机会。
           if (mirror && restoreWritesOk && mirrorParseOk) await ctx.repos.seeded.write(true);
         }
         ctx.set({
           folders: effectiveFolders,
-          // 必须去重：仓库 read 不做去重，磁盘/同步镜像里的重复身份会直接渲染成两块磁贴
-          // （与 pins watcher 路径同口径，见 data/context.ts）。
+          // 仓库 read 不去重，磁盘/镜像里的重复身份会直接渲染成两块磁贴（与 pins watcher 同口径）。
           pins: dedupePins(effectivePins),
           collapsedSites,
           settings: effectiveSettings,

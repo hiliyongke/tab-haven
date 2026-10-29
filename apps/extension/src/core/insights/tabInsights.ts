@@ -4,16 +4,8 @@ import { normalizeHostname } from '@/core/url/hostname';
 import { DAY_MS } from '@/core/util/time';
 
 /**
- * 标签习惯洞察：从本地标签数据推导三类行动建议。
- *
- * 全部纯本地计算，零上报。三类洞察的出口全部指向产品内已有动作
- * （清理重复 / 一键休眠 / 归档窗口），形成「发现 → 行动」闭环。
- * 洞察对象是「当前窗口快照」，随事件刷新，不落盘。
- *
- * 三类洞察的判定口径：
- *  - 重复重灾区：哪些站点在窗口里持有最多冗余标签（同一页面 ≥ 2 份）；
- *  - 休眠候选：可安全休眠（canSafelyDiscardTab）且未被固定空间绑定的标签；
- *  - 滞留预警：打开超过 7 天未激活的标签 → 建议归档。
+ * 标签习惯洞察：从当前窗口快照纯本地推导三类建议（重复重灾区 / 休眠候选 / 滞留预警），
+ * 随事件刷新、不落盘。
  */
 
 /** 重复重灾区阈值：同页面份数 ≥ 2 记为重复（与 DuplicateIndex 口径一致）。 */
@@ -56,17 +48,9 @@ interface InsightsResult {
 }
 
 /**
- * 洞察版页面身份键：归一化主机名 + 路径 + 查询 + 片段。
- *
- * 比 webComparisonKey（复用引擎 / DuplicateIndex 的严格口径）宽松一档——
- * 主机名经 www 归一化，www.a.com/x 与 a.com/x 记同一页面：洞察按站点聚合
- * 展示，用户认知里「带不带 www」不是两个页面。严格口径服务于自动清理的
- * 误杀防线（宁漏勿杀），宽松口径服务于「重灾区」的完整呈现，两者刻意不同。
- * pendingUrl 优先与复用引擎同序（导航中的标签以目标页身份参与统计）。
- *
- * 端口必须参与身份：`localhost:3000/a` 与 `localhost:8080/a` 是两个不同的
- * 服务（本地开发最常见），只用 hostname 拼键会把它们判成同一页面 —— 洞察
- * 报「有冗余」而 planDuplicateCleanup（严格口径）报 0，两条结论自相矛盾。
+ * 洞察版页面身份键（www 归一化，比 webComparisonKey 宽松一档，服务于站点聚合展示）。
+ * 端口必须参与身份，否则 localhost:3000 与 localhost:8080 会被判成同一页面，与严格口径结论矛盾。
+ * pendingUrl 优先，与复用引擎同序。
  */
 function pageKeyOf(tab: TabRecord): { key: string; host: string } | null {
   const candidates = tab.pendingUrl ? [tab.pendingUrl, tab.url] : [tab.url];
@@ -87,21 +71,13 @@ function pageKeyOf(tab: TabRecord): { key: string; host: string } | null {
   return null;
 }
 
-/**
- * 计算窗口洞察。
- * @param tabs 当前窗口标签快照（tabStore.tabs）
- * @param boundTabIds 固定空间绑定标签 id 集合（绑定标签不参与休眠建议，
- *   与 handleDiscardInactive 的 targets 过滤口径一致）
- * @param now 滞留判定的时间基准；默认 Date.now()，测试注入固定值保持
- *   确定性 —— 与 parseWorkona 的 fallbackTime 注入同款惯例
- */
+/** @param now 滞留判定时间基准，测试可注入固定值。 */
 export function computeInsights(
   tabs: readonly TabRecord[],
   boundTabIds: ReadonlySet<number>,
   now: number = Date.now()
 ): InsightsResult {
-  // 1) 重复重灾区：页面身份键分组（www 归一化口径），≥ 2 份成组；
-  //    组内取归一化域名，同域名多组合并计数（一个站点多页面重复时按站点聚合更可读）。
+  // 重复重灾区：≥2 份成组，按站点聚合冗余数。
   const countByHost = new Map<string, number>();
   const copiesByKey = new Map<string, number>();
   for (const tab of tabs) {
@@ -121,8 +97,7 @@ export function computeInsights(
     .sort((a, b) => b.count - a.count || a.host.localeCompare(b.host))
     .slice(0, INSIGHT_TOP_N);
 
-  // 2) 休眠候选 / 已休眠：复用 canSafelyDiscardTab 纯函数（与批量休眠同口径），
-  //    绑定标签额外排除（休眠它们会让固定空间条目显示「未打开」造成误判）。
+  // 休眠候选：绑定标签排除（休眠它们会让固定空间条目显示「未打开」）。
   let discardableCount = 0;
   let discardedCount = 0;
   for (const tab of tabs) {
@@ -133,16 +108,11 @@ export function computeInsights(
     }
   }
 
-  // 3) 滞留预警：未激活超过 7 天的未固定标签（固定是用户主动长期保留，
-  //    不属于「忘记关」；已休眠的已经不占内存，无需催促）。
+  // 滞留预警：7 天未激活的未固定标签（绑定/pinned 是用户主动长期保留，已休眠不占内存）。
   const staleTabs: StaleTab[] = [];
   for (const tab of tabs) {
-    // 固定空间绑定标签与 pinned 同属「用户主动长期保留」，不该被建议归档
-    // （与上方 discardableCount 的绑定排除同口径：只排除 pinned 会漏掉绑定标签）。
     if (tab.active || tab.pinned || tab.discarded || boundTabIds.has(tab.id)) continue;
-    // 判定用**实时**激活时刻 lastActivatedAt，不用 lastAccessed：后者在面板侧被
-    // mergeSnapshotTabs 冻结在「标签首次出现」的时刻，拿它算滞留会把「8 天前打开、
-    // 刚刚才切过的标签」判成「8 天没动过」——本洞察的口径（7 天未激活）随之失效。
+    // 用实时 lastActivatedAt 而非面板侧被冻结的 lastAccessed，否则刚切过的标签会被误判为长期滞留。
     const activatedAt = tab.lastActivatedAt ?? tab.lastAccessed;
     if (typeof activatedAt !== 'number' || !Number.isFinite(activatedAt)) continue;
     const idleMs = now - activatedAt;

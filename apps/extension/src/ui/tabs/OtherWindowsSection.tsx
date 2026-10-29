@@ -30,14 +30,7 @@ export function OtherWindowsSection({
   onPullToWindow
 }: {
   otherWindows: readonly OtherWindow[];
-  /**
-   * 查询态：**必填**。
-   *
-   * 此前给了 `= 'ready'` 默认值（注释说「以兼容无状态来源的调用方」），而全仓
-   * 唯一调用点早已显式传值 —— 这个默认值没有任何真实消费方，却把「三态必须显式」
-   * 降级成可选：将来任何新增调用方忘了传，组件会静默以 ready 渲染旧快照或空列表，
-   * 把「查询一直失败」伪装成「没有其他窗口」。改为必填后由编译器兜住。
-   */
+  /** 查询态：**必填**，由编译器兜住三态显式传递；给默认值会让「查询失败」被伪装成「没有其他窗口」。 */
   status: OtherWindowsStatus;
   onRetry?: () => void;
   onFocusTab: (tab: TabRecord) => void;
@@ -169,9 +162,8 @@ export function OtherWindowsSection({
                       onClick={() => onPullToWindow(tab)}
                     />
                   )}
-                  {/* 危险态统一走 .row-action.is-danger（见 main.css）：此前手写的
-                      text-gray-400 + hover 红是同一语义的第二份实现，静默态 2.68:1
-                      低于非文本的 3:1，命中区也只有 18px。 */}
+                  {/* 危险态统一走 .row-action.is-danger（见 main.css）：手写 hover 红是同语义的第二份实现，
+                      且静默态 2.68:1 低于非文本的 3:1、命中区只有 18px。 */}
                   <RowActionButton
                     icon={Icons.close}
                     label={t('关闭该标签')}

@@ -3,10 +3,8 @@ import type { TemporarySection } from '@/core/site/Sections';
 /**
  * 键盘漫游序列（空查询态）：按列表显示顺序展开可见分区。
  *
- * 放 core 的理由：这是「分区 → 标签 id 序列」的纯派生（含折叠过滤），入参全是
- * `core/site/Sections` 的领域类型，零 chrome/DOM/React 依赖 —— 与
- * `core/layout/footerOrder` 的「顺序口径」同类。埋在 App 的 useMemo 里时
- * 无法单测，「折叠分区不进序列」这条规则只能靠手点验证。
+ * 放 core 的理由：「分区 → 标签 id 序列」的纯派生（含折叠过滤），零 chrome/DOM/React 依赖；
+ * 埋在 App 的 useMemo 里时无法单测，「折叠分区不进序列」这条规则只能靠手点验证。
  */
 
 /** 漫游序列的入参（与侧边栏的显示态一一对应）。 */

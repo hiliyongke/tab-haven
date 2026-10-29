@@ -2,23 +2,19 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TabRecord } from '@/core/tab-types';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 
-/** 预渲染的视口外缓冲行数，滚动时避免白屏。 */
+/** 视口外缓冲行数，滚动时避免白屏。 */
 const OVERSCAN = 6;
 
 /**
- * 用户主动定位（⌘J / 底部定位按钮）时请求虚拟列表滚动到目标标签。
- * 虚拟化后目标行可能在渲染窗口外（DOM 不存在），App 层的 querySelector
- * 永远找不到——必须「先滚动到 index、行挂载后再查 DOM」，故经此事件通知。
+ * 主动定位（⌘J / 定位按钮）请求虚拟列表滚到目标标签：虚拟化后目标行可能未挂载，
+ * DOM 查询无从触发，故经此事件按 index 滚动、行挂载后再查 DOM。
  */
 export const LOCATE_SCROLL_EVENT = 'tabs:locate-scroll';
 
 /**
- * 零依赖的定高虚拟列表：只渲染可视区 + 上下缓冲的少量行，用于长分组避免挂载上千个 DOM 节点。
- *
- * itemSize 以调用方估算值起步、首行挂载后实测校准：纯估算公式会与 CSS padding
- * 隐式耦合（改任一侧即错位），实测兜底消除该耦合，字号/密度调整不必同步改公式。
- *
- * 仅在父级不需要拖拽重排时使用；重排场景由调用方回退到全量 SortableContext。
+ * 定高虚拟列表：只渲染可视区 + 缓冲行，避免长分组挂载上千 DOM 节点。
+ * itemSize 为首行实测前的估算值；实测校准消除估算公式与 CSS padding 的隐式耦合。
+ * 仅用于无需拖拽重排的场景，重排由调用方回退到全量 SortableContext。
  */
 export function VirtualRowList({
   tabs,
@@ -34,21 +30,16 @@ export function VirtualRowList({
   itemSize: number;
   /** 视口最大高度（px）；超过则内部滚动，否则自适应内容高度。 */
   maxHeight: number;
-  /** 当前激活标签 id（虚拟化下激活行自动滚入可视区，接替 TabRow 内部的 scrollIntoView）。 */
+  /** 当前激活标签 id；虚拟化下由列表层负责滚入可视区。 */
   activeTabId?: number;
   /** 激活标签自动滚入可视区（与 TabRow 同名开关）。 */
   autoScrollActive?: boolean;
-  /**
-   * 搜索键盘导航选中的标签 id。
-   * 搜索过滤后命中行可能仍在渲染窗口之外（DOM 不存在，TabRow 的
-   * scrollIntoView 无从触发）——必须在列表层按 index 滚动，键盘流
-   * （↑/↓ + Enter）才不会指向看不见的行。
-   */
+  /** 搜索导航选中的标签 id；命中行可能未挂载，须由列表层按 index 滚入可视区。 */
   searchActiveTabId?: number;
   renderRow: (tab: TabRecord) => ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 底部渐隐边界提示（三层滚动链最内层，截断处需要「还有更多」的可见信号）
+  // 底部渐隐：三层滚动链最内层，截断处需要「还有更多」的可见信号。
   useScrollFade(scrollRef);
   /** 当前渲染窗口首行的外层定高 wrapper（行高实测的挂载点）。 */
   const firstRowRef = useRef<HTMLDivElement | null>(null);
@@ -57,15 +48,9 @@ export function VirtualRowList({
   /** 实测行高（首行自然高度）；null = 尚未测得，先用估算值。 */
   const [measuredSize, setMeasuredSize] = useState<number | null>(null);
   /**
-   * 根字号缩放系数（基准 16px）。
-   *
-   * 只作用于 `itemSize`：它是**设计基准下的 px**，字体放大后真实行高同步变高，
-   * 按写死的 px 定高会让行内容溢出被裁（WCAG 1.4.4 要求 200% 缩放不丢内容）。
-   * 实测值 measuredSize 本身就含缩放，不再乘。
-   *
-   * `maxHeight` **不参与缩放**：调用方传的是真实视口派生的 px
-   * （sectionCards 的 `viewportHeight * 0.5`，viewportHeight = window.innerHeight），
-   * 再乘一次等于二次放大，字号放大时虚拟区会突破「视口一半」的上限。
+   * 根字号缩放系数（基准 16px），仅作用于 itemSize：它是设计基准 px，放大后行高同步变高，
+   * 定高写死会裁内容（WCAG 1.4.4）。实测值本身含缩放不再乘；
+   * maxHeight 是真实视口派生 px，再乘等于二次放大。
    */
   const [scale, setScale] = useState(1);
   useEffect(() => {
@@ -98,27 +83,19 @@ export function VirtualRowList({
   /** 实际生效行高：实测值优先（已含缩放），未测得时退回按字号缩放的估算值。 */
   const effectiveItemSize = measuredSize ?? itemSize * scale;
 
-  // 估算值变化（切换密度 / 打开「显示网址」副标题）意味着行高结构已变：
-  // 丢弃旧实测值重新校准。否则 measuredSize 会一直优先于新的 itemSize，
-  // wrapper 定高与真实 li 高度不符 —— 表现为行互相重叠或被裁切。
+  // 估算值或缩放变化意味着行高结构已变，丢弃旧实测值重新校准；否则 wrapper 定高与
+  // 真实行高不符（行重叠/裁切）。scale 必须在依赖里：漏掉时字号变化后永久沿用旧行高。
   useEffect(() => {
     setMeasuredSize(null);
-  }, [itemSize]);
+  }, [itemSize, scale]);
 
-  // 行高实测校准：窗口移动（start 变化）或估算值变化（密度 / URL 副标题开关）后重测。
-  // 实测的是 wrapper 内 li 的自然高度（wrapper 只定高不裁剪，li 可溢出）；
-  // 与当前生效值一致时不 setState（防「测→改→再测」反馈循环）。
+  // 行高实测校准：窗口移动或估算变化后重测 li 自然高度；与生效值一致时不 setState（防反馈循环）。
   const total = tabs.length;
   const totalHeight = total * effectiveItemSize;
   /**
-   * 上界钳制：tabs 收缩（搜索过滤/批量关标签）时 scrollTop 仍是旧值。
-   *
-   * 只钳 start 不够：内容高度收缩后容器**没有可滚动余量**，浏览器不会派发
-   * scroll（依赖「scrollTop 越界钳位 → 派发 scroll」的自愈是 UA 行为而非契约），
-   * scrollTop 恒为旧值 —— start 被钳到末行、end 也跟着越界，结果只剩最后一行
-   * 挂载（滚到 2000px 后过滤成 3 条，看到的是孤零零一条）。
-   *
-   * 故派生一个已钳位的 `scrolledTop`，窗口的**两个端点**都用它算。
+   * scrollTop 上界钳制：tabs 收缩后内容无可滚动余量，浏览器不派发 scroll（越界自愈是
+   * UA 行为非契约），scrollTop 恒为旧值。故派生已钳位的 scrolledTop，窗口两端点都用它算，
+   * 否则只剩末行挂载。
    */
   const maxScrollTop = Math.max(0, totalHeight - viewport);
   const scrolledTop = Math.min(scrollTop, maxScrollTop);
@@ -127,10 +104,8 @@ export function VirtualRowList({
     Math.max(0, total - 1)
   );
   useEffect(() => {
-    // 已校准过就不再测：`start` 每移动一行都会变，跟着它重测等于每次滚动都强制
-    // 一次同步布局（getBoundingClientRect 会打断浏览器的渲染流水线）。
-    // 虚拟列表用的是**统一**行高，一次校准足够；结构变化（密度档位 / 是否显示
-    // 网址副标题）由上面的 effect 把 measuredSize 置回 null 来触发重新校准。
+    // 已校准就不再测：start 每行变化都触发会强制同步布局；统一行高一次校准足够，
+    // 结构变化由上面的 effect 置回 null 触发重测。
     if (measuredSize !== null) return;
     const inner = firstRowRef.current?.firstElementChild;
     if (!(inner instanceof HTMLElement)) return;
@@ -138,14 +113,13 @@ export function VirtualRowList({
     if (height > 0 && Math.abs(height - effectiveItemSize) >= 1) setMeasuredSize(height);
   }, [start, effectiveItemSize, measuredSize]);
 
-  // maxHeight 已是真实 px，不再乘 scale（见 scale 的注释）。
+  // maxHeight 已是真实 px，不再乘 scale。
   const containerHeight = Math.min(totalHeight, maxHeight);
   const end = Math.min(total, Math.ceil((scrolledTop + viewport) / effectiveItemSize) + OVERSCAN);
   const visible = tabs.slice(start, end);
 
-  // rAF 节流：滚动事件每帧最多触发一次 setState，避免高频滚动时整树反复重渲染。
-  // 必须记录「最新值」再在帧里提交：帧内有 pending 时直接丢弃，会让停止滚动时
-  // 最后一帧的 scrollTop 丢失，窗口停在旧位置（表现为列表底部一小段滚不出来）。
+  // rAF 节流：每帧最多一次 setState；必须记录最新值在帧里提交，否则停止滚动时最后一帧
+  // scrollTop 丢失，窗口停在旧位置。
   const scrollRafRef = useRef(0);
   const pendingTopRef = useRef(0);
   useEffect(() => () => cancelAnimationFrame(scrollRafRef.current), []);
@@ -158,9 +132,7 @@ export function VirtualRowList({
     });
   };
 
-  // ⌘J 定位：把渲染窗口滚到目标 index（直接写 scrollTop = 瞬时滚动，
-  // 无 scrollTo API 差异），同时写 scrollTop 状态——不等 scroll 事件走 rAF，
-  // 让行在下一次渲染即挂载。
+  // ⌘J 定位：直接写 scrollTop 瞬时滚动，并同步写状态让行在下一次渲染即挂载，不等 rAF。
   useEffect(() => {
     const handleLocateScroll = (event: Event) => {
       const tabId = (event as CustomEvent<number>).detail;
@@ -175,8 +147,7 @@ export function VirtualRowList({
     return () => window.removeEventListener(LOCATE_SCROLL_EVENT, handleLocateScroll);
   }, [effectiveItemSize]);
 
-  // 搜索键盘导航选中行滚入可视区：命中行可能未挂载（TabRow 的 scrollIntoView
-  // 无从触发），按 index 直接滚动容器。键盘逐行移动用瞬时滚动（auto），
+  // 搜索导航选中行滚入可视区：命中行可能未挂载，按 index 滚动容器；逐行移动用瞬时滚动，
   // 平滑动画在快速连按时会拖沓且目标位置持续过期。
   useEffect(() => {
     if (searchActiveTabId === undefined) return;
@@ -195,9 +166,8 @@ export function VirtualRowList({
     }
   }, [searchActiveTabId, effectiveItemSize]);
 
-  // 激活标签自动滚入可视区：目标行可能未挂载，TabRow 内部的 scrollIntoView
-  // 不可用，需按 index 直接滚动容器（等价 block:'nearest'：只在目标不可见时滚）。
-  // scrollTo 优先（支持平滑动画），无该 API 的环境（jsdom）退回直接赋值。
+  // 激活标签自动滚入可视区：目标行可能未挂载，按 index 滚动容器（等价 block:'nearest'）。
+  // scrollTo 优先（支持平滑），无该 API 的环境（jsdom）退回直接赋值。
   useEffect(() => {
     if (!autoScrollActive || activeTabId === undefined) return;
     const index = tabsRef.current.findIndex((tab) => tab.id === activeTabId);
@@ -221,24 +191,16 @@ export function VirtualRowList({
   return (
     <div
       ref={scrollRef}
-      /* scroll-fade：本区是「固定空间 → 主列表 → 虚拟列表」三层滚动链的最内层，
-         被 maxHeight 截断却没有底部边界提示，滚到一半会误判到底。 */
+      /* scroll-fade：三层滚动链最内层，被 maxHeight 截断需底部边界提示 */
       className="virtual-row-scroll scroll-fade"
       onScroll={handleScroll}
       style={{ height: containerHeight, overflowY: totalHeight > maxHeight ? 'auto' : 'hidden' }}
     >
       <div style={{ height: totalHeight, position: 'relative' }}>
         {/*
-          role="list"：行由调用方渲染，TabRow 根元素是 <li>，而虚拟化分支外层没有
-          <ul>（非虚拟分支由 sectionCards 提供）——缺了这个角色，渲染出的就是
-          「父非 ul/ol 的孤儿 li」，读屏会丢失「列表 N 项」语义与位置播报。
-          行 wrapper 标为 presentation，让 <li> 直接挂回 list 的语义上下文。
-
-          aria-setsize 声明「全集 N 项」：虚拟化只挂载窗口内的行，读屏按 DOM
-          数项会得到「3 项」这类随滚动变化的数字。
-          （aria-posinset 挂在行 wrapper 上会被 presentation 角色吞掉，
-          它必须落在调用方渲染的 <li> 上 —— 但那需要给 renderRow 增加位置入参，
-          属接口变更，不在本次改动范围。）
+          role="list"：虚拟化分支外层无 <ul>，TabRow 的 <li> 会成孤儿，读屏丢失列表语义；
+          行 wrapper 标 presentation 让 <li> 挂回 list 上下文。
+          aria-setsize 声明全集 N 项：虚拟化只挂载窗口内行，否则读屏按 DOM 数得到随滚动变化的数字。
         */}
         <div
           role="list"
