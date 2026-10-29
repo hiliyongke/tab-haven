@@ -123,9 +123,7 @@ export function useBatchTabActions(params: {
         notify(t('没有可清理的重复标签'));
         return;
       }
-      // 保留项全程留在 DOM 里（关闭只作用于 removable），因此脉冲不需要
-      // 「等 80ms 猜 DOM 已更新」这种拍脑袋的时间窗口 —— 改为等关闭动作
-      // **完成后**再脉冲，用确定性信号取代猜测的延迟。
+      // 关闭动作只作用于 removable；等待 closeWithUndo 完成后再高亮仍在 DOM 中的保留项。
       return closeWithUndo(
         liveTabs,
         plan.removable.map((tab) => tab.id)

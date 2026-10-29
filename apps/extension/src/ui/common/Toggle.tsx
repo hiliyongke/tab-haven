@@ -5,8 +5,7 @@ import { useControlId } from '@/ui/common/controlId';
  *
  * 可达性要点：
  * - role="switch" + aria-checked，读屏播报「开 / 关」而非「已点击」；
- * - 轨道与滑块的视觉走 CSS 令牌（.switch / .switch-knob），尺寸由 --sw-w/--sw-h 派生，
- *   不再出现 left-[18px] 这类与尺寸强耦合的魔数；
+ * - 轨道与滑块使用 CSS 令牌（.switch / .switch-knob），尺寸和位移由 --sw-w / --sw-h 派生；
  * - ::after 透明扩区把 20px 视觉高度撑到 24px 命中区（WCAG 2.5.8）。
  */
 export function Toggle({

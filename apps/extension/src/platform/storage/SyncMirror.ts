@@ -54,7 +54,7 @@ interface MirrorData {
 /**
  * 同步状态的成因分类。
  * 前四类是 pull() 的结果（区分「从未同步过」与「本该有镜像却拿不到」）；local 由初始化切片合成 ——
- * 本地已有数据、本轮未从镜像恢复，此时沿用 ok 会让设置页误报「已生效」。
+ * 本地已有数据且初始化未从镜像恢复时，应标记为 local，避免设置页误报「已生效」。
  */
 export type MirrorSyncIssue = 'ok' | 'none' | 'chunk-limit' | 'unreadable' | 'local';
 

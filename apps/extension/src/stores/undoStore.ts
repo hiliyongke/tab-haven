@@ -224,7 +224,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
   const scheduleToastClear = (): void => {
     clearTimeout(toastTimer);
-    // 提示条显示时长来自设置（默认 7 秒），不再硬编码。
+    // 提示条显示时长读取设置，默认 7 秒。
     const durationSec = useDataStore.getState().settings.toastDurationSec;
     toastTimer = setTimeout(() => {
       set({ toast: null });
@@ -349,13 +349,8 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
   /**
    * 撤销执行体（undo / undoBatch 共用）。
-   *
-   * 关键语义：恢复成功才出栈。先出栈再恢复时，一旦部分或全部恢复失败，
-   * 该批次的撤销记录已经消失，用户既没拿回标签也失去了重试入口。
-   * 本实现：先恢复 → 按结果决定整批移除还是保留失败项（失败项重新入栈，可再次撤销）。
-   *
-   * 因此出栈由调用方经 `onCommitted` 回调执行，而**不是**在调用前乐观出栈：
-   * 提前出栈会在「拿不到目标窗口」这类早退路径上把批次永久丢掉。
+   * 恢复成功后才移除批次；恢复失败的条目保留在栈中，供用户重试。
+   * 调用方通过 `onCommitted` 在恢复完成后更新当前栈，确保无法确定目标窗口时撤销记录仍可用。
    */
   const runUndo = async (
     batch: UndoBatch,
@@ -457,31 +452,22 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     batch: UndoBatch,
     onCommitted: (currentStack: UndoBatch[], retryBatch: UndoBatch | undefined) => void
   ): Promise<void> => {
-    // CAS：置位与判据必须是同一次同步操作，不能分开。
-    //
-    // 调用方（`undo` / `undoBatch`）的 `isExecuting()` 在 `await get().load()` **之前**
-    // 判定，而置位在这里（await 之后）。于是 ready=false 时同一 tick 的两次撤销会
-    // 各自通过那道判空、各自 await 同一个 loadInFlight、各自 popBatch 拿到**同一个**
-    // latest —— 同一批标签被恢复两次（撤销从安全网变成重复标签制造机）。
-    // persistUndo=false 时跨页复核整段跳过，那道判空是唯一拦截，缺口更大。
-    //
-    // 放在本函数开头（await 之前同步执行）覆盖全部调用方：zustand 的 set 同步生效，
-    // 置位后同 tick 内的第二个调用方立刻读到。
+    // CAS：检查状态与置位在同一次同步操作中完成，并在任何 await 之前执行。
+    // zustand 的 set 同步生效，因此同一 tick 内的后续调用会立即读到执行中状态；
+    // 该护栏也覆盖 persistUndo 关闭时仅有的页内互斥路径。
     if (get().undoing || get().redoing) return;
     set({ undoing: true });
     try {
       // 跨页互斥：锁名声明在同层的 crossPageLock（存储键不散落到 store）。
-      // 锁内先按磁盘栈复核批次仍存在（他页可能已撤销），双重恢复由此根治。
       await withCrossPageLock(UNDO_EXEC_LOCK, async () => {
-        // 跨页复核：另一窗口可能已撤销同一批次（内存栈经 watch 收敛存在延迟窗口）。
-        // persistUndo 开启时磁盘是跨页权威；关闭时各页内存互不可见，退化为页内语义。
+        // 锁内复核批次仍在持久化栈中。persistUndo 开启时以磁盘为跨页权威；
+        // 关闭时各页内存互不可见，撤销语义限定在当前页面。
         const settings = await settingsRepository.read();
         if (settings.persistUndo) {
           const disk = await undoRepository.read();
           if (!disk.some((entry) => entry.id === batch.id)) {
-            // 磁盘查不到该批次（如批次在 persistUndo 关闭期间入栈、之后用户重新开启，
-            // 或已被另一页面撤销）：不得静默 return——「点了撤销没反应」会让用户
-            // 以为扩展卡住。批次留在内存栈中不弹出，用户至少明确知道本次未执行。
+            // 磁盘中没有该批次（例如其在 persistUndo 关闭时入栈，或已被另一页面撤销）时，
+            // 保留当前内存记录并显示错误提示，明确告知本次撤销未执行。
             set({
               toast: {
                 message: translate('操作失败，请稍后重试'),
@@ -503,15 +489,12 @@ export const useUndoStore = create<UndoState>()((set, get) => {
 
   /** 入栈并持久化（closeWithUndo 与 recordClosedBatch 共用）。 */
   const appendBatch = async (batch: UndoBatch): Promise<void> => {
-    // load 在途期间不得基于内存栈入栈：load 完成时会以旧磁盘值覆盖内存，
-    // 在途入栈的批次会被整批抹掉（面板秒开秒操作可确定性复现）。
+    // 等待 load 完成后再入栈，避免磁盘状态加载覆盖尚未持久化的内存批次。
     if (!get().ready) await get().load();
     const settings = await settingsRepository.read();
     const { kept, evicted } = pushBatchWithEvicted(get().batches, batch, settings.undoStackLimit);
     set({ batches: kept });
-    // 淘汰告知：栈深上限是已披露且用户可调的，缺的是「淘汰发生那一刻」
-    // 的一次提示——否则用户只在打开撤销历史时才发现旧批次不见了。
-    // 只在真正淘汰时提示，且由 toast（非 alert）承载 —— 这是信息而非错误。
+    // 发生淘汰时通过 toast 告知用户；栈深上限已在撤销历史中说明，此处仅提示实际淘汰结果。
     if (evicted.length > 0) {
       // 走 notifyEviction 合并：连续关闭会一次次淘汰，逐次提示会互相顶掉。
       get().notifyEviction(
@@ -521,8 +504,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
         })
       );
     }
-    // 新的关闭批次入栈即清空重做栈：重做只对「最近一次撤销」有意义，用户一旦
-    // 开始新的关闭动作，旧的重做项已不再对应当前状态（否则重做会去关无关的标签）。
+    // 新的关闭批次入栈时清空重做栈：重做仅对应最近一次撤销，避免关闭与当前状态无关的标签。
     // 仅栈非空时才写盘：绝大多数关闭路径不产生额外写。
     if (get().redoBatches.length > 0) {
       set({ redoBatches: [] });
@@ -560,9 +542,7 @@ export const useUndoStore = create<UndoState>()((set, get) => {
             })
           );
         }
-        // 重做栈同样需要跨页回流：另一页撤销写入的重做项在本页内存看不到时，
-        // 「入栈即清重做栈」的守卫（仅看内存）就不会触发，陈旧的重做项会留到
-        // 下次重做 —— 重做按 URL 反查，可能关掉与本次撤销无关的标签。
+        // 重做栈同样通过 watcher 跨页回流，使新关闭批次入栈时能清除其他页面生成的重做项。
         if (!redoWatcherStarted) {
           redoWatcherStarted = true;
           watcherUnsubscribers.push(

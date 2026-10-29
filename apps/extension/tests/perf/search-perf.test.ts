@@ -2,21 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { SearchEngine } from '@/core/search/SearchEngine';
 
 /**
- * 性能规格测试（搜索性能的结构性保证 → 回归门禁）：
- *  - 「搜索输入到结果呈现 < 100ms（150 标签规模）」—— 单测覆盖纯计算部分
- *    （索引已构建后的查询路径）；DOM 渲染与冷启动（<500ms）无法在单测环境度量。
- *  - 索引构建（fuzzysort prepare + 拼音首字母）为标签变更时的一次性成本，
- *    单独设阈值防回归。
+ * 搜索性能规格：150 标签下索引后查询中位数低于 100ms，索引构建低于 1000ms；
+ * 500 标签下查询中位数低于 300ms。
  *
- * 阈值口径与防 flaky：
- *  - **预热**：首个查询要承担 fuzzysort 的首次加载与 JIT 编译，
- *    直接计时会把一次性成本算进「单次查询」，在 CI 冷机上足以翻几十倍。
- *    （拼音词典 pinyin-pro 为按需动态加载，不在查询路径与本次度量范围内。）
- *  - **取中位数**而非最大值：单次毛刺（GC、调度抢占）不应判死刑；
- *    中位数仍能稳定捕获数量级回归，这才是本测试要守的东西。
- *  - **阈值按规模分档**：500 标签与 150 标签用同一阈值并不合理，
- *    规模大 3 倍仍要求同样的耗时，等于把偶发抖动放大成必然失败。
- *  - 本文件只做纯计算，不与其他用例争抢 CPU（规模测试自身即负载）。
+ * 单测覆盖纯计算路径；DOM 渲染与冷启动耗时不在度量范围内。索引构建是标签变更时
+ * 的一次性成本，单独设置阈值；拼音词典按需加载，不计入本文件的查询测量。
+ *
+ * 测量前预热搜索引擎，并按标签规模设置阈值；多轮取中位数以降低 GC 与调度波动的
+ * 影响。本文件只测量搜索性能，不与其他用例争抢 CPU。
  */
 
 /** 构造贴近真实规模的标签集：中英混排标题 + 多样化域名。 */
@@ -59,12 +52,12 @@ function buildTabs(
   });
 }
 
-/** 预热：让 fuzzysort 完成首次加载与 JIT，避免一次性成本计入测量。 */
+/** 预热搜索引擎，避免初始化耗时计入单次查询测量。 */
 function warmUp(engine: SearchEngine): void {
   for (const query of ['git', '文档', 'wk', 'release']) engine.search(query);
 }
 
-/** 多轮取中位数：抗单次毛刺，仍能捕获数量级回归。 */
+/** 多轮取中位数，降低单次测量波动的影响。 */
 function medianQueryMs(engine: SearchEngine, queries: readonly string[], rounds = 5): number {
   const samples: number[] = [];
   for (let round = 0; round < rounds; round += 1) {
@@ -85,7 +78,7 @@ describe('SearchEngine 性能规格', () => {
     warmUp(engine);
     const queries = ['git', '文档', 'wk', 'wj', 'release', 'zhihu', '深度', 'dev', 'x', 'com'];
 
-    // 附加校验：查询确实命中（防止「快是因为啥都没做」的假通过）
+    // 确认查询有命中结果后再评估耗时。
     expect(engine.search('文档')).not.toHaveLength(0);
     expect(medianQueryMs(engine, queries)).toBeLessThan(100);
   });

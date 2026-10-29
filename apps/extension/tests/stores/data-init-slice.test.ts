@@ -5,22 +5,8 @@ import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { DataContext, DataState } from '@/stores/data/types';
 
 /**
- * 初始化切片（`stores/data/initSlice.ts`）。
- *
- * 这段逻辑的核心不是「读数据」，而是**首次启动的镜像恢复顺序**，其中三条错了会丢用户数据：
- *
- * 1. **`seeded` 必须在恢复数据全部落盘成功之后才置位**。若先置位而回写失败，
- *    下次启动不再拉取镜像，新设备刚恢复出来的数据永久丢失。
- * 2. **pull 为 null（通道不可用 / 镜像损坏）时同样不置位**，保持下次启动重试的机会。
- * 3. **本地已有数据时以本地为准**（只在对应分区为空时才用镜像值覆盖），
- *    否则老设备会被陈旧镜像反向覆盖。
- *
- * 另有一条与隐私相关的闸门：**「不上传」与「不下载」必须同开同关** ——
- * 关掉同步的用户在换机时不得被旧镜像回灌。
- *
- * 测试方式：直接调用 `createInitSlice(ctx)` 并传入假 ctx，不经 store ——
- * 初始化守卫是模块级变量，因此每个用例都 `resetModules` 后重新导入，
- * 否则第二个用例会被第一个用例的守卫挡掉（表现为「什么都没发生」而假绿）。
+ * 初始化与镜像恢复行为规格：仅在同步开启且本地分区为空时恢复有效镜像；
+ * 恢复写入成功后设置 seeded，本地已有数据时以本地内容为准。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -314,11 +300,7 @@ describe('首次启动的镜像恢复', () => {
     expect(applied.mirrorIssue).toBe('unreadable');
   });
 
-  /**
-   * 回归（M4 / S2）：initSlice 的镜像恢复走的是同一批外部输入，必须与备份导入
-   * 同款收紧 url / favicon。此前两处都只用基础 schema，备份入口的收紧形同虚设
-   * （同一份数据在镜像通道里原样落盘）。
-   */
+  /** 镜像恢复的 URL 与 favicon 按外部数据校验规则归一化。 */
   it('镜像条目 url 为脚本 / 本地文件时归一为 about:blank（与备份入口同口径）', async () => {
     mocks.pull.mockResolvedValueOnce({
       folders: [

@@ -48,7 +48,7 @@ async function openKeysInWindow(
       if (key) keys.add(key);
     }
   } catch (error) {
-    // 与 snapshots.restoreSnapshot 同口径：去重查询失败会走「不去重」分支，本轮可能多建副本。
+    // 与 snapshots.restoreSnapshot 同口径：去重查询失败会走「不去重」分支，此次恢复可能多建副本。
     logDegraded('undo', `查询窗口 ${windowId} 已打开页面失败，按无重复恢复（可能多建副本）`, error);
     return { keys, degraded: true };
   }

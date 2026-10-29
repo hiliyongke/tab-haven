@@ -113,19 +113,17 @@ describe('folderCommands 纯计算', () => {
   });
 
   it('fixedItemKey 以完整 web URL 为身份键（查询串参与身份）', () => {
-    // 基线规则「同一 URL 全局唯一」为精确 URL 匹配；查询串 / 锚点不同即不同条目。
+    // 查询串 / 锚点不同即为不同条目，相同 URL 得到相同身份键。
     expect(fixedItemKey('https://x.com/?a=1')).not.toBe(fixedItemKey('https://x.com/?b=2'));
     expect(fixedItemKey('https://x.com/?a=1')).toBe(fixedItemKey('https://x.com/?a=1'));
-    // 无 URL（挂起 / 导入数据）返回 null：判不出身份就不给身份键。
-    // 历史上这里返回空串，导致所有无 URL 条目撞成同一个键、互相判为重复而被删除。
+    // 无 URL（挂起 / 导入数据）不生成身份键。
     expect(fixedItemKey(undefined)).toBeNull();
     // 非 web 页（内部页）降级原样返回
     expect(fixedItemKey('chrome://newtab')).toBe('chrome://newtab');
   });
 
-  it('多个无 URL 条目不会互相判为重复（防静默删除回归）', () => {
-    // 回归：fixedItemKey 曾对无 url 条目返回 ''，使第二个及之后的条目被
-    // 归入 duplicateItemIds，从**全部文件夹**里移除 —— 一次导入即丢数据。
+  it('多个无 URL 条目不会互相判为重复', () => {
+    // 多个无 URL 条目均保留，且不加入重复条目集合。
     const folders = [
       folder('a', 'A', {
         items: [

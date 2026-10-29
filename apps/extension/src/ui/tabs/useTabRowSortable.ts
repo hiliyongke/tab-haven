@@ -49,7 +49,7 @@ export function useTabRowSortable({
       // 「提示暂停、松手却真实重排」的行为矛盾。
       canReorder: reorderEnabled,
       title,
-      // 拖拽跟随层要显示图标：带页面地址交给 Favicon 走浏览器通道，不再带图标地址。
+      // 拖拽跟随层根据页面 URL 通过浏览器通道获取对应 favicon。
       url
     }
   });

@@ -23,11 +23,8 @@ import {
  *  1. 能力边界（哪些组合支持、哪些明确不支持）；
  *  2. 反馈语义（拒绝必有原因，绝不静默；noop 才是唯一允许的静默）。
  *
- * 历史缺陷（本次修复的对象）：
- *  - 标签拖到分组头：卡片高亮，松手什么都不做；
- *  - 收藏夹条目拖回自己所属文件夹：写一次无效数据并弹「已移动到目标文件夹」；
- *  - 文件夹拖到收藏夹空白：高亮，松手无操作；
- *  - 排序开关关闭时：标签排序有提示、分组排序静默。
+ * 投放判定与视觉反馈在所有拖拽类型和闸门状态下保持一致：支持的操作返回动作，
+ * 不支持的操作返回原因，原位投放不执行操作；排序开关关闭时统一拒绝排序。
  */
 
 const tab = (tabId: number, containerKey = 'ck', canReorder = true): DragData => ({
@@ -258,7 +255,7 @@ describe('classifyDrop：文件夹与磁贴作为拖拽源', () => {
 });
 
 describe('resolveDrop：全局闸门', () => {
-  it('排序开关关闭：标签排序与分组排序都给出同一原因（不再一半有提示一半静默）', () => {
+  it('排序开关关闭：标签排序与分组排序都返回 sync-off', () => {
     const ctx = { ...OK, tabOrderSync: false };
     expect(outcomeOf(resolveDrop(tab(1), target(tab(2)), ctx))).toBe('sync-off');
     expect(outcomeOf(resolveDrop(section('a', 1), target(section('b', 2)), ctx))).toBe('sync-off');

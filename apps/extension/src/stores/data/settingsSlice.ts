@@ -159,7 +159,7 @@ export function createSettingsSlice(
           await clearAllStoredData(() => syncMirror.clearAll());
           // 清空期间若又排入合并写（极少见），丢弃之，保证最终落盘为空态。
           await ctx.cancelWrites();
-          // 存储刚被整体清空：降级记账已无对应数据，不重置会让「数据可能未保存」横幅永久驻留。
+          // 整体清空后复位降级记账；失败记录已不再对应现存数据。
           ctx.resetDegraded();
           ctx.set({
             folders: [],
@@ -167,7 +167,7 @@ export function createSettingsSlice(
             collapsedSites: [],
             settings: DEFAULT_SETTINGS,
             boundTabIds: [],
-            // 镜像已随 clearAllStoredData 删除：写失败态与拉取分类同样不再有对应数据。
+            // clearAllStoredData 同时删除镜像，因此清空写入失败态与拉取分类。
             mirrorWriteFailed: false,
             mirrorQuotaExceeded: false,
             mirrorIssue: null,

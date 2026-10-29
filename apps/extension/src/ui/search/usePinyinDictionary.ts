@@ -27,7 +27,7 @@ export function usePinyinDictionary(enabled: boolean): boolean {
       }
       // 词典加载失败只降级拼音匹配（标题 / URL 匹配不受影响），但必须留痕：
       // 否则用户看到的「打拼音搜不到」无从归因。
-      logDegraded('search', '拼音词典加载失败，本轮拼音匹配不可用');
+      logDegraded('search', '拼音词典加载失败，当前无法使用拼音匹配');
     });
     return () => {
       cancelled = true;

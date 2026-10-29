@@ -7,9 +7,8 @@ import { collectFromFile, type CollectOptions } from 'i18n-kit/node';
 /**
  * 行为规格：源码词条抽取（`packages/i18n-kit/src/collect.ts`）。
  *
- * 扫描器与守卫共用这一份抽取结果 —— 抽不到就等于「英文模式露中文」，
- * 而且 check / lint 会因为用的是同一份结果而同时给出绿灯。下面每一条
- * 都钉死一类曾真实发生的漏抽。
+ * 扫描器与守卫共用抽取结果；抽取结果决定词典登记项与检查范围。
+ * 以下用例定义抽取器对常见源码结构的当前行为。
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'i18n-collect-'));
@@ -33,7 +32,7 @@ describe('collectFromFile: t() 调用点', () => {
   });
 
   it('Given 三元表达式两支 When 抽取 Then 两支都登记（漏一支即该分支露中文）', () => {
-    // 要防的失效：三元整体被跳过时，运行时两支都会走到却只有一支登记。
+    // 三元表达式的两支字符串字面量都会登记，确保每个可达分支都有词条。
     expect(sentences(`t(tab.pinned ? '取消固定' : '固定标签');`)).toEqual(['取消固定', '固定标签']);
   });
 
@@ -48,8 +47,7 @@ describe('collectFromFile: t() 调用点', () => {
   });
 
   it('Given 字符串拼接原文 When 抽取 Then 报「无法计算 key」而不是静默放过', () => {
-    // 回归：只认 TemplateLiteral 时，`'共' + n + '个'` 既抽不到词条，
-    // 又因 lint 把 t() 参数整棵标记为已接管而躲过裸露中文检查，三处守卫全绿。
+    // 字符串拼接无法静态确定完整原文；抽取器会报告错误，不将其静默当作有效词条。
     const result = collect(`t('共' + count + '个标签');`);
     expect(result.entries).toHaveLength(0);
     expect(result.errors.join('\n')).toContain('字符串拼接');
@@ -62,14 +60,14 @@ describe('collectFromFile: t() 调用点', () => {
   });
 
   it('Given context 是非字面量 When 抽取 Then 报错而不是按无 context 算 key', () => {
-    // 运行时按变量值算 key、抽取按 undefined 算 key，两者不一致时英文模式露中文。
+    // context 非字面量时无法静态确定 key，抽取器报告错误以避免扫描与运行时的 key 不一致。
     const result = collect(`t('固定标签', { context: ctx });`);
     expect(result.errors.join('\n')).toContain('context 不是字面量');
   });
 
   it('Given 源码有可恢复的语法错误 When 抽取 Then 报「语法错误」且不丢掉能抽到的词条', () => {
-    // errorRecovery 下坏语法不抛错，只挂在 ast.errors 上；不读它等于「抽到多少算多少」。
-    // 这里用 tsx 下的 `<T>` 单类型参数歧义构造可恢复错误（Babel 会继续产出 AST）。
+    // Babel 的 errorRecovery 会将可恢复语法问题记录在 ast.errors 并继续生成 AST；
+    // 抽取器报告语法错误，同时保留仍可抽取的有效词条。tsx 下的 `<T>` 构造该场景。
     const result = collect(`const f = <T>(x: T) => x;\nt('甲文案');`, 'recover.tsx');
     expect(result.errors.join('\n')).toContain('语法错误');
     expect(result.entries.map((entry) => entry.sentence)).toContain('甲文案');
@@ -92,10 +90,8 @@ describe('collectFromFile: 常量表与 Trans', () => {
   });
 
   it('Given `*Key` 属性是含中文的插值模板串 When 抽取 Then 报错而非静默漏抽', () => {
-    // 回归（白纸审查）：常量表的值同样会进 t() 渲染。旧实现只调 literalText，
-    // 对插值模板串返回 null 后 push('') 被过滤 —— 既抽不到词条，lint 又因
-    // markTree 把值标记为「已接管」而不报裸露中文，scan/check/lint 三绿，
-    // 但这句中文在英文模式原样显示。必须与 t() 通道同口径报错。
+    // 含中文的插值模板无法静态确定词条 key；常量表属性值与 t() 参数使用同一抽取规则，
+    // 抽取器对该模板串报告错误，避免静默漏词或将其标记为已接管。
     const result = collect('const X = { labelKey: `共 ${count} 个标签` };');
     expect(result.entries).toHaveLength(0);
     expect(result.errors.join('\n')).toContain('模板串含插值');
@@ -108,8 +104,7 @@ describe('collectFromFile: 常量表与 Trans', () => {
   });
 
   it('Given `*Key` 属性是条件表达式 When 抽取 Then 每一支都入词条，不静默丢弃', () => {
-    // 回归：branchNodes 展开成裸字面量后，若只按 TemplateLiteral/BinaryExpression 判定，
-    // 两支都会既不入词典也不报错，而英文模式下它们会原样渲染。
+    // 条件表达式的每个字面量分支都会登记，且不产生抽取错误。
     const result = collect(`const X = { labelKey: f ? '丙文案' : '丁文案' };`);
     expect(result.errors).toEqual([]);
     expect(result.entries.map((entry) => entry.sentence)).toEqual(['丙文案', '丁文案']);
@@ -130,8 +125,7 @@ describe('collectFromFile: 常量表与 Trans', () => {
 
 describe('collectFromFile: 常量表通道可配置', () => {
   it('Given 自定义 keySuffixes When 抽取 Then 该后缀的属性值也登记（title / placeholder 这类非 t() 通道）', () => {
-    // 要防的失效：`{ title: … }` / `{ labelTitle: … }` 这类常量表最终也会传进 t()，
-    // 但默认只认 `*Key`，于是只能靠 @i18n-ignore 压住 lint 告警——告警没了，词条依然进不来。
+    // 传入自定义后缀后，匹配属性中的原文进入抽取结果；未配置的后缀仍遵循默认规则。
     const entries = collect(`const X = [{ labelTitle: '聚焦搜索' }];`, 'fixture.tsx', {
       keySuffixes: ['Key', 'Title']
     });

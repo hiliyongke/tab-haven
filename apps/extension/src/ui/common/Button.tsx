@@ -11,20 +11,16 @@ type ButtonVariant =
   | 'danger-ghost'
   | 'soft-outline';
 
-/** 段尾 `disabled:hover:*` 非冗余：Chrome 里 `<button disabled>` 仍匹配 :hover，禁用态会继续
- *  播 hover 变色（看着像还能点），须显式把 hover 回落到静态值。 */
+/** Chrome 中 `<button disabled>` 仍匹配 :hover，因此禁用态显式将 hover 样式设回静态值。 */
 const BUTTON_TONES: Record<ButtonVariant, string> = {
   primary: 'bg-accent-600 text-on-accent hover:bg-accent-700 disabled:hover:bg-accent-600',
   secondary: 'text-gray-600 hover:bg-gray-100 disabled:hover:bg-transparent',
-  /* 描边次级：与 secondary 同骨架多一条可见边界。收进变体后「灰底还是白底描边」不再取决于
-     Tailwind 输出顺序（调用点补 border + hover:bg-gray-50 会被 secondary 的 hover:bg-gray-100 覆盖）。 */
+  /* 描边次级：沿用 secondary 的文字样式，使用描边表面与独立 hover 底色表达次级层级。 */
   'secondary-outline':
     'border border-control bg-surface font-medium text-gray-600 hover:bg-gray-50 disabled:hover:bg-surface',
-  /* ghost / accent-ghost：无底色无边框的文字按钮。收进变体后 min-h 命中下限与 disabled:hover
-     兜底与其余变体同源。 */
+  /* ghost / accent-ghost：无底色无边框的文字按钮，命中尺寸与禁用态 hover 规则由变体统一提供。 */
   ghost: 'text-gray-500 hover:bg-gray-100 disabled:hover:bg-transparent',
-  /* 强调色文字按钮：与 ghost 同骨架只换强调色，不让调用方用 className 覆盖 ghost 的 text-gray-500
-     （两个 text-* 同特异性，胜负取决于输出顺序）。 */
+  /* 强调色文字按钮：沿用 ghost 的骨架，以强调色表达层级，样式由变体统一管理。 */
   'accent-ghost': 'font-medium text-accent-700 hover:bg-accent-100 disabled:hover:bg-transparent',
   /* 警示色文字按钮（告警横幅「重试」）：配色必须由变体给定。 */
   'warn-ghost': 'font-medium text-warn-700 hover:bg-warn-100 disabled:hover:bg-transparent',
@@ -74,7 +70,7 @@ export function Button({
     <button
       type={type}
       className={
-        /* cursor-pointer：Tailwind v4 preflight 不再为按钮默认提供手型光标，须显式声明 */
+        /* Tailwind v4 preflight 不为按钮设置手型光标，因此可用状态由组件显式声明。 */
         'inline-flex items-center justify-center rounded transition-base cursor-pointer disabled:cursor-default disabled:opacity-50 ' +
         /* 高度下限：dense/xs/sm 24px / md 32px（WCAG 2.5.8），不以牺牲最小点击区域为代价。 */
         BUTTON_SIZES[size] +

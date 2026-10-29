@@ -6,10 +6,7 @@ import { hasPermissions, requestPermissions } from '@/platform/permissions';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 
 /**
- * navigation / permissions：两处「薄封装」，价值全在**失败必须可观测**上。
- *
- * 这两类能力散落在各入口时，被拒/失败用户得不到任何反馈（打开设置页没反应、
- * 开关点了没反应）。收敛到 platform 后统一进诊断管道，本文件锁住该语义。
+ * 导航与权限行为规格：浏览器 API 调用失败时记录诊断并返回可处理结果。
  */
 
 function lastDiagnosticMessage(): string | undefined {

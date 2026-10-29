@@ -48,9 +48,8 @@ export function VirtualRowList({
   /** 实测行高（首行自然高度）；null = 尚未测得，先用估算值。 */
   const [measuredSize, setMeasuredSize] = useState<number | null>(null);
   /**
-   * 根字号缩放系数（基准 16px），仅作用于 itemSize：它是设计基准 px，放大后行高同步变高，
-   * 定高写死会裁内容（WCAG 1.4.4）。实测值本身含缩放不再乘；
-   * maxHeight 是真实视口派生 px，再乘等于二次放大。
+   * 根字号缩放系数（基准 16px）只作用于设计基准 px 的 itemSize，使行高随字号同步变化（WCAG 1.4.4）。
+   * 实测行高已包含缩放；maxHeight 是视口派生的实际 px，直接使用。
    */
   const [scale, setScale] = useState(1);
   useEffect(() => {
@@ -104,8 +103,7 @@ export function VirtualRowList({
     Math.max(0, total - 1)
   );
   useEffect(() => {
-    // 已校准就不再测：start 每行变化都触发会强制同步布局；统一行高一次校准足够，
-    // 结构变化由上面的 effect 置回 null 触发重测。
+    // 校准后复用实测行高；itemSize 或 scale 改变时由上方 effect 清空值并触发重测。
     if (measuredSize !== null) return;
     const inner = firstRowRef.current?.firstElementChild;
     if (!(inner instanceof HTMLElement)) return;
@@ -113,7 +111,7 @@ export function VirtualRowList({
     if (height > 0 && Math.abs(height - effectiveItemSize) >= 1) setMeasuredSize(height);
   }, [start, effectiveItemSize, measuredSize]);
 
-  // maxHeight 已是真实 px，不再乘 scale。
+  // maxHeight 是视口派生的实际 px，直接作为容器高度上限。
   const containerHeight = Math.min(totalHeight, maxHeight);
   const end = Math.min(total, Math.ceil((scrolledTop + viewport) / effectiveItemSize) + OVERSCAN);
   const visible = tabs.slice(start, end);

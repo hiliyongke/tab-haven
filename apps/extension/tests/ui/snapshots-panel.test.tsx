@@ -8,9 +8,7 @@ import { SnapshotsPanel } from '@/ui/snapshot/SnapshotsPanel';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 
 /**
- * 快照面板概念收敛规格：
- * 四种 origin 混排在一个列表里时，用户无法判断对象的生命周期与恢复预期。
- * 现按「命名快照 / 归档 / 关窗自动保存」三组展示，每组语义唯一。
+ * 快照面板行为规格：按来源分类展示快照，恢复前确认影响范围，保存工作区操作互斥。
  */
 
 function makeSnap(partial: Partial<Snapshot>): Snapshot {
@@ -87,7 +85,7 @@ describe('SnapshotsPanel 分组', () => {
   });
 });
 
-describe('SnapshotsPanel 恢复确认（恢复不在撤销栈覆盖范围，必须先见影响面）', () => {
+describe('SnapshotsPanel 恢复确认', () => {
   it('行内恢复先弹摘要确认（名称 + 标签数 + 分组数），确认后才执行', () => {
     const restore = vi.fn(async () => ({ count: 2, degraded: false }));
     useSnapshotStore.setState({
@@ -175,11 +173,8 @@ describe('SnapshotsPanel 习惯洞察直达', () => {
 });
 
 describe('SnapshotsPanel 保存工作区在途互斥', () => {
-  /**
-   * 「保存为工作区」每次都新增一条、不覆盖旧版：双击会并发创建两份内容相同
-   * 的工作区快照，而列表里看不出哪份是新的。故与其它写路径同款加在途标尺。
-   */
-  it('连点两次只创建一份（await 期间按钮禁用 + ref 标尺）', async () => {
+  /** 保存工作区时保持操作互斥，连续点击只执行一次。 */
+  it('连续点击期间只执行一次工作区保存', async () => {
     let release: ((saved: boolean) => void) | undefined;
     const saveSpace = vi.fn(
       () =>

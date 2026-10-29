@@ -5,13 +5,7 @@ import { buildDragAccessibility } from '@/ui/dnd/DndRoot';
 import { DragType } from '@/ui/dnd/types';
 import { translate } from '@/i18n';
 
-/**
- * 拖拽读屏播报（本地化）。
- *
- * 回归点：dnd-kit 内置指令/公告是英文，若这里回退成内置默认值，
- * 中文界面下的读屏用户会听到与界面语言不一致的提示 —— 只能靠本测试拦住。
- * 各回调藏在 DndContext 内部，因此断言直接驱动导出的构建函数。
- */
+/** 拖拽读屏播报行为规格：指令与各阶段公告使用界面语言，并说明不可投放的落点。 */
 
 function activeOf(data: unknown): Active {
   return { id: 1, data: { current: data } } as unknown as Active;
@@ -61,8 +55,7 @@ describe('拖拽读屏播报（本地化）', () => {
   });
 
   it('结构性不可投放的落点播报「不能放置」，而不是「移动到」', () => {
-    // 读屏用户看不到落点禁用态，语言是唯一的信息来源：
-    // 先说「移动到 X」、松手后无事发生，等于把视觉层的假高亮原样复制给语音层。
+    // 不可投放的落点在悬停与放置阶段都播报「该位置不能放置」。
     const { announcements } = buildDragAccessibility(translate);
     const active = activeOf(TAB_A);
     const siteSection = {

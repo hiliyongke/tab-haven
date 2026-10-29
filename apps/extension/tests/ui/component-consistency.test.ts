@@ -3,17 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * 组件一致性守卫（`.codebuddy/skills/ui-component/SKILL.md` 的结构性落地）。
- *
- * `design-tokens.test.ts` 管**令牌**（颜色 / 字号 / 间距 / 对比度），本文件管
- * **结构**：同一个视觉形态只允许有一套 class 串，且收口用的语义类必须真实存在。
- *
- * 为什么需要它：审计发现「收口之后重复又在新位置复发」——`Button`/`IconButton`
- * 收口了，但 chip、行内图标按钮、分组小标题、输入下划线这些形态当时没有组件化，
- * 于是各业务文件各写一套 class 串。令牌守卫一条都拦不住这类重复。
- *
- * 每条断言都带「判据自测」：正则/取值写成常量后必须仍能命中一次已知样本，
- * 否则改坏了会静默恒绿（这是守卫最常见的失效方式）。
+ * 组件结构行为规格：相同视觉形态使用一致的 class 组合，语义类在样式表中有定义；
+ * 扫描判据需能识别对应源码形态。
  */
 
 const SRC_DIR = join(process.cwd(), 'src');
@@ -30,10 +21,7 @@ function walk(dir: string, ext: string): string[] {
 const tsxFiles = walk(SRC_DIR, '.tsx');
 const cssText = readFileSync(CSS_PATH, 'utf8');
 
-/**
- * 注释不算代码：改类名时常在注释里留着旧串（本仓库就有一处），
- * 不剥离会把「解释为什么改」的注释本身判成违规。
- */
+/** 搜索源码 class 用法前移除注释内容。 */
 function stripComments(line: string): string {
   if (/^\s*(\/\/|\*|\/\*|\{\/\*)/.test(line)) return '';
   return line.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '');
@@ -60,10 +48,7 @@ function stripBlockComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '));
 }
 
-/**
- * 跨行搜索：JSX 属性换行是常态，逐行匹配对「多行写的 `<button className>`」完全失效
- * （历史缺陷：SectionHead 两处手写 .row-action 因此长期漏检，守卫恒绿）。
- */
+/** 跨行搜索 JSX 属性，覆盖多行书写的 className。 */
 function findAcrossLines(pattern: RegExp): string[] {
   const hits: string[] = [];
   // matchAll 要求全局标志；调用方传判据时不必关心这一点。
@@ -94,7 +79,7 @@ const ALLOWED: Record<string, string[]> = {
 };
 
 describe('组件一致性：同一形态只有一套写法', () => {
-  it('Given 输入下划线已收口为 .input-row / .input-line When 再搜手写下划线串 Then 为零', () => {
+  it('输入下划线样式只使用语义类，不重复手写 class 串', () => {
     // 判据自测：这三个样本必须被正则命中，否则说明正则已失效。
     expect(
       /border-b border-(gray-200|control|subtle)/.test('className="border-b border-gray-200"')
@@ -106,7 +91,7 @@ describe('组件一致性：同一形态只有一套写法', () => {
     expect(hits, `手写下划线串应改为 .input-row / .input-line：\n${hits.join('\n')}`).toEqual([]);
   });
 
-  it('Given 分组小标题已收口为 .group-label When 再搜字面 class 串 Then 为零', () => {
+  it('分组小标题样式不重复手写 class 串', () => {
     const sample = 'className="text-3xs font-medium tracking-wide text-gray-500"';
     expect(/text-3xs\s+font-medium\s+tracking-wide\s+text-gray-500/.test(sample)).toBe(true);
 
@@ -114,7 +99,7 @@ describe('组件一致性：同一形态只有一套写法', () => {
     expect(hits, `分组小标题应改用 .group-label：\n${hits.join('\n')}`).toEqual([]);
   });
 
-  it('Given 徽章已收口为 Chip / .chip / .count-pill When 再搜手写圆底徽章 Then 为零', () => {
+  it('徽章样式不重复手写圆底 class 串', () => {
     expect(/rounded-full\s+bg-(?:gray|accent)-/.test('className="rounded-full bg-gray-100"')).toBe(
       true
     );
@@ -125,9 +110,9 @@ describe('组件一致性：同一形态只有一套写法', () => {
     expect(hits, `徽章应改用 Chip / .chip / .count-pill：\n${hits.join('\n')}`).toEqual([]);
   });
 
-  it('Given 行内图标按钮已收口为 RowActionButton When 再搜裸 .row-action 按钮 Then 为零', () => {
+  it('行内图标按钮统一使用 RowActionButton', () => {
     const pattern = /<button\b[\s\S]{0,400}?className=["'][^"']*\brow-action/;
-    // 判据自测：单行与多行两种写法都必须命中（多行是历史漏检点，不能只测单行）。
+    // 判据自测：单行与多行两种写法都必须命中。
     expect(pattern.test('<button className="row-action"')).toBe(true);
     expect(pattern.test('<button\n  type="button"\n  className="row-action close-site"\n>')).toBe(
       true
@@ -139,7 +124,7 @@ describe('组件一致性：同一形态只有一套写法', () => {
 });
 
 describe('组件一致性：收口用的语义类必须真实存在', () => {
-  it('Given 组件依赖这些语义类 When 读 main.css Then 全部有定义', () => {
+  it('组件所需的语义类均在 main.css 中定义', () => {
     for (const className of [
       '.group-label',
       '.input-row',
@@ -152,16 +137,13 @@ describe('组件一致性：收口用的语义类必须真实存在', () => {
     }
   });
 
-  it('Given 输入框聚焦态改走 2px 单条线 When 读 main.css Then 不再叠 inset 指示条', () => {
-    // 1px 边框 + inset -2px 同色叠层会渲染成约 3px 的实心底边，
-    // 在 plain（强调色＝中性灰）主题下观感发闷 —— 已改为 border-bottom-width: 2px。
+  it('输入框聚焦态使用 2px 下边框，不叠加 inset 指示条', () => {
+    // 聚焦状态通过 2px 下边框显示，不叠加 inset 阴影。
     expect(cssText).not.toMatch(/\.input-(?:row:focus-within|line:focus)[^{]*\{[^}]*inset 0 -2px/);
   });
 
-  it('Given 超紧凑密度已上线 When 读 main.css Then 行 / 分区头 / 固定区 / 磁贴四处都有规则', () => {
-    // 这条守卫的由来：首版 tight 只写了行内距，收藏夹头与置顶磁贴完全没变，
-    // 上半屏看不出切换效果（用户实测反馈「没覆盖全」）。
-    // 密度是**整块版面**的档位，不是单一组件的属性 —— 四个面都要跟着收。
+  it('超紧凑密度为行、分区头、固定区和磁贴提供对应规则', () => {
+    // 超紧凑密度同时影响行、分区头、固定区容器与磁贴条留白。
     const surfaces: [string, RegExp][] = [
       ['行内留白', /\.row-item\.density-tight[\s\S]{0,120}?padding-top:\s*0/],
       ['分区头', /\[data-density='tight'\]\s+\.section-head\s*\{[\s\S]{0,120}?padding-top:\s*4px/],
@@ -176,10 +158,8 @@ describe('组件一致性：收口用的语义类必须真实存在', () => {
     }
   });
 
-  it('Given 超紧凑密度 When 读 main.css Then 置顶磁贴保持 36px（不得随密度缩小）', () => {
-    // 32px 磁贴会同时踩两个坑：16px 的「取消固定」角标占掉四分之一格（图标看起来没居中），
-    // 且 4+32+4 的内容高与容器盒高差 1px，Chrome 会画出常驻滚动条。
-    // 密度只收紧磁贴条的上下留白，不动磁贴本身。
+  it('超紧凑密度下置顶磁贴保持 36px', () => {
+    // 超紧凑密度调整磁贴条留白，不改变置顶磁贴尺寸。
     expect(cssText).not.toMatch(/\[data-density='tight'\]\s+\.pinned-tile\s*\{[^}]*width:\s*32px/);
   });
 });

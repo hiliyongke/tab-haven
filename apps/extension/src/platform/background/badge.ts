@@ -8,9 +8,8 @@ import { createSerialChain } from '@/core/util/concurrency';
 let badgeTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
- * 临时角标覆盖（如「整理完成」打勾）及其到期时间。覆盖态自带到期时间是刻意的：SW 被回收
- * 时裸 setTimeout 会被吞掉，若只靠定时器清除，角标会永久停在覆盖文案上。改为「到期时间 +
- * 每次刷新时判定」后，只要之后发生任意一次刷新就会回到真实状态。
+ * 临时角标覆盖（如「整理完成」打勾）及其到期时间。每次刷新时检查到期时间并恢复真实状态，
+ * 使 Service Worker 回收后触发的下一次刷新也能清除过期覆盖。
  */
 let badgeOverride: { text: string; color: string; until: number } | undefined;
 let overrideTimer: ReturnType<typeof setTimeout> | undefined;

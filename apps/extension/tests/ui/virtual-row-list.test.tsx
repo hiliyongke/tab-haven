@@ -146,21 +146,17 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
       expect(translated?.style.transform).toBe(`translateY(${(100 - 6) * 32}px)`);
     });
 
-    // 过滤成 3 条：容器不再有可滚动余量，浏览器不会派发 scroll 来自愈 scrollTop
+    // 列表缩减到 3 行后，当前滚动位置超出有效范围。
     view.rerender(
       <VirtualRowList tabs={tabsOf(3)} itemSize={32} maxHeight={400} renderRow={renderRow} />
     );
 
-    // 未钳制时 start 被顶到 2、end=3 —— 只剩最后一行，前两行空白
+    // 列表收缩后应显示全部 3 行，渲染窗口不留空白。
     await waitFor(() => expect(mountedRows(view)).toHaveLength(3));
   });
 
-  it('根字号缩放变化后重新校准实测行高（不沿用旧 measuredSize）', async () => {
-    // 背景：measuredSize 一旦经首行实测赋值，测量 effect 的
-    // `if (measuredSize !== null) return` 就永不重测；只有把它置回 null 才会重测。
-    // 用户改浏览器/系统默认字号（resize → readScale）时，DOM 里 li 的真实高度已变，
-    // 但 itemSize 不变 —— 若丢弃实测值的 effect 依赖漏了 scale，measuredSize 会
-    // 永久停在旧行高，wrapper 定高与内容高度错位（行重叠/裁切）。
+  it('根字号缩放变化后重新校准行高', async () => {
+    // 浏览器默认字号变化后，行高随缩放比例变化，虚拟容器应按新的实测行高布局。
     let rootFontSize = 16;
     let measuredRowHeight = 40;
     const realGetComputedStyle = window.getComputedStyle.bind(window);
@@ -199,16 +195,15 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
     );
     const spacer = () => view.container.querySelector<HTMLElement>('.virtual-row-scroll > div');
 
-    // 首行实测 40px（与估算 32×1 不同）→ measuredSize=40 → 占位高度 = count×40
+    // 首行实测为 40px，100 行占位高度为 4000px。
     await waitFor(() => expect(spacer()?.style.height).toBe(`${count * 40}px`));
 
-    // 用户把默认字号翻倍：rootFontSize 32 → scale=2，DOM 行高随之变为 80px
+    // 根字号由 16px 变为 32px，实测行高同步变为 80px。
     rootFontSize = 32;
     measuredRowHeight = 80;
     fireEvent.resize(window);
 
-    // 修复后：scale 变化触发 setMeasuredSize(null) → 重测得到新行高 80 → 占位高度 = count×80。
-    // 修复前（依赖仅 [itemSize]）：measuredSize 恒为旧的 40 → 占位高度恒为 count×40。
+    // 字号缩放后重新测量，100 行占位高度更新为 8000px。
     await waitFor(() => expect(spacer()?.style.height).toBe(`${count * 80}px`));
   });
 });

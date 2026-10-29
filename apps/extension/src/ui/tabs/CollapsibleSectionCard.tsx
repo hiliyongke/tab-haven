@@ -80,14 +80,7 @@ export const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
 
   // 原生组编辑对话框状态（改名 / 换色 / 删除），统一走 DialogShell 保证焦点与键盘行为。
   const [editOpen, setEditOpen] = useState(false);
-  /**
-   * 从折叠分组的播放提示进入后，临时只展示播放中的标签。
-   *
-   * 「是否生效」是渲染期直接算出来的（下面 `visibleTabs` 里的 `!isCollapsed`），
-   * 不再用 effect 把 `isCollapsed` 的变化回写进 state —— 那是一次「渲染 → 副作用
-   * → 再渲染」的额外往返，且让 `playingOnly` 与 `isCollapsed` 成了两份需要人肉
-   * 保持同步的状态。
-   */
+  /** 从折叠分组的播放提示进入后，临时只展示播放中的标签；筛选是否生效由 visibleTabs 根据 isCollapsed 派生。 */
   const [playingOnly, setPlayingOnly] = useState(false);
 
   const accent = useSectionAccent(section);
@@ -141,7 +134,7 @@ export const CollapsibleSectionCard = memo(function CollapsibleSectionCard({
       rowProps.callbacks.onToggleSiteCollapsed(section.siteKey, !isCollapsed);
     }
   };
-  // 展开态：站点分区永远平铺渲染（子域折叠模式已移除，层级只有一级）。
+  // 展开态下站点分区平铺渲染，层级固定为一级。
   const renderBody = () => (
     <div className="section-body">
       <SectionRows

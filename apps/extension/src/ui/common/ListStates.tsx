@@ -62,7 +62,7 @@ export function EmptyTabs({
       hint={t('新建标签会自动显示在这里；把常用页拖到顶部常驻磁贴，随时一键直达。')}
       action={
         <div className="flex flex-col items-center gap-1.5">
-          {/* 复用统一按钮：此处手写一份 accent 原子类，改主题/圆角时要改两处 */}
+          {/* 使用统一按钮变体，主题与圆角由 Button 组件保持一致。 */}
           <Button
             variant="soft-outline"
             size="xs"
@@ -94,7 +94,7 @@ export function EmptyTabs({
   );
 }
 
-/** 数据初始化失败（自动重试仍失败）：说明 + 手动重试出口，替代无出口的骨架屏。 */
+/** 数据初始化在自动重试后仍失败时，呈现说明与手动重试出口。 */
 export function LoadErrorState({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (

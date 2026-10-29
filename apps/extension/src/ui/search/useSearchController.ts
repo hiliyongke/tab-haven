@@ -15,11 +15,10 @@ import { useAllWindowTabs } from '@/ui/search/useAllWindowTabs';
 
 /**
  * 常驻搜索：查询状态、模糊搜索引擎、命中/过滤、键盘导航、以及禁缓存角标集。
- * 三个**不显眼但已知踩过坑**的点：
+ * 三项需要保持的约束：
  *
- * 1. **拼音能否启用是引擎的构造入参，不是事后补丁**：词典 1MB+ 必须动态加载，
- *    而引擎构造后不可变；故由 `usePinyinDictionary` 在词典就绪后翻转信号，
- *    引擎 memo 随之重建（引用变化即重算），不存在「补了拼音但没人知道」。
+ * 1. **拼音能否启用是引擎的构造入参**：词典 1MB+ 必须动态加载，而引擎构造后不可变；
+ *    `usePinyinDictionary` 在词典就绪后翻转信号，引擎 memo 随之重建（引用变化即重算）。
  * 2. **选中索引必须钳制回界内**：搜索期间标签被关闭会让 searchHits 收缩，越界的
  *    `selectedSearchTabId` 为 undefined，表现为高亮消失且 Enter 无动作。
  * 3. **空 `Set` 必须是模块级常量**：它挂在 `noCacheTabIds` 的依赖链上，
@@ -185,9 +184,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
    */
   const historyHits = useMemo(() => {
     if (!historyEngine || !isFiltering) return [];
-    // 与主引擎同走 deferredQuery：历史引擎同样要过 fuzzysort（+拼音索引），
-    // 用即时 query 会让它抢在输入框回显之前跑，把「结果晚一帧」的延迟策略
-    // （上面的 useDeferredValue 说明）只对一半的输入生效。
+    // 历史引擎与主引擎共用 deferredQuery，确保 fuzzysort（含拼音索引）的查询时序一致。
     const raw = historyEngine.search(deferredQuery, HISTORY_HITS_LIMIT);
     const decoded: HistorySearchHit[] = [];
     for (const hit of raw) {

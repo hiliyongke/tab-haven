@@ -50,10 +50,7 @@ describe('planAutoGroups', () => {
   });
 
   it('本地站点：端口不同即不同站点，不并入同名既有组', () => {
-    // 回归：站点标签曾一律算成 subLabel(subdomain, registrableDomain)，而 local/ip
-    // 站点的 registrableDomain **不含端口** —— localhost:3000 与 localhost:8080
-    // 会被算成同一个 "localhost"，于是 8080 的标签被吸收进 3000 的组（两站点被合并）。
-    // 建组标题与同站点判定必须是同一口径（都保留端口），见 siteLabelOfSite。
+    // 本地站点身份包含端口；端口不同的 localhost 标签不归入同一站点组。
     const plans = planAutoGroups([
       {
         kind: 'site',
@@ -87,10 +84,7 @@ describe('planAutoGroups', () => {
   });
 
   it('分组信息不可知的标签不参与新建原生组（跨窗口搜索 / 组查询降级兜底）', () => {
-    // 规格：deriveSections 会把 groupId 不在已知 groups 内的标签按未分组处理
-    // （否则这些标签既不在原生区也不在未分组区，会从列表里消失）。但它们在浏览器
-    // 侧**可能已属于某个原生组**，为它新建组会覆盖既有归属 —— 区分口径与裁决见
-    // planAutoGroups 的注释。这里既无「创建原生组」计划，也不产出空计划。
+    // 这些标签的原生组归属未知；为避免改变其归属，不生成新建组计划。
     const plans = planAutoGroups([
       siteSection('github.com', [
         makeTab(1, { windowId: 2, groupId: 9 }),
@@ -138,12 +132,12 @@ describe('planAutoGroups', () => {
   });
 });
 
-describe('planAutoGroupDomainCorrections（Chrome 组继承的回归）', () => {
+describe('planAutoGroupDomainCorrections（自动组成员归属校正）', () => {
   function nativeSection(title: string, tabs: TabRecord[], groupId = 7): TemporarySection {
     return { kind: 'native', key: `group-${groupId}`, title, tabs, groupId, collapsed: false };
   }
 
-  it('自动组内混入异域名成员时只移出异域标签（Chrome 把点链接打开的新标签塞进了同组）', () => {
+  it('自动组内出现异域名成员时只移出异域标签', () => {
     const corrections = planAutoGroupDomainCorrections(
       [
         nativeSection('github.com', [
@@ -169,7 +163,7 @@ describe('planAutoGroupDomainCorrections（Chrome 组继承的回归）', () => 
     expect(corrections).toHaveLength(0);
   });
 
-  it('组标题被用户改名后无法证明归属，跳过校正', () => {
+  it('组标题与站点名不符时跳过校正', () => {
     const corrections = planAutoGroupDomainCorrections(
       [
         nativeSection('工作', [
@@ -304,7 +298,7 @@ describe('groupColorForLabel', () => {
   });
 
   it('颜色取自自动分组色板：与全部合法色同源、且不含 grey', () => {
-    // 派生关系必须钉死：硬编码 8 个色名会在色板增删时静默过期（新色永远取不到）。
+    // 自动分组色板由合法组色中排除 grey 后得到。
     expect(AUTO_GROUP_COLOR_NAMES).toEqual(GROUP_COLOR_NAMES.filter((name) => name !== 'grey'));
     // grey 是 Chrome 新建组的默认色，留给手动建组；自动分组用它会让用户分不清
     // 「这个组是我建的还是扩展建的」。

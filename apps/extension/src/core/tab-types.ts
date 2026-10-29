@@ -118,10 +118,8 @@ const TAB_FIELDS = [
 ] as const satisfies readonly (keyof TabRecord)[];
 
 /**
- * 完备性断言：satisfies 只保证「列出的都是合法字段」，不保证「全部字段都已列出」。
- * 断言直接挂在函数类型上：漏登记字段时标注退化为 `never`，箭头函数赋值即编译失败。
- * （曾写成 `const x: … = true; void x;`——那条 void 语句不产生任何效果，删掉它编译、lint、
- * 测试全绿，而完备性约束静默失效。）
+ * 完备性断言：`satisfies` 保证列出的字段均有效，函数类型条件同时确保没有遗漏。
+ * 漏登记字段时目标类型为 `never`，函数赋值会导致编译失败。
  */
 const sameTabFields: Exclude<keyof TabRecord, (typeof TAB_FIELDS)[number]> extends never
   ? (a: TabRecord, b: TabRecord) => boolean

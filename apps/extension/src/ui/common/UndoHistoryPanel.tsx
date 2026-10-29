@@ -139,7 +139,7 @@ export function UndoHistoryPanel({
 
   return (
     <DialogShell title={t('撤销历史')} onClose={onClose} widthClassName="dialog-md">
-      {/* 滚动交给 DialogShell 内容区，不再自套一层 max-h+overflow（两层滚动容器会让滚动条出现两次）。 */}
+      {/* 滚动由 DialogShell 内容区承担，保持单一滚动容器。 */}
       {/* 不加 pr-1：滚动条留白由内容区自身 padding 承担，否则列表右边缘与标题栏 × 错位。 */}
       <div>
         {/* 空态复用通用 EmptyState：与弹窗 / 侧栏的空态同构，文案仍取 undo.historyEmpty。 */}

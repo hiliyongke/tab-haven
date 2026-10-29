@@ -10,8 +10,8 @@ import { settingsRepository } from '@/platform/storage/repositories';
  *
  * 说明：
  * - 不引 react-i18next，避免把 React 拉进 SW bundle；
- * - i18next 无后端时同步初始化完成，`initHeadlessI18n` 之前的 `t()` 即刻可用（浏览器语言）；
- * - SW 每次被回收后重新拉起时模块重新执行，无需额外恢复逻辑。
+ * - i18next 无后端，同步初始化后 `t()` 即可按浏览器语言提供文案；
+ * - Service Worker 每次启动都会执行模块初始化。
  */
 
 const browserLanguage = globalThis.navigator?.language ?? '';

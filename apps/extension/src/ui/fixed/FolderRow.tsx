@@ -68,7 +68,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
    * 但这里是**索引化**实现（预建 byKey / byRawUrl / byId 三张表后 O(1) 查表），
    * 不是逐条目调用该函数 —— 差异仅在于 URL 索引排除隐身标签
    * （与 handleOpenAll / openSavedItem 的 `!tab.incognito` 同口径）。
-   * 索引随 tabs / folder.items 变化重算；FolderItemRow 改为纯 memo 叶子，仅自身运行时变化时才重渲染。
+   * 索引随 tabs / folder.items 变化重算；FolderItemRow 接收索引结果并以 memo 叶子组件渲染。
    */
   const runtimeByItem = useMemo(() => {
     // 索引全局共享（按 tabs 引用缓存），本层只做 O(条目) 的映射。

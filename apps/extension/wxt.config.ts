@@ -4,9 +4,9 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 /**
- * dev server 端口：`vite().server` 与下面 dev 态 CSP 共用同一份（strictPort，
- * 不漂移）。dev 必须显式放行它 —— WXT 的 dev CSP 补丁只往 `script-src` 追加 dev
- * origin（wxt 内部 addDevModeCsp），style / img / connect 这几条得自己放。
+ * dev server 端口：`vite().server` 与下面 dev 态 CSP 共用同一份（strictPort）。
+ * dev 模式需放行本地开发源；WXT 会为 `script-src` 加入 dev origin，style / img / connect
+ * 指令也需显式允许开发源。
  */
 const DEV_SERVER_PORT = 3000;
 const DEV_ORIGIN = `http://localhost:${DEV_SERVER_PORT}`;
@@ -16,10 +16,8 @@ const DEV_WS_ORIGIN = `ws://localhost:${DEV_SERVER_PORT}`;
  * 扩展页 CSP：sidepanel / options / about / 卸载备份页，以及后台 Service Worker
  * 都由 `content_security_policy.extension_pages` 管。
  *
- * MV3 的默认 CSP 只锁 `script-src 'self'; object-src 'self'`，`img-src` / `font-src` /
- * `style-src` / `connect-src` 全是敞开的。本项目「零出站网络请求」当前唯一的拦截点
- * 是构建后扫产物的 `scripts/privacy-check.mjs`，补一条显式 CSP 是运行时的第二道闸：
- * 将来若有代码想发请求，浏览器会先把它拦下来（且 DevTools 直接给出违规指令）。
+ * MV3 默认 CSP 只锁定 `script-src 'self'; object-src 'self'`，其他资源指令由此处明确设置。
+ * 生产构建将 `connect-src` 设为 `'none'`，其余扩展页资源仅允许产品实际使用的来源。
  *
  * 逐条用途与放开原因（动任何一条都会影响全部扩展页）：
  * - `default-src 'self'`：兜底。未单列的指令（worker-src / media-src / frame-src 等）
@@ -94,7 +92,7 @@ export default defineConfig({
       'bookmarks',
       'notifications',
       // 侧边栏主形态所需。WXT 检测到 sidepanel 入口后本就会自动注入该权限，
-      // 这里显式列出是让「声明」与 PRIVACY.md/隐私门禁的口径落在同一处源码上
+      // 这里显式列出，使权限声明与 PRIVACY.md 中的用途说明保持一致
       // （WXT 会去重，产物 manifest 中不会出现重复项）。
       'sidePanel',
       // 开发者禁缓存能力：DNR 改响应头（横幅改由侧边栏角标呈现，不注入页面）。

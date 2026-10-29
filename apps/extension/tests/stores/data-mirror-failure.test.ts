@@ -7,22 +7,11 @@ import type { Repositories } from '@/platform/registry';
 import type { DataContext, DataState } from '@/stores/data/types';
 
 /**
- * 镜像写失败态的置位与复位（`stores/data/context.ts`）。
- *
- * 两条必须成立的口径：
- *
- * 1. **写失败必须可见**：镜像走浏览器账号通道，失败时本地数据不受影响 ——
- *    正因如此它曾完全静默，用户一直以为同步在生效（`mirrorWriteFailed` 置位）。
- * 2. **关闭同步后必须显式复位**：此后不再有任何镜像写入，`onSuccess` 回调永远
- *    不会再来。若不在关闭路径复位，横幅与 `mirrorWriteFailed` 会永久粘住，
- *    而此时本地数据完好、用户也已经关掉了同步 —— 提示既过时又错配。
+ * 镜像写入失败时展示降级状态；后续写入成功或关闭同步后清除失败状态。
+ * 容量超限与其他写入失败使用不同状态分类。
  */
 
-/**
- * 写失败的**成因**必须可区分（M20 / S11）：`reason === 'quota'`（超出同步容量上限）
- * 是确定性故障，用户可以自己处理（删掉一些固定条目），UI 要显示
- * 「未生效（超出同步容量上限）」；普通写失败只需「本次改动未上传」。
- */
+/** 容量超限与其他镜像写入失败使用不同状态分类。 */
 const mocks = vi.hoisted(() => ({
   handlers: {} as {
     onFailure?: (message: string, reason?: 'quota' | 'write') => void;
@@ -86,7 +75,7 @@ afterEach(() => {
 });
 
 describe('镜像写失败态', () => {
-  it('镜像写失败：置起 mirrorWriteFailed 与降级横幅（不是静默失败）', () => {
+  it('镜像写失败时设置失败标记与降级横幅', () => {
     // Given 开启同步、镜像写正常
     const { state } = build();
     expect(state.mirrorWriteFailed).toBe(false);
@@ -99,7 +88,7 @@ describe('镜像写失败态', () => {
     expect(state.storageDegraded).toBe(true);
   });
 
-  it('镜像写成功：复位失败态（quota 抖动恢复后告警要消失）', () => {
+  it('镜像写成功后复位失败标记', () => {
     // Given 上一轮失败过
     const { state } = build();
     mocks.handlers.onFailure?.('同步镜像写入失败（超出配额）');
@@ -113,7 +102,7 @@ describe('镜像写失败态', () => {
     expect(state.storageDegraded).toBe(false);
   });
 
-  it('关闭同步后复位失败态：此后不再有镜像写入，成功回调不会再来', () => {
+  it('关闭同步后清除镜像写入失败状态', () => {
     // Given 同步开着且刚失败过（云端仍留着旧镜像）
     const { ctx, state } = build();
     mocks.handlers.onFailure?.('同步镜像写入失败（超出配额）');
@@ -123,14 +112,14 @@ describe('镜像写失败态', () => {
     // When 用户关闭同步（镜像已清、不会再有写回执）
     ctx.resetMirrorFailure();
 
-    // Then 失败态必须显式复位，否则横幅永久粘住且与实际状态相反
+    // Then 失败标记与存储降级状态均复位
     expect(state.mirrorWriteFailed).toBe(false);
     expect(state.storageDegraded).toBe(false);
   });
 });
 
 describe('镜像写失败的成因区分', () => {
-  it('reason=quota 与 reason=write 给出不同状态（容量超限可被用户处理）', () => {
+  it('容量超限与其他写入失败使用不同状态标记', () => {
     // Given 一次普通写失败
     const write = build();
     mocks.handlers.onFailure?.('同步镜像写入失败', 'write');
@@ -147,7 +136,7 @@ describe('镜像写失败的成因区分', () => {
     expect(quota.state.mirrorQuotaExceeded).not.toBe(write.state.mirrorQuotaExceeded);
   });
 
-  it('写成功后容量标记一并复位（腾出容量后提示要消失）', () => {
+  it('写成功后复位容量超限与失败标记', () => {
     const { state } = build();
     mocks.handlers.onFailure?.('同步镜像写入失败：超出同步容量上限', 'quota');
     expect(state.mirrorQuotaExceeded).toBe(true);

@@ -30,8 +30,7 @@ export function ClearDataDialog({
     <DialogShell
       title={t('清除所有数据')}
       onClose={onClose}
-      /* 动作行走 footer（与确认类弹窗同一底栏），不再挤在内容区里靠 pt-1 凑间距；
-         按钮回到默认 md(32px) —— size="sm"(24px) 与同族弹窗不同档。 */
+      /* 操作按钮放在确认类弹窗共用的 footer，使用默认 md 尺寸以保持按钮档位一致。 */
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <Button variant="secondary" onClick={onExportBackup}>
@@ -60,7 +59,7 @@ export function ClearDataDialog({
         <p className="text-3xs font-medium text-warn-700">
           {t('此操作不可恢复。建议先导出一份备份。')}
         </p>
-        {/* items-start 让复选框与多行说明首行顶部对齐，不再靠 mt-px(1px) 微调 */}
+        {/* items-start 让复选框与多行说明的首行顶部对齐。 */}
         <label className="flex cursor-pointer items-start gap-2 text-3xs text-gray-700">
           <Checkbox checked={ack} className="mt-0.5" onChange={onAckChange} />
           <span>{t('我已了解上述数据将被永久删除，且无法恢复')}</span>

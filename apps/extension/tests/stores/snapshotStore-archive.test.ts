@@ -6,12 +6,7 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * 归档（archive）事务语义：
- *  - 保存失败必须中止关窗（否则就是一次不可撤销的丢标签）；
- *  - 关闭前登记撤销批次（归档也是关闭动作，关闭后必须有可撤销入口）。
- *
- * 标签查询经 mock 注入：fake-browser 的 windows.getCurrent 无实现，
- * queryCurrentWindowTabs（currentWindow 查询）在其上不可用。
+ * 归档行为规格：仅在快照保存成功后关闭窗口，并将实际关闭的标签登记为撤销批次。
  */
 const tabState: { tabs: TabRecord[] } = { tabs: [] };
 

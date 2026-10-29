@@ -112,8 +112,7 @@ export const RowItem = memo(
       (density === 'large' ? ' density-large' : '') +
       (isActive ? ' is-active' : '') +
       (isMediaPlaying ? ' is-media-playing' : '') +
-      // 休眠态不再整体降透明：整行 opacity-60 会把标题压到约 2.7:1（AA 要 4.5:1），
-      // 改走 .is-discarded 语义类只淡化 favicon 与标题到达标灰阶。
+      // 休眠态通过 .is-discarded 语义类淡化 favicon，并将标题保持在 AA 要求的 4.5:1 对比度。
       (isDiscarded ? ' is-discarded' : '') +
       (isSplitCompanion ? ' is-split-companion' : '') +
       (isHighlighted ? ' is-highlighted' : '') +

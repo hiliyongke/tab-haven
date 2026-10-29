@@ -44,7 +44,7 @@
     "test": "聚合：apps/extension 测试（含覆盖率 ratchet）→ packages/i18n-kit 测试 → 根级跨包守卫（tests/config）",
     "test:watch": "转发到 apps/extension：vitest 监听模式",
     "check:ui": "转发到 apps/extension：设计令牌守卫",
-    "check:privacy": "转发到 apps/extension：隐私回归（权限冻结 + 零网络调用）",
+    "check:privacy": "转发到 apps/extension：隐私检查（权限清单 + 零网络调用）",
     "check:i18n": "转发到 apps/extension：文案守卫",
     "i18n": "转发到 apps/extension：文案一条龙（扫描 → 编译 → 守卫）",
     "i18n:report": "转发到 apps/extension：发布前文案盘点",

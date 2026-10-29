@@ -1,19 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-// 顶层静态 import：写在用例体内动态 import 时，模块首次解析的耗时被计入
-// 5s 用例超时，全量跑（并行 worker 抢占 CPU）时首用例稳定超时——门禁因此时红时绿。
-// vi.mock 会被提升到 import 之前，静态 import 拿到的同样是 mock 实现。
+// 静态导入依赖，使用下方 vi.mock 提供的测试桩。
 import { queryWindowTabs } from '@/platform/tabs';
 import { restoreSnapshot } from '@/platform/snapshot/snapshots';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 
 /**
- * 快照恢复的可撤销性。
- *
- * 关键契约：恢复完成后，本次**新建**的标签被记为 kind='restore' 的撤销批次。
- * 于是「撤销本次恢复」= 关闭这批标签，而撤销栈既有语义（⌘Z 重新打开）能再开回来。
- *
- * 另一个要点是**差分精度**：只记「恢复后多出来的 tabId」，不能把窗口里原本就在的
- * 标签误判成恢复出来的 —— 否则撤销会关掉整个窗口，比「不可撤销」更糟。
+ * 快照恢复撤销行为规格：仅将本次恢复新建的标签登记为 kind='restore' 的撤销批次；
+ * 恢复前标签状态不可用时不创建撤销批次。
  */
 
 const createdIds: number[] = [];
@@ -38,8 +31,7 @@ vi.mock('@/platform/snapshot/snapshots', () => ({
   parseOneTab: vi.fn(),
   persistSnapshot: vi.fn(),
   replaceSpaceSnapshot: vi.fn(),
-  // 快照淘汰监听：store 在模块加载时注册，mock 必须提供该导出，
-  // 否则 import 期即抛「No export is defined on the mock」。
+  // 提供快照淘汰监听器桩。
   setSnapshotEvictionListener: vi.fn(),
   SNAPSHOTS_RMW_LOCK: 'lock'
 }));
@@ -69,7 +61,7 @@ const tab = (id: number) => ({
   groupId: -1
 });
 
-describe('snapshotStore.restore 的可撤销性（R8）', () => {
+describe('snapshotStore.restore 撤销行为', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -129,9 +121,9 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
     expect(recordClosedBatch).not.toHaveBeenCalled();
   });
 
-  it('拿不到「恢复前现场」时不记账（否则撤销会关掉整个窗口）', async () => {
+  it('无法读取恢复前标签状态时不记录撤销批次', async () => {
     vi.mocked(restoreSnapshot).mockResolvedValueOnce({ count: 2, degraded: false });
-    // 差分基线为空 = 「窗口里每个标签都是本次新建的」，撤销会把用户原有标签一并关掉。
+    // 恢复前状态不可用时，无法确定哪些标签由本次恢复新建。
     vi.mocked(queryWindowTabs).mockRejectedValueOnce(new Error('query failed'));
 
     useSnapshotStore.setState({
@@ -152,7 +144,7 @@ describe('snapshotStore.restore 的可撤销性（R8）', () => {
     });
 
     const { count } = await useSnapshotStore.getState().restore('s3');
-    // 恢复本身照常成功，只是少一个反悔入口
+    // 恢复返回成功数量，不创建撤销批次。
     expect(count).toBe(2);
     expect(recordClosedBatch).not.toHaveBeenCalled();
   });

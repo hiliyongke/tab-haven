@@ -36,7 +36,7 @@
     "test": "vitest run --coverage：本包全量测试并统计覆盖率（覆盖率 ratchet 在此判定，下降即失败）",
     "test:watch": "vitest 监听模式：开发时改哪测哪",
     "check:ui": "设计令牌守卫：UI 不得硬编码颜色/间距等值，必须走设计令牌",
-    "check:privacy": "隐私回归：权限清单、网络通道调用数、存储键须与 PRIVACY.md 一致（零出站红线）",
+    "check:privacy": "隐私检查：权限清单、网络通道调用数、存储键须与 PRIVACY.md 一致（零出站红线）",
     "check:i18n": "文案守卫：先跑 i18n-kit check（产物已编译 / 无孤立译文 / 无未登记原文 / 无伪翻译 / 遗留 key 在用 / 白名单不过期），再跑 i18n-kit lint（源码无裸露中文）",
     "i18n:report": "发布前文案盘点：生成 i18n/report.md（人读），只出报告不判失败；终端支持时输出的路径可 ⌘/Ctrl+点击直接打开",
     "i18n": "日常一条龙：扫描源码抽词 → 编译进运行时词条 → 跑文案守卫（写中文后跑它就够了）",
@@ -44,7 +44,7 @@
     "i18n:apply": "把 i18n/ 下的词典编译成 src/i18n/locales/{zh-CN,en}/translation.json（运行时资源，平铺哈希 key，勿手改）",
     "i18n:lint": "检查未被词典接管的裸露中文（JSX 裸文本 / 字符串常量 / 模板串）；就近写 // @i18n-ignore，原文常量表用 @i18n-ignore-start/end",
     "zip": "打包为 .output/*.zip，用于 Chrome 应用商店上架",
-    "crx": "构建并签名 CRX3，用于离线分发；复用 .output/tabs.pem（首次会自动生成，上架仍用 zip）"
+    "crx": "构建并签名 CRX3，用于离线分发；签名密钥由 pack-crx 默认存放在用户配置目录，后续应复用该密钥（上架仍用 ZIP）"
   },
   "engines": {
     "node": ">=26"

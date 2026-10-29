@@ -3,12 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeClipboardText } from '@/platform/clipboard';
 
 /**
- * 行为规格：剪贴板写入（`src/platform/clipboard.ts`）。
- *
- * 这个出口存在的理由就是「失败必须可判定」：剪贴板在非安全上下文、缺少用户
- * 手势、权限被拒、文档未聚焦时都会抛错，且各浏览器抛的时机不一致。调用方
- * （标签行「复制网址」）据此二选一地提示成功或失败 —— 一旦这里吞掉异常或
- * 反过来抛出，用户就会遇到「点了复制，什么也没发生」。
+ * 剪贴板行为规格：写入成功时返回 true；剪贴板不可用或写入失败时返回 false。
  */
 
 const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');

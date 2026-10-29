@@ -6,12 +6,8 @@ import { redoRepository, settingsRepository } from '@/platform/storage/repositor
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * 重做栈（FIX-03）的持久化语义。
- *
- * 三条不变量：
- *  1. 重做只对「最近一次撤销」有意义 —— 任何新的关闭批次入栈即清空；
- *  2. 清空必须落盘 —— 否则上一轮的重做项会在重启后复活，去关一批无关的标签；
- *  3. 与撤销栈共用 `persistUndo` 开关 —— 关闭时两者都仅会话内有效。
+ * 重做栈持久化行为：新的关闭批次清空重做记录；持久化与撤销栈共用 `persistUndo`，
+ * 关闭时仅在当前会话内有效。
  */
 
 afterEach(() => {
@@ -47,7 +43,7 @@ describe('重做栈持久化', () => {
     expect(useUndoStore.getState().redoBatches).toEqual([]);
   });
 
-  it('清空动作会落盘（防止重启后旧重做项复活）', async () => {
+  it('清空重做栈后存储中为空', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
     await useUndoStore.getState().load();
     await redoRepository.write([redoBatch()]);

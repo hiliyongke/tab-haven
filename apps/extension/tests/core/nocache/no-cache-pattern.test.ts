@@ -40,8 +40,7 @@ describe('normalizeNoCachePattern', () => {
   });
 
   it('裸 TLD 被拒绝（单标签主机只放行 localhost）', () => {
-    // `com` 会在 DNR 侧编译成 `^https?://([^/?#]+\.)?com([/:?#]|$)`，
-    // 一条输入即对整个 .com 顶级域强制 no-store。
+    // 裸 TLD 会匹配整个顶级域，因此仅放行 localhost 作为单标签主机。
     expect(normalizeNoCachePattern('com')).toBeNull();
     expect(normalizeNoCachePattern('io')).toBeNull();
     // 本机名是唯一放行的单标签主机（对本机服务禁缓存的合法需求）
@@ -49,11 +48,7 @@ describe('normalizeNoCachePattern', () => {
   });
 });
 
-/**
- * 回归：备份导入 / 设置同步两条入口都只经过 SettingsSchema，不走 UI 编辑器。
- * 若 pattern 校验只留在 UI，导入的 `["https://*", "http://*"]` 会编译成覆盖
- * 全部 HTTP(S) 流量的 modifyHeaders 规则——一条 JSON 即可接管浏览器缓存策略。
- */
+/** SettingsSchema 校验禁缓存规则的行为规格：导入与同步设置中的 DNR 通配和锚定语法均被拒绝。 */
 describe('SettingsSchema.noCachePatterns', () => {
   it('丢弃含 DNR 通配/锚定语法的条目（导入路径不可绕过）', () => {
     const parsed = SettingsSchema.safeParse({
@@ -76,8 +71,7 @@ describe('SettingsSchema.noCachePatterns', () => {
   });
 
   it('归一化后去重：同一站点的多种写法只占一份额度', () => {
-    // 上限写在 transform 之前时，'a.com' 与 'A.COM' 各占一份额度且归一化后重复，
-    // 既浪费额度又编译出重复的 DNR 规则。
+    // 同一站点的多种写法归一化后只占一份额度，并保留一条规则。
     const parsed = SettingsSchema.safeParse({
       noCachePatterns: ['a.com', 'A.COM', 'a.com/']
     });

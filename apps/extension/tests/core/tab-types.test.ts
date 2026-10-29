@@ -50,7 +50,7 @@ describe('mergeSnapshotTabs', () => {
     expect(merged[1]?.lastAccessed).toBe(999);
   });
 
-  it('既有标签冻结 lastAccessed：激活引发的时间刷新不改变排序键（回归：激活即全量重排）', () => {
+  it('既有标签冻结 lastAccessed：激活时间变化不改变排序键', () => {
     const prev = [
       makeTab(1, { lastAccessed: 100 }),
       makeTab(2, { lastAccessed: 200, active: true })

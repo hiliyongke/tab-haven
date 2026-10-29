@@ -70,12 +70,8 @@ export function scan(paths: KitPaths, options: ScanOptions = {}): ScanResult {
   const pruned: Record<string, number> = {};
 
   /**
-   * 抽空保护：一条都没抽到时**绝不落盘**。
-   *
-   * 触发路径是真实存在的（`--src` 配错、目录下没有 .ts/.tsx、解析被 errorRecovery
-   * 静默跳过），而后果不可逆——746 条源词典被写成 `{}`，随后 apply 把两个运行时
-   * 词条也编译成 `{}`，界面整包露中文，词典又没有备份。宁可报错退出让人去查配置，
-   * 也不静默清空一份资产（首次扫描 previous 为空时属正常，照常写入）。
+   * 抽空保护：本次抽取结果为空且已有源词典非空时，扫描报告错误并放弃写入，避免空结果覆盖既有词典。
+   * 首次扫描时源词典为空，允许写入空词典。
    */
   const previousCount = Object.keys(previous).length;
   if (Object.keys(next).length === 0 && previousCount > 0) {
@@ -112,8 +108,8 @@ export function scan(paths: KitPaths, options: ScanOptions = {}): ScanResult {
   }
 
   /**
-   * 失效词条不忍删除：译文里已不再被源码引用的 key 移入 `i18n/retired/`。
-   * 直接删的代价是文案改回旧版本时译文永久丢失，而译文可复用正是哈希 key 的收益之一。
+   * 成功扫描发现源码当前未引用的 key 时，其非空译文会写入 `i18n/retired/`；
+   * 原文再次出现时可按相同 key 复用归档译文。
    */
   if (removed.length > 0) {
     for (const lng of paths.lngs) {
@@ -128,9 +124,8 @@ export function scan(paths: KitPaths, options: ScanOptions = {}): ScanResult {
   }
 
   /**
-   * 剪枝：失效词条已归档，译文文件里那份就成了「词典中不存在的孤立译文」，
-   * `check` 规则 2 会一直红而没有任何自动修法（开发者只能手删 key）。
-   * 默认不动（保留最大回旋余地），需要时显式 `scan --prune`。
+   * 剪枝：启用 `--prune` 时，从译文文件中移除失效 key，避免 `check` 将其判为孤立译文；
+   * 归档文件保留可复用译文。默认不剪枝，译文文件保留原条目。
    */
   if (options.prune && removed.length > 0) {
     for (const lng of paths.lngs) {

@@ -8,15 +8,8 @@ import { settingsRepository, undoRepository } from '@/platform/storage/repositor
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * 撤销入口的执行互斥（M3 / S1 + S6）。
- *
- * 入口的 `isExecuting()` 判空发生在 `await get().load()` **之前**，而 `undoing` 的
- * 置位在 `runGuardedUndo` 里（await 之后）。ready=false 时同一 tick 的两次撤销会
- * 各自通过那道判空、各自 await 同一个 loadInFlight、各自 `popBatch` 拿到同一个
- * latest —— 同一批标签被恢复两次。persistUndo=false 时跨页复核整段跳过，那道判空
- * 是唯一拦截，缺口更大。
- *
- * 因此互斥必须是「在 runGuardedUndo 开头 CAS 置位」，而不是「入口判空」。
+ * 撤销执行互斥行为规格：加载完成前并发触发的撤销请求只恢复一次；按批次 id 撤销时，
+ * 即使撤销历史尚未加载，也会先完成加载再执行。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -78,8 +71,8 @@ describe('撤销执行互斥', () => {
     expect(useUndoStore.getState().undoing).toBe(false);
   });
 
-  it('persistUndo=false（跨页复核整段跳过）时同样只恢复一次', async () => {
-    // Given 关闭持久化：跨页复核分支不存在，入口判空是唯一拦截
+  it('persistUndo=false 时同样只恢复一次', async () => {
+    // Given 关闭持久化且内存中有待撤销批次
     await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: false });
     const batch = makeBatch();
     useUndoStore.setState({ batches: [batch], ready: false });
@@ -108,7 +101,7 @@ describe('撤销执行互斥', () => {
     // When 在 ready=false 时按 id 撤销
     await useUndoStore.getState().undoBatch(batch.id);
 
-    // Then 正常撤销（恢复被调用），而不是给出与事实相反的「已不存在」
+    // Then 执行恢复，且提示不报告批次不存在
     expect(mocks.restore).toHaveBeenCalledTimes(1);
     expect(useUndoStore.getState().toast?.message).not.toContain('不存在');
   });

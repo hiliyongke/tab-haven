@@ -4,18 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { DialogShell } from '@/ui/dialog/Dialog';
 
-/**
- * 背景惰性化（applyBackgroundInert）的「原型访问器」回归。
- *
- * 真实 Chrome 里 `inert` 是 WebIDL 访问器属性：读 `HTMLElement.prototype.inert`
- * 会以 `HTMLElement.prototype` 自身作为 this，而它不是平台对象，Blink 直接抛
- * `Illegal invocation`（与 `Element.prototype.innerHTML` 同类）。
- * jsdom 未实现 inert，读到的是 undefined —— 所以这条 bug 在单测里永远走降级
- * 分支、永远全绿，只有在真实浏览器打开任意弹窗时才崩。
- *
- * 这里人为在原型上装一个「一读就抛」的 getter 来模拟 Blink：实现只要去读
- * 原型值，用例立刻红；用 `in` 做存在性检测则安全通过。
- */
+/** 背景惰性化行为规格：检测 inert 能力时不触发原型访问器，并在弹窗关闭后恢复背景状态。 */
 
 let app: HTMLDivElement;
 
@@ -42,7 +31,7 @@ describe('背景惰性化的 inert 特性检测', () => {
         throw new TypeError('Illegal invocation');
       },
       set: () => {
-        /* 占位：真实实现写入即可 */
+        /* 测试不需要记录 getter/setter 的状态。 */
       }
     });
 

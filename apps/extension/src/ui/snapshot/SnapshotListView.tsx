@@ -145,14 +145,10 @@ export function SnapshotListView({
         </div>
       )}
 
-      {/* 不再自套 max-h + overflow：DialogShell 的内容区已是 flex-1 overflow-y-auto、
-          外壳 max-h-[85vh]，再嵌一层会出现两条滚动条且高度互相打架
-          （UndoHistoryPanel 已按此约定实现）。pr-1 也去掉 —— 内容区 px-4 之外
-          再多 4px 会让列表右边缘比标题栏 × 少 4px。 */}
+      {/* 滚动由 DialogShell 内容区承担，保持单一滚动容器；内容区 padding 控制列表与标题栏的右边缘对齐。 */}
       <div className="flex flex-col gap-2">
         {state === 'loading' ? (
-          /* 骨架与主列表同一套语言：面板打开到 read 完成之间不再闪一句
-             「还没有快照」，版面高度也不会跳。 */
+          /* 加载态使用与主列表一致的骨架，保持状态切换时文案与版面稳定。 */
           <LoadingSkeleton />
         ) : state === 'error' ? (
           <LoadErrorState onRetry={onRetryLoad} />

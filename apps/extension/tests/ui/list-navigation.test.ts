@@ -6,11 +6,8 @@ import { act, renderHook } from '@testing-library/react';
 import { useListNavigation } from '@/ui/hooks/useListNavigation';
 
 /**
- * 列表键盘漫游（↑↓ / Enter）。
- *
- * 回归点：空态漫游是「列表 + 键盘」卖点的一部分 —— 只支持先输入查询才能
- * 用 ↑↓ 选择，聚焦搜索框直接按 ↑↓ 毫无反应。本测试守住两态共用的语义：
- * 循环移动、Enter 激活并消费按键、序列收缩时索引钳制、换批回到首项。
+ * 列表键盘漫游行为规格：方向键循环移动，Enter 激活当前项；序列收缩时选择保持在界内，
+ * 查询变化后回到首项。
  */
 
 function key(k: string): KeyboardEvent<HTMLInputElement> {
@@ -37,7 +34,7 @@ describe('useListNavigation', () => {
     act(() => {
       expect(result.current.handleKeyDown(key('ArrowDown'))).toBe(true);
     });
-    // 首次导航从首项起算，落到第二项（与旧行为一致）
+    // 首次导航后选中第二项。
     expect(result.current.selectedTabId).toBe(2);
 
     act(() => {

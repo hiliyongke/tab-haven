@@ -6,13 +6,8 @@ import type { UndoTabRecord } from '@/core/schema/models';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
 
 /**
- * 标签恢复引擎（撤销栈与快照共用的落盘路径）。
- *
- * 它是「可重试撤销」承诺的落点：失败明细不准，
- * 用户要么丢数据（整批丢弃），要么重复开标签（整批保留）。
- *
- * fake-browser 未实现 tabs.group / tabGroups.update，按 auto-group-sync.test.ts
- * 的既有范式注入最小实现。
+ * 标签恢复行为规格：按位置恢复记录，保留固定、静音和分组状态；返回失败明细，
+ * 并按目标窗口中标签的 URL 处理已有页面与重复 URL。
  */
 
 // fake-browser 的窗口 id 恒为 0（tabs.create 不接受自定义 windowId），
@@ -86,7 +81,7 @@ describe('restoreTabRecordsDetailed', () => {
 
   it('原组已删除时按组名重建', async () => {
     const { group, update } = stubGroupApis();
-    // 显式模拟「组不存在」：get 抛错 → 视为原组失效，直接按名重建
+    // 模拟原组查询失败，恢复操作按组名创建目标组。
     const getStub = vi.fn(async () => {
       throw new Error('group gone');
     });
@@ -95,13 +90,13 @@ describe('restoreTabRecordsDetailed', () => {
       [record({ url: 'https://g.com/', groupId: 5, groupName: '工作' })],
       WINDOW_ID
     );
-    // get 校验即发现失效：不再尝试带 groupId 入组，只新建组一次
+    // 恢复到新建的同名组，且仅创建一次。
     expect(group).toHaveBeenCalledTimes(1);
     expect(group.mock.calls[0]![0]).toEqual({ tabIds: [expect.any(Number)] });
     expect(update).toHaveBeenCalledWith(77, { title: '工作' });
   });
 
-  it('旧 groupId 被浏览器复用为无关组（标题不符）：不入他组，按名重建', async () => {
+  it('groupId 指向名称不符的组时按组名重建', async () => {
     const { group, update } = stubGroupApis();
     const getStub = vi.fn(async () => ({ id: 5, title: '无关组' }));
     (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
@@ -109,12 +104,12 @@ describe('restoreTabRecordsDetailed', () => {
       [record({ url: 'https://g.com/', groupId: 5, groupName: '工作' })],
       WINDOW_ID
     );
-    // 标题不符：绝不带旧 groupId 入组（否则标签误入「无关组」）
+    // 名称不符的组不作为恢复目标。
     expect(group).not.toHaveBeenCalledWith(expect.objectContaining({ groupId: 5 }));
     expect(update).toHaveBeenCalledWith(77, { title: '工作' });
   });
 
-  it('旧 groupId 与组名一致：直接入原组（不重建）', async () => {
+  it('groupId 对应组名一致时直接入组（不重建）', async () => {
     const group = vi.fn(async () => 5);
     const tabs = fakeBrowser.tabs as unknown as { group: typeof group };
     tabs.group = group as unknown as typeof tabs.group;
@@ -148,8 +143,7 @@ describe('restoreTabRecordsDetailed', () => {
   });
 
   it('批次内同 URL 的记录照数恢复（撤销必须还回用户实际关掉的数量）', async () => {
-    // 回归：新建的 URL 被加回去重集合时，「多选关闭 3 个同 URL 标签」后
-    // 撤销只还回 1 个，而 toast 仍报「已恢复 3 个」。
+    // 同一批次中的重复 URL 按记录数量分别恢复。
     const result = await restoreTabRecordsDetailed(
       [
         record({ url: 'https://same.com/', index: 0 }),
@@ -182,8 +176,7 @@ describe('restoreTabRecordsDetailed', () => {
   });
 
   it('复用豁免未获确认时计入 degraded（界面不得只报「已恢复 N 个」）', async () => {
-    // 豁免是「恢复出来的标签不被复用引擎合并掉」的唯一凭据：发放未获确认时，
-    // 标签可能随即被合并，此时「已恢复」是假的——degraded 必须把它交上去。
+    // 复用豁免发放未获确认时，将恢复结果标记为 degraded。
     vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((() =>
       Promise.resolve({ ok: false })) as never);
 

@@ -18,13 +18,7 @@ import {
 } from '@/platform/tabs';
 
 /**
- * 平台标签层（30+ 浏览器操作的唯一出口）。
- *
- * 重点覆盖两类契约：
- *  1. **纯计算**的 `computeReorderIndex` —— 拖拽重排写回原生顺序的核心，
- *     算错直接表现为「拖完顺序乱跳」；
- *  2. **返回值语义** —— 本层一律「失败不抛、返回可判定值」，
- *     调用方据此决定要不要留撤销入口，返回值失真即等于静默丢数据。
+ * 平台标签操作行为规格：按标签与分组顺序计算移动位置；浏览器操作失败时返回可判定结果。
  */
 
 function tab(partial: Partial<TabRecord> = {}): TabRecord {
@@ -153,8 +147,7 @@ describe('computeGroupMoveIndex', () => {
   });
 
   it('先剔除 source 整组占位，避免 off-by-N', () => {
-    // A 在前、B 在后：若沿用「移动前的快照索引」会把落点算成 B 末标签 index 3 + 1 = 4，
-    // 但剔除 A 的两条之后 B 的末位是 1，正确落点为 2。落点必须先剔除 source 整组再算。
+    // 移除 source 整组后，以目标组末项在新序列中的位置计算插入索引。
     expect(
       computeGroupMoveIndex({ tabs, sourceTabIds: A, targetTabIds: B, placeAfter: true })
     ).toBe(2);
@@ -250,11 +243,7 @@ describe('computeNativeGroupMoveIndex', () => {
   });
 });
 
-/**
- * 失败项由**注入桩**决定，不依赖 fake-browser 对不存在 id 的处理——
- * 后者对 remove(9999) 静默成功、对 reload 干脆不实现，两种行为都不是 Chrome 的真实语义，
- * 拿它当断言依据等于把测试绑死在模拟器的实现细节上。
- */
+/** 为 remove / reload 注入指定标签的失败结果。 */
 function stubApi<K extends 'remove' | 'reload'>(api: K, failingId: number): void {
   const tabs = fakeBrowser.tabs as unknown as Record<K, (id: number) => Promise<void>>;
   tabs[api] = vi.fn(async (id: number) => {
@@ -291,8 +280,7 @@ describe('removeGroup', () => {
     const tabGroups = fakeBrowser.tabGroups as unknown as {
       get: (id: number) => Promise<unknown>;
     };
-    // 文案与 Chrome 实际抛出的 `No group with id: N` 一致 —— 判定是文案匹配，
-    // 测试必须用真实文案，否则会掩盖「判定失效」这类回归。
+    // 使用 Chrome 返回的错误文案验证「组不存在」的判定。
     tabGroups.get = (async () => {
       throw new Error('No group with id: 99');
     }) as unknown as typeof tabGroups.get;
@@ -300,9 +288,8 @@ describe('removeGroup', () => {
     expect(await removeGroup(99)).toBe('missing');
   });
 
-  it('组查询本身失败时返回 failed，不得塌缩成 missing', async () => {
-    // 回归：此前 groupExists 用布尔吞掉「查询失败」，removeGroup 判为 missing，
-    // 调用方据此清掉记账而真组仍在 → 永久孤儿组（关闭开关时永不再解散）。
+  it('组查询失败时返回 failed，与组不存在区分', async () => {
+    // 查询失败时保留失败结果，调用方可区别处理查询异常与组不存在。
     const tabGroups = fakeBrowser.tabGroups as unknown as {
       get: (id: number) => Promise<unknown>;
     };
@@ -321,9 +308,7 @@ describe('createNewTab', () => {
   });
 
   it('after-active 位置：插到当前激活标签之后', async () => {
-    // 注入激活标签的查询结果：fake-browser 的 query 对 active 过滤不稳，
-    // 而本用例要验证的是「取激活标签 index + 1」这段逻辑。
-    // 另外 fake-browser 的 create 会忽略 index，故断言传参而非返回值。
+    // 提供当前激活标签索引，并验证新标签接收其后的插入位置。
     const tabs = fakeBrowser.tabs as unknown as { query: (q: unknown) => Promise<unknown[]> };
     tabs.query = vi.fn(async () => [{ id: 5, index: 2 }]) as never;
     const createSpy = vi.spyOn(fakeBrowser.tabs, 'create');

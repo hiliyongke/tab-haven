@@ -9,17 +9,8 @@ import { foldersRepository } from '@/platform/storage/repositories';
 import { readSession, updateSession } from '@/platform/storage/session';
 
 /**
- * 固定空间切片中未被覆盖的动作（`stores/data/folderSlice.ts`）。
- *
- * 重点覆盖三类「错了会丢数据或拆散用户结构」的契约：
- *
- * 1. **`openSavedItem` 的优先级链**：挂起标签 → 已绑定标签 → 精确 URL 匹配 → 新建绑定。
- *    精确匹配还必须排除「已绑定给其他条目」的标签，否则一个标签同时服务两个条目，
- *    违反「一个 tab 只服务一个条目」的不变量。
- * 2. **`syncFolderToNativeGroup` 的排除集**：`tabs.group` 是**移动语义**，
- *    把已属于其他原生组、隐身或已固定的标签拉进来会拆散用户手动建立的组。
- * 3. **`createFolderFromNativeGroup` 的导入守卫**：导入事务期间写 folders 会被丢弃，
- *    但绑定变更照常发生 → 留下指向不存在条目的脏绑定，整条路径必须跳过。
+ * 固定空间文件夹行为规格：已保存条目按优先级打开，原生组同步只处理可加入的标签，
+ * 导入事务期间跳过会修改文件夹与会话绑定的操作。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -106,8 +97,7 @@ async function seedFolder(
   items: { url: string; title?: string }[]
 ): Promise<{ folderId: string; itemIds: string[] }> {
   await useDataStore.getState().createFolder(name);
-  // createFolder 追加到末尾：按 id 就地替换刚建的那个，**不能整体重设 folders**，
-  // 否则连续 seed 多个文件夹时前面的会被抹掉（本文件多个用例依赖多文件夹共存）。
+  // 在刚创建的文件夹中填充条目，并保留其它文件夹。
   const createdFolder = folders().at(-1)!;
   const created = items.map((item) =>
     createFolderItem({ url: item.url, title: item.title ?? 'T' })
@@ -331,11 +321,8 @@ describe('openSavedItem 优先级链', () => {
 });
 
 describe('createFolderFromNativeGroup', () => {
-  it('导入事务进行中整条路径跳过（否则留下指向不存在条目的脏绑定）', async () => {
-    // 注意：`ctx.isImporting()` 读的是模块级闭包，**不是 store 状态**，
-    // 所以 `setState({ importing: true })` 骗不过它 —— 必须走真实并发路径。
-    // 做法：用导出结果构造合法备份，把 folders.write 换成可控 promise 挂在半途，
-    // 等到确认导入已进入写入阶段再调用受守卫的动作（用 waitFor 消除时序猜测）。
+  it('导入事务期间跳过从原生组创建文件夹', async () => {
+    // 保持备份导入处于写入阶段，再验证导入期间的文件夹操作结果。
     const payload = await useDataStore.getState().exportData();
     let release: (() => void) | undefined;
     const writeSpy = vi
@@ -356,7 +343,7 @@ describe('createFolderFromNativeGroup', () => {
     await importing.catch(() => undefined);
   });
 
-  it('组内全是不可收藏的内部页时不建空文件夹（否则凭空多一个空夹还提示已保存）', async () => {
+  it('组内没有可保存条目时不创建文件夹', async () => {
     const ok = await useDataStore
       .getState()
       .createFolderFromNativeGroup('组', [
@@ -431,13 +418,13 @@ describe('syncFolderToNativeGroup', () => {
     expect(ok).toBe(true);
     expect(mocks.groupTabs).toHaveBeenCalledWith([900]);
     expect(mocks.updateGroupMeta).toHaveBeenCalledWith(500, '工作');
-    // 收敛等待必须先于删除：否则 UI 会短暂拿到未收敛的中间态
+    // 标签组归属确认后移除固定文件夹。
     expect(mocks.waitForTabGroupAssignment).toHaveBeenCalledWith([900], 500);
     expect(folders()).toHaveLength(0);
     expect(mocks.requestRefresh).toHaveBeenCalled();
   });
 
-  it('排除已固定 / 隐身 / 已属于其他原生组的标签（tabs.group 是移动语义，会拆散用户的组）', async () => {
+  it('只将未固定、非隐身且未属于其他原生组的标签加入组', async () => {
     const { folderId } = await seedFolder('工作', [
       { url: 'https://a.com/' },
       { url: 'https://b.com/' },

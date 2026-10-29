@@ -6,16 +6,7 @@ import type { Repositories } from '@/platform/registry';
 import type { DataContext, DataState } from '@/stores/data/types';
 
 /**
- * 备份不得携带「禁缓存」开启态（C1）。
- *
- * `noCacheEnabled` 一旦被备份文件打开，`noCachePatterns` 编译出的 DNR 规则立即
- * 生效（platform/background/noCache）。用户此前授予的 `<all_urls>` optional 权限
- * 是给「自己点开的那个开关」用的 —— 备份里的 true 等于绕过这次授权动作，与
- * `syncMirrorEnabled`（导入后把固定 URL 推上浏览器账号通道）同性质：会替用户做出
- * 授权动作的开关一律保留用户当下的选择。
- *
- * 而 `noCachePatterns` **照常导入**：它在 schema 层已归一化（DNR 通配/锚定语法在
- * 解析时被丢弃），开关关闭时完全是零副作用的本地配置。
+ * 导入备份时，禁缓存开关保留本地当前值；禁缓存站点列表按备份内容导入。
  */
 
 function repo<T>(value: T) {

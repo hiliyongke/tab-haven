@@ -60,10 +60,10 @@ export async function runAutoSnapshot(): Promise<void> {
     if (!settings.autoSaveSnapshots) return;
 
     // 与 windowCache / autoGroup 共用 listNormalWindowIds（窗口类型/无痕口径一致）。
-    // 查询失败不能退化成空数组：那样本轮会「静默什么都不保存」，与「所有窗口都没有
+    // 查询失败不能退化成空数组：那样本次执行会「静默什么都不保存」，与「所有窗口都没有
     // 可保存标签」在表现上完全一致，自动保存的缺口无从察觉。
     const windowIds = await listNormalWindowIds().catch((error) => {
-      logDegraded('auto-snapshot', '窗口列表查询失败，本轮未保存任何窗口', error);
+      logDegraded('auto-snapshot', '窗口列表查询失败，本次执行未保存任何窗口', error);
       return [] as number[];
     });
     const previous = await latestAutoSignature();
@@ -72,7 +72,7 @@ export async function runAutoSnapshot(): Promise<void> {
     for (const windowId of windowIds) {
       const tabs = await collectWindowTabs(windowId).catch((error) => {
         // 单窗口采集失败不得静默跳过：自动快照是唯一兜底链路，缺窗必须留痕。
-        logDegraded('auto-snapshot', `窗口 ${windowId} 标签采集失败，本轮跳过该窗口`, error);
+        logDegraded('auto-snapshot', `窗口 ${windowId} 标签采集失败，本次执行跳过该窗口`, error);
         return [] as SnapshotTab[];
       });
       if (tabs.length === 0) continue;

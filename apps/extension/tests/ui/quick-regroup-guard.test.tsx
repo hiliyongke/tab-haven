@@ -16,16 +16,7 @@ import * as autoGroupSync from '@/platform/group/AutoGroupSync';
 import App from '@/entrypoints/sidepanel/App';
 
 /**
- * handleQuickRegroup 的安全闸门回归规格。
- *
- * 背景 bug：快速整理会把当前窗口的原生组全部打散重建，是产品里唯一**不可撤销**
- * 的破坏性动作。注释承诺「执行前先存一份现场快照当回退点：存不进去就中止重排，
- * 绝不裸奔执行」。但 saveCurrentWindow 在现场为空时返回 false（不抛异常），旧实现
- * 只 catch 了异常、忽略 boolean 返回值 —— 空现场时快照没存进去，重排却照样执行，
- * 用户的分组被打散且无从恢复。
- *
- * 这两条用例锁住：saveCurrentWindow 返回 false 时绝不调用 regroupTempArea；返回
- * true 时才执行。
+ * 快速整理前保存当前窗口的撤销快照：保存失败时不执行重排，保存成功时执行重排。
  */
 
 function tab(partial: Partial<TabRecord> & { id: number }): TabRecord {
@@ -63,7 +54,7 @@ function primeStores(): void {
   useSnapshotStore.setState({ snapshots: [], ready: true });
 }
 
-/** 让重排计划非空（否则 handleQuickRegroup 会在 plan 判空处提前返回）。 */
+/** 提供可执行的重排计划。 */
 function stubPlan(): void {
   vi.spyOn(autoGrouping, 'planRegroup').mockReturnValue({
     ungroupTabIds: [1, 2],
@@ -85,7 +76,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('handleQuickRegroup（保存现场快照失败则中止不可撤销的重排）', () => {
+describe('handleQuickRegroup 快照保存与重排', () => {
   it('saveCurrentWindow 返回 false 时：不执行 regroupTempArea', async () => {
     stubPlan();
     // 现场为空/只剩内部页：store 返回 false 且已自行 notifyError。
@@ -98,7 +89,7 @@ describe('handleQuickRegroup（保存现场快照失败则中止不可撤销的�
     });
     fireEvent.click(button);
 
-    // 快照保存已尝试，但破坏性重排绝不执行（否则分组被打散且无回退点）。
+    // 快照保存失败时不执行 regroupTempArea。
     await waitFor(() =>
       expect(useSnapshotStore.getState().saveCurrentWindow).toHaveBeenCalledTimes(1)
     );

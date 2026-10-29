@@ -8,11 +8,7 @@ import type { Repositories } from '@/platform/registry';
 import type { DataContext, DataState } from '@/stores/data/types';
 
 /**
- * 导入期间「写入被丢弃」的留痕合并（S10）。
- *
- * 导入事务持续数百 ms，期间拖拽/排序会连续触发 `writeFolders` —— 逐次留痕会在诊断
- * 环形缓冲里堆出上百条同文案记录，把真正的故障挤出缓冲（诊断导出是本项目唯一的
- * 排障通道）。故按分区合并：同一原因本会话内只留一次。
+ * 导入事务期间的降级留痕行为：同一分区的重复写入拒绝在本会话内只记录一次。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -76,7 +72,7 @@ afterEach(() => {
 });
 
 describe('导入期间的降级留痕', () => {
-  it('导入进行中连续 20 次写入：每个分区的告知各只留 1 条（不刷满诊断缓冲）', async () => {
+  it('导入期间连续写入时每个分区只记录一条', async () => {
     const { ctx } = build();
     ctx.setImporting(true);
 

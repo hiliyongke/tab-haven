@@ -10,7 +10,7 @@ import { getRepositories } from '@/platform/registry';
 // 引用组合根默认实例，保证与 getRepositories() 返回的是同一组对象。
 const current = getRepositories();
 
-// 只导出实际有消费方的实例；零引用的具名导出不再保留（需要时按 getRepositories() 加回）。
+// 只导出消费方使用的实例；其他仓库通过 getRepositories() 按需获取。
 export const foldersRepository = current.folders;
 export const pinsRepository = current.pins;
 export const settingsRepository = current.settings;

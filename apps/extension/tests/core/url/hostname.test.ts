@@ -2,16 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
 
 /**
- * 行为规格：主机名归一化（`core/url/hostname`）—— 全应用唯一口径。
- *
- * 这是「同一站点」判定的地基：固定空间去重（PinIdentity）、站点归组
- * （SiteResolver）、免缓存规则（noCachePattern）都吃这一份结果。三处归一
- * 口径一旦漂移，同一站点会在不同功能里被判成两个（聚合漏判 / 固定项重复留存）。
- *
- * 规则只有三条，按序叠加：小写 → 去开头 `www.` → 去尾点。
- * 顺序有意义：先小写才拦得住 `WWW.` 这类大写前缀（下方用例钉死）。
- * 标注「刻意不归一」的是已知且有意的行为，若将来要改，改的是这里 + 所有调用方，
- * 而不是在调用方各补一套 trim / 解码逻辑。
+ * 主机名归一化行为规格：转小写、移除一个开头的 `www.` 与一个尾点；
+ * 按用例保留端口、IP 地址、IDN 形式与首尾空白等输入特征。
  */
 describe('normalizeHostname', () => {
   describe('等价类：大小写', () => {
@@ -64,7 +56,7 @@ describe('normalizeHostname', () => {
     });
 
     it('【刻意不归一】多个尾点只剥一个（a.com.. → a.com.）', () => {
-      // 正则无 /g：非循环。多点尾缀不是合法 FQDN，不做猜测式清理。
+      // 多个尾点仅移除一个。
       expect(normalizeHostname('a.com..')).toBe('a.com.');
     });
 
@@ -132,8 +124,7 @@ describe('normalizeHostname', () => {
     });
 
     it('【刻意不归一】首尾空白不裁剪（trim 不是本函数的职责）', () => {
-      // 上游（new URL / 导入解析）负责裁剪；此处若顺手 trim，
-      // 会让「带空格的坏数据」静默变成合法键。
+      // 主机名归一化保留首尾空白，由调用方负责输入解析与裁剪。
       expect(normalizeHostname(' a.com ')).toBe(' a.com ');
     });
 
@@ -156,22 +147,15 @@ describe('normalizeHostname', () => {
   });
 });
 
-/**
- * 行为规格：休眠白名单条目的归一化（用户可粘贴整串 URL）。
- *
- * 落盘前必须归一（schema 层完成），否则匹配端与落盘值不一致 —— 表现为
- * 「白名单里明明有，还是被休眠了」。这里的额外风险是**产出永不命中的垃圾条目**：
- * 非 http(s) scheme 剥不干净时会留下 `ftp:` 这类值，非空故被保留并占额度。
- */
+/** 休眠白名单行为规格：粘贴的 URL 归一为可匹配主机名，无效输入归一为空串。 */
 describe('normalizeWhitelistHost', () => {
   it('Given 粘贴整串 http(s) URL When 归一化 Then 只留 hostname', () => {
     expect(normalizeWhitelistHost('https://www.a.com/some/path')).toBe('a.com');
     expect(normalizeWhitelistHost('HTTPS://WWW.Example.com/x')).toBe('example.com');
   });
 
-  it('Given 非 http(s) scheme When 归一化 Then 也剥离 scheme（不留 `ftp:` 垃圾条目）', () => {
-    // 只剥离 http(s) 时，「去路径」会从第一个 `/` 切走，最终归一出 `ftp:`：
-    // 非空 → 落盘 → 永远匹配不上，还白占一条白名单额度。
+  it('Given 非 http(s) scheme When 归一化 Then 保留主机名', () => {
+    // 去除非 http(s) scheme 后保留主机名部分。
     expect(normalizeWhitelistHost('ftp://a.com')).toBe('a.com');
   });
 
@@ -186,20 +170,19 @@ describe('normalizeWhitelistHost', () => {
   });
 
   it('Given 带端口的 IPv6 字面量 When 归一化 Then 保留 [IPv6]:port（方括号内冒号属地址本身）', () => {
-    // 若按「含多个冒号即判空」处理，`https://[::1]:3000` 这类本地开发地址会被整条丢掉
+    // 方括号内的冒号属于 IPv6 地址，端口位于右方括号之后。
     expect(normalizeWhitelistHost('[::1]:3000')).toBe('[::1]:3000');
     expect(normalizeWhitelistHost('https://[::1]:3000/')).toBe('[::1]:3000');
   });
 
   it('Given 不带端口的 IPv6 字面量 When 归一化 Then 保留 [IPv6]（与 SiteResolver 的站点键同口径）', () => {
-    // Chrome 对默认端口 IPv6 的 URL 形态就是 `http://[::1]/`；SiteResolver 在无端口
-    // 时同样以 `[::1]` 为站点键。此处若判空丢弃，两处口径就不一致了。
+    // 不带端口的 IPv6 主机名保留为方括号形式 `[::1]`。
     expect(normalizeWhitelistHost('[::1]')).toBe('[::1]');
     expect(normalizeWhitelistHost('https://[::1]/')).toBe('[::1]');
     expect(normalizeWhitelistHost('[fe80::1]')).toBe('[fe80::1]');
   });
 
-  it('Given 越界或非数字端口 When 归一化 Then 判空丢弃（永不命中，不该占额度）', () => {
+  it('Given 越界或非数字端口 When 归一化 Then 判空丢弃', () => {
     expect(normalizeWhitelistHost('a.com:0')).toBe('');
     expect(normalizeWhitelistHost('a.com:99999')).toBe('');
     expect(normalizeWhitelistHost('a.com:8080:9090')).toBe('');
@@ -211,36 +194,34 @@ describe('normalizeWhitelistHost', () => {
   });
 
   it('Given 手输的裸 IPv6（无方括号）When 归一化 Then 补回方括号而非判空', () => {
-    // URL 解析与 SiteResolver 产出的都是 `[::1]`；把 `::1` 判空等于让用户
-    // 「照着地址栏抄一遍」仍然保存不上。
+    // 裸 IPv6 输入归一为带方括号的地址形式。
     expect(normalizeWhitelistHost('::1')).toBe('[::1]');
     expect(normalizeWhitelistHost('fe80::1')).toBe('[fe80::1]');
   });
 
   it('Given 前导零端口 / 端口前的尾点 When 归一化 Then 与 URL 解析结果同形', () => {
-    // 整串归一会把 `a.com.:080` 归一成 `a.com.:80` / `a.com:080`，
-    // 而匹配端拿到的是 URL 解析出的 `a.com:80`，条目因此永不命中。
+    // 端口去除前导零，主机尾点与端口一并归一。
     expect(normalizeWhitelistHost('a.com:080')).toBe('a.com:80');
     expect(normalizeWhitelistHost('a.com.:80')).toBe('a.com:80');
     expect(normalizeWhitelistHost('WWW.A.com.:080')).toBe('a.com:80');
   });
 
-  it('Given 含空白的 ASCII 主机名 When 归一化 Then 判空丢弃（URL 解析必然抛错，永不命中）', () => {
-    // ASCII 分支此前零校验直接放行，`a b.com` 原样落盘 → 白占一条额度。
+  it('Given 含空白的 ASCII 主机名 When 归一化 Then 判空丢弃', () => {
+    // 含空白的主机名不能解析为 hostname，不进入白名单。
     expect(normalizeWhitelistHost('a b.com')).toBe('');
     expect(normalizeWhitelistHost('a.com b')).toBe('');
     expect(normalizeWhitelistHost('https://a b.com/x')).toBe('');
   });
 
-  it('Given 形式可疑但可回环的 ASCII 主机名 When 归一化 Then 刻意保留（只拦空白）', () => {
-    // `a..com` / `-a.com` / `a_b.com` 实测都能原样回环，收紧即误伤合法条目。
+  it('Given 形式特殊的 ASCII 主机名 When 归一化 Then 保留归一化结果', () => {
+    // `a..com`、`-a.com` 与 `a_b.com` 按原样保留。
     expect(normalizeWhitelistHost('a..com')).toBe('a..com');
     expect(normalizeWhitelistHost('-a.com')).toBe('-a.com');
     expect(normalizeWhitelistHost('a_b.com')).toBe('a_b.com');
   });
 
   it('Given 中文域名（IDN）When 归一化 Then 落盘为 punycode（匹配端拿到的是 punycode）', () => {
-    // 标签 URL 的 hostname 由浏览器给出，已是 punycode；存中文原文永不命中。
+    // 白名单 hostname 归一为浏览器 URL 使用的 punycode 形式。
     expect(normalizeWhitelistHost('中文.cn')).toBe('xn--fiq228c.cn');
     expect(normalizeWhitelistHost('https://www.中文.cn/x')).toBe('xn--fiq228c.cn');
   });

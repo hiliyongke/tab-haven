@@ -206,11 +206,11 @@ export function createTransferSlice(
           pins: importedPins,
           collapsedSites: data.siteCollapse,
           settings: importedSettings,
-          // 整表替换后旧镜像结论不再成立，复位等下一次拉取重新给出。
+          // 导入替换全部数据分区后，镜像状态由下一次拉取重新判定。
           mirrorIssue: null
         });
-        // 绑定整表失效：备份替换了 folders，同 id 条目可能指向另一个网址，残留绑定会把无关标签
-        // 从临时区排除/点击激活不相干标签。清空后由 reconcileWithTabs 按 URL 精确重建。
+        // 备份替换 folders 后，绑定 id 可能指向不同网址；清空绑定并由 reconcileWithTabs 按 URL 重建，
+        // 避免无关标签从临时区排除或被条目点击激活。
         const rebound = await mutateSession(() => ({ itemTabBindings: {} }));
         ctx.applyBindings(rebound);
         applyTheme(importedSettings.themePreference, importedSettings.colorTheme);

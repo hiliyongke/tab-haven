@@ -54,7 +54,7 @@ export function IconButton({
   // min-h/min-w 兜底命中区 ≥24px（WCAG 2.5.8）：p-1 + h-4 图标刚好 24px，传入更小
   // iconClass 会掉到 22px。禁用态透明度与 Button 统一为 50。
   const classes =
-    /* cursor-pointer 与 Button 基类统一（Tailwind v4 preflight 不再默认提供） */
+    /* Tailwind v4 preflight 不为按钮设置手型光标，交互态由组件显式提供。 */
     /* disabled:hover:* 与 Button 同口径：原生 disabled 按钮在 Chrome 里仍匹配 :hover */
     'relative inline-flex items-center justify-center gap-1 rounded transition-base cursor-pointer hover:bg-gray-100 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent ' +
     /* 两档与 Button 同刻度（24 / 32）。 */

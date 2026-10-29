@@ -79,9 +79,8 @@ function SectionListImpl({
   // 每次过滤都会变。若直接进依赖数组，每次搜索输入都会解绑/重绑 window 监听。
   // 改用 ref 持有最新值 + 空依赖，只挂载一次（与 Dialog 的 useModalA11y 同构）。
   const locateContextRef = useRef({ sections, collapsedGroups, collapsedSitesSet, callbacks });
-  // 在 effect 里更新而非渲染期赋值：React 19 并发渲染下组件可能渲染但不提交，
-  // 渲染期写 ref 会把「未提交的中间值」泄漏给后续读取方。effect 在提交后执行，
-  // 且早于任何用户交互，语义与之前等价。
+  // 在 effect 里更新 ref，确保并发渲染中未提交的中间值不会泄漏给事件处理器；
+  // effect 在提交后、用户交互前执行。
   useEffect(() => {
     locateContextRef.current = { sections, collapsedGroups, collapsedSitesSet, callbacks };
   }, [sections, collapsedGroups, collapsedSitesSet, callbacks]);

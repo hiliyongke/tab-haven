@@ -38,43 +38,23 @@ export default defineConfig({
         'src/**/*.d.ts',
         'src/i18n/locales/**',
         /**
-         * 入口壳（各入口目录下的 main.tsx）只有 `createRoot().render()` —— 无分支、
-         * 无逻辑，把它计入覆盖率只会稀释均值，且测它等于测 React 本身。
-         *
-         * 这条排除的**判据**是「main.tsx 里不允许有逻辑」（分层红线：entrypoints
-         * 只组装）：`theme-init.ts` 与曾经的 `OptionsRoot`/`AboutRoot` 都曾挂在入口
-         * 壳里，前者已单独纳入统计（`tests/config/theme-init.test.ts`），后者已下沉
-         * 为 `ui/common/EntryRoot` 并纳入 `src/ui/common/**` 阈值。往 main.tsx 里
-         * 写逻辑会让这段代码自动脱离门禁 —— 这是本排除项唯一的失效方式。
+         * 入口壳（各入口目录下的 main.tsx）只调用 `createRoot().render()`，无分支或领域逻辑；
+         * 将其计入覆盖率会稀释均值。主题初始化与通用入口组件分别由专属测试和 UI 层阈值覆盖。
+         * 按分层约束，main.tsx 只负责组装，业务逻辑放在可独立测试的模块中。
          */
         'src/entrypoints/**/main.tsx'
       ],
       /**
-       * 阈值按目录分层，取「当前实测值 − 约 8 点余量」作为棘轮基线：
-       * 目的是锁住既有覆盖不回退，再逐迭代收紧，而不是一次性设成理想值然后长期飘红。
+       * 覆盖率阈值按代码层次分别设置：
+       *   - `src/core/**`：纯领域逻辑，保持较高覆盖要求；
+       *   - `src/platform/*.ts`：平台层直连文件单独设限，避免目录均值掩盖单文件缺口；
+       *   - `src/entrypoints/background.ts` 与 `src/platform/background/**`：后台编排入口与子模块分别统计；
+       *   - `src/platform/**`：平台层整体；
+       *   - UI、stores 与全局阈值按各自代码面设定。
        *
-       *   - `src/core/**`：纯领域逻辑，是唯一要求接近满覆盖的层；
-       *   - `src/platform/*.ts`：平台层**直连文件**（tabs / messages / diagnostics /
-       *     bookmarks / sessions / permissions / navigation / registry / sidePanel）。
-       *     为什么要单列这一组：目录均值会**稀释**个别文件的缺口。若这些文件只受
-       *     `src/platform/**` 约束，而该组是「直连文件 + 子目录」的整体均值，
-       *     单个直连文件即便远低于阈值也会被子目录抬高的均值掩盖。
-       *   - `src/entrypoints/background.ts` 与 `src/platform/background/**`：
-       *     SW 编排层（入口 + 子模块），是「出问题用户看不见」的能力
-       *     （重复标签复用 / 关窗自动快照 / 自动休眠 / 右键菜单 / 地址栏命令）的所在地。
-       *     子模块目录**不在 entrypoints 下**：曾写作 `src/entrypoints/background/**`，
-       *     而该目录不存在（入口是单文件 background.ts）——glob 命中 0 个文件，
-       *     阈值恒绿，等于这条门禁从未生效。
-       *   - `src/platform/**`：平台层整体（直连文件 + 子目录）。
-       *   - 全局：被 `ui/` 与 `stores/` 拉低，先给宽松基线。
-       *
-       * 注：阈值 glob 之间是**相互独立**的，各自匹配各自的文件集合并单独判定 ——
-       * `src/platform/**` 与 `src/platform/*.ts` 会同时生效，前者覆盖后者。
-       * 判定某条 glob 命中哪些文件、实测值是多少：跑一次
-       * `vitest run --coverage --coverage.reporter=json-summary`，
-       * 再按 glob 汇总 `coverage-summary.json`（同一轮里两条 glob 的数字不能直接对比）。
-       *
-       * 收紧顺序建议：entrypoints → ui 组件 → stores/data → 再抬全局。
+       * 每个 glob 独立匹配文件集合并判定；`src/platform/**` 与 `src/platform/*.ts`
+       * 会分别生效。可通过 `vitest run --coverage --coverage.reporter=json-summary`
+       * 查看匹配文件及覆盖率明细。
        */
       thresholds: {
         // 全局实测 lines 76.4 / stmts 74.9 / branch 66.4 / funcs 69.9

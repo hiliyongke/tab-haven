@@ -33,11 +33,7 @@ const distDir = join(siteDir, 'dist');
 const configFile = join(siteDir, 'vite.config.ts');
 
 /**
- * 构建期失败出口。
- *
- * 「缺了某个东西就 warn 跳过」在本文件里曾经是常态，代价是产物带着一个点不动的
- * 下载按钮也能构建成功 —— 失败被推迟到用户点击时才发生。缺件一律 fail，
- * 需要刻意跳过时由调用方显式声明（见各处 `SITE_SKIP_*`）。
+ * 构建期失败出口。缺少构建依赖或产物时终止构建；只有调用方显式设置对应 `SITE_SKIP_*` 才跳过。
  */
 function fail(message) {
   if (process.env.SITE_SKIP_ZIP === '1') {

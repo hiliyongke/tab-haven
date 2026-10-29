@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 隐私回归检查（FR-D10.5）：权限冻结 + 零网络请求 + 无第三方遥测。
+ * 隐私检查（FR-D10.5）：权限清单 + 零网络请求 + 无第三方遥测。
  *
  * 运行：pnpm check:privacy
  * 前置：先执行 pnpm build（读取 .output/chrome-mv3/manifest.json）
@@ -54,11 +54,8 @@ const ALLOWED_OPTIONAL_HOST_PERMISSIONS = new Set(['<all_urls>']);
 /**
  * 可选权限（`optional_permissions`）冻结清单。
  *
- * 这项此前完全游离在门禁之外：脚本只比 `manifest.permissions` 与 host 权限，
- * 而 `optional_permissions` 既不在前者也不在后者里 —— 往 `wxt.config.ts` 加一项
- * 而不同步 `PRIVACY.md`，门禁一条都不查。当前合法集合为空（产品没有按需权限，
- * 唯一的按需能力是走 `optional_host_permissions` 的主机权限），新增必须先改
- * `PRIVACY.md` §2 并走 PRD 变更。
+ * 该字段单独核验，避免其权限项遗漏在普通权限与主机权限检查之外。
+ * 当前集合为空；按需申请的网站权限通过 `optional_host_permissions` 声明。
  */
 const ALLOWED_OPTIONAL_PERMISSIONS = new Set();
 
@@ -102,11 +99,8 @@ const FAVICON_FILE = join(SRC, 'ui', 'common', 'Favicon.tsx');
 const FAVICON_SRC_FILE = join(SRC, 'platform', 'favicon.ts');
 
 /**
- * 存储键字面量：项目内所有存储键统一以 `tabs.` 或 `tabs:` 前缀命名。
- *
- * **两个前缀都得认**：只认 `tabs.` 时，`tabs:` 族（主题镜像 `tabs:theme` /
- * `tabs:theme-hue`，见 PRIVACY.md §3）在源码侧与文档侧同时被漏掉——双向比对
- * 两边都看不见它，于是「新增存储键须同步文档」对整族失效，门禁恒绿。
+ * 存储键字面量：项目内存储键统一使用 `tabs.` 或 `tabs:` 前缀。
+ * 两种形式都纳入与 PRIVACY.md §3 的双向比对，覆盖数据键与主题镜像键。
  */
 const STORAGE_KEY_LITERAL = /['"](tabs[.:][a-zA-Z0-9._-]+)['"]/g;
 /** i18n 键同样以 `tabs.` 开头（`t('tabs.xxx')`），不是存储键，整行跳过。 */
@@ -116,23 +110,14 @@ const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
 /** 非存储用途的 `tabs.` 字面量：导出文件格式标识。 */
 const NON_STORAGE_KEYS = new Set(['tabs.export']);
 /**
- * 非存储用途的 `tabs:` 字面量：**DOM 自定义事件名**（`src/ui/**` 的
- * `LOCATE_TAB_EVENT` 等）。
- *
- * 扫描范围放宽到整个 `src/` 后必须显式排除这一类：它们与存储键同用 `tabs:` 前缀
- * （见 `PRIVACY.md` §3.1-d 的口径说明），但从不落盘。判据刻意取**声明形态**
- * （常量名以 `_EVENT` 结尾）而非「在 ui 目录下」——后者会让「把事件名常量搬到
- * 别的目录」成为一条静默绕过门禁的路径，而命名约定是跨目录稳定的。
+ * 非存储用途的 `tabs:` 字面量：`src/ui/**` 中的 DOM 自定义事件名（如 `LOCATE_TAB_EVENT`）。
+ * 按常量名 `_EVENT` 后缀识别，目录位置变化不影响分类；此类名称不落盘。
  */
 const DOM_EVENT_LITERAL = /\b[A-Z][A-Z0-9_]*_EVENT\s*=\s*['"]tabs:/;
 /**
- * 存储键的声明范围：**整个 `src/`**。
- *
- * 早先限定为 `src/platform`（唯一触碰 `chrome.*` 的层），代价是主题镜像键
- * （`tabs:theme` / `tabs:theme-hue`，写在 `src/theme-init.ts`）根本不在扫描范围内，
- * 只能靠文档手工登记 —— 新增第三个同类键时门禁完全看不见。放宽到 `src/` 后
- * 由上面的 `DOM_EVENT_LITERAL` 精确排除 ui 层的事件名，其余 `tabs[.:]` 字面量
- * 一律进双向比对。
+ * 存储键的声明范围：整个 `src/`，包括主题镜像键与 platform 层键。
+ * DOM 自定义事件名由 `DOM_EVENT_LITERAL` 按 `_EVENT` 命名约定排除；
+ * 其余 `tabs[.:]` 字面量均参与源码与隐私说明的双向比对。
  */
 const STORAGE_KEY_SCOPE = SRC;
 
@@ -246,9 +231,9 @@ function checkFaviconGuard() {
   if (/\bbrowser\.(runtime|tabs|storage)\b/.test(text)) {
     issues.push('Favicon.tsx 出现浏览器 API 直连——图标地址构造必须留在 platform 层');
   }
-  // ③ 旧的 http(s) 图标白名单不得再出现（它是「唯一外部请求」时代的产物）。
+  // ③ 图标渲染组件不包含 http(s) 图标白名单判定。
   if (/SAFE_FAVICON_SRC|isSafeFaviconSrc/.test(text)) {
-    issues.push('Favicon.tsx 仍保留 http(s) 图标白名单判定——图标已不得来自任何外部站点');
+    issues.push('Favicon.tsx 出现 http(s) 图标白名单判定；图标只能来自浏览器 favicon 通道');
   }
   // ④ 渲染点唯一且受同一约束：多出一个 src 就是新增一条图标渲染路径。
   const srcAttrs = [...text.matchAll(/\bsrc\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]*\})/g)].map((m) =>
@@ -470,8 +455,7 @@ function scanFiles(files, label, commentsExempt = true) {
     // 构建产物必须按「不豁免注释」处理：压缩后的 bundle 是单行，行首一个 `//`
     // 就能让整行（含真实 fetch 调用）被跳过。
     const literalTarget = file.endsWith('.html') || file.endsWith('.css');
-    const exempt =
-      literalTarget || !commentsExempt ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
+    const exempt = literalTarget || !commentsExempt ? NETWORK_EXEMPT_HTML : NETWORK_EXEMPT_CODE;
     let fileHits = 0;
     lines.forEach((line, i) => {
       if (fileHits >= MAX_HITS_PER_FILE) return;
@@ -527,7 +511,10 @@ scanFiles(
 
 // 随包静态页（public/*.html，如卸载挽留页）同样要扫：它们被浏览器直接打开，
 // 页面里一个外链字体或统计像素就是一次真实出站请求，故不能只扫 src/ 与产物 JS。
-scanFiles(surfaceWalk(PUBLIC_DIR, '静态页', 1).filter((f) => f.endsWith('.html')), '静态页');
+scanFiles(
+  surfaceWalk(PUBLIC_DIR, '静态页', 1).filter((f) => f.endsWith('.html')),
+  '静态页'
+);
 
 // 工作区包（packages/*）同样要扫：packages/i18n-kit 的运行时（src/index.ts /
 // react.tsx）被 src/i18n 直接引用，是随包发布的运行时代码。只靠产物扫描是间接
@@ -538,7 +525,7 @@ scanFiles(
 );
 
 if (issues.length > 0) {
-  console.error('隐私回归检查失败:');
+  console.error('隐私检查失败:');
   for (const issue of issues) console.error(`  ✗ ${issue}`);
   process.exit(1);
 }
@@ -557,7 +544,7 @@ const packageCount = existsSync(PACKAGES)
   ? walk(PACKAGES).filter((f) => f.endsWith('.ts') || f.endsWith('.tsx')).length
   : 0;
 console.log(
-  `隐私回归检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
+  `隐私检查通过: 权限 ${[...permissions].sort().join(', ')}，` +
     `主机权限 ${[...hostPermissions].sort().join(', ')}，` +
     `网络通道调用 0（源码 ${sourceCount} 个 + 工作区包 ${packageCount} 个 + ` +
     `产物 ${bundleCount} 个 JS / ${htmlCount} 个 HTML / ${cssCount} 个 CSS），` +

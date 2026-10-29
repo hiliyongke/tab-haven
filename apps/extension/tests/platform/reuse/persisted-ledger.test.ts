@@ -4,7 +4,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 
 /**
- * 持久化豁免账本（R-A 修复）：storage.session 镜像 + SW 重启恢复。
+ * 持久化豁免账本：通过 storage.session 镜像恢复未过期令牌。
  * 场景：撤销恢复/快照恢复发放豁免后 SW 被回收，重新拉起时令牌不丢。
  */
 

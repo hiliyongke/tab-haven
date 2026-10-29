@@ -11,11 +11,8 @@ import { DndRoot } from '@/ui/dnd/DndRoot';
 import { LOCATE_SCROLL_EVENT } from '@/ui/tabs/VirtualRowList';
 
 /**
- * P0-1 回归规格：虚拟滚动必须在默认配置（tabOrderSync=true）下生效。
- * 开关不能只挂在「排序关闭」一侧：reorderEnabled 默认恒为 true，那样性能保护
- * 恰好在标签囤积场景（200+ 标签）失效。
- * 现行分档：排序关闭 > 60 行即虚拟化；排序开启时 > 120 行强制虚拟化并暂停分区
- * 排序，同时给出可见说明（两档阈值刻意靠近，缩小「既不虚拟化又全量挂载」的区间）。
+ * SectionList 行为规格：大列表在排序开启与关闭时都使用虚拟化；排序开启时，
+ * 虚拟化期间暂停排序并展示说明；短列表保持全量渲染。
  */
 
 function tabsOf(count: number): TabRecord[] {
@@ -183,7 +180,7 @@ describe('SectionList 分区整批关闭（同一域名）', () => {
   });
 });
 
-describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
+describe('SectionList 虚拟化阈值与排序提示', () => {
   it('默认配置（排序开启）250 标签仍强制虚拟化：挂载行 < 40 且显示排序暂停提示', async () => {
     const view = renderSectionList(250, true);
     await waitFor(() => {
@@ -196,11 +193,7 @@ describe('SectionList 虚拟化阈值（P0-1 回归）', () => {
   });
 
   it('70 标签且排序开启：不进入虚拟化（全量挂载，拖拽排序不受影响）', async () => {
-    // 排序开启时的强制阈值是 80（高于排序关闭时的 60）：排序是默认开启的高频
-    // 能力，过早虚拟化会大面积剥夺它，因此让排序优先，直到行数大到必须让步。
-    // 阈值由 120 下调到 80：侧边栏可用高度有限，120 行意味着首屏外还有约 90 行
-    // 真实 DOM 参与每次重排/搜索重算，是折叠展开卡顿的来源。代价是 80–120 行的
-    // 分区失去拖拽排序（由本组相邻的 150 标签用例锚定降级侧行为）。
+    // 70 行列表保持全量渲染和排序；较大的列表转为虚拟化并显示排序暂停说明。
     const view = renderSectionList(70, true);
     await waitFor(() => expect(mountedRows(view)).toHaveLength(70));
     expect(view.container.textContent).not.toContain(

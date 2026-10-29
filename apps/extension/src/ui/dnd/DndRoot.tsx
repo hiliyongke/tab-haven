@@ -133,9 +133,7 @@ export function dragCollisionDetection(args: Parameters<CollisionDetection>[0]):
   if (rowContainers.length > 0) {
     return closestCenter({ ...args, droppableContainers: rowContainers });
   }
-  // 同容器无候选（跨容器拖拽且指针落在空白）：退到全部行级目标。
-  // 到此为止，不再退回全部 droppable —— 那会让指针落在列表之外时
-  // 被外层容器（fixed-area / pinned-strip）截胡，凭空变成「拖入固定空间」。
+  // 同容器无候选（跨容器拖拽且指针落在空白）时仅匹配行级目标，避免列表外指针命中 fixed-area / pinned-strip。
   const anyRow = args.droppableContainers.filter((container) => {
     const data = container.data.current as DragData | undefined;
     return data?.type === DragType.Tab || data?.type === DragType.FolderItem;
@@ -233,13 +231,12 @@ export function buildDragOverlay(data: DragData): ReactNode {
 }
 
 /**
- * 标记「刚放下」：给 body 打一个一次性标记，指针下次移动即自动清除。松手瞬间指针仍停在
- * 落点那行，纯 :hover 会让把手继续显示（像"拖完卡住了"）；打标记后把手先隐藏，指针一动恢复。
+ * 标记「刚放下」：松手时指针仍停在落点行，标记暂时隐藏 :hover 把手，并在指针移动时自动清除。
  */
-/** 挂起的「刚放下」清理器：键盘拖拽不产生指针移动，监听器会残留——每次标记前先清掉前一次。 */
+/** 挂起的「刚放下」清理器；键盘拖拽不产生 pointermove，因此新标记前先清理旧监听器。 */
 let pendingJustDroppedClear: (() => void) | null = null;
 
-/** 导出供测试驱动（清理器残留是一类只在键盘拖拽下才出现的缺陷）。 */
+/** 导出供测试验证拖拽标记及其监听器清理契约。 */
 export function markJustDropped(): void {
   pendingJustDroppedClear?.();
   document.body.classList.add('dnd-just-dropped');
@@ -256,7 +253,7 @@ export function markJustDropped(): void {
  * 全局拖拽根：整个侧边栏共享一个 DndContext + DragOverlay。
  * - 列表内排序：各列表的 SortableContext 直接挂在下面；
  * - 跨容器投放（标签/分组 → 固定空间）：用 useDroppable，由 App 层 onDragEnd 分派；
- * - DragOverlay 提供跟随指针的丝滑拖拽视觉，替代原生 HTML5 DnD 的系统 ghost。
+ * - DragOverlay 提供跟随指针移动的拖拽内容。
  */
 export function DndRoot({
   children,
@@ -282,14 +279,13 @@ export function DndRoot({
   };
   const handleDragEnd = (event: DragEndEvent) => {
     setOverlay(null);
-    // 松手处那一行会残留把手（指针还在上面），先抑制到指针再次移动为止。
+    // 指针仍在松手行上时暂时隐藏把手，直到指针再次移动。
     markJustDropped();
     onDragEnd(event);
   };
   const handleDragCancel = () => setOverlay(null);
 
-  // 拖拽期间给 body 打标记：所有行的行尾操作都不再 hover 展开（配套规则见 main.css 的
-  // body.dnd-dragging）——150px 的展开会挤动行内布局，叠加持续重测会让落点发飘。
+  // 拖拽期间给 body 打标记，按 main.css 的 body.dnd-dragging 规则收起行尾操作，避免布局变化影响落点。
   useEffect(() => {
     if (overlay === null) return;
     document.body.classList.add('dnd-dragging');

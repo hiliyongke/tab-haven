@@ -45,13 +45,13 @@ afterEach(() => {
 });
 
 describe('MirrorSyncStatus 五态映射', () => {
-  it('本机数据为准（本轮未从镜像恢复）：给中性说明且不标红', () => {
+  it('本机数据为准（本次同步未从镜像恢复）：给中性说明且不标红', () => {
     // 与 'none' 必须分开：'none' 说「尚未生成镜像」，而此处云端镜像**确实存在**
     // （只是本机数据非空、以本地为准），沿用它会给出与事实相反的说法。
     const { container } = renderStatus({ issue: 'local' });
 
     expect(container).toHaveTextContent('Local data takes precedence');
-    // 标红意味着「同步没生效」，而这里不是故障，只是本轮没有从镜像取数据。
+    // 标红意味着「同步没生效」，而这里不是故障，只是本次同步没有从镜像取数据。
     expect(container.querySelector('.text-red-600')).toBeNull();
   });
 

@@ -340,7 +340,7 @@ const PRIVACY_BADGES: { labelKey: string }[] = [
   { labelKey: '零网络请求' }
 ];
 
-/** 隐私与数据事实（含权限口径，避免用户对「为什么需要这些权限」产生疑虑）。 */
+/** 隐私与数据事实（含权限口径，说明扩展的数据处理方式）。 */
 const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
   {
     titleKey: '本地优先存储',
@@ -348,7 +348,7 @@ const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
   },
   {
     titleKey: '零出站网络请求',
-    bodyKey: '扩展本身不发起任何网络请求，这一点由构建期的隐私回归检查把关。'
+    bodyKey: '扩展本身不发起任何出站网络请求。'
   },
   {
     titleKey: '同步走浏览器通道',
@@ -356,7 +356,7 @@ const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
   },
   {
     titleKey: '权限最小化',
-    bodyKey: '权限清单冻结在构建配置与隐私说明中，新增任何权限都必须先改这两处。'
+    bodyKey: '所需权限及其用途见下表；网站访问权限仅在你主动开启「指定站点禁用缓存」时申请。'
   },
   {
     titleKey: '不收集浏览内容',
@@ -365,11 +365,8 @@ const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
 ];
 
 /**
- * 权限 → 用途映射（信任面板）：让用户可自行验证「零网络」这一承诺。
- * 键一律字面量：死键守卫靠「源码中出现精确键串」判定，模板拼接会让整批键被判死键。
- * 数据源：`wxt.config.ts` 的 permissions（12 项，sidePanel 已显式声明而非由框架
- * 自动追加）+ optional_host_permissions 的全站 host 权限。
- * privacy-check 校验权限清单与 PRIVACY.md 一致，本面板只做展示，不引入任何监测代码。
+ * 权限 → 用途映射（信任面板）。
+ * 文案使用字面量，供本地化词条提取与界面展示。
  */
 const PERMISSION_FACTS: { titleKey: string; bodyKey: string }[] = [
   {
@@ -421,7 +418,7 @@ const PERMISSION_FACTS: { titleKey: string; bodyKey: string }[] = [
   }
 ];
 
-/** 信任面板补充事实：数据存放位置 + 自行验证教程（不要求信任声明，教会用户验证）。 */
+/** 信任面板补充事实：数据存放位置与网络请求验证方式。 */
 const TRUST_EXTRA_FACTS: { titleKey: string; bodyKey: string }[] = [
   {
     titleKey: '数据存放位置',
@@ -431,30 +428,20 @@ const TRUST_EXTRA_FACTS: { titleKey: string; bodyKey: string }[] = [
   {
     titleKey: '自行验证零网络',
     bodyKey:
-      '打开浏览器开发者工具（F12）→ Network（网络）面板 → 勾选 Preserve log（保留日志）→ 正常使用 Tabs 各功能。你不会看到任何由 Tabs 发起的出站请求。另有构建期隐私检查持续验证这一点。'
+      '打开浏览器开发者工具（F12）→ Network（网络）面板 → 勾选 Preserve log（保留日志）→ 正常使用 Tabs 各功能。你不会看到任何由 Tabs 发起的出站请求。'
   }
 ];
 
-/**
- * 技术与验证。
- *
- * 本区块刻意**不写许可**：项目暂不开源，写「MIT 开源」等于承诺一件没有的事，
- * 也会与官网（页脚、首屏徽章、结尾 CTA 均已移除许可行）口径打架。
- * 这里改成一条同样可核验、而且用户可以自己动手验证的承诺。
- */
+/** 技术栈与隐私验证方式。 */
 const TECH_FACTS: { titleKey: string; bodyKey: string }[] = [
   { titleKey: '技术栈', bodyKey: 'WXT + React 19 + TypeScript + Tailwind CSS + zustand + zod。' },
   {
-    titleKey: '测试与门禁',
-    bodyKey: 'Vitest 行为规格 + UI 渲染基线 + 设计令牌守卫 + 隐私回归，共 800 余条用例。'
-  },
-  {
     titleKey: '可自行验证',
-    bodyKey: '零出站网络请求不必听我们说：打开 DevTools 的 Network 面板观察扩展上下文，请求数为零。'
+    bodyKey: '打开 DevTools 的 Network 面板观察扩展上下文，确认没有出站网络请求。'
   }
 ];
 
-/** 区块标题样式统一（与设置页共用 .section-title，不再各写一份常量）。 */
+/** 区块标题与设置页共用 .section-title。 */
 const SECTION_TITLE_CLASS = 'section-title mb-3';
 // rounded-lg（8px）与设置页卡片同档，避免跨页两套圆角。
 const CARD_CLASS = 'rounded-lg border border-gray-200 bg-surface p-4 transition-base';
@@ -621,9 +608,7 @@ export function AboutPage() {
         <h2 className={SECTION_TITLE_CLASS}>{t('权限与用途')}</h2>
         {/* max-w-[65ch]：容器 896px 下 11px 字号单行约 77 个汉字，远超舒适阅读宽度 */}
         <p className="mb-3 max-w-[65ch] text-3xs leading-relaxed text-gray-500">
-          {t(
-            '以下是本扩展声明的全部权限与各自的一句话用途。权限清单冻结在构建配置中，新增任何权限都会使构建失败。'
-          )}
+          {t('下表列出本扩展声明的权限及其用途。')}
         </p>
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-surface">
           <ul className="divide-y divide-gray-100">

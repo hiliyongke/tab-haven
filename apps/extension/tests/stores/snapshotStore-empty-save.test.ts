@@ -6,15 +6,8 @@ import { useSnapshotStore } from '@/stores/snapshotStore';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * 空现场不落快照（S8）。
- *
- * `collectSnapshotTabs` 过滤后为空时仍照样落盘，会产出一条 tabCount=0 的快照：
- * 它既不可恢复，又占掉一个命名快照名额（SNAPSHOTS_LIMIT），而
- * `replaceSpaceSnapshot`（platform/snapshot/snapshots.ts）对空现场有明确拒绝 ——
- * 两条保存路径对同一现场的判定必须同口径。
- *
- * 与 `archiveCurrentWindow` 的「只保存可恢复标签」同口径：拿不出可恢复内容就
- * 明说，而不是落一条空的。
+ * 保存行为规格：没有可恢复标签时，当前窗口与工作区都不保存空快照，并显示失败回执；
+ * 存在可恢复标签时照常保存。
  */
 
 const tabState: { tabs: TabRecord[] } = { tabs: [] };
@@ -66,7 +59,7 @@ describe('空现场的保存', () => {
     expect(useUndoStore.getState().toast?.tone).toBe('error');
   });
 
-  it('saveSpace：同样不落空工作区快照（换过去等于清空窗口且无从恢复）', async () => {
+  it('saveSpace：空现场时拒绝保存并显示失败回执', async () => {
     const saved = await useSnapshotStore.getState().saveSpace('工作区');
 
     expect(saved).toBe(false);

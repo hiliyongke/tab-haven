@@ -166,7 +166,7 @@ describe('computeInsights', () => {
     expect(result.staleTabs.map((tab) => tab.id)).toEqual([1]);
   });
 
-  it('无 lastAccessed 的标签不参与滞留判定（旧浏览器兼容）', () => {
+  it('无 lastAccessed 的标签不参与滞留判定', () => {
     const tabs = [tabOf({ id: 1, url: 'https://x.com' })];
     const result = computeInsights(tabs, new Set());
     expect(result.staleTabs).toEqual([]);

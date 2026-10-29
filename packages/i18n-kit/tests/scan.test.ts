@@ -8,11 +8,11 @@ import { dictFile, readJson, resolvePaths, scan, type KitPaths } from 'i18n-kit/
 /**
  * 行为规格：扫描命令（`packages/i18n-kit/src/commands/scan.ts`）。
  *
- * 扫描器是整条链路的入口——它写出的词典决定了 `apply` 的产物、`check` 的判定。
- * 下面每条都钉死一类「命令看着成功、界面却露中文」的事故：
- *   - 词典没落盘（dry 被当成真跑）→ 后面全链路用的是空词典；
- *   - 失效译文没清理 → check 的「孤立译文」一直红；
- *   - 译文没归档 → 文案改回旧版本时译文永久丢失。
+ * 扫描器写出的词典、待翻译清单与失效译文归档决定 `apply` 和 `check` 的输入。
+ * 以下用例约束扫描的当前行为：
+ *   - 正常扫描写入词典与待翻译清单，dry 只返回预览结果；
+ *   - 失效译文默认归档并保留在译文文件中，`--prune` 可移除译文文件条目；
+ *   - 抽取为空且已有词典时报告错误并保护已有数据。
  */
 
 /** 造一个最小工程：按相对路径写文件，返回可直接喂给命令的 KitPaths。 */
@@ -32,8 +32,7 @@ const json = (value: Record<string, string>): string => `${JSON.stringify(value,
 
 describe('scan: 首次扫描', () => {
   it('Given 源码里有中文原文 When 扫描 Then 词典与待翻译清单同时落盘', () => {
-    // 要防的失效：只写词典不写待翻译清单，译文缺口没有任何载体暴露，
-    // 直到英文模式露中文才被发现。
+    // 待翻译清单保存缺少译文的原文，为后续补译提供明确输入。
     const paths = project({
       'src/App.tsx': `export const App = () => [t('编辑标签组'), t('固定标签')];`
     });
@@ -71,8 +70,7 @@ describe('scan: 首次扫描', () => {
 
 describe('scan: --dry', () => {
   it('Given --dry When 扫描 Then 不落盘，但 result.dictionary 能取到新增原文', () => {
-    // 要防的失效：dry 只用于「看看会新增什么」，若顺手写盘，预览动作会污染词典；
-    // 但返回值必须仍带原文，否则调用方只能看到一串哈希 key。
+    // dry 仅返回预览结果：新增原文保存在 result.dictionary 中，源词典与待翻译清单不写盘。
     const paths = project({ 'src/App.tsx': `export const App = () => t('编辑标签组');` });
 
     const result = scan(paths, { dry: true });
@@ -96,7 +94,7 @@ describe('scan: 失效词条', () => {
     });
 
   it('Given 源码里已删除的原文 When 扫描（不带 --prune） Then 译文归档但译文文件保留', () => {
-    // 要防的失效：直接删译文 → 文案改回旧写法时译文永久丢失，而译文可复用正是哈希 key 的收益。
+    // 默认扫描将失效译文写入归档并保留其在译文文件中的条目，以便原文再次出现时复用。
     const paths = fixture();
 
     const result = scan(paths);
@@ -108,8 +106,7 @@ describe('scan: 失效词条', () => {
   });
 
   it('Given 同上 When 扫描 --prune Then 失效条目从译文文件移除，在译条目不受影响', () => {
-    // 要防的失效：归档后译文文件里那份成了「词典中不存在的孤立译文」，
-    // check 规则 2 一直红而没有任何自动修法（开发者只能手删 key）。
+    // --prune 只从译文文件移除失效条目；在译条目保持不变，归档中的译文仍可复用。
     const paths = fixture();
 
     const result = scan(paths, { prune: true });
@@ -125,9 +122,8 @@ describe('scan: 失效词条', () => {
 
 describe('scan: 抽空保护', () => {
   /**
-   * 要防的失效：`--src` 配错（或目录下没有 .ts/.tsx）时抽词结果为空。若照常写入，
-   * 整包源词典会被写成 `{}` —— 随后 apply 把两个运行时词条也编译成 `{}`，
-   * 界面整包露中文，而词典是资产、没有备份，无从回溯。
+   * 抽空保护：已有词典且抽取结果为空时，扫描报告错误并保持源词典和译文文件不变。
+   * 空词典工程仍允许首次扫描并写入空词典，见下例。
    */
   it('Given 既有词典且本次一条都没抽到 When 扫描 Then 报错且不落盘', () => {
     const key = toHashKey('编辑标签组');

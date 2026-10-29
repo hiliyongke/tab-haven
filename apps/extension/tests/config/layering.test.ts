@@ -4,16 +4,8 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
- * 分层方向守卫：把 `CONTRIBUTING.md` 的「依赖方向不可逆」从人眼检查变成恒绿门禁。
- *
- * 为什么需要它：`core/**` 零 chrome/DOM/React、`ui/**` 不直连浏览器 API 这两条，
- * 此前只写在文档与评审清单里。评审靠人读，漏看一次就进主干；而破坏分层的代价
- * 不会当场报错——core 里一句 `document.title` 在 vitest（jsdom）下照样跑绿，
- * 直到 SW 或非 DOM 环境里才炸。
- *
- * 为什么用 TypeScript AST 而不是正则：源码里有大量注释在讲 `chrome.tabs`、
- * `document`（本仓库注释密度约 20%），正则要么漏判要么逼着大家改注释措辞。
- * AST 天然不看注释和字符串字面量。
+ * 分层依赖行为规格：core 不访问宿主 API，也不依赖 React 或 platform；
+ * ui、stores 与 entrypoints 不直接访问浏览器 API。
  */
 
 const SRC = join(process.cwd(), 'src');

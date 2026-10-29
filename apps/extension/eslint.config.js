@@ -21,7 +21,7 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'warn'
     }
   },
-  // Node 侧脚本（隐私回归、CRX 签名）：ESLint 默认按浏览器环境解析，
+  // Node 侧脚本（隐私检查、CRX 签名）：ESLint 默认按浏览器环境解析，
   // 需显式声明 Node 全局。未安装 globals 包，仅声明实际用到的几个，避免为一个
   // 脚本引入新依赖。
   {

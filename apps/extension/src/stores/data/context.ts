@@ -118,16 +118,13 @@ export function buildDataContext(
     if (degradedScopes.size === 0 && get().storageDegraded) set({ storageDegraded: false });
   }
 
-  /** 清空全部降级记账（数据已被整体清除，已记录的失败不再有对应数据）。 */
+  /** 整体清除数据后清空降级记账；失败记录不对应当前存储状态。 */
   function resetDegraded(): void {
     degradedScopes.clear();
     if (get().storageDegraded) set({ storageDegraded: false });
   }
 
-  /**
-   * 复位镜像失败态（关闭同步 / 清空数据时调用）：镜像降级只由 onSuccess 复位，关闭同步后不再有
-   * 镜像写入、该回调永不到来，不显式复位会让横幅与 mirrorWriteFailed 永久粘住。
-   */
+  /** 关闭同步或清空数据时复位镜像失败态；此时没有后续镜像写入触发 onSuccess。 */
   function resetMirrorFailure(): void {
     clearDegraded(SYNC_MIRROR_SCOPE);
     if (get().mirrorWriteFailed) set({ mirrorWriteFailed: false });
@@ -222,10 +219,7 @@ export function buildDataContext(
     watcherUnsubscribers.push(repos.settings.watch(() => void syncSettingsFromStorage()));
   };
 
-  /**
-   * 数据分区 watcher（folders / pins / collapse）。守卫是必需的：initialize 失败会回滚 initialized
-   * 允许重入，若无守卫每次重试都再注册三个监听器，同一次变更被回放 N 次（界面闪烁 + 重复写盘）。
-   */
+  /** 数据分区 watcher（folders / pins / collapse）每个 store 实例只注册一次，初始化重试沿用同一组监听器。 */
   const startValueWatchers = (): void => {
     if (valueWatchersStarted) return;
     valueWatchersStarted = true;
@@ -248,7 +242,7 @@ export function buildDataContext(
         set({ collapsedSites: value });
       })
     );
-    // 设置变更由 startSettingsWatcher 统一处理（重读 + 主题应用），不再重复 watch。
+    // 设置变更由 startSettingsWatcher 统一处理，负责重读设置并应用主题。
   };
 
   /**

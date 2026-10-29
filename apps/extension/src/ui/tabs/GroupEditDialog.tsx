@@ -8,14 +8,8 @@ import { groupAccentVar } from '@/ui/tabs/accent';
 import { GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 
 /**
- * 组色 → 中文原文。
- *
- * 形如 `groups.color.<色名>` 的动态拼接 key 静态扫描拿不到完整字符串，
- * 运行时在英文模式下会直接露中文。改为按色名取原文，再由运行时按原文算哈希查词典。
- *
- * 属性名以 `Key` 结尾是扫描器的抽取约定：常量表不是调用点，只有 `*Key` 属性会被
- * 抽进词典。靠 `@i18n-ignore-start/end` 豁免 zh-linter 只是压住告警，
- * 词条一条都不会进（英文模式下九个色名全是中文，而 check 绿灯）。
+ * 组色对应的中文原文。扫描器无法从 `groups.color.<色名>` 动态拼接中提取完整 key，
+ * 因此通过 `*Key` 属性收录原文，再由运行时按原文生成哈希 key 查询词典。
  */
 const GROUP_COLOR_LABELS: Record<string, { labelKey: string }> = {
   grey: { labelKey: '灰色' },
@@ -45,8 +39,7 @@ export function GroupEditDialog({
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(title);
-  // 颜色同样走草稿态：onChange 立即写回原生组时点「取消」也回滚不了 ——
-  // 与「取消放弃本次编辑」的按钮语义矛盾。改为随「确定」一起提交。
+  // 颜色保存在草稿态，只有确认时才提交，取消操作不会写回任何变更。
   const [draftColor, setDraftColor] = useState(color);
 
   /** 提交草稿（改名 + 换色）并关闭：取消路径不写回任何一项。 */

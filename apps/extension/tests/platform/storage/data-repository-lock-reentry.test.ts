@@ -6,11 +6,7 @@ import { DataRepository } from '@/platform/storage/DataRepository';
 import { withCrossPageLock } from '@/platform/storage/crossPageLock';
 
 /**
- * 回归：Web Locks 不可重入，而 store 的标准写法是「锁内重读」——
- * `withCrossPageLock(LOCK, () => repo.read())`。一旦读到的数据坏了，`read` 的恢复分支
- * 会再申请同一把锁，旧实现会**永远排队**：不抛错、不留日志，表现为启动卡死。
- *
- * 这里用不可重入的锁模拟（同名锁已持有时，普通 request 不返回），把「卡死」变成可断言的事实。
+ * 锁内读取遇到坏数据时返回符合 schema 的内容；同名锁不可用期间不回写数据。
  */
 
 const ListSchema = z.array(z.object({ id: z.string(), n: z.number() }));
@@ -46,7 +42,7 @@ afterEach(() => {
 });
 
 describe('DataRepository 锁内重读', () => {
-  it('锁内读到坏数据不悬挂：跳过回写而不是排队等同一把锁', async () => {
+  it('锁内读到坏数据时返回有效内容且不回写', async () => {
     // Given: 磁盘上是「一条合法 + 一条坏元素」，且锁不可重入
     const raw = [
       { id: 'keep', n: 1 },
@@ -56,17 +52,17 @@ describe('DataRepository 锁内重读', () => {
     installNonReentrantLocks();
     const repo = new DataRepository(KEY, ListSchema, [], { rmwLock: 'test.reentry-rmw' });
 
-    // When: 模拟 store 的「持锁 → 重读」
+    // When: 在持锁状态下读取数据
     const reading = withCrossPageLock('test.reentry-rmw', () => repo.read());
 
-    // Then: 必须返回（旧实现在这里永远不 resolve）
+    // Then: 在限定时间内返回符合 schema 的有效数据
     const result = await Promise.race([
       reading,
       new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 200))
     ]);
     expect(result).toEqual([{ id: 'keep', n: 1 }]);
 
-    // 且不回写：拿不到锁时落盘会与持锁方的 read-modify-write 互相覆盖
+    // 无法获取锁时不回写存储内容。
     expect(await fakeBrowser.storage.local.get(KEY)).toEqual({ [KEY]: raw });
   });
 });

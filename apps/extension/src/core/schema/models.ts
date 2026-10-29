@@ -9,11 +9,7 @@ import { toGroupColor } from '@/core/group/groupColors';
 import { pinIdentity } from '@/core/fixed/PinIdentity';
 import { normalizeHostname, normalizeWhitelistHost } from '@/core/url/hostname';
 import { isHttpUrl } from '@/core/url/UrlInspector';
-import {
-  FOOTER_BUTTON_KEYS,
-  footerButtonId,
-  normalizeFooterOrder
-} from '@/core/layout/footerOrder';
+import { FOOTER_BUTTON_IDS, FOOTER_BUTTON_KEYS } from '@/core/layout/footerOrder';
 
 /**
  * 数据模型（zod schema 族）——所有持久化数据的唯一校验口径。
@@ -103,141 +99,139 @@ export const DEFAULT_AGGREGATION_THRESHOLD = 2;
  *   behavior     交互行为
  *   capabilities 进阶能力开关
  */
-export const SettingsSchema = z.object({
-  themePreference: z.enum(['system', 'light', 'dark']).default('system'),
-  /** 主题色预设（色号唯一来源 core/theme/colorThemes）：plain 默认无底色 / forest / ocean / violet / sunset / mono。 */
-  colorTheme: z.enum(COLOR_THEME_IDS).default('plain'),
-  /** 语言覆盖（BCP-47）。仅约束长度与格式。 */
-  language: z.string().min(2).max(32).optional(),
-  /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
-  aggregationThreshold: z.number().int().min(1).max(5).default(DEFAULT_AGGREGATION_THRESHOLD),
-  /** 标签顺序双向同步：侧边栏拖拽重排写回原生顺序，原生改动反向同步。 */
-  tabOrderSync: z.boolean().default(true),
+export const SettingsSchema = z
+  .object({
+    themePreference: z.enum(['system', 'light', 'dark']).default('system'),
+    /** 主题色预设（色号唯一来源 core/theme/colorThemes）：plain 默认无底色 / forest / ocean / violet / sunset / mono。 */
+    colorTheme: z.enum(COLOR_THEME_IDS).default('plain'),
+    /** 语言覆盖（BCP-47）。仅约束长度与格式。 */
+    language: z.string().min(2).max(32).optional(),
+    /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
+    aggregationThreshold: z.number().int().min(1).max(5).default(DEFAULT_AGGREGATION_THRESHOLD),
+    /** 标签顺序双向同步：侧边栏拖拽重排写回原生顺序，原生改动反向同步。 */
+    tabOrderSync: z.boolean().default(true),
 
-  // —— 外观 appearance ——
-  /** 顶部常驻磁贴条（固定空间）显示开关。 */
-  showPinnedStrip: z.boolean().default(true),
-  /** 列表密度：tight 超紧凑 / compact 紧凑 / cozy 宽松 / large 大字号。tight 行高低于 24px 推荐尺寸，属「用可点面积换信息密度」的取舍。 */
-  density: z.enum(['tight', 'compact', 'cozy', 'large']).default('cozy'),
-  /** 标签行标题下方显示完整网址。 */
-  showUrl: z.boolean().default(false),
-  /** 底栏文字标签，新装默认开（窄面板自动退回纯图标）：仅图标 + 悬停提示会让新用户面对一排不可辨识的按钮。 */
-  footerLabels: z.boolean().default(true),
-  /**
-   * 底栏按钮顺序（按钮 id 列表，拖拽后写回）。空数组 = 内置默认顺序；未知 id 忽略、缺失按默认补全（升级新增不消失）。
-   * 用 z.string() 而非 enum：残留已删 id 不该让整份设置解析失败。归一化在 schema 层（备份/镜像不经过设置页），
-   * 补全后长度恒为 FOOTER_BUTTON_KEYS.length，.max() 是该不变量的兜底断言。
-   */
-  footerOrder: z
-    .array(z.string())
-    .default([])
-    .transform((ids) => normalizeFooterOrder(ids).map(footerButtonId))
-    .pipe(z.array(z.string()).max(FOOTER_BUTTON_KEYS.length)),
-  /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
-  showSplitBadges: z.boolean().default(true),
-  /** 站点组强调色：auto 按域名/favicon 自动配色 / mono 统一中性色。 */
-  groupAccentStyle: z.enum(['auto', 'mono']).default('auto'),
+    // —— 外观 appearance ——
+    /** 顶部常驻磁贴条（固定空间）显示开关。 */
+    showPinnedStrip: z.boolean().default(true),
+    /** 列表密度：tight 超紧凑 / compact 紧凑 / cozy 宽松 / large 大字号。tight 行高低于 24px 推荐尺寸，属「用可点面积换信息密度」的取舍。 */
+    density: z.enum(['tight', 'compact', 'cozy', 'large']).default('cozy'),
+    /** 标签行标题下方显示完整网址。 */
+    showUrl: z.boolean().default(false),
+    /** 底栏文字标签，新装默认开（窄面板自动退回纯图标）：仅图标 + 悬停提示会让新用户面对一排不可辨识的按钮。 */
+    footerLabels: z.boolean().default(true),
+    /** 底栏按钮顺序：必须包含所有已定义按钮且不重复。 */
+    footerOrder: z
+      .array(z.enum(FOOTER_BUTTON_IDS))
+      .length(FOOTER_BUTTON_KEYS.length)
+      .refine((ids) => new Set(ids).size === FOOTER_BUTTON_KEYS.length)
+      .default([...FOOTER_BUTTON_IDS]),
+    /** 处于浏览器分屏的标签显示「拆 / 伴」标记。 */
+    showSplitBadges: z.boolean().default(true),
+    /** 站点组强调色：auto 按域名/favicon 自动配色 / mono 统一中性色。 */
+    groupAccentStyle: z.enum(['auto', 'mono']).default('auto'),
 
-  // —— 行为 behavior ——
-  /** 切换标签时把当前激活标签滚动进可视区。 */
-  autoScrollActive: z.boolean().default(true),
-  /** 标签行上按鼠标中键关闭该标签。 */
-  closeOnMiddleClick: z.boolean().default(true),
-  /** 新建标签位置：end 窗口末尾 / after-active 当前激活标签之后。 */
-  newTabPosition: z.enum(['end', 'after-active']).default('end'),
-  /** 临时区排序：browser 浏览器原生顺序 / recency 最近访问优先。 */
-  sortMode: z.enum(['browser', 'recency']).default('browser'),
+    // —— 行为 behavior ——
+    /** 切换标签时把当前激活标签滚动进可视区。 */
+    autoScrollActive: z.boolean().default(true),
+    /** 标签行上按鼠标中键关闭该标签。 */
+    closeOnMiddleClick: z.boolean().default(true),
+    /** 新建标签位置：end 窗口末尾 / after-active 当前激活标签之后。 */
+    newTabPosition: z.enum(['end', 'after-active']).default('end'),
+    /** 临时区排序：browser 浏览器原生顺序 / recency 最近访问优先。 */
+    sortMode: z.enum(['browser', 'recency']).default('browser'),
 
-  // —— 能力 capabilities ——
-  /** 自动休眠：超过等待时长未访问的后台标签自动休眠释放内存。 */
-  autoDiscardEnabled: z.boolean().default(false),
-  /** 自动休眠等待时长（分钟），5–240。 */
-  autoDiscardMinutes: z.number().int().min(5).max(240).default(30),
-  /** 临时区非固定标签聚合模式：site 按网站 / opener 按来源树 / language 按语言。 */
-  groupMode: z.enum(['site', 'opener', 'language']).default('site'),
-  /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups；关闭开关会解散本功能创建的组。 */
-  autoGroupNative: z.boolean().default(false),
-  /** 工具栏图标点击行为：panel 打开侧边栏（默认）/ regroup 后台整理临时区标签，不弹面板。 */
-  actionClickMode: z.enum(['panel', 'regroup']).default('panel'),
-  /** 撤销栈深度（FIFO 淘汰上限）。 */
-  undoStackLimit: z.number().int().min(5).max(50).default(DEFAULT_UNDO_STACK_LIMIT),
-  /** 自动保存（关窗 + 定时快照）：默认开启，纯保护性能力（只保存、不改标签），容量由 maxAutoSnapshots 约束。默认值仅在存储尚无该键时生效。 */
-  autoSaveSnapshots: z.boolean().default(true),
-  /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
-  autoSnapshotIntervalMin: z.number().int().min(5).max(720).default(30),
-  /** 自动快照最大保留数（超出淘汰最旧）。 */
-  maxAutoSnapshots: z.number().int().min(1).max(50).default(10),
-  /** 命名快照最大保留数（防存储膨胀）。 */
-  snapshotLimit: z.number().int().min(1).max(100).default(30),
-  /** 状态提示条显示时长（秒）。 */
-  toastDurationSec: z.number().int().min(3).max(15).default(7),
-  /** 标签行操作按钮常显（关闭则悬停显示）。 */
-  rowActionsVisible: z.boolean().default(false),
-  /** 搜索是否包含中文拼音首字母匹配。 */
-  pinyinSearch: z.boolean().default(true),
-  /** 时间线搜索：搜索同时命中快照与归档条目。默认开启（快照已在本地、索引纯本地计算），索引量受 HISTORY_SNAPSHOT_LIMIT 约束不拖垮性能。 */
-  searchHistory: z.boolean().default(true),
-  /** 撤销记录跨重启持久化（关闭后仅会话内可撤销）。 */
-  persistUndo: z.boolean().default(true),
-  /** 同一网址只保留一个标签：新开已存在则切到最近访问的既有标签，其余（含新建）关闭。 */
-  uniqueUrlTabs: z.boolean().default(true),
-  /**
-   * 自动休眠白名单：这些 hostname 永不被自动休眠（手动休眠不受限）。
-   * 归一化必须在 schema 层：备份/镜像/直写 storage 都不经设置页，只在 UI 归一化会让落盘值与匹配端口径不一致（名单里有却仍被休眠）。
-   */
-  discardWhitelist: z
-    .array(z.string().max(HOST_MAX_LENGTH))
-    .default([])
-    .transform((hosts) => [
-      ...new Set(hosts.map(normalizeWhitelistHost).filter((host) => host.length > 0))
-    ])
-    // 上限与去重同样后置于归一化（同 SiteCollapseSchema）：否则同一站点多种写法各占额度。
-    .pipe(z.array(z.string()).max(DISCARD_WHITELIST_LIMIT)),
-  /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
-  searchAllWindows: z.boolean().default(false),
-  /** 自动休眠完成时的系统通知（通知面板内始终有「全部唤醒」可撤销）。 */
-  discardNotifyEnabled: z.boolean().default(true),
-  /** 重复标签自动合并（同网址唯一化）时的状态提示。 */
-  reuseNotifyEnabled: z.boolean().default(true),
-  /** 工具栏角标模式：auto 有重复显重复数/否则显标签数 / count 恒显标签数 / dups 恒显重复组数 / off 关闭。 */
-  badgeMode: z.enum(['auto', 'count', 'dups', 'off']).default('auto'),
-  /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
-  contextMenusEnabled: z.boolean().default(true),
-  /** 地址栏命令（t <关键词>）总开关。 */
-  omniboxEnabled: z.boolean().default(true),
-  /** 开发者：指定站点禁用前端缓存（DNR 响应头强制 no-store；需网站访问权限）。 */
-  noCacheEnabled: z.boolean().default(false),
-  /**
-   * 禁缓存站点列表：纯域名（含子域）/ 域名+路径前缀 / 完整 URL 前缀，三种形态。
-   * 归一化必须在 schema 层完成：这些串会被编译成 DNR 动态规则，备份导入与同步同样经过本 schema；
-   * 非法项（含 DNR 通配/锚定语法）在此丢弃，使「能读出的 pattern」恒等于「可安全编译的 pattern」。
-   */
-  noCachePatterns: z
-    .array(z.string().min(1).max(NO_CACHE_PATTERN_MAX_LENGTH))
-    .default([])
-    // 同 SiteCollapseSchema / discardWhitelist：先归一化 + 去重，上限作用于归一化之后的值，
-    // 否则 a.com 与 A.COM 各占一份额度、归一化后重复，编译出重复的 DNR 规则。
-    .transform((patterns) => [
-      ...new Set(
-        patterns
-          .map(normalizeNoCachePattern)
-          .filter((pattern): pattern is string => pattern !== null)
-      )
-    ])
-    .pipe(z.array(z.string()).max(NO_CACHE_PATTERNS_LIMIT)),
-  /** 首启引导是否已看过（仅首次展示交互式引导）。 */
-  onboarded: z.boolean().default(false),
-  /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
-  tipSeen: z.boolean().default(false),
-  /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
-  conceptsSeen: z.boolean().default(false),
-  /** 是否把文件夹、磁贴与设置镜像到 chrome.storage.sync。默认关闭：数据会经浏览器厂商通道离开本机，与「本地优先」相悖，须显式开启；关闭时清除已上传镜像。 */
-  syncMirrorEnabled: z.boolean().default(false),
-  /** 当前激活的工作区（origin=space 快照的 id；缺省 = 未激活）。仅是 id 引用，删除后失效，消费方须按「找不到即视为未激活」容错。术语「工作区」≠「固定空间」（FixedArea），勿混用。 */
-  activeSpaceId: z.string().optional(),
-  /** 面板展示其他窗口的分段（只读 + 聚焦/关闭）。默认关闭（「只管理当前窗口」口径），与 searchAllWindows 一致。 */
-  showOtherWindows: z.boolean().default(false)
-});
+    // —— 能力 capabilities ——
+    /** 自动休眠：超过等待时长未访问的后台标签自动休眠释放内存。 */
+    autoDiscardEnabled: z.boolean().default(false),
+    /** 自动休眠等待时长（分钟），5–240。 */
+    autoDiscardMinutes: z.number().int().min(5).max(240).default(30),
+    /** 临时区非固定标签聚合模式：site 按网站 / opener 按来源树 / language 按语言。 */
+    groupMode: z.enum(['site', 'opener', 'language']).default('site'),
+    /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups；关闭开关会解散本功能创建的组。 */
+    autoGroupNative: z.boolean().default(false),
+    /** 工具栏图标点击行为：panel 打开侧边栏（默认）/ regroup 后台整理临时区标签，不弹面板。 */
+    actionClickMode: z.enum(['panel', 'regroup']).default('panel'),
+    /** 撤销栈深度（FIFO 淘汰上限）。 */
+    undoStackLimit: z.number().int().min(5).max(50).default(DEFAULT_UNDO_STACK_LIMIT),
+    /** 自动保存（关窗 + 定时快照）：默认开启，纯保护性能力（只保存、不改标签），容量由 maxAutoSnapshots 约束。默认值仅在存储尚无该键时生效。 */
+    autoSaveSnapshots: z.boolean().default(true),
+    /** 定时自动快照间隔（分钟），仅在 autoSaveSnapshots 开启时生效；5–720。 */
+    autoSnapshotIntervalMin: z.number().int().min(5).max(720).default(30),
+    /** 自动快照最大保留数（超出淘汰最旧）。 */
+    maxAutoSnapshots: z.number().int().min(1).max(50).default(10),
+    /** 命名快照最大保留数（防存储膨胀）。 */
+    snapshotLimit: z.number().int().min(1).max(100).default(30),
+    /** 状态提示条显示时长（秒）。 */
+    toastDurationSec: z.number().int().min(3).max(15).default(7),
+    /** 标签行操作按钮常显（关闭则悬停显示）。 */
+    rowActionsVisible: z.boolean().default(false),
+    /** 搜索是否包含中文拼音首字母匹配。 */
+    pinyinSearch: z.boolean().default(true),
+    /** 时间线搜索：搜索同时命中快照与归档条目。默认开启（快照已在本地、索引纯本地计算），索引量受 HISTORY_SNAPSHOT_LIMIT 约束不拖垮性能。 */
+    searchHistory: z.boolean().default(true),
+    /** 撤销记录跨重启持久化（关闭后仅会话内可撤销）。 */
+    persistUndo: z.boolean().default(true),
+    /** 同一网址只保留一个标签：新开已存在则切到最近访问的既有标签，其余（含新建）关闭。 */
+    uniqueUrlTabs: z.boolean().default(true),
+    /**
+     * 自动休眠白名单：这些 hostname 永不被自动休眠（手动休眠不受限）。
+     * 归一化必须在 schema 层：备份/镜像/直写 storage 都不经设置页，只在 UI 归一化会让落盘值与匹配端口径不一致（名单里有却仍被休眠）。
+     */
+    discardWhitelist: z
+      .array(z.string().max(HOST_MAX_LENGTH))
+      .default([])
+      .transform((hosts) => [
+        ...new Set(hosts.map(normalizeWhitelistHost).filter((host) => host.length > 0))
+      ])
+      // 上限与去重同样后置于归一化（同 SiteCollapseSchema）：否则同一站点多种写法各占额度。
+      .pipe(z.array(z.string()).max(DISCARD_WHITELIST_LIMIT)),
+    /** 搜索范围扩展到所有窗口（默认仅当前窗口，尊重「只管当前窗口」原则）。 */
+    searchAllWindows: z.boolean().default(false),
+    /** 自动休眠完成时的系统通知（通知面板内始终有「全部唤醒」可撤销）。 */
+    discardNotifyEnabled: z.boolean().default(true),
+    /** 重复标签自动合并（同网址唯一化）时的状态提示。 */
+    reuseNotifyEnabled: z.boolean().default(true),
+    /** 工具栏角标模式：auto 有重复显重复数/否则显标签数 / count 恒显标签数 / dups 恒显重复组数 / off 关闭。 */
+    badgeMode: z.enum(['auto', 'count', 'dups', 'off']).default('auto'),
+    /** 右键菜单（页面/链接/标签栏/工具栏图标）总开关。 */
+    contextMenusEnabled: z.boolean().default(true),
+    /** 地址栏命令（t <关键词>）总开关。 */
+    omniboxEnabled: z.boolean().default(true),
+    /** 开发者：指定站点禁用前端缓存（DNR 响应头强制 no-store；需网站访问权限）。 */
+    noCacheEnabled: z.boolean().default(false),
+    /**
+     * 禁缓存站点列表：纯域名（含子域）/ 域名+路径前缀 / 完整 URL 前缀，三种形态。
+     * 归一化必须在 schema 层完成：这些串会被编译成 DNR 动态规则，备份导入与同步同样经过本 schema；
+     * 非法项（含 DNR 通配/锚定语法）在此丢弃，使「能读出的 pattern」恒等于「可安全编译的 pattern」。
+     */
+    noCachePatterns: z
+      .array(z.string().min(1).max(NO_CACHE_PATTERN_MAX_LENGTH))
+      .default([])
+      // 同 SiteCollapseSchema / discardWhitelist：先归一化 + 去重，上限作用于归一化之后的值，
+      // 否则 a.com 与 A.COM 各占一份额度、归一化后重复，编译出重复的 DNR 规则。
+      .transform((patterns) => [
+        ...new Set(
+          patterns
+            .map(normalizeNoCachePattern)
+            .filter((pattern): pattern is string => pattern !== null)
+        )
+      ])
+      .pipe(z.array(z.string()).max(NO_CACHE_PATTERNS_LIMIT)),
+    /** 首启引导是否已看过（仅首次展示交互式引导）。 */
+    onboarded: z.boolean().default(false),
+    /** 侧边栏一次性「能力发现」Tip 是否已看过（仅首次展示）。 */
+    tipSeen: z.boolean().default(false),
+    /** 固定空间空态「概念一览」是否已隐藏（用户点过「不再显示」）。 */
+    conceptsSeen: z.boolean().default(false),
+    /** 是否把文件夹、磁贴与设置镜像到 chrome.storage.sync。默认关闭：数据会经浏览器厂商通道离开本机，与「本地优先」相悖，须显式开启；关闭时清除已上传镜像。 */
+    syncMirrorEnabled: z.boolean().default(false),
+    /** 当前激活的工作区（origin=space 快照的 id；缺省 = 未激活）。仅是 id 引用，删除后失效，消费方须按「找不到即视为未激活」容错。术语「工作区」≠「固定空间」（FixedArea），勿混用。 */
+    activeSpaceId: z.string().optional(),
+    /** 面板展示其他窗口的分段（只读 + 聚焦/关闭）。默认关闭（「只管理当前窗口」口径），与 searchAllWindows 一致。 */
+    showOtherWindows: z.boolean().default(false)
+  })
+  .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
 
 /** 列表密度档位（从 schema 派生，避免 UI 各处手写联合类型导致加档漏改）。 */
@@ -317,7 +311,7 @@ export const SnapshotSchema = z
   });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 
-/** 导出格式版本号。首个公开版本就带上，避免后续加字段只能猜字段是否存在；导入端只比对字面量，不做跨版本升格。 */
+/** 导出格式版本号；导入仅接受当前版本。 */
 export const EXPORT_FILE_VERSION = 1;
 
 /**
@@ -404,7 +398,7 @@ const ExportFileImportSchema = ExportFileSchema.safeExtend({
 
 /**
  * 导出文件统一读取口径：单一格式，不匹配即拒（不静默降级），只认 EXPORT_FILE_VERSION。
- * 失败区分「版本不匹配」（由另一版本 Tabs 导出，可解释）与「文件本身有问题」，提示须指向可操作下一步。
+ * 版本不匹配与文件校验失败返回不同原因，界面据此给出对应提示。
  * 解析走导入专用 schema：favIconUrl 经 scheme 白名单归一化（任意 http(s) 图标 → undefined）。
  */
 export function parseExportFile(

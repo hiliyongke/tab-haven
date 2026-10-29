@@ -105,9 +105,8 @@ describe('KeeperPolicy', () => {
     expect(removable.map((tab) => tab.id)).toEqual([1]);
   });
 
-  it('空组不产出 keeper（不用断言伪造保留者）', () => {
-    // 回归：此前 `?? group.tabs[0]!` 让空组返回「类型是 TabRecord、运行时 undefined」
-    // 的假 keeper，下游 keeper.id 当场崩。空组必须给出空结果。
+  it('空组不产出 keeper', () => {
+    // 空组没有保留者，也没有可移除标签。
     const { keeper, removable } = KeeperPolicy.default.select({ key: 'x', tabs: [] });
     expect(keeper).toBeUndefined();
     expect(removable).toEqual([]);

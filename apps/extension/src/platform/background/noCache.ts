@@ -43,9 +43,9 @@ export async function syncNoCacheRules(settings: Settings): Promise<void> {
   try {
     const permitted = await siteAccessPermission();
     if (permitted === 'unknown') {
-      // 保留现状：撤掉已生效规则会把故障放大成功能失效，什么都不做最坏只是本轮没对齐
+      // 保留现状：撤掉已生效规则会把故障放大成功能失效，什么都不做最坏只是本次同步没对齐
       // （下一次设置变更 / 权限变化 / SW 启动会重试）。
-      logDegraded('no-cache', '权限查询结果未知，本轮保留现有禁缓存规则不做改动');
+      logDegraded('no-cache', '权限查询结果未知，本次同步保留现有禁缓存规则不做改动');
       return;
     }
     const addRules =
@@ -68,9 +68,9 @@ export function setupNoCache(): void {
     .read()
     .then((settings) => syncNoCacheRules(settings))
     .catch((error) => {
-      // 读不到设置则本轮规则根本没对齐，而 watch 只在设置变更时触发，禁缓存可能
+      // 读不到设置则本次同步规则根本没对齐，而 watch 只在设置变更时触发，禁缓存可能
       // 整个会话静默失效。必须留痕（不阻断流程）。
-      logDegraded('no-cache', '禁缓存规则同步：读取设置失败，本轮未对齐', error);
+      logDegraded('no-cache', '禁缓存规则同步：读取设置失败，本次同步未对齐', error);
     });
   settingsRepository.watch((settings) => {
     void syncNoCacheRules(settings);

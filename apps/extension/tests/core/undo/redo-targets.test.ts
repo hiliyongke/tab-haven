@@ -4,11 +4,7 @@ import type { UndoTabRecord } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 
 /**
- * 行为规格（FIX-03 重做）：重做目标 = 当前窗口中 URL 与撤销记录相同的标签。
- *
- * 为什么按 URL 而不是 tabId：撤销记录是「用记录重建标签」，只存五元组，
- * 没有浏览器 tabId（关闭后即失效、恢复出来的也是新 id），因此重做只能按
- * URL 反查 —— 这也决定了固定标签必须豁免，否则重做会关掉用户刚固定的页面。
+ * 重做目标行为规格：按 URL 在当前窗口匹配撤销记录中的标签，并默认排除固定标签。
  */
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -78,7 +74,7 @@ describe('selectRedoTargets', () => {
     expect(selectRedoTargets(tabs, [record('')])).toEqual([]);
   });
 
-  it('内部页按原始 URL 兜底命中（无 web 比较键不得被整体丢弃）', () => {
+  it('内部页按原始 URL 匹配', () => {
     const tabs = [
       makeTab({ id: 1, url: 'chrome://newtab/' }),
       makeTab({ id: 2, url: 'about:blank' })
@@ -88,7 +84,7 @@ describe('selectRedoTargets', () => {
     expect(selectRedoTargets(tabs, [record('about:blank')]).map((t) => t.id)).toEqual([2]);
   });
 
-  it('混合批次：web 与内部页各自命中，不因内部页丢键而漏掉 web 那批', () => {
+  it('混合批次中 web 与内部页分别按 URL 命中', () => {
     const tabs = [
       makeTab({ id: 1, url: 'https://a.com/' }),
       makeTab({ id: 2, url: 'chrome://newtab/' })

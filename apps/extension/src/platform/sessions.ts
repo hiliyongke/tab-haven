@@ -65,7 +65,7 @@ export async function getRecentlyClosed(): Promise<RecentClosedEntry[]> {
   } catch (error) {
     // 静默降级必须可观测（本模块族纪律）：返回空列表会让撤销历史面板
     // 「最近关闭」分区看起来是空的，实际可能是 sessions API 失败。
-    logDegraded('sessions', '读取最近关闭列表失败，本轮按空列表处理', error);
+    logDegraded('sessions', '读取最近关闭列表失败，本次按空列表处理', error);
     return [];
   }
 }

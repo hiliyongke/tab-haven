@@ -94,9 +94,7 @@ export function useSpaces(): {
   /**
    * 切换空间：写回现场 → 关闭当前标签 → 恢复目标 → 落盘激活 id → 提示。
    *
-   * 刻意**不再**用 `void (async () => { … })()` 包一层：那样外层返回的 Promise 会在
-   * 工作完成前就 resolve，调用方 `await performSwitch(...)` 拿到的「完成」是假的 ——
-   * 紧接着读取状态会读到切换前的值，而 `switching` 也已被置回 false。
+   * 返回的 Promise 覆盖整个切换流程，使调用方 await 后读取到完成态，并保持 switching 到流程结束。
    */
   const performSwitch = useCallback(
     async (target: Snapshot) => {

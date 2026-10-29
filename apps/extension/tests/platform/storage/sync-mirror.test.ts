@@ -11,8 +11,7 @@ const payload = (marker: string) => ({
 });
 
 /**
- * 镜像去抖行为规格：500ms 窗口内多次 schedule，最终落盘的必须是**最新** payload
- * （只写第一个 payload 会让密集操作后的镜像陈旧，新设备拉取会丢数据）。
+ * 镜像去抖行为规格：500ms 窗口内多次 schedule 后，最终写入最新 payload。
  */
 describe('SyncMirror', () => {
   beforeEach(() => {
@@ -62,13 +61,8 @@ describe('SyncMirror', () => {
     expect((mirror?.folders[0] as { name?: string })?.name).toBe(big);
   });
 
-  it('超出同步配额时跳过写入而不是set 抛错后重试（避免白耗分钟级写配额）', async () => {
-    /**
-     * 要防的失效：写侧只按总字节放行、读侧按块数判定，两把尺子错位时
-     * 102000 < total ≤ 102400 会切出 18 块（> MAX_CHUNKS 17）并写入成功，
-     * 而 pull 判定「分块超限」返回 null —— 镜像写进去了却永远读不出来，
-     * 换机时新设备拿到 null，还会把本地空态推上云覆盖掉这份镜像。
-     */
+  it('超出同步配额时不写入镜像，且不标记为 chunk-limit', async () => {
+    /** 写入前校验总字节数与分块数；超限数据不会产生无法读取的镜像。 */
     const oversized = 'x'.repeat(103_000);
     syncMirror.schedule({
       folders: [{ id: 'big', name: oversized, collapsed: false, createdAt: 1, items: [] }],
@@ -77,14 +71,14 @@ describe('SyncMirror', () => {
     });
     await vi.advanceTimersByTimeAsync(600);
 
-    // 一条块都没落盘：容量超限是确定性的，重试只会反复撞配额。
+    // 容量超限时不写入任何镜像分块。
     const all = await fakeBrowser.storage.sync.get(null);
     expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toEqual([]);
-    // 必须留痕（设置页据此提示「同步未生效」），且不得污染拉取分类。
+    // 保留容量限制的诊断分类，不标记为镜像内容不可读。
     expect(syncMirror.readLastPullIssue()).not.toBe('chunk-limit');
   });
 
-  it('新数据写成功后，旧 payload 的重试不得复活旧镜像', async () => {
+  it('新数据写入成功后保持为当前镜像', async () => {
     const sync = fakeBrowser.storage.sync;
     // 第一次落盘失败 → 排定 30s 重试（携带旧 payload）。
     const setSpy = vi.spyOn(sync, 'set').mockRejectedValueOnce(new Error('quota'));
@@ -102,12 +96,8 @@ describe('SyncMirror', () => {
     expect(mirror?.folders[0]).toMatchObject({ id: 'new' });
   });
 
-  it('写入失败不留下半截镜像（先 set 后 remove：他设备 pull 不会误报「镜像损坏」）', async () => {
-    /**
-     * 要防的失效：performWrite 先 remove 旧块再 set 新块时，set 失败会留下
-     * 「meta 声明 N 块、块已被删到 1 块」的中间态 —— 他设备 pull() 据此判
-     * unreadable，把一次写失败显示成「镜像损坏」。
-     */
+  it('写入失败时保留原有完整镜像', async () => {
+    /** 写入失败后，现有镜像仍完整可读。 */
     const sync = fakeBrowser.storage.sync;
     // Given 一份已落盘的多块镜像
     syncMirror.schedule({
@@ -174,9 +164,9 @@ describe('SyncMirror', () => {
     expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);
   });
 
-  it('clearAll 排在在途写之后：在途写落盘不得让已清除的镜像复活', async () => {
+  it('在途写入完成后 clearAll 保持镜像为空', async () => {
     const sync = fakeBrowser.storage.sync;
-    // 让在途写的 set 挂起：模拟去抖 flush 刚触发、用户立即关闭同步的竞态窗口。
+    // 暂停在途写入，并在写入完成前执行清理。
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -186,7 +176,7 @@ describe('SyncMirror', () => {
     void syncMirror.write(payload('inflight'));
     const clearing = syncMirror.clearAll();
 
-    // 放行在途写：其 set 先落盘，clearAll 的 remove 必须排在它之后执行。
+    // 完成在途写入并等待清理操作结束。
     release();
     await clearing;
     setSpy.mockRestore();
@@ -196,7 +186,7 @@ describe('SyncMirror', () => {
     expect(await syncMirror.pull()).toBeNull();
   });
 
-  it('镜像分块数超出同步配额：返回 null 但标记为 chunk-limit（而非「从未同步过」）', async () => {
+  it('镜像分块数超限时返回 null 并标记 chunk-limit', async () => {
     // Given meta 声明的分块数超过 MAX_CHUNKS（64）——镜像存在但拿不全
     await fakeBrowser.storage.sync.set({
       'tabs.sync.v1.meta': JSON.stringify({ count: 65 })
@@ -205,7 +195,7 @@ describe('SyncMirror', () => {
     // When
     const mirror = await syncMirror.pull();
 
-    // Then 数据拿不到，但成因必须留痕（否则设置页会把它当成「从未同步过」）
+    // Then 数据不可用，分类保留为 chunk-limit。
     expect(mirror).toBeNull();
     expect(syncMirror.readLastPullIssue()).toBe('chunk-limit');
   });
@@ -274,7 +264,7 @@ describe('SyncMirror', () => {
     expect(syncMirror.readLastPullIssue()).toBe('unreadable');
   });
 
-  it('分类不粘住上一次结果：正常拉取后再次损坏必须回落为 unreadable', async () => {
+  it('正常拉取后镜像损坏时标记为 unreadable', async () => {
     // Given 一次正常回读（ok）
     syncMirror.schedule(payload('fresh'));
     await vi.advanceTimersByTimeAsync(600);
@@ -285,20 +275,20 @@ describe('SyncMirror', () => {
     await fakeBrowser.storage.sync.set({ 'tabs.sync.v1.meta': 'broken' });
     await syncMirror.pull();
 
-    // Then 上一次的 ok 不得残留
+    // Then 当前分类为 unreadable
     expect(syncMirror.readLastPullIssue()).toBe('unreadable');
   });
 
-  it('在途写失败排入的重试不得让 clearAll 之后的镜像复活', async () => {
+  it('clearAll 完成后不写入在途请求的重试数据', async () => {
     const sync = fakeBrowser.storage.sync;
-    // 在途写失败：其 catch 会在 clearAll 的链头 cancelPending 之后才排入 30s 重试。
+    // 在途写入失败并进入重试等待时执行清理。
     const setSpy = vi.spyOn(sync, 'set').mockRejectedValueOnce(new Error('quota'));
 
     void syncMirror.write(payload('inflight-fails'));
     await syncMirror.clearAll();
     setSpy.mockRestore();
 
-    // 越过全部重试退避：若 performClear 未在链内补撤，旧 payload 会被重试写回。
+    // 清理完成后等待重试窗口结束，确认镜像仍为空。
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
     const all = await sync.get(null);
     expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);

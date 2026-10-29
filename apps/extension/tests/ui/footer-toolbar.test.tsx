@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { DndContext } from '@dnd-kit/core';
 import { FooterToolbar } from '@/entrypoints/sidepanel/FooterToolbar';
+import { FOOTER_BUTTON_IDS, type FooterButtonId } from '@/core/layout/footerOrder';
 import i18n, { translate } from '@/i18n';
 
 /**
@@ -44,8 +45,7 @@ function renderFooter(overrides: Partial<FooterProps> = {}) {
     onOpenAbout: vi.fn(),
     onOpenSnapshots: vi.fn(),
     onOpenPalette: vi.fn(),
-    // 空数组 = 用内置默认顺序（与用户从未拖拽过时的状态一致）
-    footerOrder: [],
+    footerOrder: [...FOOTER_BUTTON_IDS],
     onReorderFooter: vi.fn(),
     ...overrides
   };
@@ -132,10 +132,7 @@ describe('FooterToolbar 清理重复入口', () => {
 });
 
 describe('FooterToolbar 重排分组入口', () => {
-  /**
-   * 回归保护：它是分组混乱后唯一的一键修复入口，价值不可替代，因此必须常驻底栏
-   * —— 这组断言把该决策固化下来，防止被以「精简底栏」为由下沉到命令面板。
-   */
+  /** 重排入口常驻底栏，便于用户直接整理当前分组。 */
   it('常驻显示，点击触发重排', () => {
     const props = renderFooter();
 
@@ -229,44 +226,22 @@ describe('FooterToolbar 休眠入口影响面提示', () => {
   });
 });
 
-/**
- * 按钮顺序可自定义（拖拽写回 settings.footerOrder）。
- *
- * 两条关键契约：① 持久化的顺序真的决定渲染顺序；② 顺序里没列出的按钮按默认
- * 相对顺序追加到末尾 —— 否则版本升级新增按钮时，老用户的自定义顺序会让新按钮消失。
- */
 describe('FooterToolbar 按钮顺序', () => {
   const toolbarButtons = () =>
     within(screen.getByRole('navigation', { name: translate('侧边栏工具') })).getAllByRole(
       'button'
     );
 
-  it('Given 自定义顺序 When 渲染 Then 按该顺序排列', () => {
-    renderFooter({ footerOrder: ['footer:settings', 'footer:palette'] });
+  it('按完整的自定义顺序渲染按钮', () => {
+    const customOrder: FooterButtonId[] = [
+      'footer:settings',
+      'footer:palette',
+      ...FOOTER_BUTTON_IDS.filter((id) => id !== 'footer:settings' && id !== 'footer:palette')
+    ];
+    renderFooter({ footerOrder: customOrder });
 
     const buttons = toolbarButtons();
-    // 可访问名取 aria-label（= 按钮的 title），不是旁边那行文字标签
     expect(buttons[0]).toHaveAccessibleName(translate('设置'));
     expect(buttons[1]).toHaveAccessibleName(translate('打开命令面板'));
-  });
-
-  it('Given 顺序里缺按钮 When 渲染 Then 缺失的按默认顺序追加（不消失）', () => {
-    // 只声明一个，其余 12 个按钮必须仍然渲染出来
-    renderFooter({ footerOrder: ['footer:settings'] });
-
-    const buttons = toolbarButtons();
-    const labels = buttons.map((button) => button.textContent ?? '');
-    expect(buttons[0]).toHaveAccessibleName(translate('设置'));
-    expect(labels).toContain(translate('命令'));
-    expect(labels).toContain(translate('定位'));
-    expect(labels).toContain(translate('快照'));
-  });
-
-  it('Given 顺序里含未知 id When 渲染 Then 忽略未知项（不崩、不漏按钮）', () => {
-    renderFooter({ footerOrder: ['footer:not-exist', 'footer:palette'] });
-
-    const buttons = toolbarButtons();
-    expect(buttons[0]).toHaveAccessibleName(translate('打开命令面板'));
-    expect(buttons.length).toBeGreaterThan(5);
   });
 });

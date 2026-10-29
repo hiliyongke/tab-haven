@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { reorderBlockedReason } from '@/core/site/reorderCapability';
 
 /**
- * 列表内排序的可排序性判定。
- *
- * 这是「界面能拖」与「拖了真生效」之间的唯一口径，两边共用它才不会出现
- * 「看着能拖、拖了没反应」。因此每个分支都必须有断言锁住。
+ * 列表内排序行为规格：同一判定用于界面交互与执行路径，决定排序是否可用及其阻止原因。
  */
 describe('reorderBlockedReason', () => {
   it('默认配置（同步开 + 浏览器顺序）允许排序', () => {

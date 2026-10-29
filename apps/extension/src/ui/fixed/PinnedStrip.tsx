@@ -56,7 +56,7 @@ export function PinnedStrip() {
   if (pins.length === 0) return null;
 
   const handleMiddleClick = makePinMiddleClickHandler(closeTabs);
-  // 同一动作（取消固定）在标签行叫「取消固定」，这里曾叫「从磁贴条移除」。
+  // 取消固定操作统一显示为「取消固定」。
   const unpinTitle = t('取消固定');
 
   return (

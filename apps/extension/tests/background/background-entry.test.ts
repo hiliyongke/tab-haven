@@ -15,18 +15,8 @@ import { getLastActiveTabId, recordActiveTab } from '@/platform/background/windo
 import { syncCachedSettings } from '@/platform/background/shared';
 
 /**
- * SW 入口编排器（`background.ts`）。
- *
- * `defineBackground(main)` 的实现是 `{ main }`，因此测试可以直接取出并调用 `main()`，
- * 再用 `spyOn(event, 'addListener')` 把各监听器捕获下来手动驱动。
- *
- * 这里覆盖的是**编排**而非算法（算法在各自的子模块里已有测试）：事件 → 分发 → 调用哪个
- * 子模块。编排错误的典型症状是「功能静默失灵」——监听器没注册、分支走错、早退。
- *
- * 环境说明：
- *  - 不重置模块注册表：`windowCache` 的激活锚点是模块级状态，`enforceNewTabPosition`
- *    依赖它；重置会让断言失去参照。代价是会跨用例累积，故一律使用**互不相同的窗口 id**。
- *  - `settingsRepository` 的读取会被两侧消费（入口自身 + 子模块），故用同一个仓库写入。
+ * Service Worker 入口行为规格：注册浏览器事件监听器，并按事件与设置调用对应功能；
+ * 测试通过触发监听器验证事件分发与可观察副作用。
  */
 
 type AnyListener = (...args: unknown[]) => unknown;
@@ -80,8 +70,7 @@ function stubBrowserApis(): void {
   });
   Object.assign(fakeBrowser.i18n, { getMessage: vi.fn(() => '') });
   Object.assign(fakeBrowser.notifications, { create: vi.fn(async () => 'id') });
-  // 卸载挽留页：fake-browser 默认把这两个方法标成 notMocked（调用即抛错）；真实浏览器
-  // 对相对路径同样抛错（Invalid URL）—— 不打桩就测不到注册行为，bug 只会在真实 SW 控制台出现。
+  // 为卸载挽留页注册测试提供完整扩展 URL 与可调用的卸载 URL 方法。
   Object.assign(fakeBrowser.runtime, {
     // WXT 的 getURL 形参是带前导斜杠的 PublicPath（'/xxx.html'），拼接时不再补斜杠，
     // 与真实行为一致
@@ -137,10 +126,7 @@ async function boot(settings: Partial<Settings> = {}): Promise<Map<string, AnyLi
   const mod = await import('@/entrypoints/background');
   const main = (mod.default as unknown as { main: () => void }).main;
   main();
-  // 入口内的初始化是 fire-and-forget（void 调用）。这里必须**显式等设置缓存落定**：
-  // 多个监听器（omnibox 开关、badgeMode、通知开关）读的是 SW 侧的 `cachedSettings`，
-  // 若缓存仍是默认值，针对「关闭开关」的用例会因为缓存尚未刷新而走进错误分支，
-  // 而只断言缺席的用例会因此**假绿**。
+  // 等待设置缓存同步完成，后续监听器读取本次用例的设置值。
   await syncCachedSettings();
   return listeners;
 }
@@ -176,9 +162,7 @@ function rawTab(partial: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  // 假定时器是必需的：入口内多处 fire-and-forget 的防抖（角标 500ms、窗口缓存 250/800ms）
-  // 在真实定时器下会**跨用例触发**——上一个用例启动的刷新会打到下一个用例的 stub 上，
-  // 表现为「角标收到的是上一个用例的数据」这类难以归因的失败。
+  // 使用虚拟时钟控制入口中的角标防抖与窗口缓存定时任务。
   vi.useFakeTimers();
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue(undefined as never);
@@ -258,10 +242,7 @@ describe('入口初始化', () => {
     listeners.get('runtime.onInstalled')!();
 
     await vi.waitFor(() => expect(setUninstallUrl).toHaveBeenCalledTimes(1));
-    // setUninstallURL 只接受完整 URL：传相对路径 'uninstall-backup.html' 时真实浏览器
-    // 抛 Invalid URL，又因该 API 返回 Promise 而成为未处理 rejection
-    // （fake-browser 把未 mock 的调用标成 notMocked 调用即抛，若被外层 try/catch
-    // 静默吞掉就发现不了，所以这个约束必须在这里锁死）。
+    // setUninstallURL 使用完整扩展 URL。
     expect(setUninstallUrl).toHaveBeenCalledWith(
       'chrome-extension://fake-id/uninstall-backup.html'
     );
@@ -269,7 +250,7 @@ describe('入口初始化', () => {
 });
 
 describe('runtime.onMessage 端点', () => {
-  it('settings-synced：同步设置缓存并应答 ok（不再让发送方等到超时）', async () => {
+  it('settings-synced：同步设置缓存并返回 ok', async () => {
     const listeners = await boot();
     const { call, responses } = messageHarness(listeners.get('runtime.onMessage')!);
 
@@ -316,10 +297,8 @@ describe('runtime.onMessage 端点', () => {
     expect(responses).toEqual([]);
   });
 
-  it('单参数调用（sender 缺失）不因来源校验抛错 —— 监听器内抛错会吞掉整条消息通道', async () => {
-    // 宿主一定会传 sender，但测试桩 / polyfill 可能不传；来源校验必须容忍 sender 缺失。
-    // 修复前此处会抛 TypeError（`sender.id` 无 optional chaining），而异常发生在监听器内
-    // 会直接吞掉整条消息通道 —— 与 platform/messages.ts 早已防护的是同一类问题。
+  it('sender 缺失时来源校验不抛错', async () => {
+    // 消息监听器的来源校验接受未提供 sender 的调用。
     const listeners = await boot();
     const listener = listeners.get('runtime.onMessage')! as unknown as (
       r: unknown,
@@ -720,7 +699,7 @@ describe('contextMenus.onClicked 路由', () => {
     await vi.waitFor(() => expect(setPinned).toHaveBeenCalledWith(77, { pinned: true }));
   });
 
-  it('达上限时右键固定：不写入、通知失败并留痕（超限量会让整份备份被拒）', async () => {
+  it('达到上限时右键固定：不写入并通知失败', async () => {
     await pinsRepository.write(
       Array.from({ length: PINS_LIMIT }, (_, i) => ({
         id: `pin-${i}`,
@@ -743,7 +722,7 @@ describe('contextMenus.onClicked 路由', () => {
     await vi.waitFor(() =>
       expect(readDiagnostics().some((e) => e.message.includes('上限'))).toBe(true)
     );
-    // 关键断言：入口不再自己写 pins，超限时一条都不会多出来
+    // 达到上限时固定图标列表保持原长度。
     expect(await pinsRepository.read()).toHaveLength(PINS_LIMIT);
     // 反馈必须与事实一致：走的是失败文案，不能报「已加入常驻磁贴」。
     // 文案按 SW 侧同一条 `t()` 解析（后台无 React，语言由 initHeadlessI18n 决定）。
@@ -813,14 +792,11 @@ describe('omnibox 监听', () => {
 
 describe('重复标签复用的 SW 接线', () => {
   /**
-   * 背景：`ReuseCoordinator` 的**决策算法**在 `tests/platform/reuse/` 下已有覆盖，
-   * 但入口把它接到浏览器事件的这一段（激活既有标签 / 关闭新建标签 / 通知面板 /
-   * 回传关闭快照）。接线错位的典型症状是算法测试全绿而线上失灵：
-   * 提示开关被忽略、或把「计划关闭」而非「实际关闭」的标签回传撤销栈（撤销时
-   * 凭空多出重复标签）。这里锁的是**接线**，不是算法。
+   * 重复标签复用行为规格：按设置激活保留标签并关闭副本；提示开关控制面板通知，
+   * 实际关闭的标签快照仍发送到撤销流程。
    */
 
-  /** 注入复用链路依赖的浏览器 API：窗口扫描结果 + 标签组查询（fake-browser 未实现后者，同步抛错）。 */
+  /** 注入复用链路使用的窗口标签与分组查询结果。 */
   function stubReuseDeps(windowId: number): void {
     Object.assign(fakeBrowser.tabs, {
       query: vi.fn(async () => [
@@ -833,13 +809,7 @@ describe('重复标签复用的 SW 接线', () => {
     Object.assign(fakeBrowser.tabGroups, { query: vi.fn(async () => []) });
   }
 
-  /**
-   * 启动并等待「同 URL 唯一化」开关联动落定。
-   *
-   * coordinator 构造为 fail-closed 的禁用态，开关由 `syncCoordinatorEnabled()`
-   * 异步读回设置后置起；不等它落定就驱动 onCreated，`handleCreated` 会直接
-   * return —— 用例会以「什么都没发生」的假绿/假红形式失败，且极难归因。
-   */
+  /** 启动入口并等待同 URL 复用设置同步完成。 */
   async function bootReuse(
     windowId: number,
     settings: Partial<Settings>
@@ -887,7 +857,7 @@ describe('重复标签复用的 SW 接线', () => {
         expect.objectContaining({ type: 'reuse-closed', windowId })
       )
     );
-    // 刻意与 notifyReuse 分开：关掉提示也必须能撤销这次自动关闭
+    // 关闭提示不影响将本次关闭操作登记到撤销流程。
     expect(sendMessageMock()).not.toHaveBeenCalledWith({ type: 'duplicate-reused' });
   });
 });

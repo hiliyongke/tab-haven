@@ -28,13 +28,13 @@ describe('<被测对象>', () => {
 
 ## 分层手法
 
-| 层                | 手法                                                                      |
-| ----------------- | ------------------------------------------------------------------------- |
-| `tests/core/`     | 纯函数直接构造输入断言输出；表驱动（`it.each`）覆盖枚举分支               |
-| `tests/platform/` | 用 `fake-browser`；先读同目录已有测试头部注释了解与真实 Chrome 的偏差声明 |
-| `tests/stores/`   | 操作序列 → 断言 store 状态 + 持久化副作用（spy DataRepository）           |
-| `tests/ui/`       | testing-library 按 role/文案查询；`userEvent` 模拟交互；断言行与 a11y     |
-| `tests/perf/`     | 性能阈值断言，阈值变更必须注释理由                                        |
+| 层                               | 手法                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `apps/extension/tests/core/`     | 纯函数直接构造输入断言输出；表驱动（`it.each`）覆盖枚举分支               |
+| `apps/extension/tests/platform/` | 用 `fake-browser`；先读同目录已有测试头部注释了解与真实 Chrome 的偏差声明 |
+| `apps/extension/tests/stores/`   | 操作序列 → 断言 store 状态 + 持久化副作用（spy DataRepository）           |
+| `apps/extension/tests/ui/`       | testing-library 按 role/文案查询；`userEvent` 模拟交互；断言行与 a11y     |
+| `apps/extension/tests/perf/`     | 性能阈值断言，阈值变更必须注释理由                                        |
 
 ## 坏数据注入套路（持久化相关必做）
 
@@ -45,7 +45,7 @@ describe('<被测对象>', () => {
 ## 验证与收尾
 
 ```bash
-pnpm test:watch tests/<层>/<文件>   # 单文件快验
+pnpm test:watch apps/extension/tests/<层>/<文件>   # 单文件快验
 pnpm test                           # 全量 + 覆盖率（ratchet，不许降）
 ```
 
@@ -54,4 +54,4 @@ pnpm test                           # 全量 + 覆盖率（ratchet，不许降�
 ## 输入 / 输出
 
 - 输入：被测模块路径 + 关注点（新功能 / bug 回归 / 补覆盖率）。
-- 输出：`tests/` 下新增或修改的测试文件 + 执行结果摘要。
+- 输出：`apps/extension/tests/` 下新增或修改的测试文件 + 执行结果摘要。

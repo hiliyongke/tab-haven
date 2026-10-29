@@ -148,9 +148,7 @@ export function SettingsPage() {
         const raw = error instanceof Error ? error.message : '';
         const message =
           raw === 'export-version-mismatch'
-            ? t(
-                '备份文件版本与当前 Tabs 不兼容：它由另一个版本导出。请用导出该备份的 Tabs 版本导入，或在新版本里重新导出一份。'
-              )
+            ? t('备份文件格式与当前版本不匹配，请选择当前版本导出的备份文件。')
             : // 写盘失败带分区名（transferSlice 抛 `import-write-failed:<分区>`）。
               // 一律落到「文件无效」会掩盖真实原因（存储不可用），用户会反复
               // 重试导入、甚至以为备份损坏。分区名让人知道卡在哪一步。
@@ -374,8 +372,7 @@ export function SettingsPage() {
           <TextField
             type="search"
             size="lg"
-            /* 不再覆写圆角：同一个 TextField 在这里 8px、其余全部 4px。
-               需要大圆角应走组件的 radius prop，不要在调用点硬改。 */
+            /* 圆角由 TextField 的 radius prop 控制；此处沿用组件默认值。 */
             className="elev-1"
             value={settingsSearch}
             onChange={setSettingsSearch}

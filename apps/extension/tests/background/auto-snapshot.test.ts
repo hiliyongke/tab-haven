@@ -5,15 +5,8 @@ import { settingsRepository, snapshotsRepository } from '@/platform/storage/repo
 import { runAutoSnapshot, syncAutoSnapshotAlarm } from '@/platform/background/autoSnapshot';
 
 /**
- * 定时自动快照：
- *  - 开关关闭时不产生任何快照（未开启则关窗 / 定时均不产生快照）；
- *  - 现场无变化时不重复写入（否则定时快照会快速耗尽保留数并填满存储）；
- *  - 闹钟周期 = 用户设置值（不能小于 1 分钟，也不应被浏览器静默抬升为每分钟唤醒）。
- *
- * 环境说明：fake-browser 未实现 tabGroups.query，且它是**同步抛错**（不是 rejected promise），
- * 采集端的 .catch(() => []) 兜不住——异常会一路冒泡到 runAutoSnapshot 的外层 catch，
- * 表现为「静默不落盘」。测试侧注入最小实现（无原生分组）还原真实环境。
- * windows.getAll 可用但不会自带标签，需手动 create 到目标窗口。
+ * 定时自动快照行为规格：开关关闭时不保存；现场未变化时不重复写入；闹钟周期与用户设置一致。
+ * 测试桩为无原生标签组场景提供空查询，并为目标窗口创建测试标签。
  */
 
 /** 注入 tabGroups.query 最小实现：当前窗口无原生标签组。 */

@@ -33,7 +33,7 @@ const FRAGMENT_TABS: TabRecord[] = [
 const FRAGMENT_GROUPS: TabGroupRecord[] = [{ id: 7, title: 'alpha.example.com', color: 'blue' }];
 
 describe('deriveSections 同站点归并', () => {
-  it('域名命名的同站点原生组并入站点分区（碎片化修复）', () => {
+  it('域名命名的同站点原生组并入站点分区', () => {
     const sections = deriveSections({ tabs: FRAGMENT_TABS, groups: FRAGMENT_GROUPS, threshold: 1 });
 
     // 原生组 7 不再单独成区
@@ -92,9 +92,8 @@ describe('deriveSections 同站点归并', () => {
   });
 
   it('未分组同站点标签不足阈值时，与同站点原生组凑数归并（新标签不滞留未分组）', () => {
-    // 截图场景：gamma.example.com 原生组 4 个成员 + 未分组 1 个同站点标签（如通过
-    // 外链新打开的详情页）。未分组侧 1 < 阈值 2，修复前不归并、标签滞留
-    // 「未分组」；判定口径改为「该站点在临时区的全部标签」（4 + 1 = 5 ≥ 2）后归并。
+    // gamma.example.com 原生组有 4 个成员，临时区另有 1 个同站点标签；
+    // 合计 5 个标签达到阈值 2 时，站点分区吸收原生组与未分组标签。
     const tabs = [
       makeTab(1, 'https://gamma.example.com/a', { groupId: 7, index: 1 }),
       makeTab(2, 'https://gamma.example.com/b', { groupId: 7, index: 2 }),
@@ -144,8 +143,7 @@ describe('deriveSections 同站点归并', () => {
   });
 
   it('本地/带端口站点：组标题含端口时同站点归并同样生效', () => {
-    // 自动建组对本地站点的标题是解析器原始 value（含端口，如 localhost:3000）；
-    // 标题比对一律用 subLabel（丢端口）→ 恒不匹配，本地站点碎片化修不了。
+    // localhost:3000 的站点标题包含端口时，应与该站点成员匹配并执行归并。
     const tabs = [
       makeTab(1, 'http://localhost:3000/a', { groupId: 7, index: 1 }),
       makeTab(2, 'http://localhost:3000/b', { index: 2 })
@@ -160,8 +158,7 @@ describe('deriveSections 同站点归并', () => {
   });
 
   it('本地站点按端口区分：localhost:3000 的归并不串到 localhost:8080 分区', () => {
-    // 本地站点的 registrableDomain 不含端口，只用 (注册域, 子域) 匹配会让
-    // localhost:3000 的候选命中 localhost:8080 的分区（张冠李戴）。
+    // localhost:3000 与 localhost:8080 是不同站点分区，各自保留对应端口的标签。
     const tabs = [
       makeTab(1, 'http://localhost:3000/a', { groupId: 7, index: 1 }),
       makeTab(2, 'http://localhost:3000/b', { index: 2 }),
@@ -178,9 +175,7 @@ describe('deriveSections 同站点归并', () => {
   });
 
   it('异端口的未分组标签不并入 localhost:3000 归并分区（端口是本地站点身份的一部分）', () => {
-    // 分支 2 的 sameSiteSingles 只比 (registrableDomain, subdomain) 时，本地站点的
-    // registrableDomain 不含端口 → localhost:8080 的唯一标签被判为与 localhost:3000
-    // 同站，一并塞进 3000 分区，从「未分组」里平空消失（与分支 1 的端口口径分叉）。
+    // localhost:3000 的归并分区只包含同端口标签；localhost:8080 的标签仍留在临时区。
     const tabs = [
       makeTab(1, 'http://localhost:3000/a', { groupId: 7, index: 1 }),
       makeTab(2, 'http://localhost:3000/b', { index: 2 }),
@@ -199,7 +194,7 @@ describe('deriveSections 同站点归并', () => {
   });
 
   it('IP 站点同样按端口区分：127.0.0.1:8080 的唯一标签不被 3000 归并吞掉', () => {
-    // 与 localhost 同因：IP 主机的 registrableDomain 也不含端口。
+    // IP 主机的不同端口分别作为独立站点身份。
     const tabs = [
       makeTab(1, 'http://127.0.0.1:3000/a', { groupId: 7, index: 1 }),
       makeTab(2, 'http://127.0.0.1:3000/b', { index: 2 }),
@@ -218,7 +213,7 @@ describe('deriveSections 同站点归并', () => {
     ]);
   });
 
-  it('全部未分组时与原聚合行为一致（无归并）', () => {
+  it('全部未分组时按站点聚合且不归并原生组', () => {
     const tabs = [
       makeTab(1, 'https://alpha.example.com/a', { index: 1 }),
       makeTab(2, 'https://beta.example.com/b', { index: 2 })
@@ -248,8 +243,7 @@ describe('planAutoGroups 同站点吸收', () => {
   });
 
   it('凑数归并分区：未分组同站点标签被真正吸收进既有原生组', () => {
-    // 与上一条同场景：自动分组开启时，planAutoGroups 应把未分组标签
-    // 并入既有原生组（absorbIntoGroupId），而不只是展示层归并。
+    // 自动分组开启时，未分组同站点标签生成并入既有原生组的计划。
     const tabs = [
       makeTab(1, 'https://gamma.example.com/a', { groupId: 7, index: 1 }),
       makeTab(2, 'https://gamma.example.com/b', { groupId: 7, index: 2 }),
@@ -303,7 +297,7 @@ describe('planAutoGroups 同站点吸收', () => {
     );
   });
 
-  it('非归并分区中已入组的标签仍整组跳过（原保守规则不变）', () => {
+  it('已入组标签保持原生组归属，未分组站点生成建组计划', () => {
     const tabs = [
       makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
       makeTab(2, 'https://beta.example.com/b', { index: 2 })

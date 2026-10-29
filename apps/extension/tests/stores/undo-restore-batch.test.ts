@@ -6,16 +6,8 @@ import { settingsRepository } from '@/platform/storage/repositories';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * 撤销「快照恢复」批次（kind='restore'）必须**关闭**这批标签。
- *
- * 该批次记的是快照恢复新建出来、此刻仍开着的标签。常规撤销分支是「重新打开」，
- * 走它会命中 RestoreEngine 的「已打开去重」全部判成功 —— 批次出栈、提示
- * 「已恢复 N 个」而界面毫无变化：既空转又给假回执。关闭后生成的普通批次
- * （kind='restore-undo'）仍可再被撤销，于是能再开回来。
- *
- * 桩的范围：窗口解析（避免依赖浏览器 windows API）、目标窗口标签查询（构造
- * 现场）、closeTabs（fake-browser 的 tabs.remove 在本环境抛 TypeError，不稳定，
- * 因此断言「关闭请求带上了正确的 tabId」而不是浏览器内部状态）。
+ * 撤销快照恢复批次（kind='restore'）时关闭本次恢复的新建标签，并将关闭结果登记为
+ * 普通撤销批次，支持再次撤销恢复。
  */
 
 // vi.mock 会被提升到文件顶部：桩函数必须经 vi.hoisted 声明，否则 mock 工厂

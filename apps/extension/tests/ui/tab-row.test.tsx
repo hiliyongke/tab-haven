@@ -138,13 +138,7 @@ describe('TabRow', () => {
   });
 });
 
-/**
- * 搜索命中行的滚动开关。
- *
- * 虚拟化分区里行可能根本没挂载（TabRow 的 scrollIntoView 无从触发），滚动由
- * VirtualRowList 按 index 单点承担；若这里仍无条件滚动，会出现「行级滚动 +
- * 列表层滚动」两路并发、目标口径不同而抖动。故滚动与高亮拆成两个开关。
- */
+/** 搜索命中行滚动规格：全量渲染时由 TabRow 滚动；虚拟化时由 VirtualRowList 按索引滚动，TabRow 保留高亮并关闭自身滚动。 */
 describe('TabRow 搜索命中滚动开关', () => {
   it('默认：命中行自行 scrollIntoView（全量渲染分区依赖它）', () => {
     const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');

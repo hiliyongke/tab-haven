@@ -6,8 +6,7 @@ import { useSiteI18n } from '../i18n';
 /**
  * 文档资源区：全部做成站内折叠详情。
  *
- * 项目暂不开源，因此不链任何仓库地址 —— 隐私、权限、快捷键、备份这四类内容直接
- * 写在页面里，读者不需要跳走另一个站点。
+ * 隐私、权限、快捷键与备份说明直接写在页面里，读者无需跳转到其他站点。
  */
 export function Docs() {
   const { t } = useSiteI18n();
@@ -25,11 +24,7 @@ export function Docs() {
             <h3>{t('隐私承诺与自验证')}</h3>
           </summary>
           <ul className="check-list">
-            <li>
-              {t(
-                '扩展代码不含任何网络请求，也不发起任何出站连接；这一点由发布前的隐私回归脚本强制校验。'
-              )}
-            </li>
+            <li>{t('扩展不发起任何出站网络请求。')}</li>
             <li>{t('数据以 chrome.storage.local 为主存储，离线可用，卸载扩展即清除。')}</li>
             <li>
               {t(
@@ -77,7 +72,7 @@ export function Docs() {
             <h3>{t('权限逐条说明')}</h3>
           </summary>
           <p className="muted">
-            {t('权限清单是冻结的：新增权限会令隐私回归检查失败，也会同步更新这里的说明。')}
+            {t('权限用途见下表；网站访问权限仅在你主动开启「指定站点禁用缓存」时申请。')}
           </p>
           <PermissionTable />
         </details>

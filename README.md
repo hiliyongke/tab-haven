@@ -18,11 +18,9 @@ Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它默认只管�
 
 ## 安装
 
-### 从 Chrome Web Store（推荐，待上架）
+### 从 Chrome Web Store
 
-商店上架后，在扩展商店搜索 "Tabs" 一键安装。
-
-上架前需准备的材料（商店文案、权限理由、隐私政策 URL、截图）与发布前自查清单统一维护在 [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)；打包用 `pnpm zip`（WXT 只打入口产物与 `public/`，不含 `tests/`、`.codebuddy/`、`apps/site/` 等开发文件）。
+通过 Chrome Web Store 中的 Tabs 发布页面安装。商店文案、权限说明、隐私披露与发布检查项见 [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md)。
 
 ### 从源码构建（开发者）
 
@@ -55,7 +53,7 @@ pnpm check            # 一条命令跑全部：typecheck → lint → check:i18
 
 加载已解压扩展：打开扩展管理页（`chrome://extensions`，Edge 为 `edge://extensions`）→ 开启"开发者模式" → "加载已解压的扩展程序" → 选择 `.output/chrome-mv3`。
 
-> **不需要为 Edge 单独打包**：实测 `wxt build -b edge` 与 Chrome 变体的 `manifest.json`、`background.js`、文件清单**字节级一致**（`wxt.config.ts` 的 `build:manifestGenerated` hook 没有做浏览器变体裁剪）。Edge 与 Chrome/Brave 共用同一个包，唯一的区别是扩展管理页地址。将来若要上架 Edge Add-ons，需按该商店流程单独提交（那是商店要求，不是包内容差异）。
+Chrome、Edge 与 Brave 均可使用生产构建；需要面向 Edge 调试时运行 `pnpm dev:edge`。
 
 ---
 
@@ -64,7 +62,7 @@ pnpm check            # 一条命令跑全部：typecheck → lint → check:i18
 | 能力域     | 功能                                                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 标签视图   | 原生标签组、同域名自动聚合、未分组三区展示；n× 计数、静音、拆分视图徽章                                                                                                                                                                                                                                                                                               |
-| 组织       | 文件夹（CRUD / 拖放排序 / 挂起转正 / 一键打开全部 / 导出到书签）、常驻磁贴（身份归一化、中键只关页）、从书签栏导入文件夹；工作区切换（命令面板键入文件夹名，一键打开该「空间」全部缺失条目，P-04「文件夹即空间」轻量验证）                                                                                                                                            |
+| 组织       | 文件夹（创建、编辑、删除、拖放排序、挂起转正、一键打开全部、导出到书签）、常驻磁贴（身份归一化、中键只关页）、从书签栏导入文件夹；工作区切换（命令面板键入文件夹名，一键打开该「空间」全部缺失条目）                                                                                                                                                                  |
 | 搜索       | 标题 / 网址 / 拼音首字母模糊搜索，命中高亮，`↑↓` / `Enter` / `Esc` 键盘导航；可选扩展到所有窗口（跨窗口一键切换）；时间线搜索（搜索框内「含历史」开关，同时命中最近 20 份快照与归档条目，支持仅打开单个 URL 或整快照恢复）；命令面板（⌘/Ctrl+P：命令 + 标签切换 + 文件夹空间三组漫游）                                                                                |
 | 拖拽整理   | dnd-kit 驱动的标签/常驻磁贴/分组头/文件夹条目排序；标签拖到原生分组头即加入该组、拖入收藏夹与文件夹（重复 URL 自动去重）、拖到磁贴区固定，磁贴拖回标签区取消固定；不支持的落点在拖拽过程中即显示禁用态并说明原因                                                                                                                                                      |
 | 快捷入口   | 网页/链接/标签栏/工具栏图标右键菜单（休眠、固定、加入文件夹、按域名搜索）；地址栏 `t` 命令直达标签/固定条目；工具栏角标（标签数 / 重复组数，休眠数见悬停提示）                                                                                                                                                                                                        |
@@ -76,8 +74,6 @@ pnpm check            # 一条命令跑全部：typecheck → lint → check:i18
 | 数据       | 完整备份导出导入（收藏夹 + 设置 + 全部快照与归档，导入为事务、失败整体回滚；单一备份格式，格式不符即拒绝）；文件夹、常驻磁贴与设置经浏览器账号通道镜像同步（**默认关闭**，跨设备首启自动恢复）                                                                                                                                                                        |
 | 平台       | 侧边栏为主形态（点击工具栏图标即打开）；中/英双语；主题三态（跟随系统/亮/暗）；自制弹窗组件；快捷键帮助面板（含浏览器设置跳转）                                                                                                                                                                                                                                       |
 | 信任       | 权限与用途（关于页）：全部权限与可选主机权限逐条用途说明、数据存放位置说明、DevTools 零网络请求自验证教程（用户可自行验证「零网络」这一承诺）                                                                                                                                                                                                                         |
-
-> 注：本版（v1.0）包含时间线搜索、快照恢复预览与选择性恢复、权限与用途说明、工作区切换入口、习惯洞察、Workona 迁移器，均不新增权限、不新增上报。本产品尚未在应用商店上架，代码内不保留任何版本兼容 / 迁移逻辑（备份格式单一、无跨版本解析、无设置迁移）。
 
 ---
 
@@ -156,11 +152,11 @@ apps/extension/src/
 
 ## 开发与测试
 
-- **框架**：[WXT](https://wxt.dev)（MV3 扩展框架，提供 sidepanel 一等入口、多浏览器 target、entrypoint 级构建变体、Vitest 集成）
+- **框架**：[WXT](https://wxt.dev)（MV3 扩展框架，提供 sidepanel 一等入口、多浏览器 target 与 Vitest 集成）
 - **UI**：React 19 + TypeScript + Tailwind CSS
 - **状态**：zustand
 - **校验**：zod（所有持久化数据均经 schema 校验，坏数据隔离不扩散）
-- **测试**：Vitest，行为规格测试（Given/When/Then 语义），覆盖 core 纯函数、platform 适配层、store 事务、UI 渲染、设计令牌守卫、性能回归与持久化失败注入
+- **测试**：Vitest，行为规格测试（Given/When/Then 语义），覆盖 core 纯函数、platform 适配层、store 事务、UI 渲染、设计令牌守卫、性能指标与持久化失败场景
 
 ### 脚本一览
 
@@ -169,23 +165,23 @@ apps/extension/src/
 | `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                                         |
 | `pnpm build`                                                     | 生产构建                                                                          |
 | `pnpm zip`                                                       | 打包为上架用 ZIP                                                                  |
-| `pnpm crx`                                                       | 打包离线分发用 CRX3（复用 `.output/tabs.pem` 签名；上架仍用 zip）                 |
+| `pnpm crx`                                                       | 打包离线分发用 CRX3（签名密钥由 `pack-crx` 默认存放在用户配置目录；上架仍用 ZIP） |
 | `pnpm site:dev`                                                  | 官网开发预览：端口 5174（中文 `/`、英文 `/en/`）                                  |
-| `pnpm site:build`                                                | 官网构建：预渲染中英两份静态页 + 拷入下载包 + 零外链自检，产物 `apps/site/dist`   |
+| `pnpm site:build`                                                | 官网构建：预渲染中英静态页、复制下载包并做零外链自检；缺少匹配版本 ZIP 时构建失败 |
 | `pnpm site:preview`                                              | 预览官网产物 `apps/site/dist`，端口 5175                                          |
 | `pnpm site:i18n`                                                 | 官网文案一条龙：抽词 → 编译词条 → 跑守卫（独立词典 `apps/site/i18n/`）            |
 | `pnpm site:check`                                                | 官网门禁：typecheck → lint → i18n → build（不并入 `pnpm check`）                  |
 | `pnpm check`                                                     | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
 | `pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm test:watch` | 类型 / 规范 / 测试                                                                |
-| `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案 / 隐私回归                                                        |
+| `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案 / 隐私校验                                                        |
 | `pnpm i18n`                                                      | 文案一条龙：扫描源码抽词 → 编译词条 → 跑守卫（写中文后跑它）                      |
 | `pnpm i18n:scan` / `i18n:apply` / `i18n:lint`                    | 分步：抽词 / 编译进运行时 / 检查裸露中文                                          |
-| `pnpm i18n:report`                                               | 发布前文案盘点：只出报告不判失败                                                  |
+| `pnpm i18n:report`                                               | 文案盘点：只出报告不判失败                                                        |
 | `pnpm format` / `pnpm format:check`                              | Prettier 格式化 / 只校验不写入                                                    |
 
 > 每个命令的用途、产出与注意事项见 `package.json` 的 `scriptDocs` 字段（JSON 不支持注释，说明集中放在那里，此处只列简表）。
 
-> **`pnpm crx` 的签名私钥要单独备份**：首次打包时浏览器在 `.output/tabs.pem` 生成 CRX3 签名私钥，后续版本必须复用同一把，否则 Chrome 视作不同扩展、无法覆盖升级。它未入库（`.gitignore` 已排除 `*.pem` 与 `.output/`），而 `.output/` 是构建产物目录——清理时会连同删掉。需要保留离线分发能力，先把它复制到仓库外再清理。
+> **`pnpm crx` 的签名私钥要妥善备份**：`pack-crx` 默认将 CRX3 签名密钥保存到用户配置目录，后续离线分发应复用该密钥，否则 Chrome 会将其视为不同扩展。
 
 ### 文案（i18n）体系
 
@@ -205,8 +201,7 @@ t('打开', { context: 'verb' }); // 同句不同语境：context 参与 key
 **单一实现**（`packages/i18n-kit/src/hashKey.ts`），扫描器与两条运行时轨道（UI / 后台）都
 import 它——抄一份就一定会漂移，而漂移的表现是「英文模式整片露中文且查不出原因」。
 
-工具链已抽成独立包 **`packages/i18n-kit`**（自研，不绑定本产品），其它项目可直接引用：
-`i18n-kit scan | apply | check | lint | migrate`，详见
+工具链已抽成独立包 **`packages/i18n-kit`**，CLI 支持 `scan | apply | check | lint`，详见
 [packages/i18n-kit/README.md](./packages/i18n-kit/README.md)。
 
 #### 日常流程
@@ -222,13 +217,13 @@ pnpm i18n          # = i18n-kit scan && apply && check
 
 #### 目录职责
 
-| 路径                                       | 谁维护     | 说明                                     |
-| ------------------------------------------ | ---------- | ---------------------------------------- |
-| `apps/extension/i18n/source/zh-CN.json`    | 扫描器     | 母语原文词典（哈希 key → 中文），勿手改  |
-| `apps/extension/i18n/translation/en.json`  | 人 / 流程  | 译文（键与 source 对齐）                 |
-| `apps/extension/i18n/untranslated/en.json` | 生成物     | 待翻译清单                               |
-| `apps/extension/i18n/retired/en.json`      | 生成物     | 失效词条的译文归档（改回旧文案时可复用） |
-| `apps/extension/src/i18n/locales/*`        | apply 生成 | 运行时资源，**平铺**、**勿手改**         |
+| 路径                                       | 谁维护     | 说明                                    |
+| ------------------------------------------ | ---------- | --------------------------------------- |
+| `apps/extension/i18n/source/zh-CN.json`    | 扫描器     | 母语原文词典（哈希 key → 中文），勿手改 |
+| `apps/extension/i18n/translation/en.json`  | 人 / 流程  | 译文（键与 source 对齐）                |
+| `apps/extension/i18n/untranslated/en.json` | 生成物     | 待翻译清单                              |
+| `apps/extension/i18n/retired/en.json`      | 生成物     | 失效词条的译文归档，可供复用            |
+| `apps/extension/src/i18n/locales/*`        | apply 生成 | 运行时资源，**平铺**、**勿手改**        |
 
 全部词条一律是哈希 key（键由原文摘要生成，源码里只写中文原文）。
 
@@ -275,8 +270,7 @@ Tabs 的底线是**无自有服务器、无自有账号、无遥测、零出站�
 **Tabs 当前不对外开源**，仓库保持私有，暂不授予任何使用、复制或再分发许可
 （各 `package.json` 的 `license` 字段已相应置为 `UNLICENSED`）。
 
-对外一致的口径是：官网与商店文案均不得出现开源 / 许可声明；等真正开源时，
-再补许可条款并同步官网页脚、首屏徽章与结尾 CTA 三处（它们的许可行已按此口径移除）。
+对外介绍与商店资料不得暗示本项目已提供公开使用、复制或再分发许可。
 
 ---
 
@@ -316,7 +310,7 @@ pnpm build && pnpm zip   # 先产出扩展包（下载按钮指向它）
 pnpm site:build          # 再构建官网；产物 apps/site/dist 可直接整体上传
 ```
 
-产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入（按版本号精确匹配），缺失时只告警不阻断构建。
+产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入并按版本号精确匹配；缺少对应版本 ZIP 时，`pnpm site:build` 默认失败。
 
 **发布前必须做的一件事**：把真实域名填进 `apps/site/site.config.ts` 的 `SITE_URL`。留空时构建会跳过 canonical / hreflang / JSON-LD 与 `sitemap.xml` 并打印告警 —— 宁可缺标签，也不能把占位域名发出去。
 

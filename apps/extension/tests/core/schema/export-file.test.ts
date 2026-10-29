@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { EXPORT_FILE_VERSION, ExportFileSchema, parseExportFile } from '@/core/schema/models';
 
 /**
- * 导出文件契约：`format` + `version` + 五个数据分区。
- *
- * `parseExportFile` 是备份导入的唯一入口 ——
- * 备份是用户「换机不丢数据」的唯一指望，契约松一点就是数据事故。
+ * 导出文件契约：`format`、`version` 与五个数据分区均符合当前 schema。
+ * `parseExportFile` 是备份导入的唯一入口，只接受当前格式与版本。
  */
 
 /** 版本号一律引用常量：硬编码会在格式演进时把「契约测试」变成绊脚石。 */
@@ -27,10 +25,8 @@ describe('parseExportFile', () => {
     expect(result.success && result.data.version).toBe(EXPORT_FILE_VERSION);
   });
 
-  it('缺 version 即拒绝：不为无版本号的备份开口子', () => {
-    // 场景：任意 JSON（甚至别的扩展导出的文件）都没有 version 字段。
-    // 若缺省兜底为当前版本，等于让无版本号的任意结构按当前格式解析通过，
-    // 「单一格式、版本不符即拒绝」的口径就形同虚设。
+  it('缺少 version 的备份被拒绝', () => {
+    // 缺少版本号的输入不符合当前导出文件契约。
     const withoutVersion: Record<string, unknown> = { ...VALID };
     delete withoutVersion['version'];
     const result = parseExportFile(withoutVersion);
@@ -38,8 +34,8 @@ describe('parseExportFile', () => {
     expect(result.success === false && result.reason).toBe('invalid');
   });
 
-  it('其他版本被拒绝：版本不符的数据结构不得被读取', () => {
-    // 若此处放行，不认识的新字段会被当数据处理，缺失的字段则被填成默认值。
+  it('其他版本的备份被拒绝', () => {
+    // 只接受当前版本，不对版本不同的数据使用当前 schema 解析。
     const other = parseExportFile({ ...VALID, version: EXPORT_FILE_VERSION + 1 });
     expect(other.success).toBe(false);
     // 版本不匹配要能被识别出来：UI 据此给出「请用导出时的版本导入」提示
@@ -63,7 +59,7 @@ describe('parseExportFile', () => {
 });
 
 describe('ExportFileSchema 版本号常量', () => {
-  it('schema 的字面量与导出常量一致（改常量必须同步改 schema）', () => {
+  it('schema 版本号与导出常量一致', () => {
     expect(ExportFileSchema.parse(VALID).version).toBe(EXPORT_FILE_VERSION);
   });
 });
@@ -90,9 +86,8 @@ describe('导入侧网址 scheme 白名单', () => {
     expect(result.data.fixedFolders[0]?.items[0]?.url).toBe('https://example.com/a');
   });
 
-  it('可执行 / 内部页 scheme 一律降级为安全占位', () => {
-    // 场景：备份文件可被手工构造。javascript: / data: / file: / chrome:// 若原样落盘，
-    // 之后点击条目就会在标签上下文里执行或跳到内部页。
+  it('非 http(s) 的可执行与内部页 scheme 降级为安全占位', () => {
+    // 导入数据中的非 http(s) 网址统一使用安全占位。
     for (const url of [
       'javascript:alert(1)',
       'data:text/html,<script>alert(1)</script>',
@@ -107,7 +102,7 @@ describe('导入侧网址 scheme 白名单', () => {
     }
   });
 
-  it('一条畸形网址不会把整份备份判死（归一化而非判坏）', () => {
+  it('单条不可用网址降级后仍保留备份其余数据', () => {
     const result = parseExportFile({
       ...withPin('javascript:alert(1)'),
       settings: { themePreference: 'dark' }

@@ -7,10 +7,8 @@ import { Icon, Icons } from '@/ui/common/Icon';
 /**
  * 标签行状态徽章（n× 重复 / 静音 / 拆分指示）。
  *
- * 可达性约定：徽章主体是单字符图标（如「拆」「伴」），仅靠 title 无法让读屏
- * 稳定播报（title 在无 role 的 <span> 上只是兜底）。统一改为
- * 「可见字符 aria-hidden + sr-only 全量文案」，保证视觉紧凑且语义完整。
- * 字号统一走 text-2xs 令牌，不再散写任意值字号。
+ * 可达性约定：徽章可见字符设置 aria-hidden，全量文案放入 sr-only，确保读屏稳定播报。
+ * 字号使用 text-2xs 令牌，保持状态徽章的排版一致。
  */
 export function StatusBadges({
   tab,

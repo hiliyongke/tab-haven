@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 /**
  * 守护 tsconfig 的别名配置写法：`baseUrl` 自 TS 6.0 起弃用、7.0 移除，
  * 而去掉它之后 `paths` 的映射必须以 `./` 开头，否则 tsc 报 TS5090。
- * 这里是配置层面的回归，不涉及任何 src 模块。
+ * 测试范围仅限 tsconfig 配置，不涉及 src 模块。
  */
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));

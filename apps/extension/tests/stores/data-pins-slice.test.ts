@@ -6,16 +6,8 @@ import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
 
 /**
- * 固定图标切片（`stores/data/pinsSlice.ts`）。
- *
- * 这组动作有三处「顺序 / 幂等」契约，错了都会表现为用户可见的怪现象：
- *
- * 1. **「确保固定」而非「翻转」**：`addPin` / `openPin` 都调 `setPinned(tabId, true)`，
- *    因为翻转基准若取过期快照会方向反转（快照说未固定、实际已固定 → 翻成取消固定）。
- * 2. **主动刷新快照**：加/删固定后调 `tabSyncService.requestRefresh()`，否则标签是否
- *    从临时区移入置顶区取决于 `pinned` 事件回灌时序，表现为「切一下 tab 才出现」。
- * 3. **豁免必须早于导航**：`openPin` 新建标签时先 `grantReuseAllowance` 再 `updateTabUrl`，
- *    顺序反了显式打开的固定图标会被复用引擎合并关闭。
+ * 固定图标行为规格：添加与打开时确保标签已固定并刷新快照；移除时取消匹配标签的固定；
+ * 新建标签打开固定图标时，先发放复用豁免再导航。
  */
 
 const mocks = vi.hoisted(() => ({

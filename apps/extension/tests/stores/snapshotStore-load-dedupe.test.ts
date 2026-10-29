@@ -5,12 +5,7 @@ import { snapshotsRepository } from '@/platform/storage/repositories';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 
 /**
- * snapshotStore.load() 的在途去重（S7）。
- *
- * 快照族是本项目最大的读（SNAPSHOTS_LIMIT × SNAPSHOT_TABS_LIMIT，每条标签带
- * base64 favicon）。此前只有 `before` 引用守卫而没有共享 promise，StrictMode 双
- * 挂载与多入口并发会各自发起一次全量读盘 —— 启动耗时翻倍，且多出一个「以旧值
- * 覆盖新值」的窗口。
+ * snapshotStore.load() 行为规格：并发调用共享一次读取；一次读取完成后再次调用会重新读取。
  */
 
 beforeEach(() => {

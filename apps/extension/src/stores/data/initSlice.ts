@@ -38,7 +38,7 @@ function pickExplicitKeys<T extends object>(raw: unknown, parsed: T): Partial<T>
   // 后者用 `as unknown as` 抹掉「键 ↔ T 字段」关联，字段名写错检查不出来。
   // 外部键名无法被证明属于 T，故只放宽键名这一处。
   const given = new Set(Object.keys(raw));
-  // 直接以 `Partial<T>` 为目标类型，收尾不再 `as`（会抹掉上面保住的值类型关联）。
+  // 以 `Partial<T>` 为目标类型，保留字段键与值类型的关联。
   const out: Partial<T> = {};
   for (const key of Object.keys(parsed) as Array<keyof T>) {
     if (given.has(String(key))) out[key] = parsed[key];
@@ -156,7 +156,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
           // 恢复失败必须同时降级分类：pull 分类只说明「镜像读得到」，解析/落盘失败时镜像同样没生效，
           // 沿用 'ok' 会显示「已生效」而本地一条未恢复（失效被当成生效）。
           if (mirror && (!mirrorParseOk || !restoreWritesOk)) mirrorIssue = 'unreadable';
-          // 本地 folders/pins 均非空 → 本轮一条未恢复（以本地为准放弃覆盖）。归类 'local' 而非 'none'：
+          // 本地 folders/pins 均非空 → 镜像数据未恢复（以本地为准放弃覆盖）。归类 'local' 而非 'none'：
           // 云端镜像确实存在（只是本机以本地为准），'none' 的「尚未生成镜像」与事实相反。
           if (
             mirror &&
@@ -166,8 +166,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
             effectivePins === pins
           )
             mirrorIssue = 'local';
-          // seeded 必须在恢复数据全部落盘成功后才写：先置位而回写失败，下次启动不再拉取镜像，
-          // 恢复数据永久丢失。pull 为 null 或解析失败同样不置位，保持下次重试机会。
+          // 仅在镜像数据全部解析并成功落盘后写入 seeded；pull 为空或解析失败时保留下次重试机会。
           if (mirror && restoreWritesOk && mirrorParseOk) await ctx.repos.seeded.write(true);
         }
         ctx.set({

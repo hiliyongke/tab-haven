@@ -1,20 +1,6 @@
 /**
- * UI 设计令牌守卫：对比度 / 未定义变量 / 越界令牌 / 字号令牌。
- *
- * 把「本可以被机器发现」的四类问题固化为断言，防止它们悄悄回到代码库：
- *
- *   1. 对比度：对「主题 × 色相 × 前景/背景」全矩阵断言 WCAG 2.1 阈值。
- *      易踩的坑：--ring 用 rgba(品牌, .32) 合成后仅 1.55:1，键盘焦点在浅色下几乎不可见；
- *              --c-gray-500 弱文本 4.12:1；表单边框 border-gray-200 仅 1.33:1。
- *   2. 未定义变量：CSS 里 var(--x) 引用的 --x 必须被声明。
- *      失效模式：--c-red-200 被引用但从未定义，整条 border-color 声明静默失效（IAC）。
- *   3. 越界令牌：TSX 里用到的 `accent-N / gray-N / warn-N / red-N` 必须在 @theme 中定义；
- *      同时禁止直接使用 Tailwind 默认调色板（不随主题换肤）。
- *      失效模式：hover:text-accent-800（@theme 只到 700，类名不生成任何 CSS）、
- *              text-amber-600（浅色下仅 3.19:1，深色下 bg-amber-100 变成刺眼亮黄）。
- *   4. 字号令牌：禁止散写 text-[10px] 这类任意值，统一走 text-2xs。
- *
- * 纯静态分析，不依赖构建产物，因此放在测试套件内随 `pnpm test` 执行。
+ * UI 设计令牌行为规格：检查所有主题与色相组合的对比度、CSS 变量引用、令牌范围、
+ * 字号与间距刻度，以及按钮指针样式和高对比度模式适配。
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -194,14 +180,7 @@ const tsxFiles = walk(SRC_DIR, '.tsx');
 /** CSS 变量也可能由 `.ts` 注入（如主题应用器），扫描需覆盖两种扩展名。 */
 const sourceFiles = [...tsxFiles, ...walk(SRC_DIR, '.ts')].sort();
 
-/**
- * 运行时注入的 CSS 变量：由 JS 写内联样式（`setProperty` / style 对象）写入，
- * 因此不在 CSS 里声明。
- *
- * 集合**由源码推导**而不是硬编码白名单：写死的名单不会随代码变动，某个变量
- * 停止注入后守卫依旧放行，而 CSS 里的 `var()` 会静默取到 fallback —— 这类
- * 「守卫一直在、但放行的东西已经不存在」正是白名单的典型腐化方式。
- */
+/** 运行时注入的 CSS 变量从源码提取，并与 CSS 中声明的变量一并校验。 */
 /** 字号豁免的适用文件（URL 副标题只此一处，见用例内的说明）。 */
 function isTabRowFile(file: string): boolean {
   return relative(ROOT, file) === join('src', 'ui', 'tabs', 'TabRow.tsx');
@@ -263,13 +242,7 @@ function isDecorativeGray400(line: string): boolean {
   return /<Icon\b/.test(line) || /aria-hidden/.test(line);
 }
 
-/**
- * 弱对比度令牌的使用面守卫。
- *
- * 为什么**不**做成 `TEXT_PAIRS` 的一条：那组断言的语义是「这组前景/背景应当达标」，
- * 而 `--c-gray-400` 无论怎么用都只有 2.4–2.8:1 —— 加进去只会得到一条恒红、
- * 且没人能修好的用例（要修的是用法，不是令牌）。
- */
+/** 弱对比度令牌 `--c-gray-400` 仅用于图标与装饰元素，不承载文字信息。 */
 describe('弱对比度令牌不得承载信息', () => {
   it('TSX 不得用 text-gray-400 承载文字（装饰性元素除外）', () => {
     const failures: string[] = [];
@@ -422,13 +395,7 @@ describe('字号令牌', () => {
 });
 
 describe('间距 / 圆角 / 阴影刻度', () => {
-  /**
-   * @theme 已显式声明 --spacing(4px) 与 --radius-* 刻度，Tailwind 的
-   * p-1 / py-0.5 / rounded-lg 等工具类即由它们派生。散写 `[Npx]` 任意值会
-   * 绕过刻度（历史上出现过 py-[2px]、py-[7px] 这类非网格值），必须拦住。
-   * 宽高类（w-/max-h-/max-w-）不在此列：它们多为「面板/列表的容器级尺寸」，
-   * 与内容网格无关，且常需 calc() 兜底。
-   */
+  /** 间距、圆角与阴影使用设计刻度；宽高类可按容器尺寸需求单独设置。 */
   it('间距与圆角、阴影不得散写任意值', () => {
     const failures: string[] = [];
     // 仅覆盖内/外边距与间隙：这些才是 4px 网格的适用范围。
@@ -453,10 +420,7 @@ describe('间距 / 圆角 / 阴影刻度', () => {
 });
 
 describe('交互基线', () => {
-  /**
-   * UI-01 守卫：Tailwind v4 preflight 不再为按钮默认提供 cursor: pointer，
-   * 基类若漏写该类，所有按钮 hover 退化为箭头光标，且构建期不会有任何报错。
-   */
+  /** Button 与 IconButton 的基类为按钮提供指针光标。 */
   it('Button 与 IconButton 基类必须声明 cursor-pointer', () => {
     const button = readFileSync(join(SRC_DIR, 'ui', 'common', 'Button.tsx'), 'utf8');
     const iconButton = readFileSync(join(SRC_DIR, 'ui', 'common', 'IconButton.tsx'), 'utf8');

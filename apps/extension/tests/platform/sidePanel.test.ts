@@ -4,12 +4,10 @@ import { openSidePanel, setActionClickBehavior } from '@/platform/sidePanel';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 
 /**
- * 侧边栏平台适配的行为规格：打开（`openSidePanel`）与工具栏点击行为对齐
- * （`setActionClickBehavior`）。两者同属 `platform/sidePanel`，此前被拆成两个
- * 测试文件（side-panel / sidePanel），命名与风格都不统一，现合并到一处。
+ * 侧边栏平台适配的行为规格：分别验证打开（`openSidePanel`）与工具栏点击行为对齐
+ * （`setActionClickBehavior`）。
  *
- * 断言重点是**失败路径留痕**：静默吞错会表现为「点『打开面板』没反应」，
- * 且用户无法区分「浏览器不支持」与「打开被拒绝」。
+ * 失败路径记录诊断信息，用于区分浏览器能力缺失与打开请求失败。
  */
 
 function lastDiagnostic(): string | undefined {
@@ -92,7 +90,7 @@ describe('openSidePanel', () => {
     expect(open.mock.calls[1]![0]).toEqual({ windowId: 77 });
   });
 
-  it('二次尝试也失败时留痕（不再静默吞掉「打开面板没反应」）', async () => {
+  it('二次尝试失败时记录侧边栏打开诊断信息', async () => {
     stubPanel(vi.fn(async () => Promise.reject(new Error('denied'))));
     vi.spyOn(fakeBrowser.windows, 'getCurrent').mockResolvedValue({ id: 55 } as never);
 
@@ -113,14 +111,10 @@ describe('openSidePanel', () => {
 });
 
 /**
- * 「点击图标是打开面板还是后台整理」由设置决定，而 `setPanelBehavior` 不跨浏览器
- * 会话持久 —— SW 每次唤醒都要对齐一次。这条链上没有返回值可断言，能钉死的是
- * **传参**与**降级**：能力缺失 / 调用失败都不能把设置层的意图变成异常抛给调用方。
+ * 工具栏点击行为由设置决定：对齐时传递开关值；浏览器能力缺失或调用失败时不抛异常。
  */
 describe('setActionClickBehavior', () => {
-  // 整体替换 `fakeBrowser.sidePanel`，而不是往既有对象上挂属性：上面那个
-  // describe 的 afterEach 会把它置为 undefined，`fakeBrowser.reset()` 不会重建，
-  // 逐个属性赋值会踩到「Cannot set properties of undefined」。
+  // 为本组用例设置 sidePanel 的 setPanelBehavior 能力。
   const stubBehavior = (setPanelBehavior: unknown) => {
     (fakeBrowser as unknown as { sidePanel?: unknown }).sidePanel = { setPanelBehavior };
   };

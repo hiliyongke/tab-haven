@@ -113,7 +113,7 @@ describe('syncNoCacheRules 注入闸门', () => {
   });
 
   it('权限查询失败（unknown）时不动现有规则：不清空已生效的 DNR', async () => {
-    // 权限查询抛错 ≠ 未授权：塌缩成 false 会让本轮撤掉已经生效的规则，
+    // 权限查询抛错 ≠ 未授权：塌缩成 false 会让这次调用撤掉已经生效的规则，
     // 表现为「用户什么都没做，禁缓存自己失效了」。
     (fakeBrowser as unknown as { permissions?: unknown }).permissions = {
       contains: vi.fn(async () => {

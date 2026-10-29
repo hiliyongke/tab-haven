@@ -7,12 +7,8 @@ import { EntryRoot } from '@/ui/common/EntryRoot';
 import { translate } from '@/i18n';
 
 /**
- * 页面入口根（`ui/common/EntryRoot`）。
- *
- * 这段逻辑此前以 `OptionsRoot` / `AboutRoot` 两份近似复制写在各入口的
- * main.tsx 里，而入口壳被覆盖率 exclude 排除 —— 也就是说
- * 「初始化失败要可见、可重试」这条用户可见的兜底从未被任何测试覆盖。
- * 收口成组件后在此补行为规格。
+ * EntryRoot 行为规格：初始化成功后显示页面内容；初始化失败时显示错误并记录诊断，
+ * 用户重试成功后进入正常视图。
  */
 
 const logFailure = vi.fn();

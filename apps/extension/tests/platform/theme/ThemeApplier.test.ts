@@ -3,17 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyTheme, watchSystemTheme } from '@/platform/theme/ThemeApplier';
 
 /**
- * 主题三态的应用（`platform/theme/ThemeApplier`）。
- *
- * 为什么单独建这个文件：主题是**首帧可见**的东西，而它此前没有独立测试 —— 目录均值
- * 阈值下（platform 子目录整体 82%）它塌到 0% 也不会触发门禁。
- *
- * 要钉死的三件事：
- *  1. 三态解析：system 跟随系统、light/dark 直出；
- *  2. 镜像落盘：`tabs:theme` / `tabs:theme-hue` 必须与 `theme-init` 的读取键一致
- *     （键名一致性另由 tests/config/theme-mirror-keys.test.ts 守护）；
- *  3. 降级：localStorage 不可用/写入失败都不能让设置页崩掉 —— 主题是装饰性的，
- *     绝不能变成致命路径。
+ * 主题应用行为规格：解析 system/light/dark 偏好，持久化主题与色号；
+ * 存储或系统配色能力不可用时仍应用主题，并按系统设置处理过渡效果。
  */
 
 /**

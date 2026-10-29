@@ -15,20 +15,9 @@ import {
 } from '@/platform/messages';
 
 /**
- * 消息协议契约测试。
- *
- * `src/platform/messages.ts` 的模块注释明确写着「新增消息类型只需改这一处，两端
- * switch 未覆盖的分支由 tests/platform/messages.test.ts 的协议契约测试兜住」——
- * 本文件锁定这条消息协议契约，覆盖三件事：
- *
- *  1. `MessageSchema` 是唯一协议入口：登记的类型必须全部可解析、未登记的必须被拒；
- *  2. 收发两端的降级语义：广播吞 rejection、ack 超时不得挂起调用链；
- *  3. `watchPendingActions` 的双通道（初始 get + onChanged）必须按 `at` 自防重，
- *     且执行即清队列（否则历史动作会随下次写入重放）。
- *
- * 注意：捕获到的监听器只能**直接调用**来模拟事件派发 —— 因此不能用「调用 off() 后
- * 再直接调用监听器」来断言注销，那条路径绕过了浏览器的监听器注册表。注销改由
- * `removeListener` 收到同一函数引用来断言。
+ * 消息协议行为规格：登记的消息类型均可解析，未登记类型与无效载荷被拒绝；
+ * 广播与 ack 在接收端不可用时按约定降级；挂起动作按 at 去重，执行后清空队列。
+ * 注销行为通过确认 removeListener 收到原注册函数来断言。
  */
 
 /** 注册 runtime 消息监听，返回被注册的监听器与注销函数。 */
@@ -82,7 +71,7 @@ describe('MessageSchema 协议契约', () => {
     }
   });
 
-  it('未登记的类型被拒绝（漏改协议只表现为消息被静默丢弃，必须在测试里拦住）', () => {
+  it('未登记的消息类型与无效载荷均被拒绝', () => {
     expect(MessageSchema.safeParse({ type: 'not-registered' }).success).toBe(false);
     expect(MessageSchema.safeParse(undefined).success).toBe(false);
     expect(MessageSchema.safeParse('focus-search').success).toBe(false);
@@ -124,7 +113,7 @@ describe('MessageSchema 协议契约', () => {
         at: 1
       }).success
     ).toBe(true);
-    // 超限整条被拒：发送侧必须先截断并留痕，否则这一轮的撤销入口静默消失。
+    // 超出上限的消息整体被拒绝，发送侧需按上限提供 tabIds。
     const overLimit = [...atLimit, atLimit.length + 1];
     expect(
       MessageSchema.safeParse({
@@ -208,8 +197,7 @@ describe('onRuntimeMessage 来源与校验闸门', () => {
     const { listener } = registerRuntimeMessage((m) => received.push(m));
     listener({ type: 'focus-search' }, { id: 'some-other-extension' });
     expect(received).toHaveLength(0);
-    // 未带 sender 的单参数调用必须照常交付：任何 polyfill / 测试桩若在读 sender.id 时
-    // 抛 TypeError，异常发生在监听器内会吞掉整条消息通道。
+    // 未带 sender 的合法消息同样正常交付。
     listener({ type: 'focus-search' });
     expect(received).toHaveLength(1);
   });
@@ -270,7 +258,7 @@ describe('watchPendingActions 挂起队列消费', () => {
     const actions: PendingAction[] = [];
     const { listener, off } = registerPendingWatcher((a) => actions.push(a));
     await vi.waitFor(() => expect(actions).toHaveLength(1));
-    // SW 侧 RMW 合并写入时 newValue 会带上已被本面板消费过的旧动作：协议层必须自防重。
+    // 重复通知包含已消费动作时，协议仍按 at 去重。
     listener({ [PENDING_ACTIONS_KEY]: { newValue: [dup] } }, 'session');
     await Promise.resolve();
     expect(actions).toHaveLength(1);

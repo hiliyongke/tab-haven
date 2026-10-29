@@ -3,7 +3,7 @@ import { prepare, single, type Prepared, type Result } from 'fuzzysort';
 /**
  * 搜索内核：标题 + URL + 中文拼音（首字母串 + 全拼串）的模糊匹配。
  * 拼音词典 pinyin-pro 体积大，按需动态 import()（仅开启拼音搜索时预加载）。
- * 引擎构造后不可变：拼音目标只在构造期同步补齐，词典就绪后重建引擎即可。
+ * 引擎构造后不可变：拼音目标在构造期同步补齐，词典就绪后重建引擎。
  * 命中分段输出纯文本（无 HTML），由渲染层加粗，XSS 面为零。
  */
 
@@ -145,7 +145,7 @@ function toSegments(target: string, result: Result | undefined): HighlightSegmen
  *
  * 引擎**构造后不可变**：拼音目标只在构造期按 `isPinyinDictionaryReady()` 的结果
  * 一次性补齐。词典尚未就绪时本引擎就是纯字面匹配引擎——调用方应在词典就绪后
- * 重建引擎（构造是轻量的 fuzzysort prepare），而不是原地打补丁。
+ * 重建引擎（构造是轻量的 fuzzysort prepare），保持引擎状态不可变。
  */
 export class SearchEngine {
   private readonly targets: PreparedTarget[];

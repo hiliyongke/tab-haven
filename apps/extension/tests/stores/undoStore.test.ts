@@ -148,9 +148,8 @@ describe('undoStore', () => {
     expect(useUndoStore.getState().batches[0]!.entries).toHaveLength(1);
   });
 
-  it('拿不到恢复窗口时批次必须留在栈里（早退不得吞掉撤销记录）', async () => {
-    // 回归：undo 曾把出栈提前到恢复之前，导致 windowId 解析失败的早退分支
-    // 只弹了「操作失败」，批次却已从栈中移除 —— 用户拿不回标签也失去了重试入口。
+  it('恢复窗口不可用时保留撤销批次', async () => {
+    // 恢复窗口不可用时保留记录，供用户再次尝试撤销。
     const tab = makeTab({ id: 1, url: 'https://a.com/', index: 0 });
     await useUndoStore.getState().closeWithUndo([tab], [tab.id]);
     expect(useUndoStore.getState().batches).toHaveLength(1);

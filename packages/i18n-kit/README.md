@@ -31,9 +31,9 @@ i18n-kit lint     # 检查未被词典接管的裸露中文
 译文补齐流程：把 `i18n/untranslated/en.json` 里的条目译好，填回
 `i18n/translation/en.json`，再跑 `apply`。
 
-改文案后：原文一变就是一个新 key，旧译文成了「词典里已无此条」的孤立译文
-（`check` 规则 2 会失败）。旧译文已自动归档进 `i18n/retired/<lng>.json`（改回旧文案时
-还能捞回来），确认不再需要就跑 `i18n-kit scan --prune` 把译文文件里那份删掉。
+成功执行非 `--dry` 扫描时，源码中不再出现的原文对应 key 会被视为失效条目；其非空译文会归档到
+`i18n/retired/<lng>.json`，以便保留可复用译文。默认情况下，译文文件仍保留该条目，
+`check` 会将其判为孤立译文；需要移除时运行 `i18n-kit scan --prune`，归档内容仍保留。
 
 ## 接入
 
@@ -72,7 +72,7 @@ export { Trans, Slot };
 | `i18n/source/<母语>.json`                 | 母语原文词典（扫描产物，勿手改）           |
 | `i18n/translation/<lng>.json`             | 译文（键与 source 对齐，人维护）           |
 | `i18n/untranslated/<lng>.json`            | 待翻译清单（生成物）                       |
-| `i18n/retired/<lng>.json`                 | 失效词条的译文归档（改回旧文案时可复用）   |
+| `i18n/retired/<lng>.json`                 | 已停用词条的译文归档（需要时可复用）       |
 | `src/i18n/locales/<lng>/translation.json` | 运行时资源（apply 产物，**平铺**，勿手改） |
 
 覆盖：`--root --src --dict --locales --lngs en,ja`。
@@ -99,7 +99,7 @@ export default {
   `i18n-kit.config.mjs` 里配 `keySuffixes: ['Key', 'Title']`（默认 `['Key']`，配 `[]` 关闭）。
   扫描器与 `lint` 读同一份配置——只加 `@i18n-ignore` 压住告警、词条依然进不来。
 - **词条一律平铺**（`{ "i18n_xxx": "译文" }`），不做对象嵌套：嵌套会让键路径与原文两套体系互相纠缠。
-- **译文可复用**：失效词条的译文进 `i18n/retired/`，文案改回旧版本时不会白丢。
+- **译文可复用**：已停用词条的译文保存在 `i18n/retired/`，需要时可复用。
 
 ### 豁免未标记中文（lint）
 

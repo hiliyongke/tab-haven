@@ -74,10 +74,8 @@ describe('notifyEviction 会话内合并', () => {
     expect(useUndoStore.getState().toast?.tone).toBe('info');
   });
 
-  it('同一操作内两类淘汰告知都应并入回执（不只带出最后一条）', () => {
-    // 回归：notifyEviction 用数组收集多条告知，但只把最后一条设为 toast。
-    // 旧 showToast 用 `filter((m) => current.message === m)` 消费，只能匹配最后一条，
-    // 其余在清空数组时永久丢失 —— 表现为「快照淘汰 + 撤销栈淘汰只提示了一类」。
+  it('同一操作内的多条淘汰告知均并入回执', () => {
+    // 同一操作触发多类淘汰时，回执保留每条告知并按发生顺序呈现。
     const store = useUndoStore.getState();
     store.notifyEviction('probe-undo', '告知A-撤销栈已满');
     store.notifyEviction('probe-snapshots', '告知B-快照已满');
@@ -113,9 +111,7 @@ describe('notifyEviction 会话内合并', () => {
       await useUndoStore.getState().closeWithUndo([makeTab({ id: i })], [i]);
     }
 
-    // 回归（R18）：淘汰发生在 appendBatch 内、回执在其后设置。若两者各占一条
-    // 提示条，回执会覆盖淘汰告知，而 key 已标记为已提示 → 本会话内永久漏发。
-    // 正确结果：回执是主消息，淘汰告知挂在 note 上同槽展示。
+    // 关闭操作的回执作为主消息，淘汰告知作为附加说明一并显示。
     const first = useUndoStore.getState();
     expect(first.batches).toHaveLength(5);
     expect(first.toast?.message).toBe(translate('已关闭 {{count}} 个标签', { count: 1 }));

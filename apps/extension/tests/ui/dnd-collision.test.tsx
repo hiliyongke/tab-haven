@@ -7,19 +7,8 @@ import { DragType, type DragData } from '@/ui/dnd/types';
 import { buildDragOverlay, dragCollisionDetection, markJustDropped } from '@/ui/dnd/DndRoot';
 
 /**
- * 全局拖拽落点判定（`ui/dnd/DndRoot.tsx`）。
- *
- * `dragCollisionDetection` 决定「拖到哪算哪」，是纯函数式的落点算法，但它藏在
- * DndContext 内部、无法从组件外部触发 —— 不导出就等于没有任何回归保护。拖拽是本应用
- * 最核心的交互，落点算错是最容易被用户直接感知为「坏了」的问题。
- *
- * 断言围绕它注释里明确写过的四类**已修 bug 的防回归**：
- *  1. 卡片层级排序不得被内层标签行截胡 → 只比较同层级容器；
- *  2. 磁贴（横向）用中心距离，避免 pointerWithin 对磁贴间空隙敏感；
- *  3. 行层级优先「指针精确命中 + 面积最小」，让嵌套目标命中最深层；
- *  4. 指针落在空白处时**只在同级同容器的行目标里**取最近中心 ——
- *     不限定层级会被外层 fixed-area 截胡成「拖入固定空间」，
- *     不限定容器会跨分区命中（表现为「某分区首尾拖不动」）。
+ * 全局拖拽落点行为规格：卡片与磁贴按层级筛选目标，行目标优先精确命中和最小区域；
+ * 指针位于空白处时按当前容器选择行目标，不跨分区命中外层容器。
  */
 
 /**
@@ -187,7 +176,7 @@ describe('dragCollisionDetection：磁贴层级（横向）', () => {
   });
 
   it('指针精确落在标签行上时回退到行层级：磁贴可拖回标签区取消固定', () => {
-    // 不加这条回退，「磁贴拖回标签区 = 取消固定」在契约里写得到、碰撞层永远命中不到。
+    // 指针命中标签行时，标签行作为磁贴取消固定的落点。
     const result = dragCollisionDetection(
       args({
         active: dndPin('p1'),

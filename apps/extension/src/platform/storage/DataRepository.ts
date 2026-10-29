@@ -224,8 +224,7 @@ export class DataRepository<T> {
       }
       await withCrossPageLock(QUARANTINE_RMW_LOCK, async () => {
         const quarantine = await browser.storage.local.get(QUARANTINE_KEY);
-        // existing 是 unknown：非数组（异常写入/旧版本残留）直接 push 会在 try 里抛错吞掉整次隔离，
-        // 故用 Array.isArray 收窄，非数组时从空列表重新开始。
+        // existing 是 unknown：非数组值不能直接 push，否则会中断本次隔离；先用 Array.isArray 收窄。
         const existing = quarantine[QUARANTINE_KEY];
         const list: unknown[] = Array.isArray(existing) ? existing : [];
         list.push(entry);

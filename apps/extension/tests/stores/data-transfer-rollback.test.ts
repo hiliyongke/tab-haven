@@ -6,12 +6,8 @@ import type { Repositories } from '@/platform/registry';
 import type { DataContext, DataState } from '@/stores/data/types';
 
 /**
- * 导入事务的回滚链（M10 / S3）与导入后的镜像状态复位（S9）。
- *
- * 回滚链里每个 `rollback()` 都是 `withCrossPageLock` 内的整表写，锁请求在上下文
- * 销毁（面板在回滚途中关闭）时以 AbortError reject 并透传。不接住它，循环在第一个
- * 分区处就断掉：剩余分区不再回滚（存储里留下半套数据，与「整体回滚」相反），抛出
- * 的也变成不可解释的锁错误而非 `import-write-failed:<分区>`。
+ * 导入事务行为规格：写入失败时回滚已写入的分区；单个分区回滚失败时继续处理其余
+ * 分区，并返回可识别的导入失败信息。导入成功后清除过期的镜像状态。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -173,7 +169,7 @@ describe('导入事务的回滚链', () => {
 });
 
 describe('导入成功后的镜像状态', () => {
-  it('整表替换 folders/pins 后复位 mirrorIssue（旧结论不再成立）', async () => {
+  it('整表替换 folders/pins 后清除 mirrorIssue', async () => {
     const h = await harness();
 
     await h.run(payload);

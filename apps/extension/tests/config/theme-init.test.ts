@@ -2,15 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * 首帧主题初始化（`src/theme-init.ts`）。
- *
- * 这个模块必须在 React 渲染前同步跑完（防主题闪烁），所以它：
- *  - 只用 `import type`（运行时 import 有被拆成异步 chunk 的风险）；
- *  - 镜像键与色号白名单**刻意内联**（不能运行时 import 权威来源）——复制由
- *    `theme-mirror-keys.test.ts` 守护对齐。
- *
- * 也因此它长期被覆盖率 exclude 排除：里面有真实分支（存储不可用时的降级、
- * 非法值的回落、system 跟随系统）却从未被执行过。本规格直接驱动这个 IIFE。
+ * 首帧主题初始化行为规格：根据存储值与系统偏好设置主题、偏好和色号；
+ * 存储不可用或值无效时使用对应默认值。
  */
 
 const MIRROR_KEY = 'tabs:theme';
@@ -112,8 +105,7 @@ describe('theme-init', () => {
   });
 
   it('页面级存储不可用：降级为跟随系统，不抛错', async () => {
-    // 隐私模式 / 存储被禁用时 getItem 会抛：首帧脚本抛错会让整个入口白屏，
-    // 这里必须吞掉并走默认值（这条分支此前因脚本被 exclude 而从未被执行）。
+    // 存储读取失败时使用 system 偏好与默认色号，且初始化不抛错。
     const stub = installLocalStorage({ [MIRROR_KEY]: 'dark', [HUE_MIRROR_KEY]: 'ocean' });
     stub.failGet = true;
     await expect(runThemeInit()).resolves.toBeUndefined();

@@ -42,7 +42,7 @@ describe('SearchEngine', () => {
     expect(engine.pinyinReady).toBe(true);
     const hits = engine.search('jrrb');
     expect(hits.some((hit) => hit.tabId === 3)).toBe(true);
-  }, 20000); // 首次动态 import('pinyin-pro')（约 1MB）在沙箱内偶发 2–6s，放宽以防偶发超时（非逻辑回归）。
+  }, 20000); // 为拼音词典加载预留时间。
 
   it('拼音全拼命中中文标题（jinribang 命中"今日热榜"）', async () => {
     await preloadPinyinDictionary();
@@ -53,7 +53,7 @@ describe('SearchEngine', () => {
     expect(engine.search('jrrb').some((hit) => hit.tabId === 3)).toBe(true);
   }, 20000);
 
-  it('拼音全拼命中含英文的混合标题（github 命中"云平台...GitHub"无关；验证"我的GitHub"式拼接）', async () => {
+  it('拼音全拼可匹配中英文混合标题', async () => {
     await preloadPinyinDictionary();
     const engine = new SearchEngine([
       { id: 5, title: '我的GitHub主页', url: 'https://github.com/me', active: false }
@@ -62,12 +62,11 @@ describe('SearchEngine', () => {
     expect(engine.search('github').some((hit) => hit.tabId === 5)).toBe(true);
   }, 20000);
 
-  it('词典就绪后新建的引擎同步具备拼音能力（无异步空窗，防结果闪回）', async () => {
+  it('词典就绪后新建的引擎立即具备拼音能力', async () => {
     // 先让模块级词典加载完成
     await preloadPinyinDictionary();
     expect(isPinyinDictionaryReady()).toBe(true);
-    // 侧边栏每次标签快照都会重建引擎：若词典就绪后仍要等一拍，拼音命中会在
-    // 重建瞬间全部消失，直到用户再次按键才回来。
+    // 标签快照变化后创建的新引擎，在词典就绪时立即支持拼音命中。
     const rebuilt = new SearchEngine(tabs);
     expect(rebuilt.pinyinReady).toBe(true);
     expect(rebuilt.search('jrrb').some((hit) => hit.tabId === 3)).toBe(true);

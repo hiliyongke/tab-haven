@@ -8,8 +8,7 @@ import { useUndoStore } from '@/stores/undoStore';
 /**
  * 撤销栈的持久化往返：`persistUndo` 是「关掉再打开还能撤销」的开关。
  *
- * 开关语义一旦退化（比如关闭时不清库、或开启时不回读），
- * 用户会看到「上次关掉的标签凭空出现在撤销面板里」。
+ * persistUndo 控制撤销批次的持久化：关闭时清空历史库，开启时从存储读取。
  */
 
 afterEach(() => {
@@ -53,7 +52,7 @@ describe('persistUndo 开关语义', () => {
     expect(useUndoStore.getState().batches).toEqual([]);
   });
 
-  it('关闭时会清空历史库（防止上一轮开启时留下的批次复活）', async () => {
+  it('关闭时清空撤销历史库', async () => {
     // 先以开启状态写入一批
     await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
     await useUndoStore.getState().load();

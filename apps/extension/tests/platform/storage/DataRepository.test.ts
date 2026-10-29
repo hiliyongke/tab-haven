@@ -6,10 +6,8 @@ import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import { clearAllStoredData, DataRepository } from '@/platform/storage/DataRepository';
 
 /**
- * 数据仓库：坏数据隔离是「不扩散」承诺的落点。
- *
- * 这里的三条路径一旦退化，用户看到的是「我的收藏夹突然空了」，
- * 而没有任何线索可查——无遥测产品没有服务端日志，隔离区是唯一的现场。
+ * 数据仓库行为规格：校验写入值，隔离不可解析的数据，并为读取与恢复路径提供
+ * 可观察的结果。
  */
 
 const ItemSchema = z.object({ id: z.string(), n: z.number() });
@@ -28,7 +26,7 @@ function repo(onUnavailable?: () => void) {
   );
 }
 
-/** 带 RMW 锁名的仓库（锁名在本测试里不参与真实互斥，只驱动「锁内重读」这条分支）。 */
+/** 创建用于验证锁内重读行为的仓库。 */
 function repoWithLock() {
   return new DataRepository<Array<{ id: string; n: number }>>(KEY, ListSchema, [], {
     rmwLock: 'test.repo-rmw'
@@ -53,8 +51,7 @@ describe('DataRepository', () => {
   });
 
   it('默认值按深拷贝给出（调用方原地修改不污染仓库默认值）', async () => {
-    // 默认值多是字面量 `[]`：把同一引用交出去后，任一消费方 push/sort 即永久
-    // 改写默认值，此后每次读盘都带脏数据（watch() 已为此做了同样的防护）。
+    // 每次读取默认值都返回独立数据，调用方修改返回值不会改变后续读取结果。
     const r = repo();
 
     const first = await r.read();
@@ -106,7 +103,7 @@ describe('DataRepository', () => {
       ]);
     });
 
-    it('恢复后的干净数据回写（下次不再走失败分支）', async () => {
+    it('恢复后的干净数据回写存储', async () => {
       await fakeBrowser.storage.local.set({
         [KEY]: [
           { id: 'ok', n: 1 },
@@ -115,7 +112,7 @@ describe('DataRepository', () => {
       });
       const r = repo();
       await r.read();
-      // 回写是 fire-and-forget，等一个宏任务周期
+      // 等待恢复后的数据写入存储。
       await flush();
       const stored = await fakeBrowser.storage.local.get(KEY);
       expect(stored[KEY]).toEqual([{ id: 'ok', n: 1 }]);
@@ -160,14 +157,8 @@ describe('DataRepository', () => {
     });
   });
 
-  describe('逐元素恢复的 element 取值（zod 升级守卫）', () => {
-    /**
-     * `zodArrayElement` 靠 `as unknown as { element }` 绕开 ZodArray 的泛型不变性。
-     * zod 升级若改名或移除该内部字段，**编译期不会报错**（断言把它兜住了），
-     * 运行时则退化为「整块隔离 → 返回默认值」，干净元素全部陪葬。
-     * 下面用「元素级 default」当探针：只有真的取到 element schema 逐条 parse，
-     * 缺省字段才会被补上；取不到时 read() 返回默认值 []。
-     */
+  describe('数组元素级恢复', () => {
+    /** 数组元素 schema 的默认值在逐元素恢复时生效。 */
     it('元素级 default 在恢复中生效（证明取到的是 element 而非整表 schema）', async () => {
       const elemKey = 'test.elem.v1';
       const elemSchema = z.object({ id: z.string(), tags: z.array(z.string()).default([]) });
@@ -214,13 +205,13 @@ describe('DataRepository', () => {
       const value = await r.read();
       area.get = originalGet;
 
-      // 交回的是他页写入的新值，且磁盘上仍是新值（恢复回写整表覆盖 ⇒ 静默丢数据）
+      // 读取结果与存储均保留另一页面写入的新值。
       expect(value).toEqual([{ id: 'new', n: 9 }]);
       const stored = await fakeBrowser.storage.local.get(KEY);
       expect(stored[KEY]).toEqual([{ id: 'new', n: 9 }]);
     });
 
-    it('未配锁时维持原行为：按读到的快照恢复并回写', async () => {
+    it('未配置锁时按读取快照恢复并回写', async () => {
       await fakeBrowser.storage.local.set({
         [KEY]: [
           { id: 'ok', n: 1 },
@@ -265,8 +256,7 @@ describe('DataRepository', () => {
 
   describe('clearAllStoredData', () => {
     /**
-     * 本环境的 jsdom 未挂 `window.localStorage`（真实扩展页一定有），注入最小实现。
-     * 用 defineProperty 而非赋值：未配置为 configurable 的重复注入会抛错。
+     * 安装可重新配置的 localStorage 测试桩。
      */
     function installLocalStorage(): void {
       const store = new Map<string, string>();
@@ -296,11 +286,10 @@ describe('DataRepository', () => {
 
     it('SW 上下文（无 window）跳过 localStorage 清理且不抛错（clearAllStoredData 也从 background 调用）', async () => {
       await fakeBrowser.storage.local.set({ [KEY]: [{ id: 'a', n: 1 }] });
-      // SW 里没有 window：裸读 localStorage 即 ReferenceError，会让「清除所有数据」
-      // 在 background 侧整体失败（local / session 已清、后续步骤中断）。
+      // Service Worker 没有 window；清理应跳过 localStorage 并完成扩展存储清理。
       vi.stubGlobal('window', undefined);
       try {
-        // 自校验：桩没生效的话下面的断言就是假绿（window 仍在，只是恰好没抛错）。
+        // 确认当前环境没有 window。
         expect(typeof window).toBe('undefined');
         await expect(clearAllStoredData(async () => undefined)).resolves.toBeUndefined();
         expect((await fakeBrowser.storage.local.get(KEY))[KEY]).toBeUndefined();
@@ -334,12 +323,6 @@ describe('DataRepository', () => {
       expect(onChange).not.toHaveBeenCalled();
       off();
     });
-
-    // 未覆盖分支（记录以免后人重复踩）：
-    // 「键被删除时回调默认值」这一分支依赖 onChanged 携带 `newValue: undefined`，
-    // 而 fake-browser 对 `remove` 根本不派发事件、对 `set(undefined)` 则整条丢弃，
-    // 两种写法都造不出这个形状。分支本身是防御性的（Chrome 删除键时确为 undefined），
-    // 但无法在现有模拟环境下断言，故不写用例。
 
     it('坏数据不推给订阅者（watch 与 read 同口径）', async () => {
       const r = repo();

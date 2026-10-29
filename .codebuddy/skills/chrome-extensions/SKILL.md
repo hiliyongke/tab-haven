@@ -16,28 +16,15 @@ Build production-quality Chrome extensions using Manifest V3 and publish them to
 
 ## Tabs 项目适配约束（本仓库优先于下文通用建议）
 
-本技能是通用 MV3 指南，落到 Tabs 仓库时**以下项目红线优先**，冲突一律以红线为准：
+本技能是通用 MV3 指南，落到 Tabs 仓库时**以下项目约束优先**，冲突一律以项目约束为准：
 
-1. **权限冻结**：`wxt.config.ts` 的 `permissions` / `optional_host_permissions` 已冻结。
-   本技能任何「添加某权限」的建议，都必须先改 `wxt.config.ts` **并同步 `PRIVACY.md`**，
-   且需用户明确批准；不得为实现功能自行加权限。
-2. **零出站网络**：禁止 `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon` / 外链资源 /
-   埋点。`pnpm check:privacy` 会扫构建产物。涉及联网的示例（如 `auth-identity.md` 的
-   OAuth 远程流程、`prompt-api.md` 之外任何云端 LLM 调用）**不适用本项目**。
-   Prompt API（Gemini Nano 端侧）本身不违反该红线，但属新能力，落地前须经用户拍板（含模型下载与可用性回退策略）。
-3. **分层架构**：`core ← platform ← stores / ui / entrypoints`。本技能示例里的
-   `chrome.*` 调用在本仓库**必须落在 `apps/extension/src/platform/**`**，`apps/extension/src/core/**`
-   不得出现 `chrome.*` / DOM / React；`apps/extension/src/ui/**` 不得绕过 platform 直连浏览器 API。
-4. **校验唯 schema**：持久化数据（含导入备份、OneTab/Workona 文本、消息载荷）一律走
-   `core/schema` 的 zod schema；导入数据不得只在 UI 处归一化。
-5. **文案双写**：新增 UI 文案同时补 `apps/extension/src/i18n` 的 `zh-CN` 与 `en`。
-6. **WXT 特性差异**：本仓库用 WXT 生成 manifest，`sidePanel` 权限、`side_panel` 字段、
-   `options_ui`、`action` 均由 WXT 自动注入，且在 `build:manifestGenerated` hook 中做
-   变体后处理（兼容变体剥离 sidePanel）。**不要照抄手写 manifest 的改法**——
-   「side panel 必须显式提供打开方式」在本仓库由 background 的
-   `setPanelBehavior({ openPanelOnActionClick: true })` 承担，且标准版刻意删除 `default_popup`。
-7. **商店上架**：Part 2 的 `CHROMEWEBSTORE.md` 流程可直接使用；产物 ZIP 还需排除
-   `.codebuddy/`、`.output/`、覆盖率目录，并走 `/release` 命令串联。
+1. **权限冻结**：`wxt.config.ts` 的 `permissions` / `optional_host_permissions` 受控。新增权限必须先获用户明确批准，并同步更新 `PRIVACY.md`；不得为实现功能自行加权限。
+2. **零出站网络**：禁止 `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon`、外链资源、埋点与上报。`pnpm check:privacy` 用于检查隐私边界。
+3. **分层架构**：`core ← platform ← stores / ui / entrypoints`。`chrome.*` 调用放在 `apps/extension/src/platform/**`；`apps/extension/src/core/**` 不得使用 `chrome.*` / DOM / React；`apps/extension/src/ui/**` 不得绕过 platform 直连浏览器 API。
+4. **校验唯 schema**：持久化数据（含导入备份、OneTab/Workona 文本、消息载荷）一律走 `core/schema` 的 zod schema；不得只在 UI 处校验或归一化。
+5. **文案流程**：源码写中文原文，运行 `pnpm i18n` 更新词典与运行时词条；不要手改 `apps/extension/src/i18n/locales/` 生成物。
+6. **WXT manifest**：manifest 由 WXT 从项目配置生成。通过 `wxt.config.ts` 配置权限与 manifest 项，不直接修改生成产物；侧边栏打开行为由 background 配置 `setPanelBehavior({ openPanelOnActionClick: true })`。
+7. **商店发布**：发布资料维护在 `CHROMEWEBSTORE.md`，通过 `/release` 串联发布检查。提交前检查 ZIP 内容，确保不包含密钥、开发文件或无关产物。
 
 ## Part 1 — Building Extensions
 

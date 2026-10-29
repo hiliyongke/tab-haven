@@ -14,13 +14,10 @@ import {
 import type { DataContext } from './types';
 
 /**
- * 「开启同步」时的反向恢复。新设备本地是默认值，initSlice 的镜像拉取分支不命中；
- * 首次开启同步且未 seeded 时，必须先从镜像恢复、置 seeded，再由调用方做首次镜像 ——
- * 否则紧随的 scheduleMirror 会把本地空态推上云，覆盖旧设备镜像（换机恢复失效、云端副本被毁）。
- *
- * 与 initSlice 的差异：这里只恢复 folders/pins，不回灌 settings（本路径由一次设置写触发，
- * 立刻用旧镜像覆盖用户刚写入的设置不可解释）。settings 的镜像恢复只在初始化路径发生。
- * seeded 口径与 initSlice 一致：镜像存在且恢复写全部成功后才置位；pull 为 null 时不置位，留下次重试。
+ * 首次开启同步且尚未 seeded 时，先从镜像恢复 folders/pins，再由调用方执行首次镜像，
+ * 避免本地默认空态覆盖已有镜像。此入口不恢复 settings：它由用户刚写入同步设置触发，
+ * 应保留该次设置；settings 仅在初始化恢复路径载入。镜像存在且数据全部成功落盘后才置 seeded，
+ * pull 未返回镜像时保留下次重试机会。
  */
 /**
  * 恢复结果。仅非 'failed' 时才允许 scheduleMirror——失败路径下本地仍是空态，

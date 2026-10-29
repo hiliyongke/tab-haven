@@ -8,11 +8,7 @@ import { redoRepository, settingsRepository } from '@/platform/storage/repositor
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
- * load() 的「以内存为准」守卫必须覆盖**两个**栈（S5）。
- *
- * 只守卫 `batches` 时，`redoRepository.read()` 在途期间经 watcher 回放进来的新
- * 重做栈，会被 read 返回的磁盘旧值整表覆盖。重做按 URL 反查关闭标签 —— 旧栈复活
- * 意味着重做可能去关掉与本次撤销无关的标签。
+ * load() 在读取期间保留 watcher 写入的内存值，覆盖撤销栈与重做栈。
  */
 
 function batch(id: string): UndoBatch {
@@ -34,7 +30,7 @@ afterEach(() => {
 });
 
 describe('load 的内存优先守卫', () => {
-  it('重做栈在 read 在途期间被外部写入：load 完成后内存值胜出（不被磁盘旧值回写）', async () => {
+  it('读取期间有新重做栈写入时保留内存值', async () => {
     // Given 磁盘上是旧重做栈，read 在途期间另一页写入了新栈（watcher 已回放进内存）
     const diskRedo = [batch('old')];
     const pushedRedo = [batch('new'), batch('old')];

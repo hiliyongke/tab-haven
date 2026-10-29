@@ -14,36 +14,14 @@ import {
 } from '@/platform/background/windowCache';
 
 /**
- * 窗口标签缓存与关窗自动快照 —— **本文件是「关窗快照」这条兜底链路的唯一回归保护**。
- *
- * `windowCache.ts` 是关闭窗口时快照内容的唯一数据来源。一旦 SW 重水化或缓存写入
- * 逻辑回归，快照会**静默丢失**且 UI 毫无征兆。这里锁住四类不变量：
- *
- *  1. 采集口径：只收 http(s)，`chrome://` 等内部页不得进快照（收了就是死条目）；
- *  2. 写入闸门：开关关闭 / 无缓存 / 已保存（skip 标记）三条路径都不得写快照；
- *  3. skip 标记语义：一次性消费、仅作用于该窗口、超 TTL 自动失效；
- *  4. 生命周期：窗口关闭后清理激活锚点、在途刷新不得复活幽灵键、防抖合并查询。
- *
- * ## 两个必须绕开的测试环境陷阱（踩过，勿重蹈）
- *
- * **① fake-browser 的 `windows.create()` 恒返回 id=1**，拿不到互不相同的窗口 id。
- * 而 `windowCache` 有模块级状态（`memWindowTabs` / `removedWindowIds` /
- * `lastActiveTabIds` / 各类定时器），`fakeBrowser.reset()` **不会**清它。若多个用例
- * 共用 id=1，前一个用例的 `handleWindowRemoved(1)` 会让后一个用例的
- * `refreshWindowTabs(1)` 提前 return —— 于是「不写快照」类断言**因为什么都没发生
- * 而通过**，形成假绿。因此本文件一律使用**互不相同的合成窗口 id**，并把
- * `tabs.query` 直接 mock 掉，不依赖真实窗口。
- *
- * **② fake-browser 的 `tabGroups.query` 是同步抛错**（不是 rejected promise），
- * 采集端的 `.catch(() => [])` 兜不住，会一路冒泡成「静默不落盘」，必须注入实现。
- *
- * 写入闸门类用例走 `storage.session` 预置缓存：这正是 SW 被回收后 `handleWindowRemoved`
- * 的兜底读取路径（`memWindowTabs` 为空 → 回读 session），比依赖内存态更贴近真实场景。
+ * 窗口标签缓存与关窗自动快照行为规格：只缓存 http(s) 标签；根据设置、缓存和 skip 标记
+ * 决定是否保存快照；skip 标记按窗口一次性消费并在过期后失效；关闭窗口后清理状态，
+ * 丢弃过期刷新结果并合并连续刷新请求。测试使用合成窗口 id 与受控查询结果。
  */
 
 const WINDOW_TABS_KEY = 'tabs.window-tabs.v1';
 
-/** fake-browser 未实现 tabGroups.query（同步抛错），注入最小实现。 */
+/** 为窗口缓存测试提供空的分组查询结果。 */
 function stubTabGroupsQuery(): void {
   const tabGroups = fakeBrowser.tabGroups as unknown as { query: () => Promise<never[]> };
   tabGroups.query = vi.fn(async () => [] as never[]);

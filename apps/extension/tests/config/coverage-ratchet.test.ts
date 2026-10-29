@@ -5,14 +5,8 @@ import { describe, expect, it } from 'vitest';
 import extensionConfig from '../../vitest.config';
 
 /**
- * 覆盖率棘轮守卫。
- *
- * `vitest.config.ts` 里那十几档阈值此前只是**配置常数**：把 `src/core/**` 的
- * `lines: 90` 改成 `70` 并与被测代码同 PR 提交，`pnpm check` 与 CI 全绿 ——
- * 「为绕过门禁修改覆盖率配置不接受」（CONTRIBUTING）这条纪律没有任何机器校验。
- *
- * 这里把阈值与 `coverage-baseline.json` 的基线逐档比对：任一档被调小即失败，
- * 失败信息写明「哪档、哪个指标、从多少降到多少」。
+ * 覆盖率阈值行为规格：各 glob 档位的每项指标不低于 coverage-baseline.json 中的基线，
+ * 每档均匹配至少一个源码文件。
  */
 
 interface Metric {
@@ -98,7 +92,7 @@ describe('覆盖率阈值档位命中校验', () => {
   const globToRegExp = (glob: string): RegExp => {
     const escaped = glob
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      // 先用占位串吃掉 `**`，否则随后的单星替换会把它拆成两段。
+      // `**` 匹配任意目录层级，`*` 匹配单个路径段中的字符。
       .replace(/\*\*/g, '@@DOUBLE_STAR@@')
       .replace(/\*/g, '[^/]*')
       .replace(/@@DOUBLE_STAR@@/g, '.*');

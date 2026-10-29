@@ -4,25 +4,17 @@ import { deriveSections } from '@/core/site/Sections';
 import { planAutoGroups, planRegroup } from '@/core/group/AutoGrouping';
 
 /**
- * 语言分组模式（settings.groupMode = 'language'）性能规格测试。
+ * 语言分组模式的性能规格：验证 100 / 500 标签下的分区派生、自动分组计划与
+ * 语言批量写回耗时。
  *
- * 背景（**推断，未实测**）：该模式下 App.tsx:594-627 会对「未固定、未入原生组、
- * 尚无 language」的标签逐条发起 chrome.tabs.detectLanguage 异步探测，结果经
- * setLanguages 批量写回。担忧是「N 次异步探测 + N 轮全量派生」在大窗口下卡顿。
+ * 本文件度量单测环境可测量的纯计算路径：
+ *  - **预热**：避免模块初始化与 JIT 的一次性成本计入单次耗时；
+ *  - **取中位数**：降低 GC 与调度波动对测量结果的影响；
+ *  - **按规模分档设置阈值**，并校验分区与计划有实际产出。
  *
- * 本文件**只测量、不优化**（task-15 / R19）：把这条链路上**可在单测环境测量的纯
- * 计算部分**量化，给出实测数字，作为是否需要升入 P1/P2 做优化的依据。
- *
- * 口径与 tests/perf/search-perf.test.ts:1-20 同款：
- *  - **预热**：首次派生承担模块初始化与 JIT，直接计时会把一次性成本算进单次耗时；
- *  - **取中位数**而非最大值：单次毛刺（GC、调度抢占）不应判死刑，中位数仍稳定
- *    捕获数量级回归；
- *  - **阈值按规模分档**：500 标签与 100 标签同阈值等于把偶发抖动放大成必然失败；
- *  - **附加正确性校验**：断言分区确实产出（防止「快是因为啥都没做」的假通过）。
- *
- * 明确**不在**本文件度量范围（单测环境无法如实测量，不臆造数字）：
- *  - chrome.tabs.detectLanguage 的真实 IPC 往返（依赖浏览器进程，单测里
- *    browser.* 是 wxt 的 fake-browser 替身）；
+ * 以下内容不在本文件度量范围内：
+ *  - chrome.tabs.detectLanguage 的真实 IPC 往返（单测中的 browser.* 由
+ *    wxt fake-browser 提供）；
  *  - React 渲染与 DOM 提交耗时。
  */
 
@@ -58,7 +50,7 @@ function buildTabs(count: number, withLanguage = false): TabRecord[] {
   }));
 }
 
-/** 语言模式派生：等价于 useSectionDerivation 在 groupMode='language' 下的调用。 */
+/** 按语言模式派生分区。 */
 function deriveLanguage(tabs: readonly TabRecord[]): ReturnType<typeof deriveSections> {
   return deriveSections({ tabs, groups: [], groupMode: 'language' });
 }
@@ -68,7 +60,7 @@ function warmUp(tabs: readonly TabRecord[]): void {
   for (let i = 0; i < 3; i += 1) void deriveLanguage(tabs);
 }
 
-/** 多轮取中位数：抗单次毛刺，仍能捕获数量级回归。 */
+/** 多轮取中位数，降低单次测量波动的影响。 */
 function medianMs(run: () => void, rounds = 7): number {
   const samples: number[] = [];
   for (let round = 0; round < rounds; round += 1) {
@@ -80,7 +72,7 @@ function medianMs(run: () => void, rounds = 7): number {
   return samples[Math.floor(samples.length / 2)]!;
 }
 
-/** 探测结果写回（等价于 tabStore.setLanguages 的 map 开销）。 */
+/** 批量写回探测到的语言。 */
 function applyLanguages(tabs: readonly TabRecord[]): TabRecord[] {
   return tabs.map((tab, index) => ({ ...tab, language: LANGS[index % LANGS.length] }));
 }
@@ -124,7 +116,7 @@ describe('语言分组模式性能规格（100 / 500 标签）', () => {
   });
 
   it('100 / 500 标签：探测结果批量写回中位数 < 50ms', () => {
-    // 逐条 set 会触发 N 轮派生；批量 set 只一轮 —— 这里量化「写回」这一步本身。
+    // 验证 100 / 500 标签下批量写回语言结果的耗时。
     const t100 = buildTabs(100);
     const t500 = buildTabs(500);
     warmUp(t100);

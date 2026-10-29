@@ -4,14 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { COMMANDS } from '@/core/commands';
 
 /**
- * 守护浏览器级快捷键的单一口径（`core/commands` ↔ `wxt.config.ts`）。
- *
- * 快捷键此前有两份硬编码：manifest 里一份、设置页与关于页各一份展示文案，
- * 且两处的 Mac 修饰键口径还不一致。改了 `suggested_key` 而漏改界面，
- * 用户看到的说明就是错的，而门禁全绿。
- *
- * `wxt.config.ts` 写的是字面量（manifest 是构建期产物，无法运行时 import），
- * 故这里不消除复制，而是让复制**必须对齐**：键位或 id 任一方向漂移即失败。
+ * 浏览器快捷键行为规格：manifest 中的命令 id 与键位和 core/commands 一致；
+ * 每条命令有唯一、非空的说明 key。
  */
 
 const root = fileURLToPath(new URL('../..', import.meta.url));

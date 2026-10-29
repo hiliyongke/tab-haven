@@ -7,7 +7,7 @@ import {
   SettingsSchema,
   UndoBatchSchema
 } from '@/core/schema/models';
-import { FOOTER_BUTTON_KEYS } from '@/core/layout/footerOrder';
+import { FOOTER_BUTTON_IDS, FOOTER_BUTTON_KEYS, footerButtonId } from '@/core/layout/footerOrder';
 
 /**
  * schema 层行为规格：
@@ -81,51 +81,44 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.safeParse({ language: 'x' }).success).toBe(false);
   });
 
-  it('未知键（非本版本字段）被剥离而非报错', () => {
-    // Tabs未发布过正式版，不存在需要兼容的旧字段；这里守的是 zod 的通用行为：
-    // 存储里出现任何当前 schema 未声明的键时解析仍成功并剥离该键，
-    // 避免脏写入让整块设置被 DataRepository 判为坏数据而回退默认值。
-    const withUnknownKey = { ...DEFAULT_SETTINGS, notAFieldOfThisVersion: false };
-    const parsed = SettingsSchema.safeParse(withUnknownKey);
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect('notAFieldOfThisVersion' in parsed.data).toBe(false);
-      expect(parsed.data.themePreference).toBe(DEFAULT_SETTINGS.themePreference);
-      expect(parsed.data.noCachePatterns).toEqual(DEFAULT_SETTINGS.noCachePatterns);
-    }
+  it('未声明的设置字段被拒绝', () => {
+    const withUnknownKey = { ...DEFAULT_SETTINGS, unexpectedField: false };
+
+    expect(SettingsSchema.safeParse(withUnknownKey).success).toBe(false);
   });
 });
 
-/**
- * 底栏顺序：外部输入（备份 / 同步镜像 / 直接写 storage）都不经过设置页，
- * 归一与长度上限必须落在 schema 层 —— 否则落盘的就是任意长的原始数组。
- */
 describe('SettingsSchema.footerOrder', () => {
-  it('未知 id 被过滤、重复项去重、缺失按钮按默认顺序补齐', () => {
-    const parsed = SettingsSchema.parse({
-      footerOrder: ['footer:bogus', 'footer:palette', 'footer:palette']
-    });
-    expect(parsed.footerOrder[0]).toBe('footer:palette');
-    expect(parsed.footerOrder).toHaveLength(FOOTER_BUTTON_KEYS.length);
-    // 补齐后是完整且不重复的按钮 id 集合
-    expect(new Set(parsed.footerOrder).size).toBe(FOOTER_BUTTON_KEYS.length);
-    for (const key of FOOTER_BUTTON_KEYS) {
-      expect(parsed.footerOrder).toContain(`footer:${key}`);
-    }
+  const defaultOrder = FOOTER_BUTTON_KEYS.map(footerButtonId);
+
+  it('缺少字段时采用完整默认顺序', () => {
+    expect(SettingsSchema.parse({}).footerOrder).toEqual(FOOTER_BUTTON_IDS);
   });
 
-  it('空数组 = 默认顺序（与用户从未拖拽过时一致）', () => {
-    expect(SettingsSchema.parse({ footerOrder: [] }).footerOrder).toEqual(
-      FOOTER_BUTTON_KEYS.map((key) => `footer:${key}`)
-    );
+  it('接受完整且不重复的自定义顺序', () => {
+    const customOrder = [
+      footerButtonId('settings'),
+      footerButtonId('palette'),
+      ...defaultOrder.filter((id) => id !== 'footer:settings' && id !== 'footer:palette')
+    ];
+
+    expect(SettingsSchema.parse({ footerOrder: customOrder }).footerOrder).toEqual(customOrder);
   });
 
-  it('注入的超长数组不会原样落盘（收敛到按钮数上限）', () => {
-    // 备份可构造任意长数组；落盘侧按「过滤而非拒绝」处理（旧版本残留 id 不该
-    // 让整份设置解析失败），但结果恒不超过按钮总数。
-    const huge = Array.from({ length: 500 }, () => 'footer:palette');
-    const parsed = SettingsSchema.parse({ footerOrder: huge });
-    expect(parsed.footerOrder).toHaveLength(FOOTER_BUTTON_KEYS.length);
+  it('拒绝未知按钮 id', () => {
+    const unknownId = defaultOrder.map((id, index) => (index === 0 ? 'footer:unknown' : id));
+
+    expect(SettingsSchema.safeParse({ footerOrder: unknownId }).success).toBe(false);
+  });
+
+  it('拒绝缺少按钮、重复按钮和超长顺序', () => {
+    const incompleteOrder = defaultOrder.slice(1);
+    const duplicateOrder = defaultOrder.map((id, index) => (index === 0 ? defaultOrder[1] : id));
+    const oversizedOrder = [...defaultOrder, defaultOrder[0]];
+
+    expect(SettingsSchema.safeParse({ footerOrder: incompleteOrder }).success).toBe(false);
+    expect(SettingsSchema.safeParse({ footerOrder: duplicateOrder }).success).toBe(false);
+    expect(SettingsSchema.safeParse({ footerOrder: oversizedOrder }).success).toBe(false);
   });
 });
 

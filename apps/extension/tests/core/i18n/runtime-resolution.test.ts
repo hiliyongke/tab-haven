@@ -8,14 +8,8 @@ import en from '@/i18n/locales/en/translation.json';
 import source from '../../../i18n/source/zh-CN.json';
 
 /**
- * 运行时解析回归：两条语言轨道都必须让 `t('中文原文')` 命中译文。
- *
- * 覆盖四类事故：
- *  1. 词典漏登记 → 英文模式直接露中文；
- *  2. 未关 `nsSeparator` / `keySeparator` → 含 `https://` 的原文被按 ':' 或 '.'
- *     切碎，英文模式渲染出截断的 URL（抽样查不出，故**全量**遍历）；
- *  3. 哈希 key 与扫描器不同源 → 整批词条命中不到；
- *  4. 非哈希 key（动态拼接）查不到译文 → 该批文案整片失效。
+ * 运行时文案解析行为规格：中文模式保留中文原文，英文模式解析为译文；
+ * URL 原文不被分隔符截断，运行时词条使用哈希 key。
  */
 
 function createInstance(lng: 'zh-CN' | 'en'): ReturnType<typeof i18next.createInstance> {
@@ -47,7 +41,7 @@ const sourceMap: Record<string, string> = source;
 /** 全量母语原文（词典扫描产物）。 */
 const sentences = Object.values(sourceMap);
 
-/** 汉字占比：整句没译才算事故，句中保留中文专有名词属正常。 */
+/** 英文译文中的汉字占比阈值，用于识别整句未翻译的文案。 */
 const HAN_RATIO_THRESHOLD = 0.3;
 const hanRatio = (text: string): number => {
   const matched = text.match(/\p{Script=Han}/gu);
@@ -85,9 +79,9 @@ describe('运行时文案解析', () => {
     expect(resolved.startsWith('//')).toBe(false);
   });
 
-  it('Given 未登记的中文原文，When 英文模式解析，Then 露出中文（故必须靠 check:i18n 拦截）', () => {
+  it('Given 未登记的中文原文，When 英文模式解析，Then 返回原文', () => {
     const t = createTranslate(createInstance('en'));
-    // 负控：证明「未登记」确实是事故而不是被兜底掩盖
+    // 未登记的原文保留中文，供 check:i18n 识别。
     expect(t('这条中文原文从未在任何词条里登记过')).toBe('这条中文原文从未在任何词条里登记过');
   });
 

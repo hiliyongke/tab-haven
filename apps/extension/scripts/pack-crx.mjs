@@ -53,8 +53,6 @@ const DEFAULT_KEY_DIR =
 const KEY_PATH = process.env.TABS_SIGNING_KEY ?? path.join(DEFAULT_KEY_DIR, 'tabs.pem');
 /** 记录「首次生成时的扩展 ID」：身份变了就拒绝打包，避免静默换代。 */
 const KEY_ID_PATH = `${KEY_PATH}.id`;
-/** 旧位置：仅用于一次性迁移，迁移后不再使用。 */
-const LEGACY_KEY = path.join(OUTPUT_DIR, 'tabs.pem');
 /** Chrome 以「扩展目录名」命名产物，这两条是它固定写出的路径。 */
 const RAW_CRX = path.join(OUTPUT_DIR, 'chrome-mv3.crx');
 const RAW_KEY = path.join(OUTPUT_DIR, 'chrome-mv3.pem');
@@ -154,19 +152,8 @@ if (!browser) {
   process.exit(1);
 }
 
-// ---- 3. 复用既有签名身份 ----
-// 旧版本把 pem 放在 .output/ 里：存在且新位置为空时先迁移，保住同一身份。
+// ---- 3. 校验签名身份 ----
 mkdirSync(path.dirname(KEY_PATH), { recursive: true });
-if (!existsSync(KEY_PATH) && existsSync(LEGACY_KEY)) {
-  renameSync(LEGACY_KEY, KEY_PATH);
-  log(`• 已把签名密钥从 .output/ 迁出 → ${KEY_PATH}`);
-}
-// 手动执行过 --pack-extension 的机器上会留下 chrome-mv3.pem；若存在则先固化，
-// 避免本次重新生成新身份导致升级链断裂。
-if (!existsSync(KEY_PATH) && existsSync(RAW_KEY)) {
-  renameSync(RAW_KEY, KEY_PATH);
-  log('• 复用已有签名密钥 → ' + KEY_PATH);
-}
 reportIdentity();
 
 // ---- 4. 打包 ----
@@ -174,9 +161,7 @@ const hasKey = existsSync(KEY_PATH);
 const args = [`--pack-extension=${EXT_DIR}`, '--no-message-box'];
 if (hasKey) args.push(`--pack-extension-key=${KEY_PATH}`);
 log(`• 浏览器：${browser}`);
-log(
-  `• 签名密钥：${hasKey ? `复用 ${KEY_PATH}` : `首次生成（完成后固化为 ${KEY_PATH}）`}`
-);
+log(`• 签名密钥：${hasKey ? `复用 ${KEY_PATH}` : `首次生成（完成后固化为 ${KEY_PATH}）`}`);
 
 spawnSync(browser, args, { stdio: 'inherit' });
 

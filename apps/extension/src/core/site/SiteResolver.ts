@@ -38,11 +38,8 @@ export class SiteResolver {
   /**
    * 解析（未缓存）。
    *
-   * 刻意**不**用一条 try 把整条解析管线包起来：那样任何实现缺陷（归一化、
-   * 归类、tldts 抛错）都会被压成 `null`，而 `null` 的领域语义是「这不是一个
-   * 可归组的站点」—— 一个 bug 于是表现为「该站点不参与分组」，既无报错也无
-   * 留痕，排查时只能靠猜。整条管线里真正会抛的只有 URL 解析（输入不可信），
-   * 因此 try 只覆盖它，其余步骤的异常按真实故障暴露。
+   * 仅捕获 URL 构造错误：rawUrl 是外部输入，解析失败按不可归组站点返回 `null`。
+   * 归一化、分类与 tldts 处理中的异常按真实故障暴露，避免与「不是可归组站点」混为一类。
    */
   private resolveUncached(rawUrl: string): SiteKey | null {
     let url: URL;

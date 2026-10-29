@@ -5,15 +5,8 @@ import { LoadErrorState } from '@/ui/common/ListStates';
 import { logFailure } from '@/platform/diagnostics';
 
 /**
- * 页面入口的公共根：读设置 → 失败可见可重试 → 成功渲染内容。
- *
- * 曾以 `OptionsRoot` / `AboutRoot` 两份近似复制的形式写在各入口的 main.tsx
- * 里，带来两个问题：
- *  1. 入口壳里沉淀了逻辑（违反「entrypoints 只组装」的分层红线），而入口壳被
- *     覆盖率 exclude 排除 —— 这段「初始化失败要可见」的处理从未被任何测试覆盖；
- *  2. 两份复制只在 scope 与子组件上不同，改一处失败处理（如加重试次数）会漏另一处。
- *
- * 收口到这里之后：逻辑可测、两处入口共享同一实现、main.tsx 只剩 render。
+ * 页面入口的公共根：读取设置，初始化失败时呈现可重试的错误态，成功后渲染内容。
+ * 设置页与关于页共用此流程；入口壳只负责组装，初始化逻辑可独立测试。
  */
 export function EntryRoot({
   scope,

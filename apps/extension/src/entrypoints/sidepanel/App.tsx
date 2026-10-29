@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FooterButtonId } from '@/core/layout/footerOrder';
 import { DuplicateIndex } from '@/core/dup/DuplicateIndex';
 import { planRegroup } from '@/core/group/AutoGrouping';
 import { canSafelyDiscardTab, NO_GROUP } from '@/core/tab-types';
@@ -163,7 +164,8 @@ export default function App() {
   }, []);
   /** 底栏按钮拖拽后的顺序写回（组件不碰存储，持久化在这里）。 */
   const handleReorderFooter = useCallback(
-    (order: string[]) => void useDataStore.getState().tryUpdateSettings({ footerOrder: order }),
+    (order: FooterButtonId[]) =>
+      void useDataStore.getState().tryUpdateSettings({ footerOrder: order }),
     []
   );
 
@@ -193,13 +195,8 @@ export default function App() {
   // 否则用户会永久停在一个没有出口的骨架屏上。
   const [loadFailed, setLoadFailed] = useState(false);
   /**
-   * 用户是否已接管滚动（防"抢滚"）：一旦手动滚动浏览，就**不再**把视图自动拉回
-   * 激活标签，直到用户显式表达「我要看激活标签」（点击标签切换 / ⌘J 定位）为止。
-   *
-   * 不用「静默期」：静默一过就会再次跟随，而用户往往正停在半路找另一个标签，
-   * 被拉回去是纯粹的干扰。
-   *
-   * 必须用 state 而非 ref：ref 变化不触发重渲染，而本值需要下传给 SectionList。
+   * 用户手动滚动后暂停激活标签跟随；点击切换标签或使用 ⌘J 定位时恢复跟随。
+   * 使用持续状态而非静默期，避免计时结束时打断用户浏览；使用 state 以便将状态传给 SectionList。
    */
   const [userScrollActive, setUserScrollActive] = useState(false);
   const markUserScroll = useCallback(() => setUserScrollActive(true), []);
@@ -209,9 +206,7 @@ export default function App() {
   /**
    * 智能激活：目标标签在其他窗口时先聚焦窗口再激活（全窗口搜索用）。
    *
-   * 刻意不依赖 effectiveTabs / currentWindowId：二者在搜索输入时每次都变，
-   * 会让 smartActivate → sectionCallbacks → SectionList 的 memo 链整条失效。
-   * 改为读取 store 实时值，与同文件其他 handler 的 getState() 写法一致。
+   * 通过 getState() 读取实时标签与窗口状态，避免搜索输入变化使 smartActivate → sectionCallbacks → SectionList 的 memo 链失效。
    */
   const smartActivate = useCallback(
     (tabId: number) => {
@@ -252,11 +247,9 @@ export default function App() {
   });
 
   /**
-   * 过滤态结束（清空搜索 / 关掉历史命中）时把主列表滚回顶部。
-   *
-   * React 不会替 DOM 节点重置 scrollTop：搜完清空后列表恢复全量，容器却停在
-   * 之前的位置，用户会以为「上面的标签丢了」。仅在「由过滤 → 非过滤」这一刻复位，
-   * 浏览过程中的滚动不受影响。
+   * 过滤态结束（清空搜索 / 关闭历史命中）时把主列表滚回顶部。
+   * React 保留 DOM 节点的 scrollTop；此时列表恢复全量，顶部标签可能仍在视口外。
+   * 仅在过滤态转为非过滤态时复位，正常浏览中的滚动不受影响。
    */
   const listScrollRef = useRef<HTMLDivElement>(null);
   /**
@@ -390,14 +383,11 @@ export default function App() {
     // 只属于当次闭包，第二次挂载的 cleanup 清不到第一次排上的定时器。
     // 初始化失败时 toast 并自动重试一次（dataStore 已回滚 initialized 守卫，允许重入），
     // 避免面板永久停在 Loading 骨架屏。
-    // 重试次数是**命名常量**而不是「再嵌一层 catch」：后者把「只重试一次」这个
-    // 决定焊死在控制流里，想改成两次只能再加一层嵌套，且每次嵌套都要重写一遍
-    // 取消判断与失败处理。
+    // 重试次数由命名常量控制，取消判断与失败处理共用同一套控制流。
     const attemptInit = (attempt: number): void => {
       void initializeData().catch((error: unknown) => {
         if (cancelled) return;
-        // 面板起不来是「用户只看到骨架屏」的故障，必须留痕：重试用尽后
-        // 错误态只说「重试」，没有诊断记录就无从判断是存储读失败还是初始化抛错。
+        // 记录初始化失败的诊断信息；错误态提供重试入口，日志用于区分存储读取与初始化故障。
         logDegraded('sidepanel', `数据初始化失败（第 ${attempt} 次）`, error);
         if (attempt === 1) notify(translate('数据加载失败，请检查扩展权限'));
         if (attempt < INIT_MAX_ATTEMPTS) {
@@ -407,7 +397,7 @@ export default function App() {
           );
           return;
         }
-        // 重试次数用尽：转错误态（手动重试 / 重新打开面板），不再静默。
+        // 达到重试上限后呈现错误态，用户可手动重试或重新打开面板。
         setLoadFailed(true);
       });
     };
@@ -685,8 +675,7 @@ export default function App() {
    * 关闭其余可清理者。走既有 closeWithUndo 管线 —— 清理同样进撤销栈、可一键反悔。
    * 固定空间绑定的标签额外豁免：那是用户显式保存的资产，不能被自动清理。
    *
-   * 清理后对「保留项」播放一次脉冲高亮：结果不再只是一个数量，
-   * 用户能看到每个域名留下了哪一个（否则只能靠撤销后反推）。
+   * 清理后对「保留项」播放一次脉冲高亮，让用户直观看到每个域名留下的标签。
    *
    * 批量动作用「**影响面提示**」而非「强制确认弹窗」——
    * 点击即执行，不给高频用户加摩擦。影响面由两处承载：
@@ -875,8 +864,7 @@ export default function App() {
    *
    * 走统一撤销批次 closeWithUndo：整批一次入栈，撤销一次即可全部找回
    * （逐个关闭会产生 N 条批次、N 次提示，撤回要点 N 次）。
-   * 分区内的 pinned / 隐身标签由分区构造阶段排除（见 core/site/Sections），
-   * 这里不再重复过滤，避免两处口径漂移。
+   * core/site/Sections 在构造分区时排除 pinned / 隐身标签；此处直接使用 section.tabs，保持单一过滤口径。
    */
   const handleCloseSection = useCallback((section: TemporarySection) => {
     const closable = section.tabs;
@@ -1131,7 +1119,7 @@ export default function App() {
           onChange={setQuery}
           inputRef={searchInputRef}
           onKeyDown={handleSearchInputKeyDown}
-          /* 有可选项才允许提示（聚焦时显示）：空态同样支持漫游，故不再要求先输入 */
+          /* 仅有可选项时显示键盘漫游提示，空态也支持漫游。 */
           showKeyboardHint={isFiltering ? filteredTabs.length > 0 : tabs.length > 0}
           showHistoryToggle
           historyOn={settings.searchHistory}
@@ -1141,9 +1129,7 @@ export default function App() {
         <output className="sr-only" aria-live="polite">
           {isFiltering ? t('命中 {{count}} 个标签', { count: filteredTabs.length }) : ''}
         </output>
-        {/* 落盘失败横幅：由「最近一次持久化是否成功」驱动（成功写会复位标志），
-            因此它表达的是「此刻存储可能不可写」，而非「历史上有过失败」。
-            宁可多提示一次，也不能让「界面显示成功、重启即丢」静默发生。 */}
+        {/* 落盘失败横幅由最近一次持久化结果驱动，表示当前存储可能不可写；成功写入会清除标志，避免数据丢失被静默处理。 */}
         {storageDegraded && (
           <Callout
             role="alert"

@@ -3,7 +3,7 @@ import { buildNoCacheDnrRules, matchesNoCachePattern } from '@/platform/nocache/
 
 /**
  * 开发者禁缓存：URL 命中判定 / DNR 规则编译（platform 层）。
- * pattern 的归一化与校验已下沉到 core，见
+ * pattern 的归一化与校验由 core 层负责，详见
  * `tests/core/nocache/no-cache-pattern.test.ts`。
  *
  * 重点保证两条链路口径一致：
@@ -82,7 +82,7 @@ describe('buildNoCacheDnrRules', () => {
   it('双通道禁缓存：请求头 no-cache 绕过已有缓存（DevTools 同款），响应头 no-store 阻止落盘', () => {
     const rule = buildNoCacheDnrRules(['example.com'])[0]!;
     expect(rule.action.type).toBe('modifyHeaders');
-    // 请求头：缓存查找阶段即放行，强制发网络请求（修复「资源已在缓存中、不发请求、规则不触发」的失效场景）
+    // 请求头：设置 no-cache，要求缓存内容在使用前重新验证。
     expect(rule.action.requestHeaders).toContainEqual({
       header: 'Cache-Control',
       operation: 'set',

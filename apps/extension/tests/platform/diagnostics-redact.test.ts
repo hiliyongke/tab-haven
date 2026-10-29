@@ -6,11 +6,10 @@ import { redactUrlsForTest } from '@/platform/log';
 /**
  * 诊断日志脱敏。
  *
- * 锁死三种易脱漏的形式：裸域名 + 路径、带端口、含 user:pass@。
- * 旧正则只认 http(s):// 前缀，这三种会原样落盘。
+ * 覆盖裸域名 + 路径、带端口及含 user:pass@ 的 URL 形式。
  */
 describe('redactUrls', () => {
-  it('带协议头的 URL 仍被脱敏（回归）', () => {
+  it('带协议头的 URL 被脱敏', () => {
     expect(redactUrlsForTest('opened https://example.com/a/b?x=1')).toBe('opened <url>');
   });
 

@@ -4,27 +4,11 @@ import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { useDataStore } from '@/stores/dataStore';
 
 /**
- * 标签镜像 store（`src/stores/tabStore.ts`）。
- *
- * 真相源在浏览器，本 store 只做「快照 → 订阅者」的中转。两类契约值得锁死：
- *
- * 1. **乐观重排**（`applyReorder` / `applyGroupReorder`）—— 松手瞬间本地生效，不再等
- *    「tabs.move → 浏览器事件 → 快照广播」的往返。index 必须重新连续分配，否则显示顺序
- *    （按 index 排序）会留空洞；越界 targetIndex 与不存在的 source 都必须**不写**，
- *    否则一次误算就会把列表打乱。
- * 2. **快照新鲜度与内容守卫**（`startTabSync`）—— 乱序到达的旧快照必须丢弃（代数守卫）；
- *    内容与当前态一致时不得 set（否则每次标签事件都触发顶层全量重渲染）。但**首次成功
- *    快照即使内容为空也必须落 `tabSyncReady=true`**，否则下游会把「未同步」误当
- *    「窗口真没标签」，进而在挂载早期清空磁盘上的全部挂起绑定。
+ * 标签 store 行为规格：重排后按顺序更新标签并连续分配 index；同步时丢弃较旧快照，
+ * 对相同内容保持状态不变，并将首次成功的空快照标记为就绪。
  */
 
-/**
- * 平台层与同步服务的替身：store 的职责是「调对参数、按结果返回」，不是自己实现这些。
- *
- * 一律用 `vi.fn<签名>(impl)` 而不是 `vi.fn(async (_a: T) => …)`：后者既会因未使用的
- * 形参触发 `no-unused-vars`（下划线前缀在本仓库未被配置为豁免），又会让
- * `mock.calls` 的元素类型退化成无参元组，断言参数时拿不到类型提示。
- */
+/** 使用平台层与同步服务桩，验证 store 的参数透传和返回值。 */
 const mocks = vi.hoisted(() => ({
   activateTab: vi.fn<(id: number) => Promise<void>>(async () => undefined),
   closeTabs: vi.fn<(ids: readonly number[]) => Promise<number[]>>(async () => []),
@@ -67,7 +51,7 @@ vi.mock('@/platform/reuse/reuseAllowance', () => ({
   grantReuseAllowance: mocks.grantReuseAllowance
 }));
 
-// 必须在 vi.mock 之后导入，否则拿到的是真实实现
+// 导入 store 时使用上面的平台层桩。
 const { useTabStore } = await import('@/stores/tabStore');
 
 function tab(partial: Partial<TabRecord> & { id: number }): TabRecord {
@@ -88,12 +72,7 @@ function group(partial: Partial<TabGroupRecord> & { id: number }): TabGroupRecor
   return { title: `组-${partial.id}`, color: 'blue', collapsed: false, ...partial };
 }
 
-/**
- * 快照回调：由 startTabSync 注册，测试里手动驱动。
- *
- * 显式声明形状而非从 mock 反推：`vi.fn()` 未标类型时其参数会被推断为 unknown，
- * 反推出的「快照」类型不含任何字段，构造夹具时才报错（且信息很难懂）。
- */
+/** 由 startTabSync 注册的快照回调，由测试用例提供同步结果。 */
 interface Snapshot {
   generation: number;
   windowId: number;
@@ -170,7 +149,7 @@ describe('平台调用透传', () => {
 });
 
 describe('duplicateTab 的复用豁免', () => {
-  it('有 web 可比对的源标签时先申请豁免（否则副本会被复用引擎合并关闭）', async () => {
+  it('可比较的源标签先申请复用豁免再复制', async () => {
     const source = tab({ id: 1, windowId: 5, url: 'https://a.com/', title: 'A' });
     primeStore([source]);
 
@@ -401,7 +380,7 @@ describe('startTabSync 快照守卫', () => {
   });
 
   it('首次成功快照即使内容为空也必须落 tabSyncReady=true（区分「未同步」与「窗口无标签」）', () => {
-    // 初始态就是 tabs=[]，若只比内容就会跳过这次写入，下游会把未同步误当无标签
+    // 空快照也标记同步完成，以区分尚未同步与窗口无标签。
     useTabStore.setState({ tabs: [], groups: [], tabSyncReady: false, currentWindowId: undefined });
     useTabStore.getState().startTabSync();
 

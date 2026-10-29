@@ -2,12 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { itemUrlMatchesTab } from '@/core/fixed/ItemMatch';
 import type { TabRecord } from '@/core/tab-types';
 
-/**
- * 固定条目 ↔ 标签的匹配口径（全应用唯一来源）。
- *
- * 口径分叉的代价是自相矛盾：UI 显示「未打开」、点「打开全部」却提示「都已打开」、
- * openSavedItem 又新建一个必然失败的标签。
- */
+/** 固定条目与标签匹配行为规格：HTTP(S) 按比较键匹配，导航中的标签按 pendingUrl 匹配；
+ * 其他协议按原始 URL 比较，无 URL 的条目不匹配。 */
 function tab(partial: Partial<TabRecord>): TabRecord {
   return {
     id: 1,
@@ -43,8 +39,7 @@ describe('itemUrlMatchesTab', () => {
   });
 
   it('非 http(s) 条目退回原样比较（内部页条目仍可命中已打开标签）', () => {
-    // 回归：比较键对内部页无定义，只按比较键会让此类条目永远匹配不到，
-    // openSavedItem 于是走到「新建 + updateTabUrl」并必然失败。
+    // 内部页按原始 URL 比较，不使用 HTTP(S) 比较键。
     expect(itemUrlMatchesTab('chrome://settings', tab({ url: 'chrome://settings' }))).toBe(true);
     expect(itemUrlMatchesTab('chrome://settings', tab({ url: 'chrome://extensions' }))).toBe(false);
   });

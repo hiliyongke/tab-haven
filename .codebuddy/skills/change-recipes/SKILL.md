@@ -11,11 +11,11 @@ disable: false
 
 ## 1. 新增/修改设置项
 
-- 必改：`apps/extension/src/core/schema/models.ts` —— `SettingsSchema` 加字段（含默认值与上限），`DEFAULT_SETTINGS` 自动派生，检查是否需手动对齐。
-- 联动：`apps/extension/src/entrypoints/options/settingSections.tsx` —— 扩展 `SettingSpec`/`BooleanSettingKey` 类型并在 `buildSections` 加声明式条目（不手写表单）。
-- 联动：`apps/extension/src/i18n/locales/zh-CN/` + `apps/extension/src/i18n/locales/en/` 双写文案键。
-- 联动：设置若属对外口径的存储数据 → `PRIVACY.md` 第 3 节。
-- 测试：`tests/core/` 补 schema 接受/拒绝分支。
+- 必改：`apps/extension/src/core/schema/models.ts` —— 在 `SettingsSchema` 中定义字段、默认值与边界。
+- 联动：`apps/extension/src/entrypoints/options/settingSections.tsx` —— 在设置项声明中加入控件配置，复用既有设置组件。
+- 联动：源码文案使用 `t('中文原文')`；运行 `pnpm i18n` 更新词条与运行时产物，不手改 `apps/extension/src/i18n/locales/`。
+- 联动：设置若涉及持久化数据 → `PRIVACY.md` 第 3 节。
+- 测试：`apps/extension/tests/core/` 补 schema 接受与拒绝场景。
 - 门禁：`pnpm typecheck && pnpm check:i18n && pnpm test`。
 
 ## 2. 新增持久化数据类型 / 改备份格式
@@ -25,31 +25,31 @@ disable: false
 ## 3. 新加快捷键命令
 
 - 必改：`wxt.config.ts` 的 `manifest.commands` 加条目（suggested_key + `__MSG_*__` 描述键）。
-- 联动：`apps/extension/src/entrypoints/background.ts`（约 line 287）`commands.onCommand` 分发逻辑。
+- 联动：`apps/extension/src/entrypoints/background.ts` 的 `commands.onCommand` 分发逻辑。
 - 联动：`public/_locales/` 的 manifest 文案（zh-CN 与 en 双写 `__MSG_command*__` 键）。
 - 门禁：`pnpm build` 验证 manifest 生成 + `pnpm check:i18n`。
 
 ## 4. 新加右键菜单项
 
-- 必改：`apps/extension/src/platform/background/contextMenus.ts` —— `rebuildContextMenus` 注册；标题走 i18n 消息键（与 `_locales` 一一对应）。
+- 必改：`apps/extension/src/platform/background/contextMenus.ts` —— 注册菜单项；标题使用 manifest locale 消息键。
 - 联动：`apps/extension/src/entrypoints/background.ts` 的 `contextMenus.onClicked` 分发。
-- 联动：确认与 `settings.contextMenusEnabled` 开关的联动（关开关时 `clearContextMenus`）。
-- 联动：`public/_locales/` 双写。
-- 测试：`tests/background/` 补菜单注册/点击行为。
+- 联动：确认与 `settings.contextMenusEnabled` 开关的联动。
+- 联动：更新 `public/_locales/` 中的 manifest 文案。
+- 测试：`apps/extension/tests/background/` 补菜单注册与点击行为。
 
 ## 5. 改 manifest / 权限
 
-- 必改：`wxt.config.ts`（permissions / optional_host_permissions / manifest hook）。
-- 必改：`PRIVACY.md` 权限表（同步口径，否则 `check:privacy` 失败）。
-- 注意：新权限要评估旧内核兼容性（如 `sidePanel` 在旧版本缺失）。
+- 必改：`wxt.config.ts`（permissions / optional_host_permissions / manifest 配置）。
+- 必改：`PRIVACY.md` 权限表，保持用途与实际行为一致。
+- 注意：新增权限须经用户批准，并评估其对隐私边界的影响。
 - 门禁：`pnpm build && pnpm check:privacy`。
 
 ## 6. 新加入口页面（形态）
 
-- 必改：`apps/extension/src/entrypoints/<name>/`（`index.html` + `main.tsx` 薄壳），WXT 自动检测入口。
-- 联动：涉及 action / side_panel 行为时核对 `wxt.config.ts` 的 `manifestGenerated` hook（`openPanelOnActionClick` 与 `default_popup` 互斥）；形态能力探测统一落在 `apps/extension/src/platform/sidePanel.ts`。
-- 复用：共享 `stores` / `ui` / `core`，入口不沉淀逻辑。
-- 测试：`tests/entrypoints/` 补入口冒烟。
+- 必改：`apps/extension/src/entrypoints/<name>/`（`index.html` + `main.tsx` 薄壳），由 WXT 发现入口。
+- 联动：涉及 action / side_panel 行为时核对 `wxt.config.ts` 的 manifest 配置及 background 的侧边栏行为。
+- 复用：共享 `stores` / `ui` / `core`，入口不沉淀业务逻辑。
+- 测试：`apps/extension/tests/entrypoints/` 补入口行为测试。
 
 ## 通用收尾（所有任务）
 

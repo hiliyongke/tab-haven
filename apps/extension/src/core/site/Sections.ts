@@ -205,10 +205,8 @@ function isSameSiteKey(groupKey: SiteKey, candidate: SiteMergeCandidate): boolea
 
 /**
  * 同站点归并候选识别：找出"域名命名的同站点原生组"。
- *
- * 背景 bug：原生组标题是建组时的域名快照；此后标签跨域导航、或同站点新标签以
- * 未分组状态打开时，同一站点的标签会同时出现在「原生组」与「站点聚合组」两处，
- * 表现为同一域名出现两个分组（碎片化）。
+ * 原生组标题是创建时的域名快照，可能与当前成员站点不一致；归并条件确保仅将同站点标签
+ * 合并到站点分区，避免相同域名同时显示在原生组与站点聚合组中。
  *
  * 归并条件（保守，只吸收本质上是站点组的原生组）：
  *  1. 组内所有成员解析为同一 (注册域, 子域)；
@@ -272,7 +270,7 @@ interface SitePlan {
   sections: Extract<TemporarySection, { kind: 'site' }>[];
   /** 未成组的独立标签。 */
   singles: TabRecord[];
-  /** 已被站点分区吸收的原生组 id（这些组不再单独成区）。 */
+  /** 已并入站点分区的原生组 id。 */
   absorbedGroupIds: Set<number>;
 }
 
@@ -333,7 +331,7 @@ function buildSitePlan({
       if (takenIds.has(singles[i]!.id)) singles.splice(i, 1);
     }
     // 分区 key 与 aggregateBySite 同口径：子域非空用「子域.注册域」，否则沿用解析器原始键。
-    // 标题走 siteLabelOf（全仓唯一口径），不再在此处重写一遍组合规则。
+    // 标题通过 siteLabelOf 生成，与其他站点分区共享唯一口径。
     const groupKey: SiteKey = {
       value: siteValueOf(candidate.key),
       label: siteLabelOf(candidate.key),
@@ -346,14 +344,8 @@ function buildSitePlan({
     });
     absorbedGroupIds.add(candidate.groupId);
   }
-  // 分区排序依据：组内**最近访问时间**降序（最近用过的站点组在前）。
-  //
-  // 旧规则是「组内首个标签的浏览器 index」——一个用户完全看不见的中间量：
-  // 「为什么 github 在 notion 上面」的答案是「哪一组里最靠左的那个标签更靠左」；
-  // 更糟的是首标签一旦被关闭，整组立刻跳位。
-  // lastAccessed 已由 tabStore 冻结（只在标签首次出现时刷新，见 mergeSnapshotTabs），
-  // 因此不会因为每次切换标签而全量重排、分区与行不停跳动。
-  // 时间戳缺失/相同时回退到浏览器顺序，保证结果稳定可预期。
+  // 分区按组内最近访问时间降序排列，让最近使用的站点组靠前。
+  // lastAccessed 由 tabStore 冻结，只在标签首次出现时刷新；时间戳缺失或相同时按浏览器顺序稳定排序。
   const latestAccessed = (tabs: readonly { lastAccessed?: number }[]) => {
     let latest = 0;
     for (const tab of tabs) {
@@ -460,9 +452,8 @@ export function deriveSections({
     )
     .sort(sortCmp);
 
-  // 站点模式先完成聚合与同站点归并：吸收结果决定哪些"域名命名的同站点原生组"
-  // 不再单独成区（消除同一域名出现原生组 + 站点组两个分区的碎片化）。
-  // opener/language 模式不做归并，原生组照常渲染。
+  // 站点模式先完成聚合与同站点归并，将符合条件的域名原生组并入站点分区。
+  // opener/language 模式保留原生组分区。
   const sitePlan =
     groupMode === 'site'
       ? buildSitePlan({

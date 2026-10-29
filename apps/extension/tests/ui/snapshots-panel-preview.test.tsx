@@ -166,11 +166,8 @@ describe('SnapshotsPanel 恢复预览', () => {
     });
   });
 
-  it('展开 300 条标签的详情：三分类逐条渲染正确（规模回归）', async () => {
-    // 规模用例（原实现的 perf 缺陷）：展开清单曾在 snap.tabs.map 内对 diff 的
-    // willCreate / existing 各做一次线性 find —— 复杂度 O(条目数 × diff 条目数)，
-    // 300 条标签一次展开即数万次比较。改为预建 Set 查表后与 diff 规模无关，
-    // 本用例锁住「规模下逐条分类仍然正确」这一行为等价性。
+  it('展开大量标签的详情：逐条显示正确分类', async () => {
+    // 快照包含未打开与已打开的标签，预览应分别归入「将新建」与「已存在」。
     const count = 150;
     const tabs = [
       ...Array.from({ length: count }, (_, i) => snapTab(`https://new.com/${i}`, `新建 ${i}`)),

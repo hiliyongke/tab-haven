@@ -71,7 +71,7 @@
   --color-gray-800: var(--c-gray-800);
   --color-gray-900: var(--c-gray-900);
 
-  /* 强调色 = 品牌绿（语义化别名，替代旧 blue- 误称） */
+  /* 强调色使用品牌绿语义令牌。 */
   --color-accent-50: var(--c-brand-50);
   --color-accent-100: var(--c-brand-100);
   --color-accent-200: var(--c-brand-200);
@@ -81,7 +81,7 @@
   --color-accent-600: var(--c-brand-600);
   --color-accent-700: var(--c-brand-700);
 
-  /* 警示色（暖琥珀，替代旧 amber- 未受控色） */
+  /* 警示色使用暖琥珀语义令牌。 */
   --color-warn-50: var(--c-warn-50);
   --color-warn-100: var(--c-warn-100);
   --color-warn-200: var(--c-warn-200);
@@ -142,7 +142,7 @@
   --c-red-600: #a8432f;
   --c-red-700: #863322;
 
-  /* 警示色（暖琥珀，用于重复标签/遗留数据提示） */
+  /* 警示色（暖琥珀，用于重复标签与隔离数据提示） */
   --c-warn-50: #fbf3da;
   --c-warn-100: #f6e8bf;
   --c-warn-200: #f0d98f;
@@ -174,9 +174,7 @@
   --count-badge-bg: var(--c-brand-500);
   --c-on-accent: #ffffff;
 
-  /* 阴影令牌（elevation）：统一走 shadow-tint 暖调。
-     历史问题：浮层里 Tailwind 默认 shadow-lg/xl（纯黑）与自定义组件的
-     暖调阴影（rgb(shadow-tint)）混用，同一屏里阴影有黑有暖。 */
+  /* 阴影令牌（elevation）：统一使用 shadow-tint 暖调，保持浮层的阴影色一致。 */
   --elev-1: 0 1px 2px rgb(var(--shadow-tint) / 8%);
   --elev-2: 0 4px 14px rgb(var(--shadow-tint) / 14%);
   --elev-3: 0 12px 32px rgb(var(--shadow-tint) / 20%), 0 2px 6px rgb(var(--shadow-tint) / 10%);
@@ -187,7 +185,7 @@
   --scroll-fade: rgb(0 0 0 / 6%);
 }
 
-/* 阴影工具类：供组件以 className 引用（替代 shadow-sm/lg/xl，后者纯黑且不随主题）。 */
+/* 阴影工具类：供组件通过 className 使用随主题变化的 elevation 令牌。 */
 .elev-1 {
   box-shadow: var(--elev-1);
 }
@@ -697,10 +695,8 @@ body {
 }
 
 /* ---------- 浮层表面（对话框 / 命令面板 / 引导 / 右键菜单）----------
- * 这四类都是「浮在内容之上的面板」，此前各自写一遍
- * `rounded-xl border border-gray-200 bg-surface` + elev-3，菜单那一处顺手写成
- * rounded-lg —— 同一视觉层级出现 8px / 12px 两档圆角，且没有说明。
- * 表面（边框 / 圆角 / 底色 / 阴影）收到这里，浮层只声明尺寸与布局。 */
+ * 统一提供边框、圆角、底色与阴影；浮层组件只声明尺寸与布局。
+ * 菜单使用较小的圆角，以匹配其贴边打开和紧凑尺寸。 */
 .modal-surface {
   border: 1px solid var(--c-gray-200);
   border-radius: var(--radius-xl);
@@ -747,9 +743,8 @@ html.theme-transition *::after {
 }
 
 /* ---------- 开关（role=switch） ----------
- * 尺寸全部由局部变量派生：改尺寸只需动 --sw-w/--sw-h，不再出现 left-[18px] 这类魔数。
- * 关闭态用「浅填充 + 达标描边」而非纯灰填充 —— 轨道是控件边界，须满足 1.4.11 的 3:1，
- * 而 --c-gray-300 对画布仅约 1.5:1，等于没有边界。 */
+ * 尺寸由局部变量派生，轨道位移随 --sw-w / --sw-h 同步计算。
+ * 关闭态采用浅填充与达标描边，确保控件边界符合 WCAG 1.4.11 的 3:1 对比度。 */
 .switch {
   --sw-w: 36px;
   --sw-h: 20px;
@@ -797,7 +792,7 @@ html.theme-transition *::after {
 }
 .switch[aria-checked='true'] .switch-knob {
   background: var(--surface);
-  /* 位移由尺寸令牌算出，不再写死像素 */
+  /* 位移由开关尺寸令牌计算。 */
   transform: translateX(calc(var(--sw-w) - var(--sw-knob) - var(--sw-pad) * 2));
 }
 
@@ -963,7 +958,7 @@ html.theme-transition *::after {
     outline: 1px solid Highlight;
   }
 
-  /* 焦点环：box-shadow 内描边被系统丢弃，改为纯 outline（系统保证可见） */
+  /* 焦点环使用系统 Highlight 色的 outline，确保高对比度模式下仍可见。 */
   :where(button, a, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
     outline: 2px solid Highlight;
     box-shadow: none;
@@ -1045,13 +1040,9 @@ html.theme-transition *::after {
   color: var(--c-red-600);
 }
 
-/* 禁用态：原生 <button disabled> 在 Chrome 里**仍然匹配 :hover**（Button.tsx 头部
-   注释同因），只写静态样式挡不住 hover 变色 —— FolderRow 给「恢复为原生标签组」
-   传了 disabled，禁用时悬停照样亮起，看着像还能点。这里把 hover / focus 的值
-   显式回落到静默态（透明度与光标由组件侧的 disabled:* 工具类承担，见
-   RowActionButton）。
-   注意 `.section-card:hover .row-action:hover` 的特异性是 (0,4,0)，高于本块的
-   (0,3,0)，故那条规则另加了 `:not(:disabled)` —— 否则卡内的禁用按钮仍会变色。 */
+/* 禁用态：Chrome 中原生 <button disabled> 仍匹配 :hover，因此 hover / focus 显式保持静默态；
+   透明度与光标由组件的 disabled:* 工具类提供。`.section-card:hover .row-action:hover` 的
+   特异性高于本块，对应规则通过 `:not(:disabled)` 排除禁用按钮。 */
 .row-action:disabled:hover,
 .row-action:disabled:focus-visible {
   background: transparent;
@@ -1118,8 +1109,7 @@ button:has(> .count-badge) {
 }
 
 /* ---------- 复选框（与 .switch 同族的表单原语，见 ui/common/Checkbox.tsx） ----------
- * 尺寸与勾选项色收在这里：此前调用点写 `h-3.5 w-3.5 shrink-0 accent-[var(--c-brand-500)]`，
- * 三处各写一遍，且 accent-[…] 是任意值，绕开了 @theme 的 --color-accent-* 刻度。 */
+ * 统一由此处设置尺寸与勾选色，并使用设计令牌 --c-brand-500。 */
 .checkbox {
   width: 14px;
   height: 14px;
@@ -1133,9 +1123,7 @@ button:has(> .count-badge) {
 }
 
 /* ---------- 分组小标题（面板分区 / 命令面板分组 / 撤销分组共用） ----------
- * 此前 `text-3xs font-medium tracking-wide text-gray-500` 在 8 处逐字重复，
- * 「保持一致」靠的是其中一处写的注释（UndoHistoryPanel）—— 注释不会跟着复制走，
- * 改字号或改色阶必漏一处。收成语义类后由代码保证。 */
+ * 语义类统一定义字号、字重、字距与颜色，供各类分组标题共享。 */
 .group-label {
   font-size: var(--text-3xs);
   font-weight: 500;
@@ -1144,10 +1132,7 @@ button:has(> .count-badge) {
 }
 
 /* ---------- 区块标题（设置页 / 关于页的一级分区标题）----------
- * 此前同一角色有 5 套写法：14px/600/gray-600（关于页与设置页各写一份常量）、
- * 14px/600/gray-700（预设卡，少一个 tracking）、10px/600（目录）、
- * 10px/500 uppercase（其他窗口）。同一屏会出现两种标题观感。
- * 语义类只定义**排版**，外边距由调用点决定（目录标题更紧凑）。 */
+ * 语义类统一定义标题排版；外边距由调用点决定，以支持目录标题等紧凑布局。 */
 .section-title {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -1156,13 +1141,8 @@ button:has(> .count-badge) {
 }
 
 /* ---------- chip：徽角 / 小胶囊的紧凑排版 ----------
- * 只给 10-11px 的窄容器用（徽章、来源标记、计数胶囊、chip 按钮）。长段落正文禁用。
- *
- * 历史问题：同类元素一半写了 leading-none、一半没写，高度随继承行高（≈1.5）浮动，
- * 并排时同类徽章差约 5px。
- * 现在 @theme 已声明 --text-2xs/3xs--line-height（默认 1 / 1.45），浮动问题消失；
- * 本类的价值是「徽角要的是 1，而不是 3xs 默认的 1.45」——一行字重 + 紧凑行高，
- * 让所有徽角共用同一个度量，不必在每处重复写 leading-none。 */
+ * 仅用于徽章、来源标记、计数胶囊与 chip 按钮等 10–11px 窄容器，不用于长段落正文。
+ * 徽角统一采用 1 的紧凑行高，与 3xs 默认行高 1.45 区分，确保并排标记高度一致。 */
 .chip {
   font-size: var(--text-2xs);
   font-weight: 500;
@@ -1173,29 +1153,25 @@ button:has(> .count-badge) {
   font-size: var(--text-3xs);
 }
 
-/* Tailwind v4 的 preflight 不再给 button 手型光标（Button/IconButton 已各自显式声明），
-   但绕过这两个组件的手写 <button>（新建标签页、搜索清除、菜单项、面板行…）全都漏了，
-   表现为「可点但光标是箭头」。统一在原生层补上，禁用态保持 default。 */
+/* Tailwind v4 的 preflight 不为 button 设置手型光标；此规则覆盖未经过 Button/IconButton 的可用按钮，
+   禁用态保持 default。Button 与 IconButton 在组件样式中单独声明。 */
 button:not([disabled]) {
   cursor: pointer;
 }
 
-/* ---------- 常驻顶部搜索框（替代弹窗式覆盖层） ---------- */
+/* ---------- 常驻顶部搜索框 ---------- */
 /* ---------- 输入落位语言（全站统一：下划线式，没有第二种） ----------
- * 以侧边栏顶部搜索框为唯一参照：无底色、仅 1px 下边框，聚焦时下边框转品牌色
- * 并叠一条 2px 内嵌指示条。此前搜索框 / 命令面板 / 弹窗输入框各写一套
- * （border-subtle / border-gray-200 / 完整描边框），改一处必漏另两处。
+ * 以侧边栏顶部搜索框为参照：无底色、仅 1px 下边框，聚焦时下边框转品牌色并叠 2px 内嵌指示条。
+ * 搜索框、命令面板与弹窗输入框共用这组视觉与焦点声明。
  *
  * 两种承载方式，**视觉与焦点行为同一组声明**：
  *  - 容器级 `.input-row`：搜索框、命令面板输入行 —— 下划线要横跨图标与按钮的
  *    整行宽度，画在容器上（此时内部 input 必须是无边框的，否则双线）；
  *  - 输入级 `.input-line`：弹窗 / 表单里的独立输入框 —— 没有容器可依附。
  *
- * 静态态用 --border-subtle（淡线）：这是「参照顶部搜索框」的观感要求 —— 此前统一
- * 时换成了 --border-control，实测下来那条线偏重、与搜索框原本的轻盈感不符。
- * 代价是静态下边框对比度 <3:1（WCAG 1.4.11），可访问性由**聚焦态**承担：下边框
- * 转品牌色并叠 2px 指示条（对比度充足且更醒目），且输入框另有占位文案与图标提示
- * 存在感。若将来要严格满足静态 3:1，改回 --border-control 一处即可。
+ * 静态态使用 --border-subtle（淡线）以保持与顶部搜索框一致的轻盈感。
+ * 静态下边框对比度低于 3:1（WCAG 1.4.11），聚焦态通过品牌色下边框与 2px 指示条提供清晰焦点，
+ * 输入框另有占位文案与图标提示。若需满足静态 3:1，可将此处改用 --border-control。
  */
 .input-row {
   border-bottom: 1px solid var(--border-subtle);
@@ -1367,7 +1343,7 @@ button:not([disabled]) {
   background: var(--c-red-500);
 }
 
-/* ---------- 弹窗宽度刻度（两档收敛，替代散落的任意宽度值） ---------- */
+/* ---------- 弹窗宽度刻度（两档） ---------- */
 /* 弹窗宽度：小弹窗放宽到 400 —— 标题栏 / 内容 / 底栏三段式分区后，360 的
    正文区（扣掉两侧 16px padding）只剩 328，中文长句在标题栏里就开始截断。 */
 .dialog-sm {
@@ -1428,15 +1404,9 @@ button:not([disabled]) {
 }
 
 /* ---------- 内滚区底部渐隐（滚动边界提示） ----------
- * 侧边栏里被 max-height 截断的内滚区（固定空间 / 快照详情 / 命令面板结果 /
- * 虚拟列表）缺少可见的底部边界，用户滚到一半会误判「已经到底了」。
- * 底部渐隐随滚动位置由 useScrollFade 切换 .is-scrolled-to-end 显隐 ——
- * 必须配套这个 JS 切换：常驻渐隐会变成「到底了还提示有更多」的反向误导。
- * 配色走 --scroll-fade 令牌（浅 6% / 深 24%），不硬编码 rgba。
- * background-attachment: scroll 把渐隐钉在**容器可视底边**：若用 local，渐隐会
- * 跟随滚动内容停在内容末端 —— 滚动过程中它在视口外看不见，滚到底时又被
- * .is-scrolled-to-end 撤掉，整个效果等于空转。
- * 「内容不足一屏时不该凭空出现阴影」由 JS 侧负责（不可滚动时不加本 class）。 */
+ * 固定空间、快照详情、命令面板结果与虚拟列表使用渐隐提示下方仍有可滚动内容。
+ * useScrollFade 根据滚动位置切换 .is-scrolled-to-end；滚到底或内容不足一屏时隐藏渐隐。
+ * 配色走 --scroll-fade 令牌（浅 6% / 深 24%）。background-attachment: scroll 将渐隐固定在容器可视底边。 */
 .scroll-fade {
   background-image: linear-gradient(to bottom, transparent, var(--scroll-fade));
   background-size: 100% 12px;
@@ -1447,14 +1417,12 @@ button:not([disabled]) {
 .scroll-fade.is-scrolled-to-end {
   background-image: none;
 }
-/* 固定空间历史上把这套写死在自己身上，现统一走 .scroll-fade（class 在 TSX 上加）。 */
+/* 固定空间通过 .scroll-fade 使用统一的内滚区底部渐隐。 */
 /* 分组模块（站点分组大壳）：同样一条中性分隔线，与下方未分组区断开 */
 .module-shell {
   border-bottom: 1px solid var(--border-subtle);
 }
-/* 紧跟 module-shell 的下一块不再画 border-top（上一块的 border-bottom 已是分隔线），
-   但要把省掉的 border+padding 折算回 margin-top 4px，让间距与模块内部相邻分区
-   （margin 2 + border 1 + padding 1 = 4px）完全一致。 */
+/* module-shell 后的分区复用上一块的 border-bottom 作为分隔线，顶部留白用 4px margin 保持间距一致。 */
 .module-shell + .section-card,
 .module-shell + .module-shell {
   border-top: 0;
@@ -1489,8 +1457,7 @@ button:not([disabled]) {
 }
 
 /* ---------- 顶部常驻磁贴区 ---------- */
-/* 不再画分隔线：磁贴自身的圆角面 + 上下留白已足以把它与列表分开，
-   少一条横线换一分呼吸感（一屏横线从 8-9 条压到 4-5 条）。 */
+/* 磁贴通过圆角面与上下留白和列表区分，不绘制额外分隔线以保持版面清爽。 */
 /* 自身只承担纵向留白（上 6 + 下 2）；横向 8px 由内部 .pinned-grid 提供，
    让磁贴与 .section-head 前导色条、行内 favicon 同处一条内容竖线。 */
 .pinned-strip {
@@ -1829,10 +1796,8 @@ button:not([disabled]) {
 [data-density='large'] .section-head .title {
   font-size: 0.875rem;
 }
-/* 模块标题（收藏夹 / 站点分组 / 浏览器置顶）此前与分区标题同为 12px/600/gray-600，
-   两级视觉完全等价 —— 模块之间的边界只能靠 14px 间距勉强表达，读起来像同一层。
-   模块头是「容器标签」，降一档为 11px/600 + 字距 + 更浅的灰；
-   分区头（github.com 这类）保持 12px/600 —— 层级变成「标签 → 内容」。 */
+/* 模块标题（收藏夹 / 站点分组 / 浏览器置顶）使用 11px、字距与浅灰，表达容器标签层级；
+   分区标题保持 12px/600，形成「标签 → 内容」的视觉层次。 */
 .module-shell > .section-head .title {
   font-size: var(--text-3xs);
   letter-spacing: 0.04em;
@@ -1863,8 +1828,7 @@ body.dnd-just-dropped .row-item .drag-grip {
 }
 
 /* ---------- 行尾操作（参与布局：悬停/聚焦时操作组以 max-width 展开，
-   标题自动收缩省略，与按钮零重叠 —— 旧「absolute 浮层 + 渐变遮罩」方案
-   在长中文标题上遮不干净，表现为文字压在按钮下） ---------- */
+   标题自动收缩省略，避免操作按钮与长标题重叠） ---------- */
 .row-actions {
   display: flex;
   flex: none;
@@ -1931,18 +1895,12 @@ body.dnd-dragging .row-item .row-actions {
   opacity: 0;
   pointer-events: none;
 }
-/* 拖拽期间放开固定空间的高度上限：34vh 内滚区大约只放得下 4–5 个文件夹，
-   而拖拽期的自动滚动被全局关闭（避免落点漂移），第 6 个及之后的文件夹在拖拽
-   过程中无法滚到 —— 用户只能放弃这次拖拽、手动滚、再拖一次。让固定区在拖拽
-   期间整段可见，成本是列表暂时被撑开（松手即恢复）。 */
+/* 拖拽期间取消固定空间的高度上限，使关闭自动滚动时所有文件夹仍可作为可见落点；松手后恢复常态布局。 */
 body.dnd-dragging .fixed-area {
   max-height: none;
 }
-/* 高度降级：真正的挤压源是**面板高度**而不是宽度。若降级挂在 ≤300px 的容器
-   查询下，320×500 的矮胖面板拿不到降级（该让位时不让），280×900 的高瘦面板
-   反而被压到 160px（不该让位时乱让）。按视口高度降级才对上因果。
-   用媒体查询而非 container-type: size：后者会让 .app 成为 fixed 后代的包含块
-   并新建层叠上下文，Dialog/ContextMenu/DragOverlay 全部要重新回归。 */
+/* 固定空间的高度限制按视口高度启用，使矮面板为主列表让位，同时避免高瘦面板被不必要地压缩。
+   使用媒体查询而非 container-type: size，避免 .app 成为 fixed 后代的包含块并创建新层叠上下文。 */
 @media (max-height: 620px) {
   .fixed-area {
     max-height: min(24vh, 160px);
@@ -1973,7 +1931,7 @@ body.dnd-dragging .fixed-area {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-brand-500) 32%, transparent);
 }
 
-/* DragOverlay 跟随指针的拖拽视觉（替代原生 HTML5 DnD 的系统 ghost） */
+/* DragOverlay 展示跟随指针移动的拖拽内容。 */
 .drag-overlay-chip {
   display: flex;
   align-items: center;
@@ -2011,9 +1969,7 @@ body.dnd-dragging .fixed-area {
   --row-bg: var(--row-hover);
 }
 
-/* 已休眠（discarded）：只淡化 favicon，标题降到仍满足 4.5:1 的灰阶。
-   历史缺陷：整行 opacity-60 会把标题压到约 2.68:1（AA 要求 4.5:1），低视力用户
-   完全读不清 —— 而休眠恰恰是最需要看清标题的时候。
+/* 已休眠（discarded）：只淡化 favicon，标题保持满足 4.5:1 对比度的灰阶，确保页面名称仍清晰可读。
    参数与 .pinned-tile.is-discarded 对齐（0.56 + grayscale .9），两处共用同一语义。 */
 .row-item.is-discarded .row-favicon {
   opacity: 0.56;
@@ -2064,9 +2020,8 @@ body.dnd-dragging .fixed-area {
   font-weight: 600;
 }
 
-/* 媒体播放中的标签：加粗品牌色标题 + 行内脉冲胶囊。刻意不再叠加整行绿底 ——
-   与激活态（15% 绿底）、搜索命中（8% 绿底）同色相浓度差仅 6-7%，肉眼难辨；
-   播放信号由 media-playing-badge 独自承担后，三态可一眼区分。 */
+/* 媒体播放中的标签使用加粗品牌色标题与行内脉冲胶囊，不铺整行绿底；
+   播放、激活（15%）与搜索命中（8%）由不同信号表达，便于区分。 */
 .row-item.is-media-playing .title-text {
   color: var(--c-brand-700);
   font-weight: 600;
@@ -2435,10 +2390,7 @@ body.dnd-dragging .fixed-area {
   pointer-events: none;
 }
 
-/* 更窄档（≤360px）：只收紧来源树缩进。
-   曾在此隐藏底栏分隔线与「关于 / 重排 / 定位」——理由是它们都有命令面板替代
-   路径、隐藏后底栏能回到一行；但实际效果是用户看到「图标莫名少了一半」，
-   入口的可发现性损失远大于省下的 20px 高度。底栏换行是可接受的代价，恢复常驻。 */
+/* 更窄档（≤360px）：只收紧来源树缩进；底栏入口保持常驻，允许换行以保留功能可发现性。 */
 @container (max-width: 360px) {
   /* 窄面板下来源树缩进收紧：4 级固定 70px 会吃掉约 22% 的行宽 */
   .row-item {

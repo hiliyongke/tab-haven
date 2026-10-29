@@ -32,10 +32,7 @@ interface StubEvent {
   trigger: (...args: unknown[]) => void;
 }
 
-/**
- * 取事件桩。断言集中在**这两个助手**里：此前每个调用点各写一遍
- * `as any` 并配一条 eslint-disable，等于在全仓唯一的零豁免纪律上开了 4 个口子。
- */
+/** 获取用于触发标签与分组事件的测试事件桩。 */
 const stubEventOf = (ns: 'tabs' | 'tabGroups', name: string): StubEvent => {
   const evt = (fakeBrowser[ns] as unknown as Record<string, StubEvent>)[name];
   // 取不到就明确失败：返回一个「看起来能用」的 undefined 会让后面的
@@ -104,7 +101,7 @@ describe('TabSyncService', () => {
     stop();
   });
 
-  it('StrictMode 双启停后仍能刷新（回归：单例 stopped 字段曾卡死首帧）', async () => {
+  it('StrictMode 清理后重新订阅仍能刷新快照', async () => {
     stubEvents();
     const service = new TabSyncService();
     const snapshotCount = { value: 0 };
@@ -127,7 +124,7 @@ describe('TabSyncService', () => {
     });
     await vi.waitFor(() => expect(snapshotCount.value).toBeGreaterThanOrEqual(1));
 
-    // 触发事件，第二次订阅必须仍能刷新（不应被第一次的 stopped 影响）
+    // 第二次订阅仍应响应标签事件并刷新快照。
     vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(() =>
       Promise.resolve([makeTab({ id: 1 }), makeTab({ id: 2 })])
     );

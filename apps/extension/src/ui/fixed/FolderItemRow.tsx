@@ -25,8 +25,7 @@ import { classifyDrop } from '@/ui/dnd/dropPolicy';
 import { DragType, type DragData } from '@/ui/dnd/types';
 
 /** 固定条目行：复用分组标签行（row-item）的视觉与交互，排序用全局 dnd-kit。
- *  运行时状态（isOpen / runtimeTab）由 FolderRow 建索引后下传；本组件纯 memo 叶子，
- *  不再订阅 tabs，避免每个条目各自扫全量标签（O(条目×标签) 退化为 O(标签+条目)）。 */
+ *  运行时状态（isOpen / runtimeTab）由 FolderRow 建索引后下传，本组件作为 memo 化叶子渲染。 */
 export const FolderItemRow = memo(function FolderItemRow({
   folder,
   item,
@@ -49,7 +48,7 @@ export const FolderItemRow = memo(function FolderItemRow({
   const isOpen = runtime.isOpen;
   const isActive = runtimeTab?.active ?? false;
 
-  // 固定条目始终可排序（无论是否打开），不再用 isOpen 禁用。
+  // 固定条目始终可排序，与关联标签是否打开无关。
   const sortable = useSortable({
     id: item.id,
     // 同 TabRow：关掉让位过渡，避免动画期间矩形漂移导致落点不准。
@@ -103,11 +102,8 @@ export const FolderItemRow = memo(function FolderItemRow({
   const handleOpen = useCallback(() => void openSavedItem(item), [openSavedItem, item]);
 
   /**
-   * 移出文件夹：删除长期保存的资产 + 顺手关掉对应标签。
-   *
-   * 两个副作用必须一起做成可撤销：⌘Z 只把标签重新打开、条目不会回来，用户会
-   * 以为撤销没生效。故先关标签（入撤销栈），再删条目，最后用一条 toast 同时
-   * 回滚两者。抽成函数供行内按钮与右键菜单共用。
+   * 移出文件夹：关闭对应标签并删除长期保存的条目，两个操作由同一撤销回执恢复。
+   * 关闭先写入撤销栈，再删除条目；行内按钮与右键菜单共用此流程。
    */
   const handleRemove = useCallback(() => {
     const allTabs = useTabStore.getState().tabs;
@@ -124,8 +120,7 @@ export const FolderItemRow = memo(function FolderItemRow({
     )
       .then(() => removeFolderItem(folder.id, item.id))
       .then(() => {
-        // 撤销栈是**旧的在前**（pushBatch 追加到末尾，popBatch / undo 取 at(-1)），
-        // 取 batches[0] 会拿到最早那批、撤销时把无关的旧标签重新打开。
+        // 撤销栈末尾是最新批次（pushBatch 追加到末尾，undo 取 at(-1)），用于精确撤销本次关闭。
         const closedBatchId = closable ? useUndoStore.getState().batches.at(-1)?.id : undefined;
         useUndoStore.getState().notify(t('已移出文件夹'), {
           label: t('撤销'),

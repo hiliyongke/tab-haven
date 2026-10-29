@@ -1,8 +1,7 @@
 /**
  * 信任数字带。
  *
- * 每个数字都必须能在仓库里找到出处 —— 这四格是替代「Logo 墙 / 用户评价」的
- * 社会证明（产品未上架、没有真实用户，编造背书就是假数据），所以只能放可核验事实。
+ * 每个数字都必须能在项目代码或公开说明中核验，确保展示内容准确可信。
  */
 export interface ProofStat {
   /** 数字字面量：不进词典（两种语言下一致） */
@@ -13,7 +12,7 @@ export interface ProofStat {
 
 export const PROOF_STATS: readonly ProofStat[] = [
   {
-    // 出处：扩展零出站请求，`scripts/privacy-check.mjs` 每次发布前强制校验
+    // 依据：扩展功能不发起出站网络请求。
     value: '0',
     labelKey: '出站网络请求',
     noteKey: '扩展不发起任何网络请求，可自行用 DevTools 验证'
@@ -22,7 +21,7 @@ export const PROOF_STATS: readonly ProofStat[] = [
     // 出处：wxt.config.ts 的 permissions（12 项）
     value: '12',
     labelKey: '项权限逐条写明',
-    noteKey: '每一项都写清用途，清单冻结、新增即触发门禁'
+    noteKey: '权限用途逐项公开说明'
   },
   {
     // 出处：README 功能一览「安全网」：撤销栈深 10

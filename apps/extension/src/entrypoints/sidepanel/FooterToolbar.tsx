@@ -1,4 +1,4 @@
-import { useMemo, type ComponentProps, type ReactNode } from 'react';
+import { type ComponentProps, type ReactNode } from 'react';
 import { useDndMonitor } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -10,7 +10,8 @@ import { useTranslation } from '@/i18n';
 import {
   FOOTER_ID_PREFIX,
   footerButtonId,
-  normalizeFooterOrder,
+  footerButtonKeyFromId,
+  type FooterButtonId,
   type FooterButtonKey
 } from '@/core/layout/footerOrder';
 import { IconButton } from '@/ui/common/IconButton';
@@ -115,10 +116,10 @@ interface FooterToolbarProps {
   /** 底部工具区文字模式：开启后图标旁显示功能名称。 */
   footerLabels: boolean;
   onOpenPalette: () => void;
-  /** 持久化的按钮顺序（`footer:` 前缀 id 列表；空数组 = 用内置默认顺序）。 */
-  footerOrder: readonly string[];
+  /** 持久化的完整按钮顺序（`footer:` 前缀 id 列表）。 */
+  footerOrder: readonly FooterButtonId[];
   /** 拖拽后的新顺序上抛（调用方负责持久化）。 */
-  onReorderFooter: (order: string[]) => void;
+  onReorderFooter: (order: FooterButtonId[]) => void;
 }
 
 export function FooterToolbar(props: FooterToolbarProps) {
@@ -155,8 +156,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
     batchBusy = 'idle'
   } = props;
 
-  /** 生效顺序：持久化值补全后即为完整列表（含未出现在持久化值里的新按钮）。 */
-  const order = useMemo(() => normalizeFooterOrder(footerOrder), [footerOrder]);
+  const order = footerOrder.map(footerButtonKeyFromId);
 
   /**
    * 拖拽结束写回顺序。
@@ -173,7 +173,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
       const from = order.findIndex((key) => footerButtonId(key) === activeId);
       const to = order.findIndex((key) => footerButtonId(key) === overId);
       if (from < 0 || to < 0) return;
-      onReorderFooter(arrayMove(order.map(footerButtonId), from, to));
+      onReorderFooter(arrayMove([...footerOrder], from, to));
     }
   });
 
@@ -320,10 +320,7 @@ export function FooterToolbar(props: FooterToolbarProps) {
        中间的空档是刻意的「呼吸区」—— 它把「这个窗口有多少标签」与「能做什么」
        分成两件事，符合工具条的信息层级。 */
     <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5 border-t border-gray-200 px-2 py-1 text-2xs text-gray-500">
-      {/* 计数徽章：视觉只留数字（与分区头的计数胶囊同构 —— 同一个 .count-pill），
-          语义由 sr-only 的整句承载。
-          这里用 t('共 {{count}} 个标签') 插值而不是拼串：整句进词典可避开
-          「空串 + 数字」的英文拼接问题，可见部分又能只留数字。 */}
+      {/* 计数徽章：可见部分只显示数字，完整语义由 sr-only 与 title 中的本地化句子承载。 */}
       <span className="shrink-0" title={t('共 {{count}} 个标签', { count: tabCount })}>
         <span className="count-pill" aria-hidden="true">
           {tabCount}

@@ -85,9 +85,7 @@ export function FixedArea() {
     return () => window.removeEventListener(CREATE_FOLDER_REQUEST_EVENT, handleCreateRequest);
   }, []);
 
-  // 滚动边界提示：抽出为 useScrollFade，供其余内滚区复用。
-  // 内容层不再有「折叠时整体替换」，文件夹增删由 hook 内的 MutationObserver 覆盖，
-  // 不需要额外的重挂信号。
+  // 滚动边界提示由 useScrollFade 统一管理；文件夹增删通过 hook 内的 MutationObserver 更新。
   useScrollFade(scrollRef);
 
   const handleConfirmDrop = (name: string) => {
@@ -97,12 +95,10 @@ export function FixedArea() {
     const targetTabs = useTabStore.getState().tabs.filter((tab) => request.tabIds.includes(tab.id));
     void (async () => {
       const folder = await createFolder(name);
-      // 超限时 createFolder 返回 null：不能拿一个从未落盘的 id 继续加条目，
-      // 否则条目写进了一个不存在的文件夹（界面上表现为「拖过去没反应」且无提示）。
+      // 超限时 createFolder 返回 null；没有已落盘的 folder id 时中止添加条目。
       if (!folder) return;
       await addTabsToFolder(targetTabs, folder.id);
-      // 新建的文件夹可能落在固定空间的滚动区之外（固定区上限 34vh），
-      // 不给反馈的话用户会以为「拖过去没反应」。
+      // 新建文件夹可能位于固定空间的滚动区之外，因此完成后显示操作回执。
       notify(t('已新建文件夹'));
     })().catch((error: unknown) =>
       useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)
@@ -186,8 +182,7 @@ export function FixedArea() {
             setCreating(false);
             void createFolder(name).then(
               (folder) =>
-                // null = 已达上限且已给出可操作的提示（删掉不再需要的文件夹），
-                // 不能再补一句「已新建文件夹」谎报成功。
+                // null 表示已达上限且已给出可操作提示；仅创建成功时显示完成回执。
                 folder ? notify(t('已新建文件夹')) : undefined,
               (error: unknown) =>
                 useUndoStore.getState().notifyFailure('fixed', t('操作失败，请稍后重试'), error)

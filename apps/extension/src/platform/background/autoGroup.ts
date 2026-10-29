@@ -25,7 +25,7 @@ import { listNormalWindowIds } from '@/platform/windows';
  *  3. 开关关闭即解散本功能创建的组（disbandAutoGroups）。
  *
  * 调度模型：事件只登记窗口 + 起一个合并定时器（leading 不抢、trailing 合并），一轮 drain
- * 内按窗口串行；本轮若发生组内移出，说明派生视图已过期，立刻补跑一轮。
+ * 内按窗口串行；本次对账若发生组内移出，说明派生视图已过期，立刻补跑一轮。
  */
 
 /** 合并窗口内连续标签事件的缓冲时长：足以把 onCreated 与随后的 onUpdated(url) 合成一轮。 */
@@ -73,7 +73,7 @@ async function reconcileAllWindows(): Promise<void> {
       scheduleAutoGroupReconcile(windowId);
     }
   } catch (error) {
-    logDegraded('auto-group', '枚举窗口失败，跳过本轮自动分组', error);
+    logDegraded('auto-group', '枚举窗口失败，跳过本次对账自动分组', error);
   }
 }
 
@@ -105,7 +105,7 @@ export function resetAutoGroupSchedulerForTest(): void {
 
 async function drainReconcile(): Promise<void> {
   if (running) {
-    // 执行期间又有事件（tabs.group / ungroup 自身会派发）：本轮结束后补跑，
+    // 执行期间又有事件（tabs.group / ungroup 自身会派发）：本次对账结束后补跑，
     // 而不是并发进入 —— 两轮交错会为同一批标签重复建组。
     rerunRequested = true;
     return;
@@ -113,9 +113,9 @@ async function drainReconcile(): Promise<void> {
   running = true;
   try {
     let round = 0;
-    // 本轮是否还需要再跑（三个来源）：needAnotherRound 某窗口发生组内移出、派生视图已过期；
+    // 本次对账是否还需要再跑（三个来源）：needAnotherRound 某窗口发生组内移出、派生视图已过期；
     // rerunRequested 执行期间又有 drain 被请求；pendingWindowIds 执行期间新登记了窗口。
-    // 不复用 rerunRequested 作循环条件：它会被「本轮无需补跑」的结果覆盖，导致第二轮误判已收敛。
+    // 不复用 rerunRequested 作循环条件：它会被「本次对账无需补跑」的结果覆盖，导致第二轮误判已收敛。
     let needAnotherRound = false;
     do {
       needAnotherRound = false;
@@ -124,7 +124,7 @@ async function drainReconcile(): Promise<void> {
       pendingWindowIds.clear();
       for (const windowId of windowIds) {
         if (await reconcileWindow(windowId)) {
-          // 本轮视图已过期：把窗口重新登记，下一轮用最新状态重新派生。
+          // 本次对账视图已过期：把窗口重新登记，下一轮用最新状态重新派生。
           needAnotherRound = true;
           pendingWindowIds.add(windowId);
         }
@@ -151,9 +151,9 @@ async function reconcileWindow(windowId: number): Promise<boolean> {
       readFixedExcludedTabIds()
     ]);
     // tabGroups 能力缺失的环境返回空数组；查询失败不能拖垮整轮（按无组处理），但必须留痕：
-    // 空组表会让本轮把已有分组判为不存在，进而可能重复建组。
+    // 空组表会让本次对账把已有分组判为不存在，进而可能重复建组。
     const groups = await queryWindowGroups(windowId).catch((error) => {
-      logDegraded('auto-group', `窗口 ${windowId} 原生组查询失败，本轮按无组对账`, error);
+      logDegraded('auto-group', `窗口 ${windowId} 原生组查询失败，本次对账按无组对账`, error);
       return [];
     });
     if (tabs.length === 0) return false;
@@ -169,7 +169,7 @@ async function reconcileWindow(windowId: number): Promise<boolean> {
     });
 
     // 1) 纠正域名漂移。有移出说明本次派生视图已过期（被移出的标签仍算在组内），
-    //    本轮不建组，交给下一轮重新聚合 —— 避免用过期视图产出重复组。
+    //    本次对账不建组，交给下一轮重新聚合 —— 避免用过期视图产出重复组。
     if ((await reconcileAutoGroupDomains(sections)) > 0) return true;
 
     // 2) 建组 / 吸收同站点未分组标签。

@@ -125,8 +125,7 @@ function RowList({
   //    全部项挂载，虚拟化与列表内排序天然互斥；排序是默认开启的高频能力，
   //    60 行就剥夺它会造成大面积行为突变，因此让「能拖拽排序」优先，
   //    直到行数大到必须让步。跨容器拖到固定空间仍可用。
-  // 阈值只写在常量上，注释不重复具体数字：**注释里的数字会过期**。本段曾写
-  // 「放宽到 120」而常量实为 80，两者不一致时读代码的人无从判断以哪个为准。
+  // 阈值以常量为唯一事实来源，注释只说明行为，避免重复数字造成口径漂移。
   const useVirtual =
     (!reorderEnabled && tabs.length > VIRTUAL_THRESHOLD) || tabs.length > FORCE_VIRTUAL_THRESHOLD;
   // 因超阈值被强制暂停排序时给出行内说明；用户主动关闭排序开关的虚拟化
@@ -135,8 +134,7 @@ function RowList({
   const viewportHeight = useViewportHeight();
 
   if (useVirtual) {
-    // itemSize 为估算起步值：VirtualRowList 首行挂载后会实测校准，
-    // 字号 / 密度 / 副标题开关调整不再要求同步改这里的公式。
+    // itemSize 作为首帧估算值；VirtualRowList 挂载后实测行高，并在字号、密度或副标题变化时重新校准。
     // 单行 = 行高 + 垂直 padding（tight 16+0 / compact 16+4 / cozy 16+12 / large 19+20）；
     // cozy 按 16+8 算得 24，实际 .density-cozy 是上下各 6px = 28，
     // 首帧 totalHeight 会少 4px，滚动条长度在挂载后跳一次。

@@ -103,8 +103,7 @@ export function OtherWindowsSection({
     // 不设 aria-label：下方可见标题已提供可访问名，重复会二次播报。
     <section className="mt-1">
       <p className="group-label px-2 pb-1 pt-2">{t('其他窗口')}</p>
-      {/* 窗口卡不再 mx-1 内缩：内缩 4px 后其内部内容的竖线必然偏离全局 8px，
-          改为满宽卡（与 .section-card 同一语言）+ 内部 px-2，内容落在 8px 竖线上。 */}
+      {/* 窗口卡使用满宽布局，内部 px-2 让内容与全局 8px 竖线对齐。 */}
       {bucketsByWindow.map(({ win, buckets }) => (
         <div key={win.windowId} className="mb-1.5">
           <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5">
@@ -135,14 +134,11 @@ export function OtherWindowsSection({
               {tabs.map((tab) => (
                 <div key={tab.id} className="flex min-w-0 items-center gap-1.5 px-2 py-1">
                   <Favicon pageUrl={tab.url} title={tab.title || tab.url || ''} />
-                  {/* 刻意保留裸 button：Button 的 min-h-6 + py-1 会把这一行的行高
-                      从 28px 撑到 32px，px-2 还会让标题相对 favicon 右移 8px ——
-                      密集列表里这是布局回归，不是收敛。（命中区不足 24px 的问题
-                      与 ListStates 的引导块同类，需另立方案，不在本轮范围。） */}
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 truncate text-left text-3xs text-gray-700 hover:text-accent-700"
-                    title={t('聚焦该标签（切到它所在窗口）')}
+                  <Button
+                    variant="ghost"
+                    size="dense"
+                    className="min-w-0 flex-1 justify-start truncate px-0 py-0 text-left text-3xs text-gray-700 hover:text-accent-700"
+                    tooltip={t('聚焦该标签（切到它所在窗口）')}
                     onClick={() => onFocusTab(tab)}
                   >
                     {tab.title || tab.url}
@@ -151,7 +147,7 @@ export function OtherWindowsSection({
                         {t('激活')}
                       </Chip>
                     )}
-                  </button>
+                  </Button>
                   {/* 拉到当前窗口：「聚焦」会把浏览器窗口焦点跳走、侧边栏上下文跟着
                       切换，用户容易迷失，因此跨窗口整理必须另给一条不切焦点的路径。 */}
                   {onPullToWindow && (
@@ -168,8 +164,7 @@ export function OtherWindowsSection({
                     icon={Icons.close}
                     label={t('关闭该标签')}
                     danger
-                    /* 12px 图标是这一行的既有观感（与左侧 14px 的「拉到当前窗口」不同档），
-                       本轮只收口不改版，故显式保留；统一图标尺寸另议。 */
+                    /* 12px 图标与左侧「拉到当前窗口」的 14px 图标形成视觉层级。 */
                     iconClass="h-3 w-3"
                     className="shrink-0"
                     onClick={() => onCloseTab(tab)}

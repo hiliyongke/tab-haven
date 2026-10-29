@@ -9,17 +9,9 @@ import type { RecentClosedEntry } from '@/platform/sessions';
 import { translate } from '@/i18n';
 
 /**
- * `ui/common` 里两个组件的边界与历史行为。
- *
- * **ErrorBoundary** 是整棵 UI 树的最后一道防线：它失效的表现是**白屏**。文案必须走
- * `i18n.t`（类组件拿不到 hooks），因为硬编码中文会让英文用户在最需要看懂说明的时刻
- * 读到看不懂的文字。`componentDidCatch` 还必须把组件栈写进诊断，否则线上只剩一句
- * 「渲染异常」，无从定位。
- *
- * **UndoHistoryPanel** 有两条容易写错的并发/复位契约：
- *  - **恢复互斥**：并发点击不同行会互相覆盖 `restoringId`，先完成的回调把另一行提前解禁；
- *  - **finally 复位**：`sessions.restore` 抛错（sessionId 失效）时必须经 finally 复位，
- *    否则该按钮**永久 disabled 卡死**。
+ * ErrorBoundary 在子树异常时展示本地化错误页并记录异常与组件栈。
+ * UndoHistoryPanel 的撤销历史与浏览器最近关闭列表按各自状态展示；恢复期间禁用相关行，
+ * 恢复结束后重新启用按钮。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -74,8 +66,7 @@ function primeUndoStore(overrides: Partial<ReturnType<typeof useUndoStore.getSta
   const undoBatch = vi.fn(async () => undefined);
   const notify = vi.fn();
   const notifyError = vi.fn();
-  // 失败路径走 notifyFailure（用户可见 + 诊断留痕），测试桩必须一并替换，
-  // 否则断言打到的是真实实现、永远不命中。
+  // 错误结果通过 notifyFailure 通知用户并记录诊断。
   const notifyFailure = vi.fn();
   useUndoStore.setState({
     batches: [],
@@ -219,7 +210,7 @@ describe('UndoHistoryPanel 空态与引导', () => {
     expect(await screen.findByText(translate('暂无撤销记录'))).toBeInTheDocument();
   });
 
-  it('空历史但有快照时给出崩溃引导，点击可跳转快照面板', async () => {
+  it('撤销历史为空且有快照时展示快照入口', async () => {
     primeUndoStore();
     const { onOpenSnapshots } = renderPanel({ hasSnapshots: true });
 
@@ -234,7 +225,7 @@ describe('UndoHistoryPanel 空态与引导', () => {
     expect(onOpenSnapshots).toHaveBeenCalled();
   });
 
-  it('有历史时不展示崩溃引导（避免误导）', async () => {
+  it('有撤销批次时不展示空历史引导', async () => {
     primeUndoStore({ batches: [batch('b1')] as never });
     renderPanel({ hasSnapshots: true });
 
@@ -267,7 +258,7 @@ describe('UndoHistoryPanel 撤销栈', () => {
 
     const buttons = await screen.findAllByTitle(translate('恢复该批次关闭的标签'));
     expect(buttons).toHaveLength(2);
-    // 栈数组按时间正序存放，展示时 reverse：最新（newer）在最上
+    // 最新批次位于列表首行。
     expect(buttons[0]!.textContent).toContain('newer0.com');
     expect(buttons[1]!.textContent).toContain('older0.com');
   });
@@ -367,7 +358,7 @@ describe('UndoHistoryPanel 浏览器最近关闭', () => {
       )
     );
 
-    // 关键：按钮必须恢复可用（finally 复位 restoringId）
+    // 恢复失败后，该行按钮仍可再次操作。
     await waitFor(() => {
       const button = row.closest('button');
       expect(button).not.toBeDisabled();

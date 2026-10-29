@@ -108,8 +108,8 @@ export function SectionShell({
         dragKeyboard={dragKeyboard}
       />
       {/* 只有可折叠分区才包 body 容器：panelId 要供 SectionHead 的 aria-controls 使用。
-          模块壳（无 onToggle）直接渲染 children —— 多包一层 div 会让模块内的第一张
-          分区卡命中 `.section-card:first-child`，把顶部分隔线去掉（视觉回归）。 */}
+          模块壳（无 onToggle）直接渲染 children，使模块内的第一张分区卡命中
+          `.section-card:first-child` 并隐藏顶部分隔线。 */}
       {onToggle ? !collapsed && <div id={panelId}>{children}</div> : children}
     </section>
   );

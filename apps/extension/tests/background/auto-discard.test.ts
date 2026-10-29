@@ -12,15 +12,8 @@ import {
 import { syncCachedSettings } from '@/platform/background/shared';
 
 /**
- * 自动休眠（`alarms` 保活调度）与批量休眠。
- *
- * 这是**唯一会主动冻结用户标签**的自动化路径，误判的代价是用户数据被静默冻结，
- * 因此断言重点是「安全集」的四道排除：白名单 / 固定空间绑定 / 最近访问 / 标签自身状态。
- *
- * 环境说明：`tabs.query` 被替换为可控的标签夹具，且 `tabs.discard` **会真实改写夹具的
- * `discarded` 标志** —— 这不是过度设计：`runAutoDiscard` 末尾的 `pruneAutoDiscardBatch`
- * 会按「批次内是否仍有存活休眠标签」决定是否清空台账。若夹具永远返回 `discarded:false`，
- * prune 必然清空刚写好的台账，测试就变成了在验证错误的行为。
+ * 自动休眠行为规格：仅处理满足条件的后台标签，并排除白名单、固定空间绑定、近期访问及
+ * 不适合休眠的标签状态；批量休眠会记录实际成功的标签。
  */
 
 interface FakeTab {
@@ -213,7 +206,7 @@ describe('runAutoDiscard 安全集', () => {
   it('台账清理：批次内标签已全部唤醒时清空（不留无法撤销的陈旧入口）', async () => {
     await applySettings({ autoDiscardEnabled: true, autoDiscardMinutes: 30 });
     await autoDiscardRepository.write([{ tabIds: [900], at: Date.now(), count: 1 }]);
-    // 所有标签都「刚访问过」→ 本轮不产生新的休眠，只剩清理逻辑生效
+    // 所有标签都「刚访问过」→ 本次执行不产生新的休眠，只清理现有台账
     installTabsApi([makeTab({ id: 1, url: 'https://a.com/', lastAccessed: Date.now() })]);
 
     await runAutoDiscard();

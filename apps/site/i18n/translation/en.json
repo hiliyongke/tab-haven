@@ -96,12 +96,10 @@
   "i18n_1ljo0sa": "The notes that spell things out",
   "i18n_0asjss0": "Why each permission is needed, where data lives, how to verify the zero-network claim — expand and read, no need to leave the page.",
   "i18n_0088ry0": "Privacy promise and self-verification",
-  "i18n_0fcs7wc": "The extension contains no network requests and opens no outbound connections; a privacy regression script enforces this before every release.",
   "i18n_1w7mxlb": "Data lives mainly in chrome.storage.local, works offline, and is removed when you uninstall the extension.",
   "i18n_1nr785f": "No analytics and no crash reporting — the trade-off is that we cannot see failures in the wild, so diagnostic logs stay on your machine until you export them.",
   "i18n_132v7gd": "Want to check yourself? Open the Network panel in DevTools and watch the extension's service worker context: zero requests.",
   "i18n_1hc9mkd": "Permissions, line by line",
-  "i18n_0f93axp": "The permission list is frozen: adding one fails the privacy regression check and updates the explanations here.",
   "i18n_0mbgylv": "Backup, import and sync mirroring",
   "i18n_1b1j0ok": "Full backup export and import: favorites, settings and every snapshot and archive, in a single JSON format that rejects anything else.",
   "i18n_0kh0mar": "Imports are transactional: if any step fails, everything rolls back and no partial data is left behind.",
@@ -193,7 +191,6 @@
   "i18n_06dgha6": "outbound network requests",
   "i18n_11nupnc": "The extension makes no network requests — verify it yourself in DevTools",
   "i18n_1op5nzd": "permissions, each with its purpose",
-  "i18n_136hh08": "Every one has a stated purpose; the list is frozen, adding one trips the gate",
   "i18n_13xx2jv": "levels of undo",
   "i18n_19wlpn4": "Step back one batch at a time, or restore a whole batch",
   "i18n_0hv3qs9": "computed on your machine",
@@ -230,5 +227,8 @@
   "i18n_14c64ho": "Four everyday moments, and what it does for you in each.",
   "i18n_15d1qac": "No account needed",
   "i18n_1nctibe": "Open your browser's extensions page (see the addresses below) and turn on Developer mode in the top-right corner.",
-  "i18n_1qnrhl8": "It is not listed yet. For now, download the archive, unzip it, open your browser's extensions page (chrome://extensions on Chrome / Brave, edge://extensions on Edge), turn on developer mode, then choose \"Load unpacked\" and pick the folder."
+  "i18n_1qnrhl8": "It is not listed yet. For now, download the archive, unzip it, open your browser's extensions page (chrome://extensions on Chrome / Brave, edge://extensions on Edge), turn on developer mode, then choose \"Load unpacked\" and pick the folder.",
+  "i18n_0embyr9": "Each permission and its purpose is listed publicly.",
+  "i18n_0qlivet": "The extension makes no outbound network requests.",
+  "i18n_13shjc6": "The permissions and their purposes are listed below. Website access is requested only when you enable ‘Disable cache for selected sites.’"
 }

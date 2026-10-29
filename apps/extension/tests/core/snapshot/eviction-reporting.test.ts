@@ -47,7 +47,7 @@ describe('trimSnapshotsWithEvicted', () => {
     expect(r.evicted.map((s) => s.id)).toEqual(['m1']);
   });
 
-  it('kept 按创建时间倒序（防自比较回归）', () => {
+  it('kept 按创建时间倒序', () => {
     const r = trimSnapshotsWithEvicted(
       [snap('x', 'manual', 1), snap('y', 'manual', 5), snap('z', 'manual', 3)],
       settings

@@ -120,9 +120,8 @@ export function createFolderSlice(
         return { added: 0, moved: 0, skipped: tabs.length };
       }
 
-      // 纯计算推迟到写入前一刻以最新基线重算（updater 内 get→算→set 无间隙）：
-      // 入口取基线 → await → 旧基线整表回写会在并发间隙覆盖期间的 folders 变更。
-      // 顺序为「先写 folders、后建绑定」：两分区无法真原子，残留窗口由 reconcileWithTabs 兜底。
+      // 在写入前以 updater 的最新基线计算，避免并发间隙覆盖 folders 变更。
+      // folders 与绑定分属两个分区，按「先写 folders、后建绑定」提交；reconcileWithTabs 负责对账。
       let computed: ReturnType<typeof computeAddTabsToFolder> | null = null;
       let baseline: FixedFolder[] = [];
       await ctx.writeFolders((current) => {
@@ -256,8 +255,7 @@ export function createFolderSlice(
         return;
       }
       // 2) 窗口内精确 URL 匹配（与 UI 侧判定同一口径，见 core/fixed/ItemMatch）
-      // 排除已绑定其他条目的标签：否则同一标签同时服务两个条目，违反
-      // 「一个 tab 只服务一个条目」不变量，直到下次 reconcile 才按插入序修复。
+      // 排除已绑定其他条目的标签，保持「一个 tab 只服务一个条目」；对账时按插入序重建绑定。
       const boundTabIds = new Set(Object.values(bindings));
       // 排除 pinned：与本文件 addTabsToFolder 的绑定判定、core/fixed/Reconcile
       // 同一口径（pinned 标签不服务固定条目绑定）。

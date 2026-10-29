@@ -8,11 +8,8 @@ import {
 } from '@/core/schema/models';
 
 /**
- * 行为规格：归一化口径唯一在 schema 层。
- *
- * 「只在 UI 输入处归一化」在这里是明确的事故模式：备份导入、同步镜像、直接写
- * storage 三条路径都不经过 UI，落盘即为未归一化值；而匹配端再归一化一次时结果
- * 未必与 UI 一致 —— 表现为「明明加进了白名单，还是被休眠了」「同站点磁贴重复留存」。
+ * 行为规格：持久化与导入数据统一由 schema 归一化；站点身份、白名单与折叠记录
+ * 的匹配口径保持一致。
  */
 
 describe('休眠白名单归一化', () => {
@@ -69,14 +66,8 @@ describe('折叠站点记录归一化', () => {
   });
 });
 
-/**
- * 上限必须在归一化**之后**生效。
- *
- * 写在 transform 之前时，`WWW.a.com` 与 `a.com.` 会各占一份额度（归一化后是同一
- * 站点），上限因此比实际可折叠的站点数更早触顶；数组内还会残留重复项，放大折叠
- * 比对与遍历成本。
- */
-describe('去重与上限的后置语义', () => {
+/** 上限按归一化并去重后的站点数量计算。 */
+describe('归一化去重与上限', () => {
   it('Given 归一化后重复的条目 When 校验 Then 先去重再判上限（上限不被重复项吃掉）', () => {
     const repeated = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? 'WWW.a.com' : 'A.com.'));
     const parsed = SiteCollapseSchema.parse(repeated);
@@ -108,8 +99,7 @@ describe('快照组色收严', () => {
   });
 
   it('Given 非法色名 When 校验 Then 降级为缺省（不让一条装饰数据判死整份备份）', () => {
-    // 组色只用于重建组时取色：整条 SnapshotTab 校验失败会让 snapshots 数组失败，
-    // 进而整份备份被拒 —— 与 favIconUrl / url 的「归一化而非判坏」必须是同口径。
+    // 非法组色降级为缺省值，快照中的其他字段与同批快照保持有效。
     const tab = SnapshotTabSchema.parse({ url: 'https://a.com', groupColor: 'chartreuse' });
 
     expect(tab.groupColor).toBeUndefined();
@@ -164,8 +154,7 @@ describe('备份导入的归一化', () => {
       persistentPins: [
         {
           id: 'p1',
-          // 备份里的 identity 是外部数据：若与 url 不一致，dedupePins 会按这个
-          // 失真身份判重，产出点开是新标签页的磁贴。
+          // 导入时根据 url 重新计算 identity，不沿用备份中的身份值。
           identity: 'WWW.Example.COM',
           url: 'https://www.example.com/',
           title: 'Example'

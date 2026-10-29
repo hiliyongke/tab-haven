@@ -77,7 +77,7 @@ export const AUTO_DISCARDED_IDS_LIMIT = 50;
 const AutoDiscardedMessageSchema = z.object({
   type: z.literal('auto-discarded'),
   tabIds: z.array(z.number().int()).max(AUTO_DISCARDED_IDS_LIMIT),
-  /** 本轮真实休眠的标签数（可能大于 tabIds 的长度：超限时 tabIds 被截断）。 */
+  /** 此次自动休眠的标签数（可能大于 tabIds 的长度：超限时 tabIds 被截断）。 */
   count: z.number().int(),
   at: z.number()
 });

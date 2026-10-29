@@ -5,17 +5,8 @@ import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { DataContext, DataState } from '@/stores/data/types';
 
 /**
- * 「开启同步」时的反向恢复（`stores/data/mirrorRestore.ts`）。
- *
- * 这段逻辑的成败决定换机时数据能不能回来，三条错了会丢用户数据：
- *
- * 1. **已 seeded 的老设备不得被陈旧镜像反向覆盖** —— 它本地即权威，直接短路返回；
- * 2. **镜像拿不到时不得推镜像** —— 本地是空态，推上去会覆盖旧设备留下的镜像，
- *    换机恢复与云端副本同时丢失（这是「failed / no-mirror」要分开上报的原因）；
- * 3. **写盘失败不置 seeded** —— 置位会让它永久失去重试机会。
- *
- * 另一条可见性要求：`pull()` 返回 null 有四种成因，这里必须把分类原样交给 store
- * （`mirrorIssue`），否则「镜像损坏」会被设置页说成「超出容量上限」。
+ * 开启同步时的镜像恢复行为规格：已有本地数据时不覆盖；未能读取或写入有效镜像时
+ * 不设置 seeded，并将镜像状态分类交给 store；恢复成功后更新本地数据并设置 seeded。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -101,7 +92,7 @@ afterEach(() => {
 });
 
 describe('restoreFromMirrorOnEnable', () => {
-  it('已 seeded 的老设备：短路返回，不拉取镜像（本地即权威）', async () => {
+  it('已 seeded 时不拉取镜像，以本地数据为准', async () => {
     const h = await harness({ seeded: true });
 
     await expect(h.run()).resolves.toBe('already-seeded');
@@ -125,8 +116,7 @@ describe('restoreFromMirrorOnEnable', () => {
     mocks.pullIssue.mockReturnValueOnce('chunk-limit');
     const h = await harness();
 
-    // 必须 failed 而不是 no-mirror：镜像确实存在（只是读不出来），本地此刻是空态，
-    // 一旦按 no-mirror 允许推镜像，云端那份旧设备数据就被空数据覆盖，换机恢复永久失效。
+    // 镜像存在但不可读时保持未 seeded，并保留 chunk-limit 分类。
     await expect(h.run()).resolves.toBe('failed');
     expect(h.set).toHaveBeenCalledWith({ mirrorIssue: 'chunk-limit' });
     expect(h.seededWrite).not.toHaveBeenCalled();
@@ -153,12 +143,12 @@ describe('restoreFromMirrorOnEnable', () => {
     await expect(h.run()).resolves.toBe('restored');
 
     expect(h.set).toHaveBeenCalledWith({ mirrorIssue: 'ok' });
-    // 写盘前经 FixedFolderSchema 归一化，故只断言身份而非整对象
+    // 恢复后持久化的文件夹保留原有身份。
     expect(h.foldersWrite).toHaveBeenCalledWith([expect.objectContaining({ id: 'from-mirror' })]);
     expect(h.seededWrite).toHaveBeenCalledWith(true);
   });
 
-  it('镜像形状非法：不恢复、不置 seeded、上报失败（留下次重试机会）', async () => {
+  it('镜像内容非法时不恢复、不置 seeded 并报告失败', async () => {
     mocks.pull.mockResolvedValueOnce({
       folders: [{ wrong: 'shape' }],
       pins: [],
@@ -172,12 +162,11 @@ describe('restoreFromMirrorOnEnable', () => {
     expect(h.seededWrite).not.toHaveBeenCalled();
     expect(h.foldersWrite).not.toHaveBeenCalled();
     expect(h.reportPersistenceFailure).toHaveBeenCalled();
-    // 镜像读得到但内容非法：状态分类必须降级，否则设置页显示「已生效」
-    // 而本地一条都没恢复（pull 的 'ok' 只说明镜像可读）。
+    // 镜像内容非法时，状态分类为 unreadable。
     expect(h.set).toHaveBeenLastCalledWith({ mirrorIssue: 'unreadable' });
   });
 
-  it('写盘失败：不置 seeded（否则永久失去重试机会）', async () => {
+  it('本地写入失败时保持未 seeded 并报告失败', async () => {
     mocks.pull.mockResolvedValueOnce({
       folders: [folder('from-mirror')],
       pins: [],
@@ -190,15 +179,11 @@ describe('restoreFromMirrorOnEnable', () => {
 
     expect(h.seededWrite).not.toHaveBeenCalled();
     expect(h.reportPersistenceFailure).toHaveBeenCalled();
-    // 镜像读到了但一条都没落盘：「已生效」是假象，必须降级状态分类
+    // 没有数据成功落盘时，状态分类为 unreadable。
     expect(h.set).toHaveBeenLastCalledWith({ mirrorIssue: 'unreadable' });
   });
 
-  /**
-   * 回归（M4 / S2）：镜像与备份文件同属外部可控输入，url / favicon 必须与导入侧
-   * 同款收紧。此前这里只用基础 schema，同一份「外部数据」在备份入口被降级为
-   * `about:blank`、在镜像入口却原样落盘 —— 等于给备份侧的收紧留了一条绕行通道。
-   */
+  /** 镜像恢复时按备份导入使用的规则校验和归一化 URL 与 favicon。 */
   it('镜像条目 url 为脚本 / 本地文件时归一为 about:blank（与备份入口同口径）', async () => {
     mocks.pull.mockResolvedValueOnce({
       folders: [
@@ -250,7 +235,7 @@ describe('restoreFromMirrorOnEnable', () => {
 
     await expect(h.run()).resolves.toBe('restored');
 
-    // 锁内重读发现本地非空 → 放弃覆盖，不写盘
+    // 本地数据已有内容时，保留本地内容且不写盘。
     expect(h.foldersWrite).not.toHaveBeenCalled();
     expect(h.set).toHaveBeenCalledWith({ folders: local });
     expect(h.seededWrite).toHaveBeenCalledWith(true);

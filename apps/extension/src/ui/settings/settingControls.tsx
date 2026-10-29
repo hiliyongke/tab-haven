@@ -41,12 +41,7 @@ function SectionCount({ count }: { count?: number }) {
 }
 
 /**
- * 设置分区：标题 + 计数 + 卡片容器。
- *
- * 曾支持 `collapsible`（details/summary 折叠「高级设置」抽屉）。该能力已移除：
- * 折叠的唯一价值是缩短滚动长度，而侧栏目录（SettingsOutline）已经提供了直达导航，
- * 折叠只剩代价 —— 用户看不见里面有什么（折叠态没有任何内容提示）。
- * `id` 供目录锚点定位，`scroll-mt-*` 让锚点跳转后标题不贴顶。
+ * 设置分区：标题、计数与卡片容器。`id` 供目录锚点定位，`scroll-mt-*` 让锚点跳转后标题不贴顶。
  */
 export function Section({
   title,
@@ -87,11 +82,8 @@ const ASSOCIABLE_CONTROLS: unknown[] = [Toggle, Select, TextField];
 
 /** children 是否是「唯一的、可关联的表单控件」。 */
 function isAssociableControl(children: ReactNode): boolean {
-  // 先剔掉非元素子节点：`createPortal` 产出的不是 React 元素（isValidElement 为 false），
-  // 但 Children.toArray 仍把它算作一项。带 confirmOffKey 的开关在确认框打开时
-  // children 就是 [Toggle, Portal] —— 不剔就会被判成「多控件组合」，
-  // <label> 退化成 <div>、htmlFor 也不再下发，点标签聚焦/切换的能力
-  // **恰好在弹窗打开那一刻**丢失（交互中途失效，最难自查）。
+  // Children.toArray 会把 portal 也计为一项；过滤非元素节点后再判断唯一控件，
+  // 确保带确认弹窗的单控件行仍可用 <label> 与 htmlFor 关联。
   const items = Children.toArray(children).filter(isValidElement);
   const only = items[0];
   if (items.length !== 1 || only === undefined) return false;
@@ -132,7 +124,7 @@ export function Row({
           {hint && <div className="mt-0.5 text-3xs text-gray-600">{hint}</div>}
         </div>
       </div>
-      {/* 窄屏下控件撑满整行（右对齐改为起始对齐，避免长文本域溢出） */}
+      {/* 窄屏下控件占满整行并起始对齐，避免长文本域溢出。 */}
       <div className="w-full shrink-0 sm:w-auto sm:pl-4">
         <ControlIdContext.Provider value={associable ? controlId : undefined}>
           {children}
@@ -185,10 +177,8 @@ export function WhitelistEditor({
               {/* 描边 Chip：可移除标签的视觉只有这一个来源。 */}
               <Chip tone="outline" className="flex items-center gap-1 px-1.5 py-0.5">
                 {entry}
-                {/* 刻意保留裸 button：.whitelist-remove 已用 inset -6px 把 12px 图标
-                    的命中区扩到 24px（无缺陷可修），而 RowActionButton 内部固定
-                    .row-action 的 20×20 盒 + 品牌色 hover，会把这枚 chip 从 16px 撑到
-                    24px、并把 hover 语义从「灰字变深」改成品牌底。 */}
+                {/* 使用裸 button 保持 chip 的紧凑尺寸；.whitelist-remove 以 inset -6px 扩大命中区，
+                    并保留灰字 hover 样式。 */}
                 <button
                   type="button"
                   aria-label={t('移出白名单')}

@@ -8,10 +8,8 @@ import { useModalA11y } from '@/ui/dialog/Dialog';
 const TOTAL = 3;
 
 /**
- * 三步引导文案（中文原文）。`onboarding.step${step}Title/Body` 运行时拼接会让静态扫描拿不到
- * 完整 key（英文露中文），故改为按步号取原文再查词典。属性名以 `Key` 结尾是扫描器的抽取
- * 约定（见 packages/i18n-kit/src/collect.ts）：常量表原文不是 t() 调用点，只有 `*Key` 属性
- * 会被抽进词典；靠 `@i18n-ignore-start/end` 只压告警、词条不进词典，所以必须走 `*Key` 通道。
+ * 三步引导文案（中文原文）。扫描器按 `*Key` 属性抽取常量表词条，因此按步号读取完整原文 key，
+ * 再由运行时查词典；动态拼接 key 与 `@i18n-ignore-start/end` 不会提供可抽取的完整词条。
  */
 const ONBOARDING_STEPS = [
   {

@@ -127,7 +127,7 @@ export default defineBackground(() => {
     } catch (error) {
       logDegraded(
         'background',
-        '启动时读取同网址唯一化开关失败，本轮维持关闭（fail-closed）',
+        '启动时读取同网址唯一化开关失败，本次启动维持关闭（fail-closed）',
         error
       );
     }
@@ -482,8 +482,7 @@ export default defineBackground(() => {
     }
   });
 
-  // omnibox：t <关键词>。刻意不加防抖：suggest 是必须调用的一次性回调，不调用地址栏会
-  // 永久停在「等待建议」；裸 setTimeout 在 SW 被回收时连同 suggest 引用一起消失。
+  // omnibox：t <关键词>。suggest 是必须调用的一次性回调；延迟到后续定时器会受 Service Worker 生命周期影响。
   browser.omnibox?.onInputChanged.addListener((text, suggest) => {
     if (!cachedSettings.omniboxEnabled) {
       suggest([]);
@@ -535,7 +534,7 @@ export default defineBackground(() => {
           notifyUser('Tabs', t('没有可整理的标签'));
           return;
         }
-        // 角标短暂打勾后恢复正常；走带到期时间的覆盖态（裸 setTimeout 在 SW 回收后不触发）。
+        // 角标短暂显示完成标记，到期后恢复设置对应的真实状态。
         showBadgeOverride('✓', BADGE_DONE_COLOR, BADGE_DONE_TTL_MS);
       } catch (error) {
         logDegraded('background', '工具栏点击处理失败', error);
@@ -553,6 +552,6 @@ export default defineBackground(() => {
     .read()
     .then((settings) => syncAlarms(settings))
     .catch((error: unknown) => {
-      logDegraded('background', '启动时闹钟对齐失败（自动休眠/自动快照本轮不生效）', error);
+      logDegraded('background', '启动时闹钟对齐失败（无法同步自动休眠与自动快照闹钟）', error);
     });
 });
