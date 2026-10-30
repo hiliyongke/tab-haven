@@ -19,7 +19,8 @@ export function TabRowActions({
   onTogglePin,
   onDuplicate,
   onDiscard,
-  onClose
+  onClose,
+  onOpenMenu
 }: {
   tab: TabRecord;
   rowActionsVisible: boolean;
@@ -28,10 +29,22 @@ export function TabRowActions({
   onDuplicate?: (tab: TabRecord) => void;
   onDiscard?: (tab: TabRecord) => void;
   onClose: (tab: TabRecord) => void;
+  /** 触屏「更多操作」按钮：桌面隐藏，触屏显形，打开行右键菜单（补上复制网址等仅菜单可达的动作）。 */
+  onOpenMenu?: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <RowActions forceVisible={rowActionsVisible}>
+      {/* 触屏「更多操作」：桌面 display:none（右键 / Shift+F10 已够），无悬停设备显形，
+          打开与右键同一个菜单，让「复制网址 / 休眠」等仅菜单可达的动作对触屏用户不再缺失。 */}
+      {onOpenMenu && (
+        <RowActionButton
+          icon={Icons.menu}
+          label={t('更多操作')}
+          className="row-action--touch-only"
+          onClick={() => onOpenMenu()}
+        />
+      )}
       {(tab.audible || tab.muted) && (
         <RowActionButton
           icon={tab.muted ? Icons.volumeOff : Icons.volumeOn}

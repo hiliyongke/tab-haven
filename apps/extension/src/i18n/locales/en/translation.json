@@ -284,7 +284,6 @@
   "i18n_1s8e5zy": "Snapshot saved",
   "i18n_04kojh2": "Page opened",
   "i18n_0y23s8p": "This snapshot has no tabs to restore",
-  "i18n_0dpro1w": "Restored {{count}} tabs; the window state could not be read, so pages that were already open may have been opened again",
   "i18n_0w48w4o": "Restored {{count}} tabs",
   "i18n_1q9iymq": "Tabs in this window",
   "i18n_180qecl": "{{count}} tabs matched",
@@ -332,7 +331,6 @@
   "i18n_0zm71mz": "Those tabs are no longer in the window — nothing to redo",
   "i18n_0x1ko8p": "Closed {{count}} tabs",
   "i18n_1wcyh95": "Restored {{count}} tabs; {{failed}} failed and are kept in undo history for retry",
-  "i18n_0s3b2b6": "The window state could not be read, so pages that were already open may have been opened again",
   "i18n_003pq8i": "Redo",
   "i18n_0kpnuoj": "Closed {{count}} tabs; {{skipped}} could not be closed",
   "i18n_0tshpvi": "Redone: closed {{count}} tabs again (you can undo again)",
@@ -798,5 +796,16 @@
   "i18n_0yp5ztr": "Open your browser’s developer tools (F12), select Network, enable Preserve log, and use Tabs normally. You will see no outbound requests made by Tabs.",
   "i18n_0guan4t": "Open the Network panel in DevTools and inspect the extension context to confirm that it makes no outbound network requests.",
   "i18n_1p1uc1c": "The table below lists the permissions declared by this extension and their purposes.",
-  "i18n_01zlviy": "The backup file format does not match this version. Select a backup exported by the current version."
+  "i18n_01zlviy": "The backup file format does not match this version. Select a backup exported by the current version.",
+  "i18n_1ej168y": "Restored {{count}} tabs; some restoration results may be incomplete. Please review the tab list.",
+  "i18n_1a5gkyc": "Some restoration results may be incomplete. Please review the tab list.",
+  "i18n_1v1xn0x": "Import failed: storage was unavailable while writing \"{{name}}\", and the rollback of {{partitions}} could not be completed. Local data may be in a mixed state — do not import again.",
+  "i18n_1oc7s2h": "Import failed: storage was unavailable while writing \"{{name}}\", and we could not confirm whether the rollback completed. Local data may be in a mixed state — do not import again.",
+  "i18n_0tcz647": "Importing…",
+  "i18n_12yt13n": "Item {{index}} of {{count}}: {{title}}",
+  "i18n_03chzcl": "Loading…",
+  "i18n_0pr0ogn": "Loading recently closed tabs…",
+  "i18n_0zjo8j3": "Press Space to drop · Esc to cancel",
+  "i18n_1t2v2v3": "Snapshot deleted",
+  "i18n_1yngzp7": "Checking other windows…"
 }

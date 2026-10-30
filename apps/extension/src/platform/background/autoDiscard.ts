@@ -43,6 +43,14 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   const at = Date.now();
   // 走台账模块：追加是整表 RMW，必须与「面板全部唤醒」共用同一把跨页锁。
   const persisted = await appendAutoDiscardBatch(tabIds, at);
+  if (!persisted) {
+    if (cachedSettings.discardNotifyEnabled) {
+      // 标签确实已休眠，但台账没落盘就没有可靠的一键唤醒入口，通知不得再作此承诺。
+      notifyUser('Tabs', t('已休眠 {{count}} 个标签', { count: tabIds.length }), 'auto-discard');
+    }
+    logDegraded('auto-discard', '自动休眠台账写入失败，本次批次不支持撤销');
+    return;
+  }
   if (cachedSettings.discardNotifyEnabled) {
     // 通知文案走 headless i18n 轨道；用途 id 为 auto-discard，与「保存失败」这类
     // 单次动作通知分开槽位，避免这条带着唯一撤销入口的通知被后一条顶掉。
@@ -51,12 +59,6 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
       t('已休眠 {{count}} 个标签（可在侧边栏一键唤醒）', { count: tabIds.length }),
       'auto-discard'
     );
-  }
-  if (!persisted) {
-    // 台账未落盘：撤销入口会指向不存在的批次，故不发带 tabIds 的「可撤销」消息
-    // （标签本身确实已休眠，通知照发）。
-    logDegraded('auto-discard', '自动休眠台账写入失败，本次批次不支持撤销');
-    return;
   }
   // 协议层对单条消息的 id 数有上限。原样发送超限数据会让整条消息被 schema 拒绝并
   // 静默丢弃——这一轮的「一键唤醒」入口就此消失。按上限截断并留痕（完整台账已在磁盘，

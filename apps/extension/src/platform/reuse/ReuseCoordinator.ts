@@ -210,13 +210,21 @@ export class ReuseCoordinator {
         // 新标签自身在 drain 在途期间被用户固定：固定即「明确要留下」，与既有标签的
         // pinned 豁免同口径——继续合并关闭是破坏性意外。
         if (latest?.pinned ?? tab.pinned) return { action: 'keep' };
+        // scanWindow 在途期间开关可能已关闭；任何激活/关闭副作用前都必须复核。
+        if (!this.enabled) return { action: 'keep' };
         await this.deps.activate(keep.id);
+        if (!this.enabled) return { action: 'keep' };
         // 逐条收集「真正关掉」的标签：复用是默认开启的自动关闭路径，快照必须与关闭结果
         // 一致——多报会撤销出重复标签，少报则留下无处可撤的关闭。关闭失败不再中断本批结算。
         const closed: TabRecord[] = [];
+        let disabledDuringClose = false;
         for (const candidate of existing) {
           // 固定标签豁免关闭（与重复清理面板 KeeperPolicy.pinnedExempt 同口径）。
           if (candidate.id === keep.id || candidate.pinned) continue;
+          if (!this.enabled) {
+            disabledDuringClose = true;
+            break;
+          }
           try {
             await this.deps.close(candidate.id);
             closed.push(candidate);
@@ -224,13 +232,16 @@ export class ReuseCoordinator {
             // 已不存在：不计入撤销账本。
           }
         }
-        try {
-          await this.deps.close(tab.id);
-          closed.push(tab);
-        } catch {
-          // 同上：新建标签已消失时无需登记。
+        if (!disabledDuringClose && this.enabled) {
+          try {
+            await this.deps.close(tab.id);
+            closed.push(tab);
+          } catch {
+            // 同上：新建标签已消失时无需登记。
+          }
         }
         if (closed.length > 0) this.deps.reportClosed?.(tab.windowId, closed);
+        if (disabledDuringClose || !this.enabled) return { action: 'keep' };
         this.deps.notifyReuse();
         return { action: 'reuse', targetId: keep.id };
       }

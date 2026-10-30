@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { inspectUrl } from '@/core/url/UrlInspector';
+import { inspectUrl, isHttpUrl } from '@/core/url/UrlInspector';
 
 /**
  * URL 检视分类与比较键语义的行为规格。
  */
+describe('isHttpUrl', () => {
+  it('只接受有有效主机的绝对 HTTP(S) URL', () => {
+    expect(isHttpUrl('https://example.com/path')).toBe(true);
+    expect(isHttpUrl('https:example.com')).toBe(false);
+    expect(isHttpUrl('http://')).toBe(false);
+    expect(isHttpUrl('https://[::::]/')).toBe(false);
+    expect(isHttpUrl('http://bad host/')).toBe(false);
+  });
+});
+
 describe('inspectUrl', () => {
   it('已提交 web 页归为 web，比较键取已提交 URL', () => {
     const result = inspectUrl('https://example.com/a', undefined);

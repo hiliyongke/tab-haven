@@ -132,7 +132,7 @@ describe('一次撤销的双栈写入', () => {
     expect(useUndoStore.getState().toast?.note).toBe(PERSIST_NOTE);
   });
 
-  it('undo 写失败同样整体回退（两栈一起落盘或一起不落）', async () => {
+  it('undo 写失败时保留 redo 安全态：原撤销批次与新重做批次均可用', async () => {
     const tab = makeTab({ id: 1, url: 'https://a.com/' });
     await useUndoStore.getState().closeWithUndo([tab], [tab.id]);
     const beforeBatches = useUndoStore.getState().batches;
@@ -140,8 +140,9 @@ describe('一次撤销的双栈写入', () => {
 
     await useUndoStore.getState().undo();
 
+    // redo 已真实落盘，不能按旧逻辑只在内存里把它抹掉；磁盘/内存都保留两个恢复出口。
     expect(useUndoStore.getState().batches).toEqual(beforeBatches);
-    expect(useUndoStore.getState().redoBatches).toEqual([]);
+    expect(useUndoStore.getState().redoBatches).toHaveLength(1);
     expect(useUndoStore.getState().toast?.note).toBe(PERSIST_NOTE);
   });
 
@@ -155,5 +156,51 @@ describe('一次撤销的双栈写入', () => {
     expect(useUndoStore.getState().batches).toEqual([]);
     expect(useUndoStore.getState().redoBatches).toHaveLength(1);
     expect(useUndoStore.getState().toast?.note).toBeUndefined();
+  });
+
+  it('真实 redo 写盘失败时不继续写 undo，重载后双栈仍是撤销前状态', async () => {
+    const tab = makeTab({ id: 1, url: 'https://a.com/' });
+    await useUndoStore.getState().closeWithUndo([tab], [tab.id]);
+    const beforeBatches = useUndoStore.getState().batches;
+    const realSet = fakeBrowser.storage.local.set;
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(((
+      items: Record<string, unknown>
+    ) => {
+      if ('tabs.redo-stack.v1' in items) return Promise.reject(new Error('quota'));
+      return realSet(items);
+    }) as never);
+
+    await useUndoStore.getState().undo();
+
+    const stored = await fakeBrowser.storage.local.get([
+      'tabs.undo-stack.v1',
+      'tabs.redo-stack.v1'
+    ]);
+    expect(stored['tabs.undo-stack.v1']).toEqual(beforeBatches);
+    expect(stored['tabs.redo-stack.v1'] ?? []).toEqual([]);
+  });
+
+  it('真实 undo 写盘失败时磁盘与内存都保留原撤销批次和新 redo', async () => {
+    const tab = makeTab({ id: 1, url: 'https://a.com/' });
+    await useUndoStore.getState().closeWithUndo([tab], [tab.id]);
+    const beforeBatches = useUndoStore.getState().batches;
+    const realSet = fakeBrowser.storage.local.set;
+    vi.spyOn(fakeBrowser.storage.local, 'set').mockImplementation(((
+      items: Record<string, unknown>
+    ) => {
+      if ('tabs.undo-stack.v1' in items) return Promise.reject(new Error('quota'));
+      return realSet(items);
+    }) as never);
+
+    await useUndoStore.getState().undo();
+
+    const stored = await fakeBrowser.storage.local.get([
+      'tabs.undo-stack.v1',
+      'tabs.redo-stack.v1'
+    ]);
+    expect(stored['tabs.undo-stack.v1']).toEqual(beforeBatches);
+    expect(stored['tabs.redo-stack.v1']).toEqual(useUndoStore.getState().redoBatches);
+    expect(useUndoStore.getState().batches).toEqual(beforeBatches);
+    expect(useUndoStore.getState().redoBatches).toHaveLength(1);
   });
 });

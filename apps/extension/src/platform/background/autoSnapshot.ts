@@ -24,13 +24,29 @@ function urlSetFingerprint(tabs: readonly SnapshotTab[]): string {
   return tabs.map((tab) => tab.url).join('|');
 }
 
-/** 最新一份自动快照的指纹（不存在则返回 null）。 */
-async function latestAutoSignature(): Promise<string | null> {
+interface AutoSignatures {
+  byWindow: Map<number, string>;
+  /** 旧版本未记录 windowId 的快照只作迁移期回退。 */
+  legacy: string | null;
+}
+
+/** 每个窗口最新一份自动快照的指纹（不存在则该窗口无记录）。 */
+async function latestAutoSignatures(): Promise<AutoSignatures> {
   const all = await snapshotsRepository.read();
-  const latest = all
+  const byWindow = new Map<number, string>();
+  let legacy: string | null = null;
+  const sorted = all
     .filter((snap) => snap.origin === 'auto')
-    .sort((a, b) => b.createdAt - a.createdAt)[0];
-  return latest ? urlSetFingerprint(latest.tabs) : null;
+    .sort((a, b) => b.createdAt - a.createdAt);
+  for (const snapshot of sorted) {
+    // 已按时间倒序，首次出现即该窗口最新一份。
+    if (snapshot.windowId === undefined) {
+      legacy ??= urlSetFingerprint(snapshot.tabs);
+    } else if (!byWindow.has(snapshot.windowId)) {
+      byWindow.set(snapshot.windowId, urlSetFingerprint(snapshot.tabs));
+    }
+  }
+  return { byWindow, legacy };
 }
 
 /** 采集某窗口可恢复的标签（口径见 collectSnapshotTabs，全仓唯一实现）。 */
@@ -66,7 +82,7 @@ export async function runAutoSnapshot(): Promise<void> {
       logDegraded('auto-snapshot', '窗口列表查询失败，本次执行未保存任何窗口', error);
       return [] as number[];
     });
-    const previous = await latestAutoSignature();
+    const previous = await latestAutoSignatures();
     let saved = 0;
 
     for (const windowId of windowIds) {
@@ -76,9 +92,9 @@ export async function runAutoSnapshot(): Promise<void> {
         return [] as SnapshotTab[];
       });
       if (tabs.length === 0) continue;
-      // 单窗口场景与上一份完全相同则跳过；多窗口时以首窗口差异判断（其余窗口仍需各自保存）。
-      if (windowIds.length === 1 && previous !== null && urlSetFingerprint(tabs) === previous)
-        continue;
+      // 每个窗口只与自己的最新自动快照比较：多窗口不能拿首窗口或全局最新一份互相去重。
+      const previousSignature = previous.byWindow.get(windowId) ?? previous.legacy;
+      if (urlSetFingerprint(tabs) === previousSignature) continue;
       const snapshot = buildSnapshot({
         name: '',
         fallbackName: DEFAULT_SNAPSHOT_NAMES.auto,

@@ -39,8 +39,19 @@ function emptySession(): SessionData {
 /** 只读用途的空会话常量（需要可写默认值时调用 emptySession()）。 */
 const EMPTY_SESSION: SessionData = emptySession();
 
+/** 写失败后的本上下文 dirty 基线：后续读取与 mutation 不得退回旧磁盘值覆盖内存变更。 */
+let volatileSession: SessionData | undefined;
+
+function cloneSession(data: SessionData): SessionData {
+  return {
+    itemTabBindings: { ...data.itemTabBindings },
+    manualStandaloneTabIds: [...data.manualStandaloneTabIds]
+  };
+}
+
 /** 读取会话数据：校验失败按空会话返回并留痕（会话是渲染期派生状态，坏数据丢弃后可重建）。 */
 export async function readSession(): Promise<SessionData> {
+  if (volatileSession) return cloneSession(volatileSession);
   try {
     const stored = await browser.storage.session.get(SESSION_KEY);
     const parsed = SessionDataSchema.safeParse(stored[SESSION_KEY]);
@@ -120,6 +131,9 @@ export function mutateSession(
         }
 
         const persisted = await writeSession(next);
+        // 写失败后保留本上下文的 dirty 基线：下一次 mutation 必须从这份内存值继续，
+        // 不能重新读到旧磁盘值而把前一次已返回给调用方的变更静默抹掉。
+        volatileSession = persisted ? undefined : cloneSession(next);
         lastPersisted = persisted;
         result = { data: next, persisted };
       });

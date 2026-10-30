@@ -16,8 +16,12 @@ import { Icon, Icons } from '@/ui/common/Icon';
  * @param density 与真实列表同档，否则切到「大字号」时骨架与真实行差 4px。
  */
 export function LoadingSkeleton({ density = 'cozy' }: { density?: Density }) {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col py-1">
+    // role=status + aria-busy：读屏用户在加载期得到「正在加载」反馈，而非空白被
+    // 误判成「没有标签」。骨架本身是纯装饰 div，语义全靠这一层承载。
+    <div className="flex flex-col py-1" role="status" aria-busy="true">
+      <span className="sr-only">{t('正在加载…')}</span>
       <div className="section-head">
         <span className="head-leading">
           <span className="skeleton h-3.5 w-0.5 shrink-0 rounded-full" />

@@ -133,15 +133,17 @@ export async function closeTabs(tabIds: readonly number[]): Promise<number[]> {
   return closedIds;
 }
 
-/** 切换静音。翻转基准取浏览器实时值而非传入快照：传入值来自节流的渲染快照，可能已过期。 */
-export async function toggleMute(tabId: number, currentlyMuted: boolean): Promise<void> {
+/** 切换静音并返回是否成功。翻转基准取浏览器实时值；读取或更新失败均不得谎报成功。 */
+export async function toggleMute(tabId: number, currentlyMuted: boolean): Promise<boolean> {
   try {
-    const live = await browser.tabs.get(tabId).catch(() => undefined);
-    const base = live?.mutedInfo?.muted ?? currentlyMuted;
+    const live = await browser.tabs.get(tabId);
+    const base = live.mutedInfo?.muted ?? currentlyMuted;
     await browser.tabs.update(tabId, { muted: !base });
+    return true;
   } catch (error) {
     logDegraded('tabs', '切换静音失败', error);
     // 标签可能已关闭
+    return false;
   }
 }
 

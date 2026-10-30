@@ -33,6 +33,7 @@ vi.mock('@/platform/storage/session', () => ({
 function repo<T>(value: T, writeOk = true) {
   return {
     read: vi.fn(async () => value),
+    readStrict: vi.fn(async () => value),
     write: vi.fn(async () => writeOk)
   };
 }
@@ -57,6 +58,7 @@ async function harness(options: {
   foldersWriteOk?: boolean;
   pinsWriteOk?: boolean;
   settingsWriteOk?: boolean;
+  seededWriteOk?: boolean;
 }): Promise<Harness> {
   // 初始化守卫是模块级变量：必须重新导入才能拿到干净的守卫
   vi.resetModules();
@@ -67,7 +69,7 @@ async function harness(options: {
   const pins = repo(options.pins ?? []);
   const collapse = repo([]);
   const settings = repo(options.settings ?? DEFAULT_SETTINGS);
-  const seeded = repo(options.seeded ?? false);
+  const seeded = repo(options.seeded ?? false, options.seededWriteOk ?? true);
   const reportPersistenceFailure = vi.fn();
 
   const ctx = {
@@ -82,6 +84,7 @@ async function harness(options: {
     },
     startSettingsWatcher: vi.fn(),
     startValueWatchers: vi.fn(),
+    setMirrorRestorePending: vi.fn(),
     reportPersistenceFailure
   } as unknown as DataContext;
 
@@ -300,6 +303,28 @@ describe('首次启动的镜像恢复', () => {
     expect(applied.mirrorIssue).toBe('unreadable');
   });
 
+  it('镜像磁贴 ID 重复时拒绝整个磁贴分区且不置 seeded', async () => {
+    mocks.pull.mockResolvedValueOnce({
+      folders: [],
+      pins: [
+        { id: 'same', identity: 'a.com', url: 'https://a.com/', title: 'A' },
+        { id: 'same', identity: 'b.com', url: 'https://b.com/', title: 'B' }
+      ],
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+    const h = await harness({
+      seeded: false,
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+
+    await h.initialized();
+
+    const applied = h.set.mock.calls[0]![0] as Partial<DataState>;
+    expect(applied.pins).toEqual([]);
+    expect(applied.mirrorIssue).toBe('unreadable');
+    expect(h.seeded.write).not.toHaveBeenCalled();
+  });
+
   /** 镜像恢复的 URL 与 favicon 按外部数据校验规则归一化。 */
   it('镜像条目 url 为脚本 / 本地文件时归一为 about:blank（与备份入口同口径）', async () => {
     mocks.pull.mockResolvedValueOnce({
@@ -354,5 +379,40 @@ describe('首次启动的镜像恢复', () => {
       .invocationCallOrder[0]!;
     const seedOrder = h.seeded.write.mock.invocationCallOrder[0]!;
     expect(writeOrder).toBeLessThan(seedOrder);
+  });
+
+  it('seeded 写失败时保持恢复待完成并报告镜像未生效', async () => {
+    mocks.pull.mockResolvedValueOnce(mirror);
+    const h = await harness({
+      seeded: false,
+      seededWriteOk: false,
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+
+    await h.initialized();
+
+    const applied = h.set.mock.calls[0]![0] as Partial<DataState>;
+    expect(applied.mirrorIssue).toBe('unreadable');
+    expect(h.reportPersistenceFailure).toHaveBeenCalledWith(
+      'dataStore',
+      '镜像恢复完成标记写入失败（下次启动重试）'
+    );
+    expect(h.ctx.setMirrorRestorePending).toHaveBeenCalledWith(true);
+    expect(h.ctx.setMirrorRestorePending).not.toHaveBeenCalledWith(false);
+  });
+
+  it('镜像写前基线读取故障时中止恢复，不用默认值覆盖', async () => {
+    mocks.pull.mockResolvedValueOnce(mirror);
+    const h = await harness({
+      seeded: false,
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+    h.folders.readStrict.mockRejectedValueOnce(new Error('storage down'));
+
+    await expect(h.initialized()).rejects.toThrow('storage down');
+
+    expect(h.ctx.repos.folders.write).not.toHaveBeenCalled();
+    expect(h.seeded.write).not.toHaveBeenCalled();
+    expect(h.set).toHaveBeenLastCalledWith({ ready: false });
   });
 });

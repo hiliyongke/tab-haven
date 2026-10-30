@@ -84,6 +84,7 @@ export function SnapshotsPanel({
     setSource: setImportSource,
     setText: setImportText,
     setName: setImportName,
+    importing: importingSnapshot,
     runImport: handleImport
   } = useSnapshotImport({
     t,
@@ -95,6 +96,8 @@ export function SnapshotsPanel({
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  /** 列表容器 ref：删除快照后把焦点归还到这里（触发删除的行按钮会随行卸载）。 */
+  const listFocusRef = useRef<HTMLDivElement>(null);
   /**
    * 勾选集：键为 `${index}-${tab.url}`（与 SnapshotRow 行键一致）。
    * 勾选是「从完整恢复里剔除若干条」，语义上必须**默认全选**——用户展开详情
@@ -260,7 +263,13 @@ export function SnapshotsPanel({
     if (deleteInFlight.current) return;
     deleteInFlight.current = true;
     try {
+      // deleteSnapshot 成功正常 resolve、失败抛错（返回 Promise<void>），故回执与
+      // 焦点归还放在 await 之后的成功路径。删除是不可逆操作，必须给可见/可听回执；
+      // 触发按钮随行卸载后焦点会掉 <body>，显式归还到存活的列表容器。
       await deleteSnapshot(id);
+      notify(t('已删除快照'));
+      // 等本轮 DOM 更新（行卸载、列表重排）后再聚焦，避免落到即将移除的节点。
+      requestAnimationFrame(() => listFocusRef.current?.focus());
     } catch (error) {
       notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
     } finally {
@@ -316,7 +325,12 @@ export function SnapshotsPanel({
     if (view !== 'report') return;
     insightsFocusedRef.current = true;
     const anchor = document.getElementById(INSIGHTS_ANCHOR_ID);
-    anchor?.scrollIntoView({ block: 'start' });
+    if (!anchor) return;
+    anchor.scrollIntoView({ block: 'start' });
+    // tabIndex={-1} 是给「直达后把键盘/读屏焦点带进洞察区」准备的；只滚动不聚焦时
+    // 它是死 affordance（焦点仍停在底栏触发按钮或弹窗首项）。preventScroll 避免与
+    // 上面的 scrollIntoView 叠加二次滚动。
+    anchor.focus({ preventScroll: true });
   }, [initialView, view]);
 
   return (
@@ -334,6 +348,7 @@ export function SnapshotsPanel({
           onTextChange={setImportText}
           onCancel={() => setView('list')}
           onImport={() => void handleImport()}
+          importing={importingSnapshot}
         />
       ) : view === 'report' ? (
         <SnapshotReportView
@@ -386,6 +401,7 @@ export function SnapshotsPanel({
           onDelete={handleDelete}
           onOpenImport={() => setView('import')}
           onOpenReport={() => setView('report')}
+          listRef={listFocusRef}
         />
       )}
       {confirmDeleteId !== null && (

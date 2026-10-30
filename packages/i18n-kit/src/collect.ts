@@ -114,13 +114,7 @@ const IGNORED_DIRS = new Set([
 /** 递归收集源码文件（排序保证扫描结果稳定）。 */
 export function walk(dir: string): string[] {
   const out: string[] = [];
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    // 无权限 / 目录在读期间被删除：跳过即可，不该让整次扫描失败。
-    return out;
-  }
+  const entries: Dirent[] = readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -225,6 +219,14 @@ function readContext(node: AstValue): string | undefined {
   return undefined;
 }
 
+/** 两个分支都是无子节点的 JSX 元素时，运行时始终只产生同一个空占位，key 保持稳定。 */
+function isStableEmptyConditional(expression: AstNode): boolean {
+  return [expression.consequent, expression.alternate].every((value) => {
+    const branch = asNode(value);
+    return branch?.type === 'JSXElement' && asNodes(branch.children).length === 0;
+  });
+}
+
 /**
  * JSX 子节点串化：文本原样拼接，其余按**同层序号**写成 `<0></0>`。
  *
@@ -256,7 +258,11 @@ export function jsxChildrenToString(
        * key 必然不同，表现为这一句在英文模式下恒中文且 check 全绿。
        * 与其静默算错，不如当场报错让调用方改写。
        */
-      if (expression.type === 'CallExpression' || expression.type === 'LogicalExpression') {
+      if (
+        expression.type === 'CallExpression' ||
+        expression.type === 'LogicalExpression' ||
+        (expression.type === 'ConditionalExpression' && !isStableEmptyConditional(expression))
+      ) {
         onError?.(
           `Trans 的子节点含动态个数的表达式（${expression.type}），无法静态计算 key，请改写成固定个数的子节点`
         );
@@ -282,7 +288,7 @@ export function jsxChildrenToString(
       return;
     }
     if (child.type === 'JSXElement') {
-      const inner = jsxChildrenToString(child.children);
+      const inner = jsxChildrenToString(child.children, onError);
       out += inner === '' ? `<${index}></${index}>` : `<${index}>${inner}</${index}>`;
       return;
     }

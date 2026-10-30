@@ -29,12 +29,18 @@ import {
   readFileSync,
   renameSync,
   statSync,
-  unlinkSync,
-  writeFileSync
+  unlinkSync
 } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  assertBrowserSpawnSucceeded,
+  assertGeneratedSigningKey,
+  assertIdentityRecord,
+  removeStaleCrx,
+  writeIdentityRecord
+} from './pack-crx-process.ts';
 
 const ROOT = process.cwd();
 const OUTPUT_DIR = path.join(ROOT, '.output');
@@ -81,17 +87,21 @@ function extensionIdFromKey(file) {
  * 校验并记录签名身份。
  * 身份与上次不同即失败：这不是「换个 key 重打一次」的小事，而是升级链断裂。
  */
-function reportIdentity() {
+function reportIdentity(record = true) {
   if (!existsSync(KEY_PATH)) return;
   ensureKeyPermissions(KEY_PATH);
   const id = extensionIdFromKey(KEY_PATH);
-  const recorded = existsSync(KEY_ID_PATH) ? readFileSync(KEY_ID_PATH, 'utf8').trim() : '';
-  if (recorded !== '' && recorded !== id && process.env.TABS_ROTATE_KEY !== '1') {
-    console.error(`✗ 签名身份与上次不一致：记录 ${recorded}，当前 ${id}`);
-    console.error('  换身份会让已安装用户无法覆盖升级。确需轮换请设 TABS_ROTATE_KEY=1。');
+  const recorded = existsSync(KEY_ID_PATH) ? readFileSync(KEY_ID_PATH, 'utf8').trim() : undefined;
+  try {
+    assertIdentityRecord(recorded, id, process.env.TABS_ROTATE_KEY === '1');
+  } catch (error) {
+    console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
+    if (recorded !== undefined && recorded !== '' && recorded !== id) {
+      console.error('  换身份会让已安装用户无法覆盖升级。确需轮换请设 TABS_ROTATE_KEY=1。');
+    }
     process.exit(1);
   }
-  writeFileSync(KEY_ID_PATH, `${id}\n`, 'utf8');
+  if (record) writeIdentityRecord(KEY_ID_PATH, id);
   log(`• 扩展 ID：${id}（密钥 ${path.relative(ROOT, KEY_PATH)}）`);
 }
 
@@ -152,9 +162,9 @@ if (!browser) {
   process.exit(1);
 }
 
-// ---- 3. 校验签名身份 ----
+// ---- 3. 校验签名身份（打包成功前只校验，不推进轮换记录） ----
 mkdirSync(path.dirname(KEY_PATH), { recursive: true });
-reportIdentity();
+reportIdentity(false);
 
 // ---- 4. 打包 ----
 const hasKey = existsSync(KEY_PATH);
@@ -163,15 +173,29 @@ if (hasKey) args.push(`--pack-extension-key=${KEY_PATH}`);
 log(`• 浏览器：${browser}`);
 log(`• 签名密钥：${hasKey ? `复用 ${KEY_PATH}` : `首次生成（完成后固化为 ${KEY_PATH}）`}`);
 
-spawnSync(browser, args, { stdio: 'inherit' });
+removeStaleCrx(RAW_CRX);
+// 首次打包不得让上一轮遗留的 PEM 冒充本轮新私钥。
+if (!hasKey) removeStaleCrx(RAW_KEY);
+try {
+  assertBrowserSpawnSucceeded(spawnSync(browser, args, { stdio: 'inherit' }));
+} catch (error) {
+  console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
 
 if (!waitForFile(RAW_CRX, 30_000)) {
   console.error('✗ 打包失败：30s 内未生成 .crx（可尝试手动运行上面的浏览器命令排查）');
   process.exit(1);
 }
 
-// 首次打包时浏览器同时写出 pem：固化为固定名并记录身份。
-if (!existsSync(KEY_PATH) && existsSync(RAW_KEY)) {
+// 首次打包时浏览器必须同时写出 pem：固化为固定名并记录身份。
+try {
+  assertGeneratedSigningKey(!hasKey, existsSync(RAW_KEY));
+} catch (error) {
+  console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
+if (!hasKey) {
   renameSync(RAW_KEY, KEY_PATH);
   log(`• 已生成签名密钥 → ${KEY_PATH}（请备份到密码管理器/密钥库）`);
 }

@@ -1,18 +1,17 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { translate } from '@/i18n';
 import { SettingsPage } from '@/entrypoints/options/SettingsPage';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { useDataStore } from '@/stores/dataStore';
+import { ImportDataError } from '@/stores/data/transferSlice';
 
 /**
- * SettingsPage 渲染冒烟规格（覆盖 UI 测试盲区的最小集）：
- * 设置加载后首屏分区渲染、设置搜索可用、恢复默认入口存在。
- * 深交互（导入导出/白名单编辑）依赖文件对话框与下载，不在冒烟范围。
+ * SettingsPage 行为规格：首屏分区与设置搜索、恢复默认入口，以及导入回滚结果反馈。
  */
 
 afterEach(() => {
@@ -75,12 +74,67 @@ describe('SettingsPage（渲染冒烟）', () => {
     expect(screen.getByText(translate('工具栏角标'), { exact: false })).toBeInTheDocument();
   });
 
-  it('设置搜索框可用：输入关键词过滤设置项', async () => {
+  it('设置搜索只显示匹配项，无匹配时隐藏设置并展示空态', async () => {
     useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
     render(<SettingsPage />);
 
     const search = await screen.findByPlaceholderText(translate('搜索设置…'));
-    expect(search).toBeInTheDocument();
+    const matchingSetting = translate('搜索扩展到所有窗口');
+    const nonmatchingSetting = translate('显示网址');
+
+    fireEvent.change(search, { target: { value: matchingSetting } });
+    await waitFor(() => {
+      expect(screen.getByText(matchingSetting, { exact: true })).toBeInTheDocument();
+      expect(screen.queryByText(nonmatchingSetting, { exact: true })).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(search, { target: { value: '绝不可能命中的设置' } });
+    await waitFor(() => {
+      expect(screen.getByText(translate('没有找到匹配的设置'))).toBeInTheDocument();
+      expect(screen.queryByText(matchingSetting, { exact: true })).not.toBeInTheDocument();
+      expect(screen.queryByText(nonmatchingSetting, { exact: true })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: translate('数据备份') })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: translate('关于 Tabs') })
+      ).not.toBeInTheDocument();
+      const outline = screen.getByRole('navigation', { name: translate('目录') });
+      expect(within(outline).queryAllByRole('link')).toHaveLength(0);
+    });
+  });
+
+  it('静态区块的正文与目录共享搜索可见集合', async () => {
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    render(<SettingsPage />);
+
+    const search = await screen.findByPlaceholderText(translate('搜索设置…'));
+    fireEvent.change(search, { target: { value: translate('数据备份') } });
+
+    await waitFor(() => expect(sectionHeading('数据备份')).toBeInTheDocument());
+    const outline = screen.getByRole('navigation', { name: translate('目录') });
+    expect(within(outline).getByRole('link', { name: translate('数据备份') })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: translate('关于 Tabs') })).not.toBeInTheDocument();
+    expect(
+      within(outline).queryByRole('link', { name: translate('关于 Tabs') })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(translate('没有找到匹配的设置'))).not.toBeInTheDocument();
+  });
+
+  it('自定义设置行的 hint 也参与搜索（跨设备同步可按说明命中）', async () => {
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    render(<SettingsPage />);
+
+    const search = await screen.findByPlaceholderText(translate('搜索设置…'));
+    const customHint = translate(
+      '默认关闭。开启后，文件夹、常驻磁贴与设置会镜像到你浏览器账号的同步通道（Tabs 没有自己的服务器）；关闭时会一并删除已上传的数据'
+    );
+    fireEvent.change(search, { target: { value: customHint } });
+
+    await waitFor(() => {
+      expect(screen.getByText(translate('跨设备同步'), { exact: true })).toBeInTheDocument();
+      expect(screen.queryByText(translate('显示网址'), { exact: true })).not.toBeInTheDocument();
+    });
   });
 
   it('就绪前显示加载态（不渲染空设置页）', () => {
@@ -104,6 +158,66 @@ describe('SettingsPage（渲染冒烟）', () => {
     await waitFor(() => {
       expect(screen.getByText(translate('主题'))).toBeInTheDocument();
     });
+  });
+});
+
+describe('SettingsPage 导入回滚结果反馈', () => {
+  async function confirmImportFailure(error: Error): Promise<void> {
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    vi.spyOn(useDataStore.getState(), 'importData').mockRejectedValue(error);
+    const { container } = render(<SettingsPage />);
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+
+    fireEvent.change(input!, {
+      target: { files: [new File(['{}'], 'backup.json', { type: 'application/json' })] }
+    });
+    const dialog = await screen.findByRole('dialog', { name: translate('导入备份') });
+    fireEvent.click(within(dialog).getByRole('button', { name: translate('导入') }));
+  }
+
+  it('结构化错误明确回滚完整时才提示本地保持导入前', async () => {
+    await confirmImportFailure(new ImportDataError('snapshots', []));
+
+    expect(
+      await screen.findByText(
+        translate(
+          '导入失败：写入「{{name}}」时存储不可用，已回滚（本地数据保持导入前的状态）。请确认浏览器存储空间后重试。',
+          { name: translate('快照') }
+        )
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('回滚存在失败分区时披露混合状态而不宣称完整回滚', async () => {
+    await confirmImportFailure(new ImportDataError('snapshots', ['folders', 'settings']));
+
+    expect(
+      await screen.findByText(
+        translate(
+          '导入失败：写入「{{name}}」时存储不可用；回滚未完成的分区：{{partitions}}。本地数据可能处于混合状态，请勿重复导入。',
+          {
+            name: translate('快照'),
+            partitions: `${translate('收藏夹')}, ${translate('设置')}`
+          }
+        )
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/本地数据保持导入前的状态/)).not.toBeInTheDocument();
+  });
+
+  it('缺少结构化回滚信息时披露无法确认回滚完整性', async () => {
+    await confirmImportFailure(new Error('import-write-failed:snapshots'));
+
+    expect(
+      await screen.findByText(
+        translate(
+          '导入失败：写入「{{name}}」时存储不可用，且无法确认回滚是否完整。本地数据可能处于混合状态，请勿重复导入。',
+          { name: translate('快照') }
+        )
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/本地数据保持导入前的状态/)).not.toBeInTheDocument();
   });
 });
 

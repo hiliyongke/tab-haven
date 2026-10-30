@@ -8,6 +8,12 @@ describe('structuralSignature', () => {
     expect(structuralSignature(a)).not.toBe(structuralSignature(b));
   });
 
+  it('常见 DJB2 碰撞的不同 favicon 仍产生不同签名', () => {
+    const a = { favIconUrl: 'Ab' };
+    const b = { favIconUrl: 'BA' };
+    expect(structuralSignature(a)).not.toBe(structuralSignature(b));
+  });
+
   it('favicon 相同则签名相同（只比内容，不比引用）', () => {
     const a = { id: '1', title: 'x', favIconUrl: 'data:image1' };
     const b = { id: '1', title: 'x', favIconUrl: 'data:image1' };

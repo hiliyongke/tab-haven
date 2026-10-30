@@ -5,7 +5,12 @@ import {
 } from '@/core/fixed/FolderOps';
 import { DEFAULT_FOLDER_NAMES } from '@/core/snapshot/defaultNames';
 import { fixedItemKey } from '@/core/fixed/FolderOps';
-import { EXPORT_FILE_VERSION, parseExportFile, type Settings } from '@/core/schema/models';
+import {
+  EXPORT_FILE_VERSION,
+  ExportFileSchema,
+  parseExportFile,
+  type Settings
+} from '@/core/schema/models';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { logFailure } from '@/platform/diagnostics';
 import {
@@ -55,22 +60,35 @@ async function safeRollback(step: {
   }
 }
 
+/** 导入失败：携带回滚未完成分区，调用方不得再宣称「本地保持导入前状态」。 */
+export class ImportDataError extends Error {
+  override readonly name = 'ImportDataError';
+
+  constructor(
+    readonly partition: string,
+    readonly rollbackFailures: readonly string[]
+  ) {
+    super(`import-write-failed:${partition}`);
+  }
+}
+
 /** 备份切片：完整导出 / 事务化导入 / 书签栏导入。 */
 export function createTransferSlice(
   ctx: DataContext
 ): DataSlice<'exportData' | 'importData' | 'importBookmarksFromBar'> {
   return {
     /** 导出完整备份。快照直读仓库：设置页不加载 snapshotStore，走内存桥会静默导出空数组。 */
-    exportData: async () => ({
-      format: 'tabs.export' as const,
-      version: EXPORT_FILE_VERSION,
-      exportedAt: new Date().toISOString(),
-      fixedFolders: ctx.get().folders,
-      persistentPins: ctx.get().pins,
-      siteCollapse: ctx.get().collapsedSites,
-      settings: ctx.get().settings,
-      snapshots: await ctx.repos.snapshots.read()
-    }),
+    exportData: async () =>
+      ExportFileSchema.parse({
+        format: 'tabs.export',
+        version: EXPORT_FILE_VERSION,
+        exportedAt: new Date().toISOString(),
+        fixedFolders: ctx.get().folders,
+        persistentPins: ctx.get().pins,
+        siteCollapse: ctx.get().collapsedSites,
+        settings: ctx.get().settings,
+        snapshots: await ctx.repos.snapshots.read()
+      }),
 
     /** 事务化导入：五个分区全部落盘成功才切内存态；任一分区写失败即回滚已写入的分区。 */
     importData: async (raw) => {
@@ -95,11 +113,11 @@ export function createTransferSlice(
         // 回滚值直读磁盘：内存态可能已被 watcher 或另一页面改写，用它回滚等于反向丢数据。
         const [beforeFolders, beforePins, beforeCollapse, beforeSettings, beforeSnapshots] =
           await Promise.all([
-            ctx.repos.folders.read(),
-            ctx.repos.pins.read(),
-            ctx.repos.collapse.read(),
-            ctx.repos.settings.read(),
-            ctx.repos.snapshots.read()
+            ctx.repos.folders.readStrict(),
+            ctx.repos.pins.readStrict(),
+            ctx.repos.collapse.readStrict(),
+            ctx.repos.settings.readStrict(),
+            ctx.repos.snapshots.readStrict()
           ]);
         const before = {
           folders: beforeFolders,
@@ -198,7 +216,7 @@ export function createTransferSlice(
           // @i18n-ignore
           const message = `导入失败：分区 ${step.name} 写入未成功，已回滚${rollbackFailures.length > 0 ? `；回滚未完成的分区：${rollbackFailures.join(', ')}` : ''}`;
           logFailure('dataStore', message);
-          throw new Error(`import-write-failed:${step.name}`);
+          throw new ImportDataError(step.name, rollbackFailures);
         }
 
         ctx.set({

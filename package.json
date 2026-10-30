@@ -28,6 +28,7 @@
     "crx": "pnpm --filter tabs crx",
     "site:dev": "pnpm --filter site dev",
     "site:build": "pnpm --filter site build",
+    "site:build:release": "pnpm --filter site build:release",
     "site:preview": "pnpm --filter site preview",
     "site:i18n": "pnpm --filter site i18n",
     "site:check": "pnpm --filter site check"
@@ -55,7 +56,8 @@
     "zip": "转发到 apps/extension：打包 .output/*.zip 用于上架",
     "crx": "转发到 apps/extension：构建并签名 CRX3",
     "site:dev": "转发到 apps/site（官网）：开发预览，端口 5174",
-    "site:build": "转发到 apps/site（官网）：预渲染中英静态页 + 拷入下载包 + 零外链自检",
+    "site:build": "转发到 apps/site（官网）：验证构建，域名配置前略过 SEO 根 URL 标签",
+    "site:build:release": "转发到 apps/site（官网）：发布构建，要求正式 SITE_URL",
     "site:preview": "转发到 apps/site（官网）：预览已构建产物，端口 5175",
     "site:i18n": "转发到 apps/site（官网）：文案一条龙（独立词典）",
     "site:check": "转发到 apps/site（官网）：官网门禁，刻意不并入 pnpm check"

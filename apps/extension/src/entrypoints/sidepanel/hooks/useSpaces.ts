@@ -59,22 +59,12 @@ export function useSpaces(): {
   const activeSpaceId = useDataStore((state) => state.settings.activeSpaceId);
   const notify = useUndoStore((state) => state.notify);
   const notifyError = useUndoStore((state) => state.notifyError);
-  /** 重入守卫：切换含 3 段 await（数百 ms），连点会并发存回/关闭/恢复。 */
+  /** 准备、待确认与执行共用一个重入守卫，首个 await 前即占用。 */
   const switchingRef = useRef(false);
   const [switching, setSwitching] = useState(false);
   const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null);
-  /**
-   * 待确认期间的重入守卫。
-   *
-   * switchSpace 里有 await（查当前窗口标签）才决定要不要弹确认，这段窗口期
-   * 连点另一个 chip 会把前一个待确认目标静默覆盖。ref 与 state 由同一个
-   * setter 维护，避免「state 已清空、ref 还锁着」导致切换永久不可用。
-   */
-  const pendingRef = useRef(false);
-  const applyPending = useCallback((value: PendingSwitch | null) => {
-    pendingRef.current = value !== null;
-    setPendingSwitch(value);
-  }, []);
+  /** 保存与激活完整链路互斥，避免连点生成多份工作区。 */
+  const savingRef = useRef(false);
 
   const spaces = useMemo(
     () =>
@@ -118,7 +108,14 @@ export function useSpaces(): {
         // 显式同一窗口：缺省会走 getLastFocused，中途焦点移动会关 A 开 B。
         const restored = await useSnapshotStore.getState().restore(target.id, targetWindowId);
         const count = restored.count;
-        await useDataStore.getState().tryUpdateSettings({ activeSpaceId: target.id });
+        const activated = await useDataStore
+          .getState()
+          .tryUpdateSettings({ activeSpaceId: target.id });
+        // 标签已恢复但激活态未落盘时不能宣称完整成功；否则下次切换会把现场写回旧空间。
+        if (!activated) {
+          notifyError(t('操作失败，请稍后重试'));
+          return;
+        }
         notify(
           closable.length === 0
             ? t('已切换到「{{name}}」，恢复 {{count}} 个标签', { name: target.name, count })
@@ -134,12 +131,12 @@ export function useSpaces(): {
         setSwitching(false);
       }
     },
-    [flushCurrentSpace, notify, setSwitching, t]
+    [flushCurrentSpace, notify, notifyError, setSwitching, t]
   );
 
   const switchSpace = useCallback(
     (target: Snapshot) => {
-      if (switchingRef.current || pendingRef.current) return;
+      if (switchingRef.current) return;
       // 点已激活的 chip 无意义：会白跑一次「全关 + 全开」并留下一条撤销批次。
       if (target.id === useDataStore.getState().settings.activeSpaceId) return;
       // 目标空间可能已被删除：先校验，避免「关了标签却恢复 0 条」+ 激活悬空 id。
@@ -149,6 +146,9 @@ export function useSpaces(): {
         notifyError(t('该工作区已不存在，请刷新后重试'));
         return;
       }
+      // 查询影响面之前即占用统一守卫：准备期的连点不能覆盖目标或并发执行。
+      switchingRef.current = true;
+      setSwitching(true);
       void (async () => {
         // 影响面闸门：切换会关掉当前窗口**全部**可关闭标签，是全产品影响面最大的
         // 动作之一，不能成为唯一不拦的破坏性操作（归档/恢复/删快照都有确认）。
@@ -170,22 +170,27 @@ export function useSpaces(): {
           closableCount = useTabStore.getState().tabs.filter(isSwitchClosable).length;
         }
         if (closableCount >= SPACE_SWITCH_CONFIRM_THRESHOLD) {
-          applyPending({ target, closableCount });
+          setPendingSwitch({ target, closableCount });
           return;
         }
         void performSwitch(target);
       })();
     },
-    [applyPending, notifyError, performSwitch, t]
+    [notifyError, performSwitch, t]
   );
 
   const confirmSwitch = useCallback(() => {
-    const pending = pendingSwitch;
-    applyPending(null);
-    if (pending) void performSwitch(pending.target);
-  }, [applyPending, pendingSwitch, performSwitch]);
+    if (!pendingSwitch) return;
+    setPendingSwitch(null);
+    void performSwitch(pendingSwitch.target);
+  }, [pendingSwitch, performSwitch]);
 
-  const cancelSwitch = useCallback(() => applyPending(null), [applyPending]);
+  const cancelSwitch = useCallback(() => {
+    if (!pendingSwitch) return;
+    setPendingSwitch(null);
+    switchingRef.current = false;
+    setSwitching(false);
+  }, [pendingSwitch]);
 
   const exitSpace = useCallback(() => {
     if (switchingRef.current) return;
@@ -198,7 +203,13 @@ export function useSpaces(): {
           notify(t('当前窗口没有可保存的标签，已保留原工作区内容'));
           return;
         }
-        await useDataStore.getState().tryUpdateSettings({ activeSpaceId: undefined });
+        const deactivated = await useDataStore
+          .getState()
+          .tryUpdateSettings({ activeSpaceId: undefined });
+        if (!deactivated) {
+          notifyError(t('操作失败，请稍后重试'));
+          return;
+        }
         notify(t('已退出工作区，回到全部标签（原工作区已保存）'));
       } catch (error) {
         useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error);
@@ -207,27 +218,27 @@ export function useSpaces(): {
         setSwitching(false);
       }
     })();
-  }, [flushCurrentSpace, notify, setSwitching, t]);
+  }, [flushCurrentSpace, notify, notifyError, setSwitching, t]);
 
   const saveAsSpace = useCallback(() => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     // 不传名字：命名统一由 store 的 fallbackName 决定（此处传 t('工作区') 会把
     // 保存时的语言写进落盘快照名，换语言后新旧记录名称不一致）。
     void useSnapshotStore
       .getState()
       .saveSpace()
-      .then((saved) => {
-        // false = 现场无可保存标签（如只剩内部页）：store 已回执「没有可保存的当前标签」，
-        // 此时 snapshots 列表并未新增本次空间。若照常往下走，会把「最新 space」误判成
-        // 一个无关的旧工作区并激活它（activeSpaceId 悬空到别的空间），还弹出与刚才
-        // 错误提示相矛盾的「已保存工作区」。必须在此中止。
-        if (!saved) return;
-        // 激活刚保存的空间（saveSpace 用当前时间戳，列表里最新即它）。
-        const latest = useSnapshotStore
+      .then(async (savedId) => {
+        // 空现场由 store 回执失败；没有本次 id 时不得激活任何既有空间。
+        if (!savedId) return;
+        // 只激活 saveSpace 明确返回的本次记录，期间其他新空间不影响目标。
+        const activated = await useDataStore
           .getState()
-          .snapshots.filter((snapshot) => snapshot.origin === 'space')
-          .sort((a, b) => b.createdAt - a.createdAt)[0];
-        if (latest) {
-          void useDataStore.getState().tryUpdateSettings({ activeSpaceId: latest.id });
+          .tryUpdateSettings({ activeSpaceId: savedId });
+        // 快照已保存但激活失败时不得再报完整成功，更不能让旧 activeSpaceId 静默留存。
+        if (!activated) {
+          notifyError(t('操作失败，请稍后重试'));
+          return;
         }
         // 动作是「保存为工作区」，反馈却说「已保存快照」——用户会怀疑自己点错了
         // 或工作区没存上（它其实出现在顶部切换条）。反馈必须与动作同名。
@@ -235,8 +246,11 @@ export function useSpaces(): {
       })
       .catch((error: unknown) =>
         useUndoStore.getState().notifyFailure('spaces', t('操作失败，请稍后重试'), error)
-      );
-  }, [notify, t]);
+      )
+      .finally(() => {
+        savingRef.current = false;
+      });
+  }, [notify, notifyError, t]);
 
   return {
     spaces,

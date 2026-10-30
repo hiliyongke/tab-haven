@@ -87,4 +87,31 @@ describe('session 串行化', () => {
       fakeBrowser.storage.session.set = originalSet;
     }
   });
+
+  it('写失败后的下一次 mutation 以 dirty 内存值为基线，不丢前次变更', async () => {
+    // Given：磁盘仍是空会话，第一次绑定只写入内存。
+    await updateSession({ itemTabBindings: {}, manualStandaloneTabIds: [] });
+    const originalSet = fakeBrowser.storage.session.set;
+    fakeBrowser.storage.session.set = (() => Promise.reject(new Error('quota'))) as never;
+    try {
+      expect((await mutateSession(() => ({ itemTabBindings: { first: 1 } }))).persisted).toBe(
+        false
+      );
+
+      // When：存储恢复后追加第二条绑定。
+      fakeBrowser.storage.session.set = originalSet;
+      const result = await mutateSession((current) => ({
+        itemTabBindings: { ...current.itemTabBindings, second: 2 }
+      }));
+
+      // Then：前次 dirty 变更与本次变更都保留，并成功落盘。
+      expect(result.persisted).toBe(true);
+      expect(result.data.itemTabBindings).toEqual({ first: 1, second: 2 });
+      expect((await readSession()).itemTabBindings).toEqual({ first: 1, second: 2 });
+    } finally {
+      fakeBrowser.storage.session.set = originalSet;
+      // 清理模块级 dirty 基线，避免泄漏到其它用例。
+      await updateSession({ itemTabBindings: {}, manualStandaloneTabIds: [] });
+    }
+  });
 });

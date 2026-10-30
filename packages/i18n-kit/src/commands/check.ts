@@ -142,7 +142,7 @@ export function check(paths: KitPaths, options: CheckOptions = {}): CheckResult 
   }
 
   const isExempt = (detail: { sentence: string; reason: string }): boolean => {
-    if (emptyAllowed.includes(detail.sentence)) return true;
+    if (emptyAllowed.includes(detail.sentence) && detail.reason.endsWith(' 为空')) return true;
     if (sameAsNativeAllowed.includes(detail.sentence) && detail.reason.endsWith('与母语原文相同')) {
       return true;
     }

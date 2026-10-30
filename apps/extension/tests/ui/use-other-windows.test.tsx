@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import { useOtherWindows } from '@/ui/tabs/useOtherWindows';
@@ -32,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -61,6 +62,84 @@ describe('useOtherWindows（A4 其他窗口分段）', () => {
     expect(result.current.otherWindows[0]!.windowId).toBe(3);
     expect(result.current.otherWindows[0]!.hasActive).toBe(true);
     expect(result.current.otherWindows[1]!.hasActive).toBe(false);
+  });
+
+  it('旧查询晚于新查询返回时被丢弃，不覆盖最新窗口快照', async () => {
+    vi.useFakeTimers();
+    let resolveOld: (tabs: TabRecord[]) => void = () => undefined;
+    let resolveCurrent: (tabs: TabRecord[]) => void = () => undefined;
+    const oldQuery = new Promise<TabRecord[]>((resolve) => {
+      resolveOld = resolve;
+    });
+    const currentQuery = new Promise<TabRecord[]>((resolve) => {
+      resolveCurrent = resolve;
+    });
+    const query = vi
+      .spyOn(fakeBrowser.tabs, 'query')
+      .mockReturnValueOnce(oldQuery as never)
+      .mockReturnValueOnce(currentQuery as never);
+    const { result } = renderHook(() => useOtherWindows(true));
+    expect(query).toHaveBeenCalledTimes(1);
+
+    // 首轮仍在途时发生标签事件：节流窗口结束后发起第二轮，而非取消首轮。
+    act(() => {
+      void fakeBrowser.tabs.onCreated.trigger({} as never);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveCurrent(windowTabs(3, 1));
+      await currentQuery;
+    });
+    expect(result.current.otherWindows.map((win) => win.windowId)).toEqual([3]);
+
+    await act(async () => {
+      resolveOld(windowTabs(2, 1));
+      await oldQuery;
+    });
+    expect(result.current.otherWindows.map((win) => win.windowId)).toEqual([3]);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('旧查询晚于新查询失败时被丢弃，不覆盖最新成功状态', async () => {
+    vi.useFakeTimers();
+    let rejectOld: (error: Error) => void = () => undefined;
+    let resolveCurrent: (tabs: TabRecord[]) => void = () => undefined;
+    const oldQuery = new Promise<TabRecord[]>((_, reject) => {
+      rejectOld = reject;
+    });
+    const currentQuery = new Promise<TabRecord[]>((resolve) => {
+      resolveCurrent = resolve;
+    });
+    const query = vi
+      .spyOn(fakeBrowser.tabs, 'query')
+      .mockReturnValueOnce(oldQuery as never)
+      .mockReturnValueOnce(currentQuery as never);
+    const { result } = renderHook(() => useOtherWindows(true));
+
+    act(() => {
+      void fakeBrowser.tabs.onCreated.trigger({} as never);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveCurrent(windowTabs(3, 1));
+      await currentQuery;
+    });
+    expect(result.current.status).toBe('ready');
+
+    await act(async () => {
+      rejectOld(new Error('stale failure'));
+      await expect(oldQuery).rejects.toThrow('stale failure');
+    });
+    expect(result.current.status).toBe('ready');
+    expect(result.current.otherWindows.map((win) => win.windowId)).toEqual([3]);
   });
 
   it('无其他窗口时为空数组', async () => {

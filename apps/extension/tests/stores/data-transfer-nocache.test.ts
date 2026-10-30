@@ -15,6 +15,7 @@ function repo<T>(value: T) {
   return {
     writes,
     read: vi.fn(async (): Promise<T> => value),
+    readStrict: vi.fn(async (): Promise<T> => value),
     write: vi.fn(async (next: T): Promise<boolean> => {
       writes.push(next);
       return true;
@@ -113,7 +114,7 @@ describe('导入备份时的禁缓存口径', () => {
 
   it('用户已开启时导入不会把它关掉（只挡「备份打开」，不反向关掉用户的选择）', async () => {
     const h = harness();
-    h.settings.read.mockResolvedValue({
+    h.settings.readStrict.mockResolvedValue({
       ...DEFAULT_SETTINGS,
       noCacheEnabled: true,
       noCachePatterns: ['mine.com']

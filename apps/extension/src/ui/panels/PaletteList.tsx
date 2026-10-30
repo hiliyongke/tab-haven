@@ -3,7 +3,7 @@ import { useTranslation } from '@/i18n';
 import {
   commandGroupLabel,
   commandGroupOf,
-  EMPTY_QUERY_TAB_LIMIT,
+  PALETTE_TAB_LIMIT,
   type CommandItem
 } from '@/ui/panels/paletteCommands';
 import { PaletteOption } from '@/ui/panels/paletteOption';
@@ -145,7 +145,7 @@ export function PaletteList({
         /* 截断提示放在 listbox 外：listbox 语义内只允许 option，提示行若藏进
            listbox 只能 role=presentation，读屏用户无从得知列表被截断。 */
         <div className="border-t border-gray-100 px-4 py-1.5 text-3xs text-gray-500">
-          {t('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: EMPTY_QUERY_TAB_LIMIT })}
+          {t('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: PALETTE_TAB_LIMIT })}
         </div>
       )}
     </>

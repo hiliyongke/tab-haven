@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSerialChain } from '@/core/util/concurrency';
 import { logDegraded } from '@/platform/diagnostics';
 import { t } from '@/i18n/headless';
+import { SYNC_MIRROR_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 
 /**
  * 跨设备同步镜像：借浏览器账号同步通道（chrome.storage.sync），产品不经手数据。
@@ -44,6 +45,31 @@ const MirrorPayloadSchema = z.object({
   settings: z.record(z.string(), z.unknown())
 });
 type MirrorPayload = z.infer<typeof MirrorPayloadSchema>;
+
+/** meta 最后切换；generation 让每次写入使用独立块，跨上下文交错也不会互相覆盖。 */
+const MirrorMetaSchema = z.object({
+  count: z.number().int().positive(),
+  generation: z.string().min(1).optional()
+});
+type MirrorMeta = z.infer<typeof MirrorMetaSchema>;
+
+function parseMirrorMeta(raw: unknown): MirrorMeta | undefined {
+  if (typeof raw !== 'string') return undefined;
+  try {
+    const parsed = MirrorMetaSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function generationChunkKey(generation: string, index: number): string {
+  return `${CHUNK_PREFIX}${generation}.${index}`;
+}
+
+function isLegacyChunkKey(key: string): boolean {
+  return key.startsWith(CHUNK_PREFIX) && /^\d+$/.test(key.slice(CHUNK_PREFIX.length));
+}
 
 interface MirrorData {
   folders: unknown[];
@@ -167,13 +193,16 @@ class SyncMirror {
 
   /** 立即写入镜像（分块 + 清理过期块）。经写串行链执行，防并发写交错回滚。 */
   write(payload: MirrorData): Promise<void> {
-    return this.writeChain.enqueue(() => this.performWrite(payload));
+    return this.writeChain.enqueue(() =>
+      withCrossPageLock(SYNC_MIRROR_LOCK, () => this.performWrite(payload))
+    );
   }
 
   /** write 的实际执行体（串行链内运行）。 */
   private async performWrite(payload: MirrorData): Promise<void> {
     const area = browser.storage?.sync;
     if (!area) return;
+    let uncommittedChunkKeys: string[] = [];
     try {
       const json = JSON.stringify({
         at: Date.now(),
@@ -217,22 +246,32 @@ class SyncMirror {
         currentBytes += charBytes;
       }
       if (current) chunks.push(current);
-      const record: Record<string, string> = {
-        [CHUNK_META_KEY]: JSON.stringify({ count: chunks.length })
-      };
+      const generation = crypto.randomUUID();
+      const record: Record<string, string> = {};
       for (let i = 0; i < chunks.length; i += 1) {
         const chunk = chunks[i];
         if (chunk === undefined) break;
-        record[`${CHUNK_PREFIX}${i}`] = chunk;
+        record[generationChunkKey(generation, i)] = chunk;
       }
-      // 清理上次残留的更多块（分块数只减不增时无残留，此处兜底）。批量 remove：逐个 remove 每次都计写配额。
+      uncommittedChunkKeys = Object.keys(record);
       const all = await area.get(null);
-      const staleKeys = Object.keys(all).filter(
-        (key) => key.startsWith(CHUNK_PREFIX) && !(key in record)
-      );
-      // 先 set 后 remove：顺序颠倒时 set 失败会留下半截镜像（旧块已删、新块未写），
-      // 他设备 pull() 读到「meta 声明 N 块而块不全」会被判 unreadable；旧块残留只是多占配额，不影响读取。
+      const previousMeta = parseMirrorMeta(all[CHUNK_META_KEY]);
+      // 新块完整落盘后才切换 meta。即使另一上下文不支持 Web Locks，读侧也只会看到
+      // 「旧 meta + 旧完整块」或「新 meta + 新完整块」，不会读到本次写入的半截状态。
       await area.set(record);
+      await area.set({
+        [CHUNK_META_KEY]: JSON.stringify({ count: chunks.length, generation } satisfies MirrorMeta)
+      });
+      uncommittedChunkKeys = [];
+      // 只清理切换前的旧 generation 与历史固定块。其它 generation 可能正被另一上下文
+      // 写入但尚未切 meta，不能把它们误判为残留删掉；失败写入的孤儿块由 clearAll 全清。
+      const previousPrefix = previousMeta?.generation
+        ? `${CHUNK_PREFIX}${previousMeta.generation}.`
+        : undefined;
+      const staleKeys = Object.keys(all).filter(
+        (key) =>
+          isLegacyChunkKey(key) || (previousPrefix !== undefined && key.startsWith(previousPrefix))
+      );
       if (staleKeys.length > 0) {
         // remove 失败单独留痕：它是清理动作，不能把一次成功的镜像写报成失败。
         await area.remove(staleKeys).catch((error) => {
@@ -247,6 +286,12 @@ class SyncMirror {
       }
       this.onSuccess?.();
     } catch (error) {
+      // 未提交块只属于本次 generation，可安全回收，避免多次写失败耗尽 sync 总配额。
+      if (uncommittedChunkKeys.length > 0) {
+        await area.remove(uncommittedChunkKeys).catch((cleanupError) => {
+          logDegraded('sync-mirror', '镜像未提交块清理失败', cleanupError);
+        });
+      }
       // 超出同步配额或同步不可用：降级（仅丢失镜像，本地数据不受影响），但必须可观测。
       logDegraded('sync-mirror', '镜像写入失败，跨设备同步已降级（本地数据不受影响）', error);
       this.onFailure?.(
@@ -268,7 +313,9 @@ class SyncMirror {
     this.cancelPending();
     // 挂到写串行链尾部：在途 performWrite 是 get→remove→set 非原子三步，clearAll 若与之并发，
     // 在途写的 set 会落在清除之后，让刚删掉的镜像复活。
-    return this.writeChain.enqueue(() => this.performClear());
+    return this.writeChain.enqueue(() =>
+      withCrossPageLock(SYNC_MIRROR_LOCK, () => this.performClear())
+    );
   }
 
   /** clearAll 的实际执行体（串行链内运行）。 */
@@ -284,6 +331,8 @@ class SyncMirror {
       if (keys.length > 0) await area.remove(keys);
     } catch (error) {
       logDegraded('sync-mirror', '镜像清除失败', error);
+      // 调用方必须停止后续本地清理：否则 sync 镜像仍在，下次启动会把已清数据回灌。
+      throw error;
     }
   }
 
@@ -294,7 +343,9 @@ class SyncMirror {
    * pull 只在 init / 开启同步时跑一次，这一次误判会粘住整个会话。
    */
   async pull(): Promise<MirrorData | null> {
-    return this.writeChain.enqueue(() => this.performPull());
+    return this.writeChain.enqueue(() =>
+      withCrossPageLock(SYNC_MIRROR_LOCK, () => this.performPull())
+    );
   }
 
   /** pull 的实际执行体（串行链内运行）。 */
@@ -311,8 +362,8 @@ class SyncMirror {
       const metaRaw = all[CHUNK_META_KEY];
       // 没有 meta 才是「从未同步过」：保持 none。meta 存在但读不出 count 说明镜像已损坏，须与从未同步过区分。
       if (typeof metaRaw !== 'string') return null;
-      const meta = JSON.parse(metaRaw) as { count?: number };
-      if (typeof meta.count !== 'number' || meta.count <= 0) {
+      const meta = parseMirrorMeta(metaRaw);
+      if (!meta) {
         this.lastPullIssue = 'unreadable';
         return null;
       }
@@ -327,7 +378,10 @@ class SyncMirror {
       }
       const chunks: string[] = [];
       for (let i = 0; i < meta.count; i += 1) {
-        const chunk = all[`${CHUNK_PREFIX}${i}`];
+        const key = meta.generation
+          ? generationChunkKey(meta.generation, i)
+          : `${CHUNK_PREFIX}${i}`;
+        const chunk = all[key];
         // 缺块 = 镜像不完整（同步被配额截断或写入中途失败），属「本该有却拿不到」。
         if (typeof chunk !== 'string') {
           this.lastPullIssue = 'unreadable';

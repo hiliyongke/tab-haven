@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
-import { settingsRepository } from '@/platform/storage/repositories';
+import { settingsRepository, undoRepository } from '@/platform/storage/repositories';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
@@ -65,5 +65,20 @@ describe('persistUndo 开关语义', () => {
     expect(useUndoStore.getState().batches).toEqual([]);
     const stored = await fakeBrowser.storage.local.get('tabs.undo-stack.v1');
     expect(stored['tabs.undo-stack.v1']).toEqual([]);
+  });
+
+  it('写前磁盘基线 readStrict 故障时中止持久化，不用默认空栈覆盖', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
+    await closeOne();
+    const before = useUndoStore.getState().batches;
+    useUndoStore.setState({ ready: true });
+    vi.spyOn(undoRepository, 'readStrict').mockRejectedValue(new Error('storage down'));
+    const write = vi.spyOn(undoRepository, 'write');
+
+    await closeOne('https://b.com/');
+
+    expect(write).not.toHaveBeenCalled();
+    const stored = await fakeBrowser.storage.local.get('tabs.undo-stack.v1');
+    expect(stored['tabs.undo-stack.v1']).toEqual(before);
   });
 });

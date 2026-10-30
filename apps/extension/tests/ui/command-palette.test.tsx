@@ -180,11 +180,13 @@ describe('CommandPalette 过滤', () => {
     expect(input.getAttribute('aria-activedescendant')).toBe('palette-item-tab-1');
   });
 
-  it('无命中时不渲染任何 option，且 Enter 不执行任何命令（不越界）', () => {
+  it('无命中时显示空态且 combobox 保持展开，Enter 不执行命令（不越界）', () => {
     const { actions, onClose, input } = renderPalette();
 
     fireEvent.change(input, { target: { value: '绝不可能命中的字符串' } });
     expect(screen.queryAllByRole('option')).toHaveLength(0);
+    expect(screen.getByText(translate('没有匹配的命令或标签'))).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-expanded', 'true');
 
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -248,6 +250,21 @@ describe('CommandPalette 空查询截断', () => {
     // 「标签-2」命中 标签-2 / 标签-20…25（含空查询时被截掉的 21-25）
     const options = screen.getAllByRole('option');
     expect(options.some((option) => option.textContent?.includes('标签-25'))).toBe(true);
+  });
+
+  it('宽泛关键词命中 21+ 标签时同样只挂载前 20 项（过滤路径也有渲染上限）', () => {
+    const { input } = renderPalette(manyTabs());
+
+    fireEvent.change(input, { target: { value: '标签' } });
+
+    expect(screen.getAllByRole('option')).toHaveLength(20);
+    expect(screen.queryByText('标签-21')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(translate('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: 20 }))
+    ).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    const active = document.getElementById(input.getAttribute('aria-activedescendant')!);
+    expect(active).toHaveTextContent('标签-20');
   });
 });
 

@@ -31,10 +31,10 @@ export interface DataContext {
   set: (partial: Partial<DataState>) => void;
   get: () => DataState;
   repos: Repositories;
-  /** 写 folders 分区。updater 在写前一刻以最新内存态重算（get→算→set 无 await），消除旧基线整表回写的并发互覆；读-算-写必须用 updater。 */
+  /** 写 folders 分区并返回是否落盘。updater 在写前一刻以最新内存态重算（get→算→set 无 await）；读-算-写必须用 updater。 */
   writeFolders: (
     folders: FixedFolder[] | ((current: FixedFolder[]) => FixedFolder[])
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   /** 同 writeFolders 的 updater 双形态。 */
   writePins: (
     pins: PersistentPin[] | ((current: PersistentPin[]) => PersistentPin[])
@@ -42,6 +42,8 @@ export interface DataContext {
   /** 丢弃排队的合并写入并等待在途批次结束；返回后写入器空闲，供清空/导入前防旧值回写。 */
   cancelWrites: () => Promise<void>;
   scheduleMirror: (state: MirrorState) => void;
+  /** 首次镜像恢复待完成期间禁止一切同步写，防止残缺本地态覆盖旧镜像。 */
+  setMirrorRestorePending: (value: boolean) => void;
   reportPersistenceFailure: (scope: string, message: string) => void;
   /** 某分区写入成功：只清除它自己的降级记录（所有分区恢复后横幅才消失）。 */
   clearDegraded: (scope: string) => void;

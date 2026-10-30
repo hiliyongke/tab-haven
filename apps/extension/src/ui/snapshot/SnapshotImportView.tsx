@@ -18,7 +18,8 @@ export function SnapshotImportView({
   text,
   onTextChange,
   onCancel,
-  onImport
+  onImport,
+  importing = false
 }: {
   source: ImportSource;
   onSourceChange: (source: ImportSource) => void;
@@ -28,6 +29,8 @@ export function SnapshotImportView({
   onTextChange: (value: string) => void;
   onCancel: () => void;
   onImport: () => void;
+  /** 导入在途：禁用入口并给 busy 反馈，避免并发提交生成重复快照。 */
+  importing?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -41,7 +44,13 @@ export function SnapshotImportView({
         aria-label={t('选择导入源')}
         className="flex gap-1 self-start rounded-lg border border-gray-200 bg-gray-50 p-0.5"
       >
-        <SegmentedChip selected={source === 'onetab'} onSelect={() => onSourceChange('onetab')}>
+        {/* 切到导入视图后焦点落进首个源选项：触发「从 OneTab 导入」的入口按钮已随
+            视图切换卸载，autoFocus 避免键盘/读屏用户焦点掉回 body。 */}
+        <SegmentedChip
+          autoFocus
+          selected={source === 'onetab'}
+          onSelect={() => onSourceChange('onetab')}
+        >
           {t('从 OneTab 导入')}
         </SegmentedChip>
         <SegmentedChip selected={source === 'workona'} onSelect={() => onSourceChange('workona')}>
@@ -80,9 +89,16 @@ export function SnapshotImportView({
         </Button>
         {/* 改走 Button：手写版少了 disabled:* 全族，且字号/圆角与其余按钮
             不在同一套刻度上。 */}
-        {/* 内容为空时禁用：否则会把「什么都没粘贴」报成「该快照没有可恢复的标签」。 */}
-        <Button variant="primary" size="xs" disabled={text.trim().length === 0} onClick={onImport}>
-          {t('导入')}
+        {/* 内容为空或导入在途时禁用：前者避免把「什么都没粘贴」报成「该快照没有
+            可恢复的标签」，后者避免并发提交生成重复快照。aria-busy 让读屏也感知进行中。 */}
+        <Button
+          variant="primary"
+          size="xs"
+          disabled={importing || text.trim().length === 0}
+          busy={importing}
+          onClick={onImport}
+        >
+          {importing ? t('导入中…') : t('导入')}
         </Button>
       </div>
     </div>

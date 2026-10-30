@@ -6,8 +6,10 @@ import { PENDING_ACTIONS_KEY } from '@/platform/messages';
 import {
   foldersRepository,
   pinsRepository,
+  redoRepository,
   settingsRepository,
-  snapshotsRepository
+  snapshotsRepository,
+  undoRepository
 } from '@/platform/storage/repositories';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import { initHeadlessI18n, t } from '@/i18n/headless';
@@ -859,5 +861,54 @@ describe('重复标签复用的 SW 接线', () => {
     );
     // 关闭提示不影响将本次关闭操作登记到撤销流程。
     expect(sendMessageMock()).not.toHaveBeenCalledWith({ type: 'duplicate-reused' });
+  });
+
+  it('无面板接收 reuse-closed 时由 SW 补写撤销库，并使旧重做目标失效', async () => {
+    // Given: 复用关闭发生时没有面板接收消息，磁盘上仍有旧重做批次
+    const windowId = 7022;
+    const listeners = await bootReuse(windowId, {
+      uniqueUrlTabs: true,
+      reuseNotifyEnabled: false
+    });
+    await redoRepository.write([
+      { id: 'redo-old', kind: 'reuse', createdAt: 1, windowId, entries: [] }
+    ]);
+    sendMessageMock().mockRejectedValue(new Error('no receiver'));
+
+    // When: 新建同址标签触发实际关闭
+    listeners.get('tabs.onCreated')!(
+      rawTab({ id: 10, windowId, index: 1, url: 'https://same.com/' }) as never
+    );
+
+    // Then: SW 补登记真实关闭快照，且清空不应再使用的重做目标
+    await vi.waitFor(async () => {
+      const batches = await undoRepository.readStrict();
+      expect(batches).toHaveLength(1);
+      expect(batches[0]).toMatchObject({ kind: 'reuse', windowId });
+      expect(batches[0]?.entries.map((entry) => entry.url)).toEqual(['https://same.com/']);
+    });
+    expect(await redoRepository.readStrict()).toEqual([]);
+  });
+
+  it('reuse-closed 已投递给面板时 SW 不重复写撤销库', async () => {
+    // Given: 面板消息通道可用
+    const windowId = 7023;
+    const listeners = await bootReuse(windowId, {
+      uniqueUrlTabs: true,
+      reuseNotifyEnabled: false
+    });
+
+    // When: 关闭快照成功投递
+    listeners.get('tabs.onCreated')!(
+      rawTab({ id: 10, windowId, index: 1, url: 'https://same.com/' }) as never
+    );
+    await vi.waitFor(() =>
+      expect(sendMessageMock()).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'reuse-closed', windowId })
+      )
+    );
+
+    // Then: 撤销登记仍由面板负责，后台补登记通道不产生重复批次
+    expect(await undoRepository.readStrict()).toEqual([]);
   });
 });

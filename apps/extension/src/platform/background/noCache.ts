@@ -4,6 +4,7 @@ import { buildNoCacheDnrRules, type NoCacheDnrRule } from '@/platform/nocache/no
 import { settingsRepository } from '@/platform/storage/repositories';
 import { checkPermissions, type PermissionState } from '@/platform/permissions';
 import { logDegraded } from '@/platform/diagnostics';
+import { createSerialChain } from '@/core/util/concurrency';
 
 /**
  * 开发者禁缓存能力（SW 侧编排）：设置变更 / SW 启动 → DNR 动态规则全量同步
@@ -17,6 +18,7 @@ type DnrApiRule = NonNullable<
 >[number];
 
 const ALL_URLS_PERMISSION = { origins: ['<all_urls>'] };
+const noCacheSyncChain = createSerialChain();
 
 /**
  * 是否持有 optional 全站 host 权限。必须三态：contains 抛错与「确实没授权」若都
@@ -38,7 +40,7 @@ function toApiRule(rule: NoCacheDnrRule): DnrApiRule {
 }
 
 /** 设置变更 / SW 启动：DNR 规则全量替换。 */
-export async function syncNoCacheRules(settings: Settings): Promise<void> {
+async function syncNoCacheRulesNow(settings: Settings): Promise<void> {
   const dnr = browser.declarativeNetRequest;
   try {
     const permitted = await siteAccessPermission();
@@ -62,30 +64,37 @@ export async function syncNoCacheRules(settings: Settings): Promise<void> {
   }
 }
 
+/** 串行完成整轮权限读取与规则替换，保证较晚的设置最终覆盖较早的同步请求。 */
+export function syncNoCacheRules(settings: Settings): Promise<void> {
+  return noCacheSyncChain.enqueue(() => syncNoCacheRulesNow(settings));
+}
+
+/** 将设置读取也放进串行链，避免迟到的启动/权限读取结果覆盖后续设置事件。 */
+function enqueueCurrentSettingsSync(failureMessage: string): Promise<void> {
+  return noCacheSyncChain
+    .enqueue(async () => {
+      const settings = await settingsRepository.read();
+      await syncNoCacheRulesNow(settings);
+    })
+    .catch((error: unknown) => {
+      logDegraded('no-cache', failureMessage, error);
+    });
+}
+
 /** SW 入口：启动对齐 + 设置监听 + 权限变化监听。 */
 export function setupNoCache(): void {
-  void settingsRepository
-    .read()
-    .then((settings) => syncNoCacheRules(settings))
-    .catch((error) => {
-      // 读不到设置则本次同步规则根本没对齐，而 watch 只在设置变更时触发，禁缓存可能
-      // 整个会话静默失效。必须留痕（不阻断流程）。
-      logDegraded('no-cache', '禁缓存规则同步：读取设置失败，本次同步未对齐', error);
-    });
+  // 仅写入诊断日志，不作为界面文案。
+  // @i18n-ignore
+  void enqueueCurrentSettingsSync('禁缓存规则同步：读取设置失败，本次同步未对齐');
   settingsRepository.watch((settings) => {
     void syncNoCacheRules(settings);
   });
 
   // 用户在浏览器设置中手动增删 optional host 权限时重新对齐规则。
   const onPermissionChanged = () => {
-    void settingsRepository
-      .read()
-      .then((settings) => syncNoCacheRules(settings))
-      .catch((error) => {
-        // 用户在浏览器设置里增删权限后规则没跟着变，是最难复现的一类报障，
-        // 静默吞掉等于放弃唯一的现场线索。
-        logDegraded('no-cache', '权限变化后重对齐禁缓存规则失败', error);
-      });
+    // 仅写入诊断日志，不作为界面文案。
+    // @i18n-ignore
+    void enqueueCurrentSettingsSync('权限变化后重对齐禁缓存规则失败');
   };
   browser.permissions.onAdded?.addListener(onPermissionChanged);
   browser.permissions.onRemoved?.addListener(onPermissionChanged);

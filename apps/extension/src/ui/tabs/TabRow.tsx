@@ -56,7 +56,9 @@ export const TabRow = memo(function TabRow({
   autoScrollOnSearch = true,
   rowActionsVisible = true,
   noCache = false,
-  containerKey
+  containerKey,
+  'aria-posinset': ariaPosInSet,
+  'aria-setsize': ariaSetSize
 }: {
   tab: TabRecord;
   duplicateCount: number;
@@ -101,6 +103,9 @@ export const TabRow = memo(function TabRow({
   noCache?: boolean;
   /** 所属容器 key（section key），供全局拖拽判断同容器排序。 */
   containerKey: string;
+  /** 虚拟化列表注入的全集位置与总数；非虚拟列表由浏览器按原生 li 推算。 */
+  'aria-posinset'?: number;
+  'aria-setsize'?: number;
 }) {
   const { t } = useTranslation();
 
@@ -157,6 +162,15 @@ export const TabRow = memo(function TabRow({
     setMenu({ x: event.clientX, y: event.clientY });
   }, []);
 
+  /**
+   * 键盘 / 触屏按钮唤出菜单：两者都没有指针坐标（键盘 clientX/Y 恒为 0、触屏按钮
+   * 点击落点是按钮本身而非整行），统一按行的右下角定位，与 Shift+F10 路径同口径。
+   */
+  const openMenuAtRow = useCallback(() => {
+    const rect = liRef.current?.getBoundingClientRect();
+    setMenu({ x: rect ? rect.right - 12 : 0, y: rect ? rect.top + 8 : 0 });
+  }, []);
+
   // 关闭回调必须稳定：ContextMenu 的 effect 依赖 onClose，内联箭头每次渲染都是
   // 新引用，会让监听反复解绑重挂（与本文件「行内回调必须稳定」的约定同因）。
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -204,11 +218,10 @@ export const TabRow = memo(function TabRow({
       // 桌面下 Shift+F10 不派发 contextmenu 事件，行聚焦时也要能打开菜单。
       if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
         event.preventDefault();
-        const rect = liRef.current?.getBoundingClientRect();
-        setMenu({ x: rect ? rect.right - 12 : 0, y: rect ? rect.top + 8 : 0 });
+        openMenuAtRow();
       }
     },
-    [reorderEnabled, onMoveTab, tab.id]
+    [reorderEnabled, onMoveTab, tab.id, openMenuAtRow]
   );
 
   const rowContainer = useTabRowSortable({
@@ -232,9 +245,19 @@ export const TabRow = memo(function TabRow({
         onDuplicate={onDuplicate}
         onDiscard={onDiscard}
         onClose={onClose}
+        onOpenMenu={openMenuAtRow}
       />
     ),
-    [tab, onToggleMute, onTogglePin, onDuplicate, onDiscard, onClose, rowActionsVisible]
+    [
+      tab,
+      onToggleMute,
+      onTogglePin,
+      onDuplicate,
+      onDiscard,
+      onClose,
+      rowActionsVisible,
+      openMenuAtRow
+    ]
   );
 
   const secondary = useMemo(
@@ -271,7 +294,17 @@ export const TabRow = memo(function TabRow({
   );
 
   return (
-    <li ref={liRef} {...tabRowIdProps(tab.id)} onContextMenu={handleContextMenu}>
+    <li
+      ref={liRef}
+      {...tabRowIdProps(tab.id)}
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
+      /* aria-current：当前激活标签对读屏不只是视觉高亮（.is-active），语义也要承载
+         ——⌘J「定位当前标签」暗示「当前标签」是重要概念。多选高亮沿用 .is-highlighted
+         视觉（listitem 不支持 aria-selected，不强加无效 ARIA）。 */
+      aria-current={isActive ? 'true' : undefined}
+      onContextMenu={handleContextMenu}
+    >
       <RowItem
         faviconPageUrl={tab.url}
         faviconTitle={tab.title || ''}

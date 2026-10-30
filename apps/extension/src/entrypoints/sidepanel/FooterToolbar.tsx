@@ -43,9 +43,33 @@ type FooterButtonSpec = Pick<
  * 会让底栏的 Tab 停靠点从 13 个变成 26 个（外壳 + 内部真按钮各一个），键盘用户
  * 每次都要多按一倍。这里只挂 `listeners`（指针拖拽），键盘可达性交给内部真按钮：
  * 底栏排序本身是可选偏好，键盘用户仍能 Tab 到每个按钮并 Enter 触发功能。
+ *
+ * 键盘重排用 Alt+←/→：事件从内部真按钮冒泡到本外壳 span（span 本身不是 Tab 停靠点，
+ * 不增加停靠数量），与指针拖拽共用 arrayMove 写回逻辑，补齐「纯键盘无法自定义顺序」。
  */
-function SortableFooterButton({ id, children }: { id: string; children: ReactNode }) {
+function SortableFooterButton({
+  id,
+  index,
+  order,
+  onReorder,
+  children
+}: {
+  id: string;
+  index: number;
+  order: readonly FooterButtonId[];
+  onReorder: (order: FooterButtonId[]) => void;
+  children: ReactNode;
+}) {
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>): void => {
+    if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      const delta = event.key === 'ArrowLeft' ? -1 : 1;
+      const to = index + delta;
+      if (to < 0 || to >= order.length) return;
+      event.preventDefault();
+      onReorder(arrayMove([...order], index, to));
+    }
+  };
   return (
     <span
       ref={setNodeRef}
@@ -58,6 +82,7 @@ function SortableFooterButton({ id, children }: { id: string; children: ReactNod
         // 拖拽中的按钮要盖住相邻项，否则会被邻居的图标 / 计数徽章压住
         zIndex: isDragging ? 30 : undefined
       }}
+      onKeyDown={handleKeyDown}
       {...listeners}
     >
       {children}
@@ -332,10 +357,16 @@ export function FooterToolbar(props: FooterToolbarProps) {
         {/* 按钮由 renderFooterButton 按 key 渲染、顺序来自 footerOrder：拖拽即改顺序
             （写回 settings.footerOrder）。条件不满足的按钮返回 null，自动跳过不占位。 */}
         <SortableContext items={order.map(footerButtonId)} strategy={horizontalListSortingStrategy}>
-          {order.map((key) => {
+          {order.map((key, index) => {
             const node = renderFooterButton(key);
             return node === null ? null : (
-              <SortableFooterButton key={key} id={footerButtonId(key)}>
+              <SortableFooterButton
+                key={key}
+                id={footerButtonId(key)}
+                index={index}
+                order={footerOrder}
+                onReorder={onReorderFooter}
+              >
                 {node}
               </SortableFooterButton>
             );

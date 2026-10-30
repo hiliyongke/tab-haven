@@ -38,7 +38,8 @@ interface TabState {
   activateTab: (tabId: number) => Promise<void>;
   /** 关闭标签，返回实际成功的标签 id（撤销联动由调用方编排）。 */
   closeTabs: (tabIds: readonly number[]) => Promise<number[]>;
-  toggleMute: (tab: TabRecord) => Promise<void>;
+  /** 切换静音，返回是否成功（供 UI 按真实结果反馈）。 */
+  toggleMute: (tab: TabRecord) => Promise<boolean>;
   /** 切换固定，返回是否成功（供 UI 按真实结果反馈）。 */
   togglePinned: (tab: TabRecord) => Promise<boolean>;
   setGroupCollapsed: (groupId: number, collapsed: boolean) => Promise<void>;
@@ -76,9 +77,7 @@ export const useTabStore = create<TabState>()((set, get) => ({
 
   closeTabs: (tabIds) => closeTabsPlatform(tabIds),
 
-  toggleMute: async (tab) => {
-    await toggleMutePlatform(tab.id, Boolean(tab.muted));
-  },
+  toggleMute: async (tab) => toggleMutePlatform(tab.id, Boolean(tab.muted)),
 
   togglePinned: async (tab) => togglePinnedPlatform(tab.id, tab.pinned),
 

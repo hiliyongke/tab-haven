@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import type { SnapshotDiffResult } from '@/core/snapshot/snapshotDiff';
@@ -52,7 +53,8 @@ export function SnapshotListView({
   onOpenImport,
   onOpenReport,
   state,
-  onRetryLoad
+  onRetryLoad,
+  listRef
 }: {
   ordered: Snapshot[];
   groups: SnapshotGroup[];
@@ -89,10 +91,14 @@ export function SnapshotListView({
   onDelete: (id: string) => void;
   onOpenImport: () => void;
   onOpenReport: () => void;
+  /** 列表容器 ref：删除快照后作为焦点归还的稳定落点（原触发按钮随行卸载，焦点会掉 body）。 */
+  listRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-2">
+    // tabIndex=-1：删除行后由面板程序化聚焦到这个**存活**容器，避免焦点掉回 <body>。
+    // -1 不进入 Tab 序列，不影响键盘漫游；focus-visible 环仅在键盘主动聚焦时出现。
+    <div ref={listRef} tabIndex={-1} className="flex flex-col gap-2 outline-none">
       {!saving ? (
         <div className="flex gap-2">
           <Button
@@ -127,6 +133,9 @@ export function SnapshotListView({
             className="min-w-0 flex-1 text-sm"
             placeholder={t('为这个快照起个名字（可留空）')}
             ariaLabel={t('为这个快照起个名字（可留空）')}
+            /* 进入命名态后焦点立即落进输入框：触发的「保存当前窗口为快照」按钮
+               已在本次渲染中卸载，autoFocus 避免焦点掉回 body、键盘用户无从继续输入。 */
+            inputProps={{ autoFocus: true }}
             value={name}
             onChange={onNameChange}
             onKeyDown={(event) => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TabRecord } from '@/core/tab-types';
 import { useScrollFade } from '@/ui/common/useScrollFade';
 
@@ -197,24 +197,29 @@ export function VirtualRowList({
       <div style={{ height: totalHeight, position: 'relative' }}>
         {/*
           role="list"：虚拟化分支外层无 <ul>，TabRow 的 <li> 会成孤儿，读屏丢失列表语义；
-          行 wrapper 标 presentation 让 <li> 挂回 list 上下文。
-          aria-setsize 声明全集 N 项：虚拟化只挂载窗口内行，否则读屏按 DOM 数得到随滚动变化的数字。
+          行 wrapper 标 presentation 让 <li> 挂回 list 上下文。全集大小与绝对位置必须
+          落在每个 listitem 上，挂在 list 容器上是无效 ARIA，读屏仍会按已挂载行数误报。
         */}
-        <div
-          role="list"
-          aria-setsize={total}
-          style={{ transform: `translateY(${start * effectiveItemSize}px)` }}
-        >
-          {visible.map((tab, index) => (
-            <div
-              key={tab.id}
-              ref={index === 0 ? firstRowRef : undefined}
-              role="presentation"
-              style={{ height: effectiveItemSize }}
-            >
-              {renderRow(tab)}
-            </div>
-          ))}
+        <div role="list" style={{ transform: `translateY(${start * effectiveItemSize}px)` }}>
+          {visible.map((tab, index) => {
+            const row = renderRow(tab);
+            const positionedRow = isValidElement<Record<string, unknown>>(row)
+              ? cloneElement(row, {
+                  'aria-posinset': start + index + 1,
+                  'aria-setsize': total
+                })
+              : row;
+            return (
+              <div
+                key={tab.id}
+                ref={index === 0 ? firstRowRef : undefined}
+                role="presentation"
+                style={{ height: effectiveItemSize }}
+              >
+                {positionedRow}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

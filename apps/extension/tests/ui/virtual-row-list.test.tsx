@@ -90,7 +90,7 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
     await waitFor(() => expect(mountedRows(view)).toHaveLength(3));
   });
 
-  it('虚拟化容器保持列表语义（调用方渲染 <li> 时不产生孤儿 li）', () => {
+  it('虚拟化列表项声明全集大小与绝对位置（滚动后仍按原序号播报）', async () => {
     // 行由调用方渲染，TabRow 根元素是 <li>；虚拟化分支外层没有 <ul>（非虚拟分支
     // 由 sectionCards 提供）——缺 list 语义时读屏会丢失「列表 N 项」与位置播报。
     const view = render(
@@ -104,7 +104,16 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
 
     const list = view.container.querySelector('[role="list"]');
     expect(list).not.toBeNull();
-    expect(list?.querySelectorAll('li').length).toBeGreaterThan(0);
+    expect(list).not.toHaveAttribute('aria-setsize');
+    expect(list?.querySelector('li')).toHaveAttribute('aria-posinset', '1');
+    expect(list?.querySelector('li')).toHaveAttribute('aria-setsize', '300');
+
+    const scroller = view.container.querySelector<HTMLElement>('.virtual-row-scroll')!;
+    scroller.scrollTop = 100 * 32;
+    fireEvent.scroll(scroller);
+    await waitFor(() => {
+      expect(list?.querySelector('li')).toHaveAttribute('aria-posinset', '95');
+    });
   });
 
   it('滚动后按偏移平移渲染窗口（translateY 跟随滚动位置）', async () => {

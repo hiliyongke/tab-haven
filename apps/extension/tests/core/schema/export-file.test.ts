@@ -58,6 +58,92 @@ describe('parseExportFile', () => {
   });
 });
 
+describe('磁贴 id 的备份契约', () => {
+  const uniquePins = [
+    { id: 'p1', identity: 'a.com', url: 'https://a.com/', title: 'A' },
+    { id: 'p2', identity: 'b.com', url: 'https://b.com/', title: 'B' },
+    { id: 'p3', identity: 'c.com', url: 'https://c.com/', title: 'C' }
+  ];
+
+  it('非空且唯一的 id 在导出校验与备份导入中均合法', () => {
+    const raw = { ...VALID, persistentPins: uniquePins };
+
+    expect(ExportFileSchema.safeParse(raw).success).toBe(true);
+    expect(parseExportFile(raw).success).toBe(true);
+  });
+
+  it.each([1, 2])('第 %i 条与首条重复时导出校验与整份导入均拒绝', (duplicateAt) => {
+    // 相邻重复（1）与非相邻重复（2）都不能进入持久化或备份导入结果。
+    const persistentPins = uniquePins.map((pin, index) =>
+      index === duplicateAt ? { ...pin, id: 'p1' } : pin
+    );
+    const raw = { ...VALID, persistentPins };
+
+    expect(ExportFileSchema.safeParse(raw).success).toBe(false);
+    expect(parseExportFile(raw)).toEqual({ success: false, reason: 'invalid' });
+  });
+});
+
+describe('整份备份的实体 id 唯一性', () => {
+  const makeUniqueIdsBackup = () => ({
+    ...VALID,
+    fixedFolders: [
+      {
+        id: 'folder-1',
+        name: '一',
+        collapsed: false,
+        items: [{ id: 'item-1', url: 'https://a.com/', title: 'A', createdAt: 1 }]
+      },
+      {
+        id: 'folder-2',
+        name: '二',
+        collapsed: false,
+        items: [{ id: 'item-2', url: 'https://b.com/', title: 'B', createdAt: 2 }]
+      }
+    ],
+    snapshots: [
+      { id: 'snapshot-1', name: '一', origin: 'manual', createdAt: 1, tabCount: 0, tabs: [] },
+      { id: 'snapshot-2', name: '二', origin: 'manual', createdAt: 2, tabCount: 0, tabs: [] }
+    ]
+  });
+
+  it('folder/item/snapshot id 均唯一时，导出校验与备份导入均通过', () => {
+    const raw = makeUniqueIdsBackup();
+
+    expect(ExportFileSchema.safeParse(raw).success).toBe(true);
+    expect(parseExportFile(raw).success).toBe(true);
+  });
+
+  it.each([
+    {
+      scenario: 'folder id 重复',
+      corrupt: (raw: ReturnType<typeof makeUniqueIdsBackup>) => {
+        raw.fixedFolders[1]!.id = 'folder-1';
+      }
+    },
+    {
+      scenario: 'folder item id 跨文件夹重复',
+      corrupt: (raw: ReturnType<typeof makeUniqueIdsBackup>) => {
+        raw.fixedFolders[1]!.items[0]!.id = 'item-1';
+      }
+    },
+    {
+      scenario: 'snapshot id 重复',
+      corrupt: (raw: ReturnType<typeof makeUniqueIdsBackup>) => {
+        raw.snapshots[1]!.id = 'snapshot-1';
+      }
+    }
+  ])('$scenario 时，导出校验与整份导入均拒绝', ({ corrupt }) => {
+    // Given 一份其他字段均合法、只有一类实体 id 重复的备份
+    const raw = makeUniqueIdsBackup();
+    corrupt(raw);
+
+    // When / Then 写出口径与导入入口使用同一唯一性约束
+    expect(ExportFileSchema.safeParse(raw).success).toBe(false);
+    expect(parseExportFile(raw)).toEqual({ success: false, reason: 'invalid' });
+  });
+});
+
 describe('ExportFileSchema 版本号常量', () => {
   it('schema 版本号与导出常量一致', () => {
     expect(ExportFileSchema.parse(VALID).version).toBe(EXPORT_FILE_VERSION);

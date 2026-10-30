@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   AutoDiscardBatchSchema,
   DEFAULT_SETTINGS,
+  EXPORT_FILE_VERSION,
   InboundFixedFolderSchema,
+  HOST_MAX_LENGTH,
+  InboundPersistentPinListSchema,
   InboundPersistentPinSchema,
+  parseExportFile,
+  PersistentPinSchema,
   SettingsSchema,
   UndoBatchSchema
 } from '@/core/schema/models';
 import { FOOTER_BUTTON_IDS, FOOTER_BUTTON_KEYS, footerButtonId } from '@/core/layout/footerOrder';
+import { dedupePins } from '@/core/fixed/FolderOps';
 
 /**
  * schema 层行为规格：
@@ -136,10 +142,15 @@ describe('InboundFixedFolderSchema / InboundPersistentPinSchema', () => {
       collapsed: false,
       items: [
         { id: 'i1', url: 'javascript:alert(1)', title: 'x', createdAt: 1 },
-        { id: 'i2', url: 'file:///etc/passwd', title: 'y', createdAt: 1 }
+        { id: 'i2', url: 'file:///etc/passwd', title: 'y', createdAt: 1 },
+        { id: 'i3', url: 'https://[::::]/', title: 'z', createdAt: 1 }
       ]
     });
-    expect(folder.items.map((item) => item.url)).toEqual(['about:blank', 'about:blank']);
+    expect(folder.items.map((item) => item.url)).toEqual([
+      'about:blank',
+      'about:blank',
+      'about:blank'
+    ]);
 
     const pin = InboundPersistentPinSchema.parse({
       id: 'p1',
@@ -151,6 +162,64 @@ describe('InboundFixedFolderSchema / InboundPersistentPinSchema', () => {
     // url 被降级时 pinIdentity 返回 null：保留原 identity（去重仍需它），
     // 不去写空串——空串会让全部降级磁贴塌缩成一个。
     expect(pin.identity).toBe('example.com');
+  });
+
+  it('about:blank 磁贴的空白 identity 使用各自 id，避免去重丢磁贴', () => {
+    const pins = [
+      InboundPersistentPinSchema.parse({ id: 'p1', identity: '', url: 'about:blank', title: 'A' }),
+      InboundPersistentPinSchema.parse({
+        id: 'p2',
+        identity: '   ',
+        url: 'about:blank',
+        title: 'B'
+      })
+    ];
+
+    expect(pins.map((pin) => pin.identity)).toEqual(['p1', 'p2']);
+    expect(dedupePins(pins)).toHaveLength(2);
+  });
+
+  it('本地读盘 schema 不收紧磁贴 id', () => {
+    expect(
+      PersistentPinSchema.safeParse({ id: '', identity: '', url: 'about:blank', title: 'A' })
+        .success
+    ).toBe(true);
+  });
+
+  it('导入磁贴 id 必须非空且在同一备份中唯一', () => {
+    expect(
+      InboundPersistentPinSchema.safeParse({ id: '', identity: '', url: 'about:blank', title: 'A' })
+        .success
+    ).toBe(false);
+    expect(
+      InboundPersistentPinSchema.safeParse({
+        id: 'p'.repeat(HOST_MAX_LENGTH + 1),
+        identity: '',
+        url: 'about:blank',
+        title: 'A'
+      }).success
+    ).toBe(false);
+    expect(
+      InboundPersistentPinListSchema.safeParse([
+        { id: 'same', identity: 'a.com', url: 'https://a.com/', title: 'A' },
+        { id: 'same', identity: 'b.com', url: 'https://b.com/', title: 'B' }
+      ]).success
+    ).toBe(false);
+
+    const result = parseExportFile({
+      format: 'tabs.export',
+      version: EXPORT_FILE_VERSION,
+      exportedAt: '2026-10-30T00:00:00.000Z',
+      fixedFolders: [],
+      persistentPins: [
+        { id: 'p1', identity: '', url: 'about:blank', title: 'A' },
+        { id: 'p1', identity: '', url: 'about:blank', title: 'B' }
+      ],
+      siteCollapse: [],
+      settings: DEFAULT_SETTINGS,
+      snapshots: []
+    });
+    expect(result).toEqual({ success: false, reason: 'invalid' });
   });
 
   it('任意 http(s) favicon 被丢弃，白名单 scheme 保留（图标不发外部请求）', () => {

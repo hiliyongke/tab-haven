@@ -45,6 +45,7 @@ vi.mock('@/platform/diagnostics', () => ({
 function repo<T>(value: T, writeOk = true) {
   return {
     read: vi.fn(async () => value),
+    readStrict: vi.fn(async () => value),
     write: vi.fn(async () => writeOk)
   };
 }
@@ -151,7 +152,13 @@ describe('导入事务的回滚链', () => {
     const h = await harness({ snapshotsWriteOk: false });
 
     // 抛出的必须是导入语义错误，不是锁错误（UI 据此给出可解释的提示）
-    await expect(h.run(payload)).rejects.toThrow('import-write-failed:snapshots');
+    const error: unknown = await h.run(payload).catch((reason: unknown) => reason);
+    const { ImportDataError } = await import('@/stores/data/transferSlice');
+    expect(error).toBeInstanceOf(ImportDataError);
+    if (error instanceof ImportDataError) {
+      expect(error.partition).toBe('snapshots');
+      expect(error.rollbackFailures).toEqual(['folders']);
+    }
 
     // 回滚链没有在第一个分区处中断：其余分区照样尝试回滚
     expect(h.pins.write).toHaveBeenLastCalledWith([]);
@@ -165,6 +172,21 @@ describe('导入事务的回滚链', () => {
         call[1].includes('folders')
     );
     expect(rollbackLogged).toBe(true);
+  });
+});
+
+describe('导入前基线读取', () => {
+  it('任一分区 readStrict 故障时不写任何分区并释放事务标志', async () => {
+    const h = await harness();
+    h.pins.readStrict.mockRejectedValueOnce(new Error('storage down'));
+
+    await expect(h.run(payload)).rejects.toThrow('storage down');
+
+    for (const repo of [h.folders, h.pins, h.collapse, h.settings, h.snapshots]) {
+      expect(repo.write).not.toHaveBeenCalled();
+    }
+    expect(h.ctx.setImporting).toHaveBeenLastCalledWith(false);
+    expect(h.ctx.setWatchersSuspended).toHaveBeenLastCalledWith(false);
   });
 });
 

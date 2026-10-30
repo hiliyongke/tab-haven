@@ -62,7 +62,7 @@ describe('空现场的保存', () => {
   it('saveSpace：空现场时拒绝保存并显示失败回执', async () => {
     const saved = await useSnapshotStore.getState().saveSpace('工作区');
 
-    expect(saved).toBe(false);
+    expect(saved).toBeUndefined();
     expect(useSnapshotStore.getState().snapshots).toHaveLength(0);
     expect(useUndoStore.getState().toast?.tone).toBe('error');
   });
@@ -76,12 +76,13 @@ describe('空现场的保存', () => {
     expect(useSnapshotStore.getState().snapshots).toHaveLength(1);
   });
 
-  it('有可保存标签时 saveSpace 同样返回 true', async () => {
+  it('有可保存标签时 saveSpace 返回本次新建快照 id', async () => {
     tabState.tabs = [makeTab({ id: 11, url: 'https://a.com/', title: 'A' })];
 
     const saved = await useSnapshotStore.getState().saveSpace('工作区');
 
-    expect(saved).toBe(true);
+    expect(saved).toBe(useSnapshotStore.getState().snapshots[0]?.id);
     expect(useSnapshotStore.getState().snapshots).toHaveLength(1);
+    expect(useSnapshotStore.getState().snapshots[0]?.name).toBe('工作区');
   });
 });

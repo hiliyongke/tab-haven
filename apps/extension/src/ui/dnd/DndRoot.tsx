@@ -267,6 +267,8 @@ export function DndRoot({
     useSensor(KeyboardSensor, KEYBOARD_SENSOR_CONFIG)
   );
   const [overlay, setOverlay] = useState<ReactNode | null>(null);
+  /** 本次拖拽是否由键盘触发（KeyboardSensor）：决定提示条文案用「空格放置」还是「松开以放置」。 */
+  const [keyboardDragging, setKeyboardDragging] = useState(false);
   const { t } = useTranslation();
 
   /** 读屏播报本地化（构建逻辑见 buildDragAccessibility，导出供测试驱动）。 */
@@ -275,15 +277,24 @@ export function DndRoot({
   const handleDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as DragData | undefined;
     if (!data) return;
+    // activatorEvent 为 KeyboardEvent 时是 Space 起拖的键盘拖拽，放置键同样是 Space；
+    // 指针拖拽才是「松开」。提示条须与真实操作一致，否则读屏用户听到「松开」却无法松开。
+    setKeyboardDragging(
+      typeof KeyboardEvent !== 'undefined' && event.activatorEvent instanceof KeyboardEvent
+    );
     setOverlay(buildDragOverlay(data));
   };
   const handleDragEnd = (event: DragEndEvent) => {
     setOverlay(null);
+    setKeyboardDragging(false);
     // 指针仍在松手行上时暂时隐藏把手，直到指针再次移动。
     markJustDropped();
     onDragEnd(event);
   };
-  const handleDragCancel = () => setOverlay(null);
+  const handleDragCancel = () => {
+    setOverlay(null);
+    setKeyboardDragging(false);
+  };
 
   // 拖拽期间给 body 打标记，按 main.css 的 body.dnd-dragging 规则收起行尾操作，避免布局变化影响落点。
   useEffect(() => {
@@ -317,7 +328,7 @@ export function DndRoot({
       {overlay !== null &&
         createPortal(
           <div className="dnd-hint" role="status">
-            {t('松开以放置 · Esc 取消')}
+            {keyboardDragging ? t('空格放置 · Esc 取消') : t('松开以放置 · Esc 取消')}
           </div>,
           document.body
         )}

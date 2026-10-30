@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { translate } from '@/i18n';
 import { ControlIdContext } from '@/ui/common/controlId';
 import { Chip } from '@/ui/common/Chip';
 import { Checkbox } from '@/ui/common/Checkbox';
@@ -9,7 +10,9 @@ import { CollapseChevron } from '@/ui/common/CollapseChevron';
 import { ColorSwatchGroup } from '@/ui/common/ColorSwatchGroup';
 import { RowActionButton } from '@/ui/common/RowActionButton';
 import { RowItem } from '@/ui/common/RowItem';
+import { StatusBadges } from '@/ui/common/StatusBadges';
 import { Icons } from '@/ui/common/Icon';
+import type { TabRecord } from '@/core/tab-types';
 
 /**
  * L1/L2 中间层原语的行为规格。
@@ -265,6 +268,91 @@ describe('ColorSwatchGroup', () => {
     // Then: 只有变量注入，没有 backgroundColor 字面色值
     expect(style).toContain('--swatch');
     expect(style).not.toMatch(/background-color/i);
+  });
+
+  it('roving tabindex：整组只有一个 Tab 停靠点（选中项）', () => {
+    // Given: 当前选中 forest
+    render(
+      <ColorSwatchGroup
+        label="主题色"
+        value="forest"
+        options={options}
+        onSelect={() => undefined}
+      />
+    );
+
+    // When: 取两个 radio
+    const radios = screen.getAllByRole('radio');
+
+    // Then: 选中项 tabIndex=0，其余 -1（键盘用户不被逐个色块绊住）
+    expect(radios[0]).toHaveAttribute('tabindex', '0');
+    expect(radios[1]).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('方向键漫游：ArrowRight 选中下一项并把焦点移过去', () => {
+    // Given: 当前选中 forest，聚焦第一个色块
+    const onSelect = vi.fn();
+    render(
+      <ColorSwatchGroup label="主题色" value="forest" options={options} onSelect={onSelect} />
+    );
+    const radios = screen.getAllByRole('radio');
+    radios[0]!.focus();
+
+    // When: 按右方向键
+    fireEvent.keyDown(radios[0]!, { key: 'ArrowRight' });
+
+    // Then: 上报 ocean，焦点跟随到第二个色块（radio 惯例：方向键即选并移动焦点）
+    expect(onSelect).toHaveBeenCalledWith('ocean');
+    expect(document.activeElement).toBe(radios[1]);
+  });
+
+  it('Home/End 跳首尾，不循环', () => {
+    // Given: 三个色号，聚焦中间项
+    const three = [...options, { value: 'violet', label: '暮山紫', hex: '#6f4ba6' }];
+    const onSelect = vi.fn();
+    render(<ColorSwatchGroup label="主题色" value="ocean" options={three} onSelect={onSelect} />);
+    const radios = screen.getAllByRole('radio');
+    radios[1]!.focus();
+
+    // When: End → 末项；Home → 首项
+    fireEvent.keyDown(radios[1]!, { key: 'End' });
+    expect(onSelect).toHaveBeenLastCalledWith('violet');
+    expect(document.activeElement).toBe(radios[2]);
+
+    fireEvent.keyDown(radios[2]!, { key: 'Home' });
+    expect(onSelect).toHaveBeenLastCalledWith('forest');
+    expect(document.activeElement).toBe(radios[0]);
+  });
+});
+
+describe('StatusBadges 休眠徽章可访问名', () => {
+  const discardedTab = { discarded: true } as TabRecord;
+
+  it('已休眠徽章用 sr-only 文本承载可访问名（span 的 aria-label 在 generic role 上无效）', () => {
+    // Given: 一个已休眠标签
+    const { container } = render(
+      <StatusBadges tab={discardedTab} duplicateCount={0} isSplitCompanion={false} />
+    );
+
+    // When: 找 sr-only 文案
+    // Then: 存在稳定可读的文本节点，且雪花图标本身 aria-hidden（不重复播报）
+    const srOnly = container.querySelector('.sr-only');
+    expect(srOnly).not.toBeNull();
+    // 测试环境 i18n 默认语言为 en，用 translate 取当前语言的译文再比对。
+    expect(srOnly?.textContent).toBe(translate('已休眠（点击唤醒）'));
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('与其他状态徽章同构：休眠雪花也是 chip，不是裸图标', () => {
+    // Given: 已休眠标签
+    const { container } = render(
+      <StatusBadges tab={discardedTab} duplicateCount={0} isSplitCompanion={false} />
+    );
+
+    // When: 查 chip 语义类
+    // Then: 存在 .chip 包裹（并列徽章高度/度量一致）
+    expect(container.querySelector('.chip')).not.toBeNull();
   });
 });
 

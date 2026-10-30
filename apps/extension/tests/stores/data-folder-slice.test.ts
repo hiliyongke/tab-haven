@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { DEFAULT_SETTINGS } from '@/core/schema/models';
+import { DEFAULT_SETTINGS, FOLDERS_LIMIT } from '@/core/schema/models';
 import { createFolderItem } from '@/core/fixed/FolderOps';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
@@ -44,7 +44,7 @@ vi.mock('@/platform/tabs', () => ({
   recolorGroup: vi.fn(async () => undefined),
   renameGroup: vi.fn(async () => undefined),
   setGroupCollapsed: vi.fn(async () => undefined),
-  toggleMute: vi.fn(async () => undefined),
+  toggleMute: vi.fn(async () => true),
   togglePinned: vi.fn(async () => true)
 }));
 
@@ -341,6 +341,65 @@ describe('createFolderFromNativeGroup', () => {
 
     release?.();
     await importing.catch(() => undefined);
+  });
+
+  it('达到文件夹上限时返回 false，且不建立脏绑定', async () => {
+    useDataStore.setState({
+      folders: Array.from({ length: FOLDERS_LIMIT }, (_, index) => ({
+        id: `folder-${index}`,
+        name: `文件夹-${index}`,
+        collapsed: false,
+        createdAt: index,
+        items: []
+      }))
+    });
+    await updateSession({ itemTabBindings: {} });
+
+    const ok = await useDataStore
+      .getState()
+      .createFolderFromNativeGroup('组', [tab({ id: 1, url: 'https://a.com/' })]);
+
+    expect(ok).toBe(false);
+    expect(folders()).toHaveLength(FOLDERS_LIMIT);
+    expect((await readSession()).itemTabBindings).toEqual({});
+  });
+
+  it('并发转换按最新基线只接受最后一个名额', async () => {
+    useDataStore.setState({
+      folders: Array.from({ length: FOLDERS_LIMIT - 1 }, (_, index) => ({
+        id: `folder-${index}`,
+        name: `文件夹-${index}`,
+        collapsed: false,
+        createdAt: index,
+        items: []
+      }))
+    });
+    await updateSession({ itemTabBindings: {} });
+
+    const results = await Promise.all([
+      useDataStore
+        .getState()
+        .createFolderFromNativeGroup('组 A', [tab({ id: 1, url: 'https://a.com/' })]),
+      useDataStore
+        .getState()
+        .createFolderFromNativeGroup('组 B', [tab({ id: 2, url: 'https://b.com/' })])
+    ]);
+
+    expect(results).toEqual([true, false]);
+    expect(folders()).toHaveLength(FOLDERS_LIMIT);
+    expect(Object.keys((await readSession()).itemTabBindings)).toHaveLength(1);
+  });
+
+  it('文件夹落盘失败时返回 false，且不建立脏绑定', async () => {
+    vi.spyOn(foldersRepository, 'write').mockResolvedValue(false);
+    await updateSession({ itemTabBindings: {} });
+
+    const ok = await useDataStore
+      .getState()
+      .createFolderFromNativeGroup('组', [tab({ id: 1, url: 'https://a.com/' })]);
+
+    expect(ok).toBe(false);
+    expect((await readSession()).itemTabBindings).toEqual({});
   });
 
   it('组内没有可保存条目时不创建文件夹', async () => {

@@ -122,6 +122,47 @@ describe('selectRedoTargets', () => {
   });
 });
 
+describe('selectRedoTargets 实际恢复身份', () => {
+  it('同 URL keeper 排在前面时仍只选择实际恢复的标签', () => {
+    // Given 窗口原有 keeper 与本次撤销恢复的标签网址相同
+    const tabs = [
+      makeTab({ id: 1, url: 'https://a.com/' }),
+      makeTab({ id: 2, url: 'https://a.com/' })
+    ];
+
+    // When 恢复结果提供实际新建的标签 id
+    const targets = selectRedoTargets(tabs, [record('https://a.com/')], {
+      restoredTabIds: [2]
+    });
+
+    // Then 重做只关闭恢复产物，不按 URL 误关 keeper
+    expect(targets.map((tab) => tab.id)).toEqual([2]);
+  });
+
+  it('身份集为空或目标已消失时不回退 URL 补位', () => {
+    const tabs = [makeTab({ id: 1, url: 'https://a.com/' })];
+
+    expect(selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [] })).toEqual([]);
+    expect(selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [2] })).toEqual(
+      []
+    );
+  });
+
+  it('身份匹配仍遵守固定标签过滤与显式放行', () => {
+    const tabs = [makeTab({ id: 2, url: 'https://a.com/', pinned: true })];
+
+    expect(selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [2] })).toEqual(
+      []
+    );
+    expect(
+      selectRedoTargets(tabs, [record('https://a.com/')], {
+        includePinned: true,
+        restoredTabIds: [2]
+      }).map((tab) => tab.id)
+    ).toEqual([2]);
+  });
+});
+
 describe('撤销「快照恢复」批次时的固定标签（includePinned）', () => {
   /**
    * 要防的失效：快照恢复会按快照里的 pinned 状态**新建固定标签**，而这批标签

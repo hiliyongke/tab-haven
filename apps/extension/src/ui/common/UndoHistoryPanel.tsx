@@ -134,19 +134,30 @@ export function UndoHistoryPanel({
       });
   };
 
-  const hasAny =
-    batches.length > 0 || redoBatches.length > 0 || (recent !== null && recent.length > 0);
+  /** 浏览器最近关闭仍在异步读取：不能与「确认无记录」共用空态，否则加载期先闪一下
+   *  「暂无撤销记录」再跳成列表，读屏/视觉都是误导。失败分支已 setRecent([]) 并留痕，
+   *  此处只把「未返回」单列为加载态。 */
+  const recentLoading = recent === null;
+  const hasAny = batches.length > 0 || redoBatches.length > 0 || (recent?.length ?? 0) > 0;
+  // 仅当没有任何可展示项、且浏览器最近关闭仍在读取时呈现加载态。
+  const showRecentLoading = recentLoading && batches.length === 0 && redoBatches.length === 0;
 
   return (
     <DialogShell title={t('撤销历史')} onClose={onClose} widthClassName="dialog-md">
       {/* 滚动由 DialogShell 内容区承担，保持单一滚动容器。 */}
       {/* 不加 pr-1：滚动条留白由内容区自身 padding 承担，否则列表右边缘与标题栏 × 错位。 */}
       <div>
+        {showRecentLoading && (
+          <div role="status" aria-busy="true">
+            <span className="sr-only">{t('正在读取最近关闭的标签…')}</span>
+          </div>
+        )}
         {/* 空态复用通用 EmptyState：与弹窗 / 侧栏的空态同构，文案仍取 undo.historyEmpty。 */}
-        {!hasAny && <EmptyState title={t('暂无撤销记录')} />}
+        {!showRecentLoading && !hasAny && <EmptyState title={t('暂无撤销记录')} />}
 
-        {/* D5.3 崩溃引导：撤销与浏览器最近关闭都为空，但存在快照时，提示用户从快照找回。 */}
-        {!hasAny && hasSnapshots && (
+        {/* D5.3 崩溃引导：撤销与浏览器最近关闭都为空，但存在快照时，提示用户从快照找回。
+            加载态不落到这里，避免与「正在读取」并存。 */}
+        {!showRecentLoading && !hasAny && hasSnapshots && (
           <Callout density="page" className="mx-1">
             <p className="text-xs">
               {t('本会话的撤销记录为空，但你有过自动保存的快照，可从快照找回整个窗口。')}

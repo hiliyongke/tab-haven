@@ -154,6 +154,12 @@ describe('normalizeWhitelistHost', () => {
     expect(normalizeWhitelistHost('HTTPS://WWW.Example.com/x')).toBe('example.com');
   });
 
+  it('Given 无斜杠但带 query 或 fragment When 归一化 Then 只留主机名', () => {
+    expect(normalizeWhitelistHost('www.a.com?from=one-tab')).toBe('a.com');
+    expect(normalizeWhitelistHost('https://www.a.com#section')).toBe('a.com');
+    expect(normalizeWhitelistHost('localhost:3000?debug=true')).toBe('localhost:3000');
+  });
+
   it('Given 非 http(s) scheme When 归一化 Then 保留主机名', () => {
     // 去除非 http(s) scheme 后保留主机名部分。
     expect(normalizeWhitelistHost('ftp://a.com')).toBe('a.com');
@@ -180,6 +186,7 @@ describe('normalizeWhitelistHost', () => {
     expect(normalizeWhitelistHost('[::1]')).toBe('[::1]');
     expect(normalizeWhitelistHost('https://[::1]/')).toBe('[::1]');
     expect(normalizeWhitelistHost('[fe80::1]')).toBe('[fe80::1]');
+    expect(normalizeWhitelistHost('[0:0:0:0:0:0:0:1]')).toBe('[::1]');
   });
 
   it('Given 越界或非数字端口 When 归一化 Then 判空丢弃', () => {
@@ -193,10 +200,18 @@ describe('normalizeWhitelistHost', () => {
     expect(normalizeWhitelistHost('user@a.com')).toBe('');
   });
 
+  it('Given 方括号内不是有效 IPv6 地址 When 归一化 Then 判空丢弃', () => {
+    expect(normalizeWhitelistHost('[::::]')).toBe('');
+    expect(normalizeWhitelistHost('[not-ipv6]')).toBe('');
+    expect(normalizeWhitelistHost('[::::]:443')).toBe('');
+  });
+
   it('Given 手输的裸 IPv6（无方括号）When 归一化 Then 补回方括号而非判空', () => {
     // 裸 IPv6 输入归一为带方括号的地址形式。
     expect(normalizeWhitelistHost('::1')).toBe('[::1]');
     expect(normalizeWhitelistHost('fe80::1')).toBe('[fe80::1]');
+    expect(normalizeWhitelistHost('FE80::1')).toBe('[fe80::1]');
+    expect(normalizeWhitelistHost('0:0:0:0:0:0:0:1')).toBe('[::1]');
   });
 
   it('Given 前导零端口 / 端口前的尾点 When 归一化 Then 与 URL 解析结果同形', () => {

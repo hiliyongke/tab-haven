@@ -93,6 +93,35 @@ describe('check: 规则 2 无孤立译文', () => {
   });
 });
 
+describe('check: 规则 4 空译文白名单', () => {
+  it('Given emptyAllowed 原文的译文为空 When 守卫 Then 仅该原因可豁免', () => {
+    const paths = healthyProject();
+    writeJson(dictFile.translation(paths, 'en'), { ...TRANSLATIONS, [EDIT_KEY]: '' });
+    apply(paths);
+
+    const result = check(paths, { emptyAllowed: [EDIT] });
+
+    expect(result.issues).toEqual([]);
+    expect(result.stats.exempt).toBe(1);
+    expect(result.stats.pending).toBe(0);
+  });
+
+  it.each([
+    ['与母语原文相同', EDIT],
+    ['汉字占比', '编辑标签组！']
+  ])('Given emptyAllowed 原文%s When 守卫 Then 不得豁免', (_reason, value) => {
+    const paths = healthyProject();
+    writeJson(dictFile.translation(paths, 'en'), { ...TRANSLATIONS, [EDIT_KEY]: value });
+    apply(paths);
+
+    const result = check(paths, { emptyAllowed: [EDIT] });
+
+    expect(result.stats.exempt).toBe(0);
+    expect(result.stats.pending).toBe(1);
+    expect(result.issues.join('\n')).toContain('伪翻译');
+  });
+});
+
 describe('check: 规则 3 无未登记原文', () => {
   it('Given 源码里出现词典中没有的原文 When 守卫 Then 报「未登记文案」', () => {
     // 要防的失效（本守卫存在的理由）：写了 t('中文') 没扫描，英文模式直接露中文。

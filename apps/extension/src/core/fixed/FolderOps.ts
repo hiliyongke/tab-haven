@@ -117,11 +117,18 @@ export function reorderPins(
 
 /** pin 身份去重：同身份保留首个，过滤后续。 */
 export function dedupePins(pins: PersistentPin[]): PersistentPin[] {
-  const seen = new Set<string>();
+  const seenIdentities = new Set<string>();
+  const seenUnidentifiedIds = new Set<string>();
   const result: PersistentPin[] = [];
   for (const pin of pins) {
-    if (seen.has(pin.identity)) continue;
-    seen.add(pin.identity);
+    if (!pin.identity) {
+      if (seenUnidentifiedIds.has(pin.id)) continue;
+      seenUnidentifiedIds.add(pin.id);
+      result.push(pin);
+      continue;
+    }
+    if (seenIdentities.has(pin.identity)) continue;
+    seenIdentities.add(pin.identity);
     result.push(pin);
   }
   return result;

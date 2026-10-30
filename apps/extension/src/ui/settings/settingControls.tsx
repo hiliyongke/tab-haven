@@ -104,6 +104,7 @@ export function Row({
   children: ReactNode;
 }) {
   const controlId = useId();
+  const labelId = useId();
   const associable = isAssociableControl(children);
   // 可关联时才渲染 <label>：点击标签文本即可聚焦/切换控件，
   // 且视觉文案与程序化标签收敛为一份（不必再在控件上另写 aria-label）。
@@ -114,6 +115,7 @@ export function Row({
         {icon}
         <div className="min-w-0">
           <LabelTag
+            id={associable ? undefined : labelId}
             className="block text-sm text-gray-800"
             {...(associable ? { htmlFor: controlId } : {})}
           >
@@ -124,8 +126,14 @@ export function Row({
           {hint && <div className="mt-0.5 text-3xs text-gray-600">{hint}</div>}
         </div>
       </div>
-      {/* 窄屏下控件占满整行并起始对齐，避免长文本域溢出。 */}
-      <div className="w-full shrink-0 sm:w-auto sm:pl-4">
+      {/* 窄屏下控件占满整行并起始对齐，避免长文本域溢出。
+          复合控件行（白名单 / 禁缓存站点列表等非单一控件）无法用 htmlFor 关联，
+          用 role=group + aria-labelledby 指向标签，给「输入域名」「添加/保存」等
+          一组控件补上分组语境，读屏按控件跳转时不致落到孤立输入框。 */}
+      <div
+        className="w-full shrink-0 sm:w-auto sm:pl-4"
+        {...(associable ? {} : { role: 'group' as const, 'aria-labelledby': labelId })}
+      >
         <ControlIdContext.Provider value={associable ? controlId : undefined}>
           {children}
         </ControlIdContext.Provider>
@@ -144,6 +152,8 @@ export function WhitelistEditor({
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
+  /** 校验提示的 id：供输入框 aria-describedby 关联（读屏聚焦输入框时能听到失败原因）。 */
+  const whitelistNoticeId = useId();
   /** 添加未生效的原因（无效 / 重复）：静默 return 会让用户以为已经加上了。 */
   const [notice, setNotice] = useState<string | null>(null);
   const add = () => {
@@ -200,6 +210,12 @@ export function WhitelistEditor({
           className="w-32"
           placeholder={t('输入域名')}
           ariaLabel={t('输入域名')}
+          /* 校验结果经 aria-invalid + aria-describedby 与输入框程序化关联：
+             role=status 只负责播报，绑定后读屏聚焦输入框也能听到「格式无效」原因。 */
+          inputProps={{
+            'aria-invalid': notice !== null,
+            'aria-describedby': notice !== null ? whitelistNoticeId : undefined
+          }}
           value={input}
           onChange={(next) => {
             setInput(next);
@@ -216,7 +232,7 @@ export function WhitelistEditor({
       </div>
       {notice !== null && (
         /* text-3xs(11px)：正文说明的最小字号（10px 仅用于图标内文与徽角）。 */
-        <p role="status" className="text-3xs text-red-600">
+        <p id={whitelistNoticeId} role="status" className="text-3xs text-red-600">
           {notice}
         </p>
       )}
@@ -247,6 +263,8 @@ export function NoCachePatternEditor({
     return { text: joined, synced: joined };
   });
   const [invalidCount, setInvalidCount] = useState(0);
+  /** 校验提示 id：供 textarea 的 aria-describedby 关联。 */
+  const patternFeedbackId = useId();
   const full = value.length >= NO_CACHE_PATTERNS_LIMIT;
 
   // 外部变更（重置设置 / 导入备份）同步进文本框；内容一致时跳过。
@@ -293,7 +311,13 @@ export function NoCachePatternEditor({
         className="font-mono leading-5"
         placeholder={t('每行一条，例：\nexample.com\nexample.com/app\nhttps://example.com/app')}
         ariaLabel={t('禁缓存站点列表')}
-        inputProps={{ spellCheck: false }}
+        /* 校验结果经 aria-invalid + aria-describedby 与输入框绑定：无效行提示既是
+           操作说明也是动态结果，role=status 负责播报，绑定让聚焦输入框时也能听到。 */
+        inputProps={{
+          spellCheck: false,
+          'aria-invalid': invalidCount > 0,
+          'aria-describedby': patternFeedbackId
+        }}
         value={draft.text}
         onChange={(next) => {
           setDraft((prev) => ({ ...prev, text: next }));
@@ -309,7 +333,13 @@ export function NoCachePatternEditor({
         }}
       />
       <div className="flex w-full items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-3xs text-gray-500">
+        {/* role=status：无效行计数是失焦/保存后的动态结果，读屏须播报；
+            id 供 textarea 的 aria-describedby 关联。 */}
+        <span
+          id={patternFeedbackId}
+          role="status"
+          className="min-w-0 truncate text-3xs text-gray-500"
+        >
           {invalidCount > 0
             ? t('已忽略 {{count}} 行格式无效的条目', { count: invalidCount })
             : t('每行一条，回车换行；失焦或点保存生效（⌘/Ctrl+Enter）')}
@@ -387,10 +417,14 @@ export function NoCacheToggle({
         ariaLabel={t('开发者：指定站点禁用缓存')}
       />
       {denied && !settings.noCacheEnabled && (
-        <span className="text-3xs text-red-600">{t('未授予网站权限，功能未开启')}</span>
+        // role=alert：点开关被拒是动态告警，读屏须立即播报，否则用户只见开关没反应却不知原因。
+        <span role="alert" className="text-3xs text-red-600">
+          {t('未授予网站权限，功能未开启')}
+        </span>
       )}
       {permissionLost && settings.noCacheEnabled && (
-        <span className="flex items-center gap-1.5 text-3xs text-warn-600">
+        // role=alert：权限在挂载后被回收同样是动态告警，读屏须立即播报。
+        <span role="alert" className="flex items-center gap-1.5 text-3xs text-warn-600">
           {t('网站权限已失效，规则未生效')}
           <Button variant="secondary" size="sm" onClick={() => void regrant()}>
             {t('重新授权')}

@@ -11,6 +11,7 @@ import { normalizeHostname } from '@/core/url/hostname';
 import { foldersRepository, settingsRepository } from '@/platform/storage/repositories';
 import { initHeadlessI18n, t } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
+import { persistReuseClosedBatch } from '@/platform/reuse/persistClosed';
 import { MessageSchema, REUSE_CLOSED_LIMIT, sendMessage } from '@/platform/messages';
 import type { Settings } from '@/core/schema/models';
 import {
@@ -112,7 +113,19 @@ export default defineBackground(() => {
               `同网址合并一次关闭 ${records.length} 条，超出单条回执上限，已截断为 ${tabs.length} 条`
             );
           }
-          sendMessage({ type: 'reuse-closed', windowId, tabs });
+          try {
+            await browser.runtime.sendMessage({ type: 'reuse-closed', windowId, tabs });
+          } catch {
+            // 无面板时 runtime 投递被拒绝，SW 直接补写撤销库；投递成功则不写，避免面板重复入栈。
+            try {
+              const persisted = await persistReuseClosedBatch(windowId, tabs);
+              if (!persisted) {
+                logDegraded('background', '无面板补登记复用撤销批次失败');
+              }
+            } catch (error) {
+              logDegraded('background', '无面板补登记复用撤销批次失败', error);
+            }
+          }
         })();
       }
     },

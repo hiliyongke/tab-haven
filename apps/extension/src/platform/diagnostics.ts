@@ -41,6 +41,23 @@ const StoredEntriesSchema = z.array(
   })
 );
 
+/** 同一诊断键内保存共享清空代际与墓碑；旧版本数组仍可读取并在下次落盘时迁移。 */
+const StoredDiagnosticsSchema = z.object({
+  clearEpoch: z.number().int().nonnegative(),
+  clearedAt: z.number().int().nonnegative(),
+  entries: StoredEntriesSchema
+});
+type StoredDiagnostics = z.infer<typeof StoredDiagnosticsSchema>;
+
+function parseStoredDiagnostics(raw: unknown): StoredDiagnostics {
+  const envelope = StoredDiagnosticsSchema.safeParse(raw);
+  if (envelope.success) return envelope.data;
+  const legacy = StoredEntriesSchema.safeParse(raw);
+  return legacy.success
+    ? { clearEpoch: 0, clearedAt: 0, entries: legacy.data }
+    : { clearEpoch: 0, clearedAt: 0, entries: [] };
+}
+
 /** 本上下文产生、尚未落盘的增量。 */
 let pending: DiagnosticEntry[] = [];
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -62,9 +79,6 @@ setDiagnosticSink((entry) => {
   schedulePersist();
 });
 
-/** 清空代数：clearDiagnostics 每次递增，flush 落盘前据此丢弃已过期批次（清空后旧记录不得复活）。 */
-let clearEpoch = 0;
-
 /** 把本上下文待写增量并入共享环形缓冲（跨页锁内 read → append → trim → write）。 */
 async function flushDiagnostics(): Promise<void> {
   const batch = pending.splice(0);
@@ -74,15 +88,21 @@ async function flushDiagnostics(): Promise<void> {
     pending.unshift(...batch);
     return;
   }
-  const epoch = clearEpoch;
   try {
     await withCrossPageLock(DIAG_RMW_LOCK, async () => {
-      // 清空竞态：本批次在「清空」之后才拿到锁，epoch 落后于当前值时直接丢弃（清空语义优先）。
-      if (epoch !== clearEpoch) return;
       const raw = (await area.get(DIAGNOSTICS_KEY))[DIAGNOSTICS_KEY];
-      const existing = StoredEntriesSchema.safeParse(raw);
-      const merged = [...(existing.success ? existing.data : []), ...batch];
-      await area.set({ [DIAGNOSTICS_KEY]: merged.slice(-DIAGNOSTIC_MAX_ENTRIES) });
+      const stored = parseStoredDiagnostics(raw);
+      // 其它上下文的 pending 可能在清空后才 flush：用共享墓碑淘汰清空前产生的记录，
+      // 不能只靠各上下文自己的模块级 epoch。清空与入写同锁，墓碑不会在 RMW 中途变化。
+      const fresh = batch.filter((entry) => Date.parse(entry.at) >= stored.clearedAt);
+      const merged = [...stored.entries, ...fresh];
+      await area.set({
+        [DIAGNOSTICS_KEY]: {
+          clearEpoch: stored.clearEpoch,
+          clearedAt: stored.clearedAt,
+          entries: merged.slice(-DIAGNOSTIC_MAX_ENTRIES)
+        } satisfies StoredDiagnostics
+      });
     });
   } catch {
     // 落盘失败回填待写队列（有界），下一条日志会触发下一轮 flush。
@@ -152,8 +172,7 @@ export async function readAllDiagnostics(): Promise<DiagnosticEntry[]> {
   if (!area) return readDiagnostics();
   try {
     const raw = (await area.get(DIAGNOSTICS_KEY))[DIAGNOSTICS_KEY];
-    const parsed = StoredEntriesSchema.safeParse(raw);
-    return parsed.success ? parsed.data : [];
+    return parseStoredDiagnostics(raw).entries;
   } catch {
     return readDiagnostics();
   }
@@ -161,8 +180,6 @@ export async function readAllDiagnostics(): Promise<DiagnosticEntry[]> {
 
 /** 清空全部诊断记录（本上下文内存 + 共享环形缓冲）。 */
 export async function clearDiagnostics(): Promise<void> {
-  // 先递增代数：在途 flush 落盘前发现代数落后即丢弃批次，否则正等在锁上的 flush 会在 remove 之后写回旧记录。
-  clearEpoch += 1;
   clearDiagnosticBuffer();
   pending = [];
   if (persistTimer !== undefined) {
@@ -171,11 +188,19 @@ export async function clearDiagnostics(): Promise<void> {
   }
   const area = browser.storage?.local;
   if (!area) return;
-  try {
-    await area.remove(DIAGNOSTICS_KEY);
-  } catch {
-    // 尽力而为：导出后清理失败只意味着记录多留一轮，不影响正确性。
-  }
+  await withCrossPageLock(DIAG_RMW_LOCK, async () => {
+    const raw = (await area.get(DIAGNOSTICS_KEY))[DIAGNOSTICS_KEY];
+    const stored = parseStoredDiagnostics(raw);
+    // 保留共享墓碑而不是 remove：其它上下文随后才执行的旧 flush 仍会读到清空代际，
+    // 其 pending 按时间戳淘汰；同毫秒记录视为清空后产生，避免刚清空就记录的新故障被误删。
+    await area.set({
+      [DIAGNOSTICS_KEY]: {
+        clearEpoch: stored.clearEpoch + 1,
+        clearedAt: Date.now(),
+        entries: []
+      } satisfies StoredDiagnostics
+    });
+  });
 }
 
 /**

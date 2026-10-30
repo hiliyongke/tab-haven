@@ -38,11 +38,16 @@ export function useBatchTabActions(params: {
     (kind: 'discard' | 'wake' | 'clean', action: () => void | Promise<void>) => {
       if (batchBusy !== 'idle') return;
       setBatchBusy(kind);
-      void Promise.resolve(action()).finally(() => {
-        setBatchBusy('idle');
-      });
+      void Promise.resolve()
+        .then(action)
+        .catch((error: unknown) => {
+          useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error);
+        })
+        .finally(() => {
+          setBatchBusy('idle');
+        });
     },
-    [batchBusy]
+    [batchBusy, t]
   );
 
   /** 一键休眠全部后台标签、未固定的标签（释放内存）。 */
@@ -127,9 +132,8 @@ export function useBatchTabActions(params: {
       return closeWithUndo(
         liveTabs,
         plan.removable.map((tab) => tab.id)
-      ).then((result) => {
+      ).then(() => {
         pulseTabRows(plan.keepIds);
-        return result;
       });
     });
   }, [closeWithUndo, runBatch, t]);

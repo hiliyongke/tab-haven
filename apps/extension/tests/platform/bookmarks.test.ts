@@ -5,6 +5,7 @@ import { isExportableUrl, readBookmarkBar, saveFolderToBookmarks } from '@/platf
 import { createFolderItem, createFolder } from '@/core/fixed/FolderOps';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import type { FixedFolder } from '@/core/schema/models';
+import { t } from '@/i18n/headless';
 
 /**
  * 书签集成。
@@ -110,7 +111,7 @@ describe('readBookmarkBar', () => {
     expect(data.looseLeaves).toEqual([{ url: 'https://loose.com/', title: 'Loose' }]);
   });
 
-  it('无标题文件夹回退为 Imported；空文件夹不进结果', async () => {
+  it('无标题文件夹回退为中文「导入」；空文件夹不进结果', async () => {
     stubBookmarks({
       getTree: async () => [
         {
@@ -129,7 +130,7 @@ describe('readBookmarkBar', () => {
     });
     const data = await readBookmarkBar();
     expect(data.folders).toHaveLength(1);
-    expect(data.folders[0]?.name).toBe('Imported');
+    expect(data.folders[0]?.name).toBe(t('导入'));
     expect(data.folders[0]?.leaves).toEqual([{ url: 'https://x.com/', title: 'X' }]);
   });
 

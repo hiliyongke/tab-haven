@@ -12,8 +12,8 @@ import { useLatestRef } from '@/ui/hooks/useLatestRef';
  * 挂起动作与 runtime 消息的消费侧。有两个**不显眼但极易写错**的约束：
  *
  * 1. **双通道去重**：同一动作可能经「即时 runtime 消息」与「session.onChanged 回放」
- *    两条通道到达，必须按 `at` 时间戳去重，否则一次快捷键会被消费两次
- *    （表现为搜索框内容被全选两次）。
+ *    两条通道到达，优先按 `actionId` 去重；旧协议无 id 时才回退到 `at` 时间戳，
+ *    否则一次快捷键会被消费两次（表现为搜索框内容被全选两次）。
  * 2. **回调引用必须稳定**：本 hook 内部用 ref 保存最新回调，使 runtime 监听与
  *    挂起队列监听只在挂载时注册一次。挂起队列监听每次重挂都会异步重读一次 session，
  *    多个在途读取可能在队列清除前重复读到同一条动作。
@@ -33,10 +33,8 @@ interface PendingActionHandlers {
 }
 
 export function usePendingActions(handlers: PendingActionHandlers): void {
-  /**
-   * 已处理的挂起动作时间戳（即时消息 + session onChanged 双通道去重）。
-   * 有界：只服务「面板挂载前后」的短暂窗口，超限整体重置，最坏退化为重复执行一次。
-   */
+  /** 双通道按独立动作 id 去重；无 id 的协议输入回退用时间戳。 */
+  const handledActionIdsRef = useRef<Set<string>>(new Set());
   const handledAtsRef = useRef<Set<number>>(new Set());
 
   /** 回调的最新值（提交后更新，见 useLatestRef）。 */
@@ -44,11 +42,18 @@ export function usePendingActions(handlers: PendingActionHandlers): void {
 
   const handlePendingAction = useCallback(
     (action: PendingAction) => {
-      if (action.at !== undefined) {
+      if (action.actionId !== undefined) {
+        const seen = handledActionIdsRef.current;
+        if (seen.has(action.actionId)) return;
+        seen.add(action.actionId);
+        if (seen.size > 32) {
+          const oldest = seen.values().next().value;
+          if (oldest !== undefined) seen.delete(oldest);
+        }
+      } else if (action.at !== undefined) {
         const seen = handledAtsRef.current;
         if (seen.has(action.at)) return;
         seen.add(action.at);
-        // 防膨胀：仅保留最近一小批。
         if (seen.size > 32) {
           const oldest = seen.values().next().value;
           if (oldest !== undefined) seen.delete(oldest);
@@ -79,7 +84,7 @@ export function usePendingActions(handlers: PendingActionHandlers): void {
   useEffect(() => {
     const onMessage = (message: Message): void => {
       switch (message.type) {
-        // 挂起动作经同一入口处理：即时消息与 session 挂起双通道按 at 去重。
+        // 挂起动作经同一入口处理：双通道按 actionId 优先、at 回退去重。
         case 'focus-search':
         case 'search-domain':
         case 'locate-active':

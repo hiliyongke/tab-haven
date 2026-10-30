@@ -1,5 +1,6 @@
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useTranslation } from '@/i18n';
+import { preserveFocusBeforeCollapse } from '@/ui/domContract';
 import { Icons } from '@/ui/common/Icon';
 import { RowActionButton } from '@/ui/common/RowActionButton';
 
@@ -91,7 +92,14 @@ export function SectionHead({
           title={toggleTitle}
           aria-expanded={expanded}
           aria-controls={panelId}
-          onClick={onToggle}
+          onClick={() => {
+            // 折叠会让本分区 body 卸载：若此刻焦点恰在被折叠的行内（键盘漫游进某行后
+            // 由程序化/快捷键触发折叠，或焦点未自动转移到 toggle 的环境），先把它移到
+            // 存活的分区头 toggle，避免焦点随行卸载掉回 body。正常点击 toggle 时焦点本
+            // 就在 toggle 上，此调用为空操作。
+            preserveFocusBeforeCollapse();
+            onToggle();
+          }}
         >
           {content}
         </button>

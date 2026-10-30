@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findCspViolations } from './csp-policy.ts';
 
 // 本脚本随扩展包住在 apps/extension/scripts/ 下，故 ROOT 就是扩展包目录：
 // src / public / .output 三个相对路径因此无需改动。
@@ -347,23 +348,7 @@ if (!/connect-src\s+'none'/.test(extensionCsp)) {
 // 只查 connect-src 不够，黑名单也不够：`img-src https://evil.example` 就是一次可用的
 // 像素外发，而它既不含通配符也不是裸协议。改成**白名单**：每个指令只允许已知来源，
 // 其余一律报「未登记」。
-const ALLOWED_CSP_SOURCES = new Set([
-  "'self'",
-  "'none'",
-  "'unsafe-inline'", // style-src 需要（Tailwind 内联样式）
-  'data:', // img-src 内联占位图
-  'chrome-extension:' // img-src 本扩展图标通道
-]);
-const unknownCspSources = extensionCsp
-  .split(';')
-  .map((directive) => directive.trim())
-  .filter(Boolean)
-  .flatMap((directive) => {
-    const [name, ...sources] = directive.split(/\s+/);
-    return sources
-      .filter((source) => !ALLOWED_CSP_SOURCES.has(source))
-      .map((source) => `${name} ${source}`);
-  });
+const unknownCspSources = findCspViolations(extensionCsp);
 if (unknownCspSources.length > 0) {
   // dev 构建会放行 HMR 的 localhost 来源：报「未登记」会让人误以为改坏了代码。
   const devLike = unknownCspSources.some((source) => /localhost|127\.0\.0\.1/.test(source));

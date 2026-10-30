@@ -13,6 +13,7 @@ export function SegmentedChip({
   tone = 'neutral',
   tooltip,
   disabled,
+  autoFocus,
   className,
   children
 }: {
@@ -27,6 +28,8 @@ export function SegmentedChip({
   /** 悬停提示（chip 文字被截断时用它给全名）。 */
   tooltip?: string;
   disabled?: boolean;
+  /** 挂载即聚焦：视图切换后把键盘焦点带进新内容首项（避免触发按钮卸载后焦点掉 body）。 */
+  autoFocus?: boolean;
   /** 附加类（末尾拼接，与 Button 同口径）。 */
   className?: string;
   children: ReactNode;
@@ -37,6 +40,7 @@ export function SegmentedChip({
       aria-pressed={selected}
       title={tooltip}
       disabled={disabled}
+      autoFocus={autoFocus}
       // py 由 shape 决定：rect 用 py-1.5（py-1 + 10px 字仅 23px，低于 24px 命中下限），
       // pill 自带边框高度，py-1 已够。
       className={

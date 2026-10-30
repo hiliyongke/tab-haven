@@ -47,6 +47,23 @@ describe('parseOneTab', () => {
     expect(result.tooLarge).toBe(false);
   });
 
+  it('有效条目恰好达到上限时，尾部无效行不误报截断', () => {
+    // Given 恰好上限条有效 URL，后面只有空行、注释与不可恢复内容
+    const lines = Array.from(
+      { length: SNAPSHOT_TABS_LIMIT },
+      (_, i) => `https://e${i}.example.com/`
+    );
+    lines.push('', '// 导出结束', '不是网址', 'javascript:alert(1)');
+
+    // When 解析导入文本
+    const result = parseOneTab(lines.join('\n'));
+
+    // Then 没有额外有效条目被丢弃，不应显示截断警告
+    expect(result.tabs).toHaveLength(SNAPSHOT_TABS_LIMIT);
+    expect(result.truncated).toBe(false);
+    expect(result.tooLarge).toBe(false);
+  });
+
   it('忽略 // 注释行与空行', () => {
     expect(parseOneTab('// 导出说明\n\nhttps://c.example.com/').tabs.map((tab) => tab.url)).toEqual(
       ['https://c.example.com/']

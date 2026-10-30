@@ -109,8 +109,19 @@ export function SectionShell({
       />
       {/* 只有可折叠分区才包 body 容器：panelId 要供 SectionHead 的 aria-controls 使用。
           模块壳（无 onToggle）直接渲染 children，使模块内的第一张分区卡命中
-          `.section-card:first-child` 并隐藏顶部分隔线。 */}
-      {onToggle ? !collapsed && <div id={panelId}>{children}</div> : children}
+          `.section-card:first-child` 并隐藏顶部分隔线。
+
+          折叠态**保留空容器并加 hidden**，而非整段卸载：aria-controls 指向的 id 若
+          在折叠时不存在，读屏用户激活折叠按钮时关联悬空、无法跳转；aria-expanded
+          仍能表达状态，但受控关系缺失。hidden 同时保证折叠态不占布局、不渲染子内容
+          （子内容本就由调用方在折叠时传空），语义与视觉均正确。 */}
+      {onToggle ? (
+        <div id={panelId} hidden={collapsed}>
+          {collapsed ? null : children}
+        </div>
+      ) : (
+        children
+      )}
     </section>
   );
 }

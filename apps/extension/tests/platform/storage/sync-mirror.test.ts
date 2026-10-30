@@ -164,6 +164,36 @@ describe('SyncMirror', () => {
     expect(Object.keys(all).filter((key) => key.startsWith('tabs.sync.v1.'))).toHaveLength(0);
   });
 
+  it('clearAll 失败时向调用方抛错，不得让本地清理继续', async () => {
+    // Given：云端已有镜像，但删除失败。
+    await syncMirror.write(payload('x'));
+    vi.spyOn(fakeBrowser.storage.sync, 'remove').mockRejectedValueOnce(new Error('sync down'));
+
+    // When / Then：失败必须可观察，不能吞掉后让调用方误以为云端已清空。
+    await expect(syncMirror.clearAll()).rejects.toThrow('sync down');
+    expect(await syncMirror.pull()).not.toBeNull();
+  });
+
+  it('每次写入使用 generation 专属块，meta 最后切换且不清理其它在途 generation', async () => {
+    // Given：另一上下文已写入但尚未切换 meta 的块。
+    await fakeBrowser.storage.sync.set({ 'tabs.sync.v1.inflight.0': 'pending' });
+
+    // When：本上下文完成一次镜像写入。
+    await syncMirror.write(payload('generation'));
+
+    // Then：当前 meta 指向本次独立块，未知在途块不被误删，旧固定块不再使用。
+    const all = await fakeBrowser.storage.sync.get(null);
+    const meta = JSON.parse(String(all['tabs.sync.v1.meta'])) as {
+      count: number;
+      generation: string;
+    };
+    expect(meta.generation).toBeTruthy();
+    expect(all[`tabs.sync.v1.${meta.generation}.0`]).toBeTypeOf('string');
+    expect(all['tabs.sync.v1.0']).toBeUndefined();
+    expect(all['tabs.sync.v1.inflight.0']).toBe('pending');
+    expect((await syncMirror.pull())?.folders[0]).toMatchObject({ id: 'generation' });
+  });
+
   it('在途写入完成后 clearAll 保持镜像为空', async () => {
     const sync = fakeBrowser.storage.sync;
     // 暂停在途写入，并在写入完成前执行清理。

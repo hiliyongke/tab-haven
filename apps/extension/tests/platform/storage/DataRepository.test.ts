@@ -227,6 +227,38 @@ describe('DataRepository', () => {
   });
 
   describe('存储不可用降级', () => {
+    it('readStrict 在无 local 区域时拒绝，不把默认值伪装成真实基线', async () => {
+      const onUnavailable = vi.fn();
+      const area = fakeBrowser.storage as unknown as { local?: unknown };
+      const original = area.local;
+      area.local = undefined;
+
+      await expect(repo(onUnavailable).readStrict()).rejects.toThrow(
+        `Storage area unavailable: ${KEY}`
+      );
+
+      expect(onUnavailable).not.toHaveBeenCalled();
+      area.local = original;
+    });
+
+    it('readStrict 透出读取故障，原数据保持不动', async () => {
+      const existing = [{ id: 'real', n: 1 }];
+      await fakeBrowser.storage.local.set({ [KEY]: existing });
+      const area = fakeBrowser.storage.local as unknown as {
+        get: (key: unknown) => Promise<Record<string, unknown>>;
+      };
+      const originalGet = area.get;
+      area.get = vi.fn(async () => {
+        throw new Error('injected read failure');
+      }) as never;
+
+      await expect(repo().readStrict()).rejects.toThrow('injected read failure');
+
+      area.get = originalGet;
+      const stored = await fakeBrowser.storage.local.get(KEY);
+      expect(stored[KEY]).toEqual(existing);
+    });
+
     it('read 在无 local 区域时回调 onUnavailable 并返回默认值', async () => {
       const onUnavailable = vi.fn();
       const area = fakeBrowser.storage as unknown as { local?: unknown };

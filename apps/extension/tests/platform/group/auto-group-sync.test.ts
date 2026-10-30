@@ -13,6 +13,18 @@ import { NO_GROUP } from '@/core/tab-types';
 
 const PLAN_A: AutoGroupPlan = { title: 'github.com', color: 'blue', tabIds: [1, 2] };
 const PLAN_B: AutoGroupPlan = { title: 'zh-CN', color: 'cyan', tabIds: [3, 4] };
+const AUTO_GROUPS_KEY = 'tabs.auto-groups.v1';
+
+/** 只对目标键注入读取故障，其余存储读取仍走 fake-browser。 */
+function failLocalGet(key: string): ReturnType<typeof vi.spyOn> {
+  const original = fakeBrowser.storage.local.get.bind(fakeBrowser.storage.local);
+  return vi.spyOn(fakeBrowser.storage.local, 'get').mockImplementation((async (
+    requested: string
+  ) => {
+    if (requested === key) throw new Error('storage read failed');
+    return original(requested);
+  }) as never);
+}
 
 /**
  * fake-browser 对 tabGroups.create/remove 与部分 update 属性实现不全，
@@ -166,6 +178,22 @@ describe('AutoGroupSync 生命周期', () => {
     expect(groupMock).not.toHaveBeenCalled();
   });
 
+  it('过滤非当前窗口的计划时也查询全部窗口标签', async () => {
+    const groupMock = stubTabsGroup();
+    stubTabGroups();
+    const queryMock = vi.fn(async (options: { currentWindow?: boolean }) =>
+      options.currentWindow ? [] : [{ id: 1, groupId: NO_GROUP }]
+    );
+    const tabs = fakeBrowser.tabs as unknown as { query: typeof queryMock };
+    tabs.query = queryMock;
+
+    const count = await syncAutoGroups([{ ...PLAN_A, tabIds: [1] }]);
+
+    expect(count).toBe(1);
+    expect(queryMock).toHaveBeenCalledWith({});
+    expect(groupMock).toHaveBeenCalledWith({ tabIds: [1] });
+  });
+
   it('计划部分过期：只对仍未分组的标签建组', async () => {
     const groupMock = stubTabsGroup();
     stubTabGroups();
@@ -196,6 +224,50 @@ describe('AutoGroupSync 生命周期', () => {
 
     expect(groupMock).toHaveBeenCalledTimes(1);
     expect(first + second).toBe(1);
+  });
+
+  it('记账基线读取失败时回滚新建组，且不以空记录覆盖原数据', async () => {
+    // Given: 磁盘已有其他窗口写入的组 id，本次创建后无法读取真实记账基线
+    await fakeBrowser.storage.local.set({ [AUTO_GROUPS_KEY]: [99] });
+    stubTabsGroup();
+    stubTabGroups();
+    stubTabsQuery({ ungrouped: [1, 2], members: { 10: [21] } });
+    const ungroupMock = vi.fn(async () => undefined);
+    const tabs = fakeBrowser.tabs as unknown as { ungroup: typeof ungroupMock };
+    tabs.ungroup = ungroupMock as unknown as typeof tabs.ungroup;
+    const getSpy = failLocalGet(AUTO_GROUPS_KEY);
+
+    // When: 创建后的记账读取发生 I/O 故障
+    const count = await syncAutoGroups([PLAN_A]);
+
+    // Then: 新建组被回滚，既有记录保持原样
+    expect(count).toBe(0);
+    expect(ungroupMock).toHaveBeenCalledWith([21]);
+    getSpy.mockRestore();
+    expect(await fakeBrowser.storage.local.get(AUTO_GROUPS_KEY)).toEqual({
+      [AUTO_GROUPS_KEY]: [99]
+    });
+  });
+
+  it('解散前读取记账失败时不解散任何组，也不清空原记录', async () => {
+    // Given: 磁盘有待解散记录，但真实基线读取失败
+    await fakeBrowser.storage.local.set({ [AUTO_GROUPS_KEY]: [10] });
+    stubTabsQuery({ members: { 10: [21] } });
+    const ungroupMock = vi.fn(async () => undefined);
+    const tabs = fakeBrowser.tabs as unknown as { ungroup: typeof ungroupMock };
+    tabs.ungroup = ungroupMock as unknown as typeof tabs.ungroup;
+    const getSpy = failLocalGet(AUTO_GROUPS_KEY);
+
+    // When: 关闭开关触发解散
+    const count = await disbandAutoGroups();
+
+    // Then: 中止操作，不把读取故障当成空记录
+    expect(count).toBe(0);
+    expect(ungroupMock).not.toHaveBeenCalled();
+    getSpy.mockRestore();
+    expect(await fakeBrowser.storage.local.get(AUTO_GROUPS_KEY)).toEqual({
+      [AUTO_GROUPS_KEY]: [10]
+    });
   });
 });
 

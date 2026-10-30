@@ -16,7 +16,7 @@ import {
 
 /**
  * 消息协议行为规格：登记的消息类型均可解析，未登记类型与无效载荷被拒绝；
- * 广播与 ack 在接收端不可用时按约定降级；挂起动作按 at 去重，执行后清空队列。
+ * 广播与 ack 在接收端不可用时按约定降级；挂起动作按 actionId 去重，执行后清空队列。
  * 注销行为通过确认 removeListener 收到原注册函数来断言。
  */
 
@@ -80,7 +80,7 @@ describe('MessageSchema 协议契约', () => {
     expect(MessageSchema.safeParse({ type: 'skip-auto-save-once' }).success).toBe(false);
   });
 
-  it('url / query 有长度上限（超长串是内存与存储放大面）', () => {
+  it('url / query 有长度上限，动作时间戳必须是安全整数', () => {
     expect(
       MessageSchema.safeParse({
         type: 'allow-duplicate-once',
@@ -95,6 +95,9 @@ describe('MessageSchema 协议契约', () => {
     expect(MessageSchema.safeParse({ type: 'search-domain', query: 'a'.repeat(513) }).success).toBe(
       false
     );
+    expect(
+      MessageSchema.safeParse({ type: 'focus-search', at: Number.MAX_SAFE_INTEGER + 1 }).success
+    ).toBe(false);
   });
 
   it('windowId 必须是整数（小数会让豁免账本键失真）', () => {
@@ -252,16 +255,17 @@ describe('watchPendingActions 挂起队列消费', () => {
     off();
   });
 
-  it('双通道（初始 get + onChanged）按 at 去重，同一动作只执行一次', async () => {
-    const dup = { type: 'focus-search', at: 42 };
-    await fakeBrowser.storage.session.set({ [PENDING_ACTIONS_KEY]: [dup] });
+  it('同一时间戳的不同动作都执行，双通道按 actionId 去重', async () => {
+    const first = { type: 'focus-search', actionId: 'action-1', at: 42 };
+    const second = { type: 'locate-active', actionId: 'action-2', at: 42 };
+    const batch = [first, second];
+    await fakeBrowser.storage.session.set({ [PENDING_ACTIONS_KEY]: batch });
     const actions: PendingAction[] = [];
     const { listener, off } = registerPendingWatcher((a) => actions.push(a));
-    await vi.waitFor(() => expect(actions).toHaveLength(1));
-    // 重复通知包含已消费动作时，协议仍按 at 去重。
-    listener({ [PENDING_ACTIONS_KEY]: { newValue: [dup] } }, 'session');
+    await vi.waitFor(() => expect(actions).toHaveLength(2));
+    listener({ [PENDING_ACTIONS_KEY]: { newValue: batch } }, 'session');
     await Promise.resolve();
-    expect(actions).toHaveLength(1);
+    expect(actions).toHaveLength(2);
     off();
   });
 
@@ -269,11 +273,11 @@ describe('watchPendingActions 挂起队列消费', () => {
     const bare = { type: 'locate-active' };
     await fakeBrowser.storage.session.set({ [PENDING_ACTIONS_KEY]: [bare] });
     const actions: PendingAction[] = [];
-    const { listener, off } = registerPendingWatcher((a) => actions.push(a));
+    const { off } = registerPendingWatcher((a) => actions.push(a));
     await vi.waitFor(() => expect(actions).toHaveLength(1));
-    listener({ [PENDING_ACTIONS_KEY]: { newValue: [bare] } }, 'session');
-    await Promise.resolve();
-    expect(actions).toHaveLength(2);
+    // 第二次真实入队也应执行；不能仅靠 id/时间戳把它判成重复。
+    await fakeBrowser.storage.session.set({ [PENDING_ACTIONS_KEY]: [bare] });
+    await vi.waitFor(() => expect(actions).toHaveLength(2));
     off();
   });
 

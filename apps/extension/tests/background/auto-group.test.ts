@@ -267,4 +267,28 @@ describe('自动分组引擎（background 事件驱动）', () => {
     // 阈值降到 1：单标签站点也成组
     expect(groupMock).toHaveBeenCalledTimes(1);
   });
+
+  it('单次 drain 达到四轮上限后仍调度剩余 pending，不永久滞留', async () => {
+    // Given：浏览器持续把跨域标签放回组内，模拟四轮内无法收敛的病态现场。
+    await setSettings({ autoGroupNative: true });
+    await fakeBrowser.storage.local.set({ 'tabs.auto-groups.v1': [7] });
+    const state = {
+      tabs: [
+        tab(1, 'https://github.com/a', 7),
+        tab(2, 'https://github.com/b', 7),
+        tab(3, 'https://notion.so/x', 7)
+      ],
+      groups: [{ id: 7, title: 'github.com' }]
+    };
+    stubBrowser(state);
+    const stuckUngroup = vi.fn(async () => undefined);
+    (fakeBrowser.tabs as unknown as { ungroup: unknown }).ungroup = stuckUngroup;
+
+    // When：一次调度连续执行超过单 drain 的四轮上限。
+    scheduleAutoGroupReconcile(1);
+    await settle();
+
+    // Then：上限只约束单次 drain，pending 会经后续定时器继续消费。
+    expect(stuckUngroup.mock.calls.length).toBeGreaterThan(4);
+  });
 });

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
-import { syncNoCacheRules } from '@/platform/background/noCache';
+import { settingsRepository } from '@/platform/storage/repositories';
+import { setupNoCache, syncNoCacheRules } from '@/platform/background/noCache';
 
 /**
  * 开发者禁缓存（DNR 动态规则同步）。
@@ -161,5 +162,81 @@ describe('syncNoCacheRules 注入闸门', () => {
     ).resolves.toBeUndefined();
 
     expect(readDiagnostics().some((e) => e.message.includes('禁缓存规则同步失败'))).toBe(true);
+  });
+
+  it('并发同步按请求顺序替换规则，旧设置不会最后覆盖新设置', async () => {
+    let releasePermission: (granted: boolean) => void = () => undefined;
+    const firstPermission = new Promise<boolean>((resolve) => {
+      releasePermission = resolve;
+    });
+    const contains = vi.fn(async () => true);
+    contains.mockImplementationOnce(() => firstPermission);
+    (fakeBrowser as unknown as { permissions?: unknown }).permissions = { contains };
+
+    let rules: { id: number }[] = [];
+    const getDynamicRules = vi.fn(async () => rules);
+    const updateDynamicRules = vi.fn(async (details?: unknown) => {
+      const update = details as { removeRuleIds: number[]; addRules: { id: number }[] };
+      const removed = new Set(update.removeRuleIds);
+      rules = [
+        ...rules.filter((rule) => !removed.has(rule.id)),
+        ...update.addRules.map(({ id }) => ({ id }))
+      ];
+    });
+    (fakeBrowser as unknown as { declarativeNetRequest?: unknown }).declarativeNetRequest = {
+      getDynamicRules,
+      updateDynamicRules
+    };
+
+    const older = syncNoCacheRules(
+      settingsWith({ noCacheEnabled: true, noCachePatterns: ['https://old.example/'] })
+    );
+    await vi.waitFor(() => expect(contains).toHaveBeenCalledTimes(1));
+    const newer = syncNoCacheRules(settingsWith({ noCacheEnabled: false, noCachePatterns: [] }));
+
+    expect(contains).toHaveBeenCalledTimes(1);
+    releasePermission(true);
+    await Promise.all([older, newer]);
+
+    expect(updateDynamicRules).toHaveBeenCalledTimes(2);
+    expect(rules).toEqual([]);
+  });
+
+  it('启动设置读取在 watcher 变更前入队，迟到的旧值不会覆盖新设置', async () => {
+    let resolveInitial: (settings: Settings) => void = () => undefined;
+    const initialSettings = new Promise<Settings>((resolve) => {
+      resolveInitial = resolve;
+    });
+    let emitSettings: ((settings: Settings) => void) | undefined;
+    vi.spyOn(settingsRepository, 'read').mockReturnValue(initialSettings);
+    vi.spyOn(settingsRepository, 'watch').mockImplementation((onChange) => {
+      emitSettings = onChange;
+      return () => undefined;
+    });
+    installPermission(true);
+
+    let rules: { id: number }[] = [];
+    const getDynamicRules = vi.fn(async () => rules);
+    const updateDynamicRules = vi.fn(async (details?: unknown) => {
+      const update = details as { removeRuleIds: number[]; addRules: { id: number }[] };
+      const removed = new Set(update.removeRuleIds);
+      rules = [
+        ...rules.filter((rule) => !removed.has(rule.id)),
+        ...update.addRules.map(({ id }) => ({ id }))
+      ];
+    });
+    (fakeBrowser as unknown as { declarativeNetRequest?: unknown }).declarativeNetRequest = {
+      getDynamicRules,
+      updateDynamicRules
+    };
+
+    setupNoCache();
+    emitSettings?.(settingsWith({ noCacheEnabled: false, noCachePatterns: [] }));
+    resolveInitial(
+      settingsWith({ noCacheEnabled: true, noCachePatterns: ['https://old.example/'] })
+    );
+
+    await vi.waitFor(() => expect(updateDynamicRules).toHaveBeenCalledTimes(2));
+    expect(rules).toEqual([]);
   });
 });

@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'vite';
 import { LANGUAGES, SITE_URL } from './site.config.ts';
 import { applyTemplate, renderHead } from './lib/html.mjs';
+import { findExternalUrls, findNetworkApis } from './lib/external-requests.mjs';
 
 const siteDir = fileURLToPath(new URL('.', import.meta.url));
 // 官网在 apps/site 下，仓库根要再上一级（'..' 只会到 apps/）。
@@ -100,31 +101,12 @@ function walk(dir) {
 /** 零外链自检：官网继承扩展的产品宪法，不得出现任何第三方请求。 */
 function assertNoExternalRequests() {
   const files = walk(distDir).filter((file) => /\.(html|js|css|svg|xml|txt)$/.test(file));
-  // 白名单都是「纯标识符、永不真正发起请求」的命名空间，不是可访问的端点：
-  // schema.org = JSON-LD 的 @context，w3.org = SVG/XML 命名空间，
-  // sitemaps.org = sitemap.xml 的命名空间（漏了它，配好 SITE_URL 后自检必红）。
-  const allowedHosts = ['schema.org', 'www.w3.org', 'www.sitemaps.org'];
-  if (SITE_URL) allowedHosts.push(SITE_URL.replace(/^https?:\/\//, ''));
-
   const external = [];
   const networkApis = [];
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
-    for (const match of text.matchAll(
-      // 同时覆盖协议相对（`//host`）与 ws/wss：只认 http(s) 时，一条 `//cdn.x/y.js`
-      // 或 `wss://host` 就能绕过「零外链」自检。域名段要求至少一个点，避免把
-      // 代码里的 `// 注释` 误判成 URL。
-      /(?:(?:https?|wss?):)?\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s"'<>)]*)/gi
-    )) {
-      // 先截断到 host 再**全等**比较：startsWith 会把 schema.org.evil.com 也放行。
-      const host = match[1].split('/')[0];
-      if (!allowedHosts.includes(host)) external.push(`${file}: ${host}`);
-    }
-    for (const match of text.matchAll(
-      /\b(fetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|EventSource)\b/g
-    )) {
-      networkApis.push(`${file}: ${match[1]}`);
-    }
+    for (const host of findExternalUrls(text, SITE_URL)) external.push(`${file}: ${host}`);
+    for (const api of findNetworkApis(text)) networkApis.push(`${file}: ${api}`);
   }
   return { external, networkApis };
 }
@@ -151,9 +133,11 @@ function findHanInEnglish(htmlPath) {
 }
 
 async function main() {
-  // 发布构建必须带真实域名：没有 SITE_URL 时 canonical / hreflang / sitemap / JSON-LD
-  // 全部静默缺失，而构建照样成功——产物与配好域名的版本外观完全一致。
-  if (process.env.SITE_BUILD_TARGET === 'release' && !SITE_URL) {
+  // 只有明确的发布构建要求配置正式域名；CI 门禁可在域名确定前验证页面与安全规则。
+  if (
+    (process.argv.includes('--release') || process.env.SITE_BUILD_TARGET === 'release') &&
+    !SITE_URL
+  ) {
     throw new Error(
       '[site] release 构建必须先在 site.config.ts 填写 SITE_URL（canonical/hreflang/sitemap 依赖它）'
     );

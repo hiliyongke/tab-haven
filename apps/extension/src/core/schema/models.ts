@@ -314,22 +314,85 @@ export type Snapshot = z.infer<typeof SnapshotSchema>;
 /** 导出格式版本号；导入仅接受当前版本。 */
 export const EXPORT_FILE_VERSION = 1;
 
+/** 导出/导入要求稳定且有界的 pin id；本地读盘 schema 保持宽松。 */
+const ExportPersistentPinSchema = PersistentPinSchema.safeExtend({
+  id: z.string().min(1).max(HOST_MAX_LENGTH)
+});
+
 /**
  * 导出格式 = 固定空间 + 图标 + 折叠态 + 设置 + 全部快照族。
  * version 是必填字面量、不做容错缺省：兜底会让无版本号的任意 JSON 按当前版本解析通过。
  * 导入端另有 ExportFileImportSchema（图标加固副本，favIconUrl 只接受 data:image/、chrome://、chrome-extension://）。
  */
-export const ExportFileSchema = z.object({
-  format: z.literal('tabs.export'),
-  version: z.literal(EXPORT_FILE_VERSION),
-  exportedAt: z.string(),
-  fixedFolders: z.array(FixedFolderSchema).max(FOLDERS_LIMIT),
-  persistentPins: z.array(PersistentPinSchema).max(PINS_LIMIT),
-  siteCollapse: SiteCollapseSchema,
-  settings: SettingsSchema,
-  /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区。 */
-  snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
-});
+export const ExportFileSchema = z
+  .object({
+    format: z.literal('tabs.export'),
+    version: z.literal(EXPORT_FILE_VERSION),
+    exportedAt: z.string(),
+    fixedFolders: z.array(FixedFolderSchema).max(FOLDERS_LIMIT),
+    persistentPins: z
+      .array(ExportPersistentPinSchema)
+      .max(PINS_LIMIT)
+      .superRefine((pins, context) => {
+        const seen = new Set<string>();
+        pins.forEach((pin, index) => {
+          if (seen.has(pin.id)) {
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'id'],
+              message: 'persistent pin ids must be unique'
+            });
+            return;
+          }
+          seen.add(pin.id);
+        });
+      }),
+    siteCollapse: SiteCollapseSchema,
+    settings: SettingsSchema,
+    /** 快照族：manual 命名快照 / auto 关窗自动 / archive 归档 / space 工作区。 */
+    snapshots: z.array(SnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
+  })
+  .superRefine((file, context) => {
+    // id 是恢复后更新实体的身份键：重复 id 必须拒绝整份备份，不能靠后写覆盖前一条。
+    const folderIds = new Set<string>();
+    const itemIds = new Set<string>();
+    file.fixedFolders.forEach((folder, folderIndex) => {
+      if (folderIds.has(folder.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['fixedFolders', folderIndex, 'id'],
+          message: 'fixed folder ids must be unique'
+        });
+      } else {
+        folderIds.add(folder.id);
+      }
+      // item id 的唯一域是整份备份，而不只是所属文件夹。
+      folder.items.forEach((item, itemIndex) => {
+        if (itemIds.has(item.id)) {
+          context.addIssue({
+            code: 'custom',
+            path: ['fixedFolders', folderIndex, 'items', itemIndex, 'id'],
+            message: 'fixed folder item ids must be globally unique'
+          });
+        } else {
+          itemIds.add(item.id);
+        }
+      });
+    });
+
+    const snapshotIds = new Set<string>();
+    file.snapshots.forEach((snapshot, index) => {
+      if (snapshotIds.has(snapshot.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['snapshots', index, 'id'],
+          message: 'snapshot ids must be unique'
+        });
+      } else {
+        snapshotIds.add(snapshot.id);
+      }
+    });
+  });
 
 export type ExportFile = z.infer<typeof ExportFileSchema>;
 
@@ -373,13 +436,33 @@ export const InboundFixedFolderSchema = FixedFolderSchema.safeExtend({
  * （url 已降为 about:blank 而 identity 仍指向原站），dedupePins 会按失真身份判重，产出点开是新标签页的磁贴。
  */
 export const InboundPersistentPinSchema = PersistentPinSchema.safeExtend({
+  id: z.string().min(1).max(HOST_MAX_LENGTH),
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema
 }).transform((pin) => {
-  // url 降为占位时 pinIdentity 返回 null：保留原 identity（去重仍需它），写空串会让全部降级磁贴塌缩成一个。
+  // url 降为占位时 pinIdentity 返回 null：保留有效输入 identity；空 identity 则用 pin id，避免多个占位磁贴互相去重。
   const identity = pinIdentity(pin.url);
-  return identity === null ? pin : { ...pin, identity };
+  if (identity !== null) return { ...pin, identity };
+  const retainedIdentity = pin.identity.trim();
+  return retainedIdentity ? { ...pin, identity: retainedIdentity } : { ...pin, identity: pin.id };
 });
+export const InboundPersistentPinListSchema = z
+  .array(InboundPersistentPinSchema)
+  .max(PINS_LIMIT)
+  .superRefine((pins, context) => {
+    const seen = new Set<string>();
+    pins.forEach((pin, index) => {
+      if (seen.has(pin.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'id'],
+          message: 'persistent pin ids must be unique'
+        });
+        return;
+      }
+      seen.add(pin.id);
+    });
+  });
 const ImportSnapshotTabSchema = SnapshotTabSchema.safeExtend({
   favIconUrl: ImportFaviconUrlSchema,
   url: ImportUrlSchema
@@ -392,7 +475,7 @@ const ImportSnapshotSchema = SnapshotSchema.safeExtend({
 /** 导入专用导出 schema：与导出同形，分区内条目改用受图标约束版本。只被 parseExportFile 使用；导出侧仍走 ExportFileSchema（原样写图标，保证导出→导入不丢信息）。 */
 const ExportFileImportSchema = ExportFileSchema.safeExtend({
   fixedFolders: z.array(InboundFixedFolderSchema).max(FOLDERS_LIMIT),
-  persistentPins: z.array(InboundPersistentPinSchema).max(PINS_LIMIT),
+  persistentPins: InboundPersistentPinListSchema,
   snapshots: z.array(ImportSnapshotSchema).max(SNAPSHOTS_LIMIT).default([])
 });
 

@@ -114,10 +114,12 @@ export class TabSyncService {
         // stopped 时不得再排新的 timer。失败时即使无 pending 也排兜底重试（指数退避）：
         // 否则浏览器启动早期打开面板撞上瞬时失败，会停在空态直到下一次标签事件。重试次数封顶。
         if (!stopped && (pending || (failures > 0 && failures < MAX_RETRY_ATTEMPTS))) {
-          pending = false;
           const factor = failures > 0 ? Math.min(2 ** failures, MAX_BACKOFF_FACTOR) : 1;
           timer = setTimeout(() => {
             timer = null;
+            // pending 由本次 trailing 查询消费；若提前在 finally 清零，等待期间的新事件会
+            // 再置 true，本次查询结束后就会多排一次没有任何新输入的查询。
+            pending = false;
             void run();
           }, THROTTLE_MS * factor);
         }

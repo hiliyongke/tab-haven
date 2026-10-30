@@ -45,6 +45,8 @@ const I18nContext = createContext<SiteI18n | null>(null);
 
 export function useSiteI18n(): SiteI18n {
   const value = useContext(I18nContext);
+  // 仅用于开发期不变量诊断，不会作为网页文案呈现。
+  // @i18n-ignore
   if (!value) throw new Error('useSiteI18n 必须在 I18nContext.Provider 内部使用');
   return value;
 }

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
+import * as tabsPlatform from '@/platform/tabs';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { useDataStore } from '@/stores/dataStore';
 import { useTabStore } from '@/stores/tabStore';
@@ -117,6 +118,44 @@ describe('侧边栏 App 渲染状态', () => {
       translate('最近的改动可能没能保存到本地：请检查浏览器存储空间是否已满，或扩展权限是否被收回')
     );
   });
+
+  it('搜索漫游 ↑↓ 时 live 区播报当前命中项（读屏不再只有视觉高亮）', async () => {
+    vi.spyOn(tabSyncService, 'start').mockReturnValue(() => undefined);
+    vi.spyOn(tabSyncService, 'requestRefresh').mockImplementation(() => undefined);
+    vi.spyOn(useDataStore.getState(), 'initialize').mockResolvedValue(undefined);
+    primeStores([tab({ id: 1 }), tab({ id: 2 })]);
+
+    const { container } = render(<App />);
+    await screen.findByText('tab-1');
+
+    // 漫游播报是第二个 <output>（第一个是命中数）。初始无选中，内容为空。
+    const outputs = container.querySelectorAll('output');
+    expect(outputs).toHaveLength(2);
+    const roamOutput = outputs[1]!;
+    expect(roamOutput).toHaveAttribute('aria-live', 'polite');
+    expect(roamOutput.textContent).toBe('');
+
+    // 输入触发过滤态（deferred），再按 ↓ 漫游到首项
+    const searchbox = screen.getByRole('searchbox');
+    fireEvent.change(searchbox, { target: { value: 'tab' } });
+    await waitFor(() => expect(screen.queryByText('tab-1')).toBeInTheDocument());
+    fireEvent.keyDown(searchbox, { key: 'ArrowDown' });
+
+    // 当前选中项被播报（含序号与标题）。命中按相关度排序，首项不固定，
+    // 故只断言格式（"第 N of M：标题"）与标题落在命中集合内，不锁死具体哪一项。
+    await waitFor(() => expect(roamOutput.textContent).not.toBe(''));
+    const announcement = roamOutput.textContent ?? '';
+    expect(announcement).toMatch(/of 2/); // 共 2 个命中
+    expect(announcement).toMatch(/tab-[12]/); // 标题是命中的标签之一
+    expect(announcement).toBe(
+      // 用实际选中的序号/标题反查译文，验证播报与列表选中态同源
+      translate('第 {{index}} 项，共 {{count}} 项：{{title}}', {
+        index: Number(announcement.match(/Item (\d+)/)?.[1] ?? '0'),
+        count: 2,
+        title: announcement.split(': ').at(-1) ?? ''
+      })
+    );
+  });
 });
 
 /** 渲染输出快照：验证有标签、空态与存储降级横幅组合下的侧边栏渲染树。 */
@@ -142,5 +181,140 @@ describe('侧边栏 App（渲染输出基线）', () => {
     await screen.findByRole('alert');
 
     expect(container.innerHTML).toMatchSnapshot();
+  });
+});
+
+describe('侧边栏语言探测', () => {
+  it('语言探测期间标签快照更新时仍应用探测结果', async () => {
+    vi.spyOn(tabSyncService, 'start').mockReturnValue(() => undefined);
+    vi.spyOn(useDataStore.getState(), 'initialize').mockResolvedValue(undefined);
+    primeStores([tab({ id: 1 })]);
+    useDataStore.setState({
+      settings: { ...DEFAULT_SETTINGS, onboarded: true, tipSeen: true, groupMode: 'language' }
+    });
+
+    let resolveDetection: (language: string) => void = () => undefined;
+    const detection = new Promise<string>((resolve) => {
+      resolveDetection = resolve;
+    });
+    const detectLanguage = vi.spyOn(tabsPlatform, 'detectLanguage').mockReturnValue(detection);
+    render(<App />);
+    await waitFor(() => expect(detectLanguage).toHaveBeenCalledWith(1));
+
+    await act(async () => {
+      useTabStore.setState({ tabs: [tab({ id: 1, title: 'tab-1-updated' })] });
+    });
+    await act(async () => {
+      resolveDetection('en');
+      await detection;
+    });
+
+    await waitFor(() => {
+      expect(useTabStore.getState().tabs.find((item) => item.id === 1)?.language).toBe('en');
+    });
+    expect(detectLanguage).toHaveBeenCalledTimes(1);
+  });
+
+  it('导航期间旧页面探测结果被丢弃并为新页面重新探测', async () => {
+    vi.spyOn(tabSyncService, 'start').mockReturnValue(() => undefined);
+    vi.spyOn(useDataStore.getState(), 'initialize').mockResolvedValue(undefined);
+    primeStores([tab({ id: 1, url: 'https://old.example/' })]);
+    useDataStore.setState({
+      settings: { ...DEFAULT_SETTINGS, onboarded: true, tipSeen: true, groupMode: 'language' }
+    });
+
+    let resolveOld: (language: string) => void = () => undefined;
+    let resolveCurrent: (language: string) => void = () => undefined;
+    const oldDetection = new Promise<string>((resolve) => {
+      resolveOld = resolve;
+    });
+    const currentDetection = new Promise<string>((resolve) => {
+      resolveCurrent = resolve;
+    });
+    const detectLanguage = vi
+      .spyOn(tabsPlatform, 'detectLanguage')
+      .mockReturnValueOnce(oldDetection)
+      .mockReturnValueOnce(currentDetection);
+    render(<App />);
+    await waitFor(() => expect(detectLanguage).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      useTabStore.setState({ tabs: [tab({ id: 1, url: 'https://current.example/' })] });
+    });
+    await act(async () => {
+      resolveOld('fr');
+      await oldDetection;
+    });
+
+    await waitFor(() => expect(detectLanguage).toHaveBeenCalledTimes(2));
+    expect(useTabStore.getState().tabs.find((item) => item.id === 1)?.language).toBeUndefined();
+    await act(async () => {
+      resolveCurrent('en');
+      await currentDetection;
+    });
+
+    await waitFor(() => {
+      expect(useTabStore.getState().tabs.find((item) => item.id === 1)?.language).toBe('en');
+    });
+  });
+});
+
+describe('侧边栏静音反馈', () => {
+  it('静音成功后显示明确回执', async () => {
+    vi.spyOn(tabSyncService, 'start').mockReturnValue(() => undefined);
+    vi.spyOn(useDataStore.getState(), 'initialize').mockResolvedValue(undefined);
+    primeStores([tab({ id: 1, audible: true, muted: false })]);
+    const toggleMute = vi.fn().mockResolvedValue(true);
+    const notify = vi.fn();
+    useTabStore.setState({ toggleMute });
+    useUndoStore.setState({ notify });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: translate('静音') }));
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(translate('已静音')));
+  });
+
+  it('平台返回 false 时不报成功，显示失败回执', async () => {
+    vi.spyOn(tabSyncService, 'start').mockReturnValue(() => undefined);
+    vi.spyOn(useDataStore.getState(), 'initialize').mockResolvedValue(undefined);
+    primeStores([tab({ id: 1, audible: true, muted: false })]);
+    const toggleMute = vi.fn().mockResolvedValue(false);
+    const notify = vi.fn();
+    const notifyError = vi.fn();
+    useTabStore.setState({ toggleMute });
+    useUndoStore.setState({ notify, notifyError });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: translate('静音') }));
+
+    await waitFor(() =>
+      expect(notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+    );
+    expect(notify).not.toHaveBeenCalledWith(translate('已静音'));
+  });
+
+  it('静音抛错时不报成功，改走带诊断的失败反馈', async () => {
+    vi.spyOn(tabSyncService, 'start').mockReturnValue(() => undefined);
+    vi.spyOn(useDataStore.getState(), 'initialize').mockResolvedValue(undefined);
+    primeStores([tab({ id: 1, audible: true, muted: false })]);
+    const error = new Error('mute failed');
+    const toggleMute = vi.fn().mockRejectedValue(error);
+    const notify = vi.fn();
+    const notifyFailure = vi.fn();
+    useTabStore.setState({ toggleMute });
+    useUndoStore.setState({ notify, notifyFailure });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: translate('静音') }));
+
+    await waitFor(() =>
+      expect(notifyFailure).toHaveBeenCalledWith(
+        'sidepanel',
+        translate('操作失败，请稍后重试'),
+        error
+      )
+    );
+    expect(notify).not.toHaveBeenCalledWith(translate('已静音'));
   });
 });

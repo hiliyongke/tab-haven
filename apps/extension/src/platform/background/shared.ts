@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { hostnameOf as coreHostnameOf, inspectUrl } from '@/core/url/UrlInspector';
 import { createSerialChain } from '@/core/util/concurrency';
+import { newId } from '@/core/util/id';
 import { normalizeWhitelistHost } from '@/core/url/hostname';
 import {
   PENDING_ACTIONS_KEY,
@@ -12,6 +13,7 @@ import {
   type PendingAction
 } from '@/platform/messages';
 import { settingsRepository } from '@/platform/storage/repositories';
+import { PENDING_ACTIONS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { logDegraded } from '@/platform/diagnostics';
 import { openSidePanel } from '@/platform/sidePanel';
 
@@ -113,23 +115,22 @@ const queueActionChain = createSerialChain();
  * 落一份到 session 队列后，面板挂载时补消费，动作不会丢。
  */
 export async function queueAction(action: PendingActionInput): Promise<void> {
-  // at 时间戳：面板经「即时消息 + session onChanged」双通道收到同一动作时按 at 去重，
-  // 且面板消费后清除 session 列表，不会重放历史动作。
-  const at = Date.now();
-  const stamped = { ...action, at } as PendingAction;
+  // 双通道通过独立 id 去重；时间戳只表示动作发生时间。
+  const stamped = { ...action, actionId: newId('action'), at: Date.now() };
   // 链尾统一兜底：任何一次漏网 reject 都会让此后每个 queueAction 永不 resolve，
   // 快捷键路径表现为「按了没反应」且无任何报错。
   await queueActionChain.enqueueSettled(
-    async () => {
-      const sessionArea = browser.storage?.session;
-      if (!sessionArea) return;
-      const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
-      // 存的是外部数据，必须经 schema 校验：手写的 as 断言会把任何形状的垃圾都当成合法队列。
-      const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
-      const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
-      list.push(stamped);
-      await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
-    },
+    () =>
+      withCrossPageLock(PENDING_ACTIONS_RMW_LOCK, async () => {
+        const sessionArea = browser.storage?.session;
+        if (!sessionArea) return;
+        const existing = await sessionArea.get(PENDING_ACTIONS_KEY);
+        // 存的是外部数据，必须经 schema 校验：手写的 as 断言会把任何形状的垃圾都当成合法队列。
+        const parsed = PendingActionsSchema.safeParse(existing[PENDING_ACTIONS_KEY]);
+        const list: PendingAction[] = parsed.success ? [...parsed.data] : [];
+        list.push(stamped);
+        await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
+      }),
     (error) =>
       // 文案须与函数名对应：此处是「挂起动作入队」，不是泛化的共享上下文操作。
       logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error)

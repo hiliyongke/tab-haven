@@ -67,8 +67,12 @@ export function SearchBar({
           <button
             type="button"
             className={'search-bar-history' + (historyOn ? ' is-active' : '')}
+            /* WAI-ARIA toggle button：可访问名保持**稳定**，开/关只由 aria-pressed 表达。
+               名称随状态变化时读屏会同时念「变化的名字」与「按下态」，语义冗余且易混
+               （与 PresetsPanel / SegmentedChip 的稳定名口径一致）。title 仍随状态给出
+               更具体的鼠标提示，不影响可访问名。 */
             title={historyOn ? t('包含历史（快照/归档）') : t('仅搜索当前标签')}
-            aria-label={historyOn ? t('包含历史（快照/归档）') : t('仅搜索当前标签')}
+            aria-label={t('包含历史（快照/归档）')}
             aria-pressed={historyOn}
             onClick={() => {
               onToggleHistory();

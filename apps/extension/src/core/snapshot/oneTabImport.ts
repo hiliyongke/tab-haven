@@ -35,11 +35,6 @@ export function parseOneTab(text: string): OneTabParseResult {
   if (isOneTabTooLarge(text)) return { tabs: out, tooLarge: true, truncated: false };
   let truncated = false;
   for (const raw of text.split(/\r?\n/)) {
-    if (out.length >= SNAPSHOT_TABS_LIMIT) {
-      // 静默 break 会让界面报「已导入 N 个」而少了一半：必须把截断事实带回去。
-      truncated = true;
-      break;
-    }
     const line = raw.trim();
     if (!line || line.startsWith('//')) continue;
     let url: string;
@@ -58,6 +53,11 @@ export function parseOneTab(text: string): OneTabParseResult {
     try {
       const parsed = new URL(url);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        if (out.length >= SNAPSHOT_TABS_LIMIT) {
+          // 只有额外有效条目才算截断；恰好上限后的空行、注释与非法 URL 不应误报。
+          truncated = true;
+          break;
+        }
         out.push({ url: parsed.href, title, pinned: false, muted: false });
       }
     } catch {

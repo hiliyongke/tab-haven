@@ -287,6 +287,24 @@ describe('dataStore 固定空间事务', () => {
     expect(file.snapshots[0]!.origin).toBe('archive');
   });
 
+  it('exportData：先校验导出结构，异常本地 ID 不会生成无法导入的备份', async () => {
+    useDataStore.setState({
+      pins: [{ id: '', identity: '', url: 'about:blank', title: 'invalid' }]
+    });
+
+    await expect(useDataStore.getState().exportData()).rejects.toThrow();
+    expect(useDataStore.getState().pins[0]?.id).toBe('');
+
+    useDataStore.setState({
+      pins: [
+        { id: 'same', identity: 'a.com', url: 'https://a.com/', title: 'A' },
+        { id: 'same', identity: 'b.com', url: 'https://b.com/', title: 'B' }
+      ]
+    });
+    await expect(useDataStore.getState().exportData()).rejects.toThrow();
+    expect(useDataStore.getState().pins).toHaveLength(2);
+  });
+
   it('importData：备份覆盖快照（完整备份语义）', async () => {
     await fakeBrowser.storage.local.set({
       'tabs.snapshots.v1': [

@@ -82,8 +82,8 @@ export function PinnedTile({
         : '');
 
   /* 右键菜单：磁贴只有一个 16px 的取消固定按钮（hover 才出现），触屏与键盘用户
-     都没有替代路径。右键补齐带文字的操作列表。 */
-  const { menu, open: openMenu, close: closeMenu } = useRowContextMenu();
+     都没有替代路径。右键 + ContextMenu 键/Shift+F10 补齐带文字的操作列表。 */
+  const { menu, open: openMenu, openFromKeyboard, close: closeMenu } = useRowContextMenu();
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     const items: ContextMenuItem[] = [{ id: 'open', label: t('打开'), onSelect: onClick }];
     if (onUnpin) {
@@ -97,6 +97,7 @@ export function PinnedTile({
       className={tileClass}
       style={accent ? ({ '--tile-accent': accent } as CSSProperties) : undefined}
       onContextMenu={openMenu}
+      onKeyDown={openFromKeyboard}
     >
       {/* 刻意保留裸 button：这里同时挂着 dnd-kit 的 setNodeRef / attributes /
           listeners 与 onAuxClick（中键打开），还有 sortable 的 inline transform。

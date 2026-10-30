@@ -3,6 +3,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { autoDiscardRepository, settingsRepository } from '@/platform/storage/repositories';
 import { updateSession } from '@/platform/storage/session';
+import { appendAutoDiscardBatch } from '@/platform/storage/autoDiscardLedger';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import {
   discardInactiveTabs,
@@ -10,6 +11,7 @@ import {
   syncAutoDiscardAlarm
 } from '@/platform/background/autoDiscard';
 import { syncCachedSettings } from '@/platform/background/shared';
+import { t } from '@/i18n/headless';
 
 /**
  * 自动休眠行为规格：仅处理满足条件的后台标签，并排除白名单、固定空间绑定、近期访问及
@@ -227,6 +229,32 @@ describe('runAutoDiscard 安全集', () => {
   });
 });
 
+describe('自动休眠台账写前基线', () => {
+  it('读取故障时追加失败且不覆盖既有批次', async () => {
+    // Given: 磁盘已有尚未唤醒的批次，写前读取发生 I/O 故障
+    const key = 'tabs.auto-discard-batch.v1';
+    const existing = [{ tabIds: [1], at: 100, count: 1 }];
+    await autoDiscardRepository.write(existing);
+    const writeSpy = vi.spyOn(autoDiscardRepository, 'write');
+    const original = fakeBrowser.storage.local.get.bind(fakeBrowser.storage.local);
+    const getSpy = vi.spyOn(fakeBrowser.storage.local, 'get').mockImplementation((async (
+      requested: string
+    ) => {
+      if (requested === key) throw new Error('storage read failed');
+      return original(requested);
+    }) as never);
+
+    // When: 追加新一轮休眠批次
+    const persisted = await appendAutoDiscardBatch([2], 200);
+
+    // Then: 操作中止，既有批次不被默认值覆盖
+    expect(persisted).toBe(false);
+    expect(writeSpy).not.toHaveBeenCalled();
+    getSpy.mockRestore();
+    expect(await fakeBrowser.storage.local.get(key)).toEqual({ [key]: existing });
+  });
+});
+
 describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', () => {
   it('休眠当前窗口后台标签的安全标签并写台账', async () => {
     await applySettings({ autoDiscardEnabled: true, discardNotifyEnabled: true });
@@ -241,6 +269,25 @@ describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', 
     expect(batch?.tabIds).toEqual([1]);
     expect(fakeBrowser.runtime.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'auto-discarded', tabIds: [1], count: 1 })
+    );
+  });
+
+  it('台账写失败时通知不再承诺一键唤醒，也不发送可撤销回执', async () => {
+    // Given：标签能真实休眠，但批次台账无法落盘。
+    await applySettings({ autoDiscardEnabled: true, discardNotifyEnabled: true });
+    installTabsApi([makeTab({ id: 1, url: 'https://a.com/' })]);
+    vi.spyOn(autoDiscardRepository, 'write').mockResolvedValueOnce(false);
+
+    // When：执行快捷键休眠。
+    await discardInactiveTabs();
+
+    // Then：通知如实说明本次不可一键唤醒，面板收不到虚假的撤销入口。
+    expect(fakeBrowser.notifications.create).toHaveBeenCalledWith(
+      'tabs-auto-discard',
+      expect.objectContaining({ message: t('已休眠 {{count}} 个标签', { count: 1 }) })
+    );
+    expect(fakeBrowser.runtime.sendMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'auto-discarded' })
     );
   });
 

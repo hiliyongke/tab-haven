@@ -2,6 +2,7 @@ import { browser, type Browser } from 'wxt/browser';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import type { FixedFolder } from '@/core/schema/models';
 import { logDegraded } from '@/platform/diagnostics';
+import { t } from '@/i18n/headless';
 
 /**
  * 书签集成：
@@ -96,7 +97,7 @@ async function readBookmarkBarUnchecked(
   for (const node of topLevel) {
     if (isBookmarkFolder(node)) {
       const leaves = collectLeaves([node]);
-      if (leaves.length > 0) folders.push({ name: node.title || 'Imported', leaves });
+      if (leaves.length > 0) folders.push({ name: node.title || t('导入'), leaves });
     } else if (node.url) {
       looseLeaves.push({ url: node.url, title: node.title || node.url });
     }

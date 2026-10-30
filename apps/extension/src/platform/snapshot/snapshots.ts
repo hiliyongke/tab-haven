@@ -12,6 +12,7 @@ import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossP
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
 import { tabGroups } from '@/platform/tabGroups';
+import { mapTab } from '@/platform/tabs';
 
 // 快照库 RMW 用 SNAPSHOTS_RMW_LOCK：快照的写入方不止面板，background SW（关窗自动保存 /
 // 定时自动快照）也直写同一仓库，裸 read → trim → write 交错时是 last-writer-wins。
@@ -56,13 +57,13 @@ export function setSnapshotEvictionListener(fn: (count: number) => void): void {
 
 /**
  * 写入一条快照（与现有列表合并、裁剪后落盘）。返回落盘后的快照列表。
- * 写盘失败（quota 超限/存储不可用）显式抛错：静默丢失会被用户误认为已保存，必须由调用方提示。
+ * 基线读取或写盘失败（存储不可用/quota 超限）显式抛错：静默丢失会被用户误认为已保存，必须由调用方提示。
  */
 export async function persistSnapshot(snapshot: Snapshot): Promise<Snapshot[]> {
   // 跨页串行化：面板与 background 可能并发走本函数，锁外交错会让后写覆盖先写。
   return withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
-    const settings = await settingsRepository.read();
-    const existing = await snapshotsRepository.read();
+    const settings = await settingsRepository.readStrict();
+    const existing = await snapshotsRepository.readStrict();
     // 走 WithEvicted 变体：裁剪会静默丢掉最旧的快照，必须把数字交出去，否则用户只在列表里
     // 发现旧快照不见了。platform 层不做 UI 反馈，只把数字交给注册的监听方。
     const { kept, evicted } = trimSnapshotsWithEvicted([snapshot, ...existing], settings);
@@ -85,7 +86,7 @@ export async function replaceSpaceSnapshot(
   windowId: number | undefined
 ): Promise<{ replaced: boolean; snapshots: Snapshot[] }> {
   return withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
-    const existing = await snapshotsRepository.read();
+    const existing = await snapshotsRepository.readStrict();
     if (snapTabs.length === 0) return { replaced: false, snapshots: existing };
     let replaced = false;
     const next = existing.map((snapshot) => {
@@ -133,8 +134,10 @@ export function collectSnapshotTabs(
   return out;
 }
 
-/** 恢复结果：新建标签数 + 是否按降级口径执行（查询目标窗口失败）。 */
+/** 恢复结果：真实创建记录 + 新建标签数 + 是否按降级口径执行。 */
 export interface RestoreSnapshotResult {
+  /** 本次实际新建的标签；不含窗口原有或恢复期间由其他操作创建的标签。 */
+  createdTabs: TabRecord[];
   /** 本次实际新建的标签数。 */
   count: number;
   /** 查询目标窗口失败，本次按「无重复」继续（宁多建不缺建，且恢复可撤销）。置起即意味着
@@ -143,7 +146,7 @@ export interface RestoreSnapshotResult {
 }
 
 /**
- * 恢复快照到当前（或指定）窗口，返回实际新建的标签数与降级标志。恢复是纯加法：
+ * 恢复快照到当前（或指定）窗口，返回实际新建标签、数量与降级标志。恢复是纯加法：
  *  - 仅新建缺失标签（与窗口内已打开 URL 相同的条目跳过，已存在的标签一律不动）；
  *  - 每个新建标签先发放复用豁免（防止被 uniqueUrlTabs 复用引擎合并）；
  *  - 还原固定（创建时内联）与静音状态（创建后置位）；
@@ -160,7 +163,7 @@ export async function restoreSnapshot(
     const win = await browser.windows.getLastFocused().catch(() => undefined);
     target = win?.id;
   }
-  if (target === undefined) return { count: 0, degraded: false };
+  if (target === undefined) return { count: 0, degraded: false, createdTabs: [] };
 
   // 1. 目标窗口已打开的 URL 集合（web 比较键）
   let degraded = false;
@@ -179,7 +182,7 @@ export async function restoreSnapshot(
 
   // 2. 仅恢复缺失条目
   const missing = missingTabsOf(snapshot, existingKeys);
-  if (missing.length === 0) return { count: 0, degraded };
+  if (missing.length === 0) return { count: 0, degraded, createdTabs: [] };
 
   // 3. 逐条创建：`tabs.create` 不带 index 时按**完成顺序**追加，并发下完成顺序不定，
   // 未分组标签在标签栏的排列会与快照不符。恢复是低频操作，用串行换取「按快照顺序还原」；
@@ -199,14 +202,17 @@ export async function restoreSnapshot(
         });
         const id = createdTab.id;
         if (id === undefined) return null;
+        let currentTab = createdTab;
         if (tab.muted) {
-          // 静音回写失败 = 恢复出的标签丢了静音状态，而用户看到的是「恢复成功」。
-          await browser.tabs.update(id, { muted: true }).catch((error) => {
+          try {
+            currentTab = (await browser.tabs.update(id, { muted: true })) ?? createdTab;
+          } catch (error) {
+            // 静音回写失败 = 恢复出的标签丢了静音状态，而用户看到的是「恢复成功」。
             logDegraded('snapshots', `快照恢复：标签 ${id} 静音状态回写失败`, error);
             degraded = true;
-          });
+          }
         }
-        return { id, tab };
+        return { id, tab, record: mapTab(currentTab) };
       } catch (error) {
         // 单条失败（无效 URL 等）跳过，继续其余条目；但必须留痕并传导降级。
         logDegraded('snapshots', '快照恢复：单条标签创建失败，已跳过', error);
@@ -214,8 +220,8 @@ export async function restoreSnapshot(
         return null;
       }
     })
-  ).filter((entry): entry is { id: number; tab: SnapshotTab } => entry !== null);
-  if (created.length === 0) return { count: 0, degraded };
+  ).filter((entry): entry is { id: number; tab: SnapshotTab; record: TabRecord } => entry !== null);
+  if (created.length === 0) return { count: 0, degraded, createdTabs: [] };
 
   // 4. 分组还原：同组名一次性成组（同名并入 / 缺失重建）
   const groupTabs = new Map<string, number[]>();
@@ -230,15 +236,16 @@ export async function restoreSnapshot(
   if (groupTabs.size > 0) {
     // 与第 1 步同口径：查询失败不能伪装成「窗口里没有同名组」——那会让每个组都被判为缺失
     // 并无条件新建，一次恢复产出一批同名重复组。
-    const existingGroups = await tabGroups.query({ windowId: target }).catch((error) => {
-      logDegraded(
-        'snapshots',
-        `快照恢复：查询目标窗口 ${target} 原生组失败，按无同名组处理`,
-        error
-      );
+    let existingGroups: Awaited<ReturnType<typeof tabGroups.query>>;
+    try {
+      existingGroups = await tabGroups.query({ windowId: target });
+    } catch (error) {
+      // 查询失败时不能把未知组状态当空列表，否则恢复会为已有组另建同名组。
+      logDegraded('snapshots', `快照恢复：查询目标窗口 ${target} 原生组失败，跳过分组还原`, error);
       degraded = true;
-      return [];
-    });
+      return { count: created.length, degraded, createdTabs: created.map((entry) => entry.record) };
+    }
+    const createdById = new Map(created.map((entry) => [entry.id, entry]));
     for (const [title, ids] of groupTabs) {
       try {
         const tabIds = [...ids] as [number, ...number[]];
@@ -247,6 +254,11 @@ export async function restoreSnapshot(
         const groupId = await browser.tabs.group(
           sameTitle?.id !== undefined ? { tabIds, groupId: sameTitle.id } : { tabIds }
         );
+        // 返回给调用方的是恢复完成时的真实记录，成功入组后同步 groupId。
+        for (const id of ids) {
+          const record = createdById.get(id)?.record;
+          if (record) record.groupId = groupId;
+        }
         // 并入既有同名组时跳过 meta 回写：用户可能在快照之后改过该组的标题/颜色。
         if (sameTitle === undefined) {
           const color = groupColors.get(title);
@@ -260,11 +272,11 @@ export async function restoreSnapshot(
         }
       } catch (error) {
         // 组恢复失败：标签保持未分组，不影响已创建的标签。
-        logDegraded('snapshots', `快照恢复：组「${title}」还原失败，标签保持未分组`, error);
+        logDegraded('snapshots', '快照恢复：分组还原失败，标签保持未分组', error);
         degraded = true;
       }
     }
   }
 
-  return { count: created.length, degraded };
+  return { count: created.length, degraded, createdTabs: created.map((entry) => entry.record) };
 }

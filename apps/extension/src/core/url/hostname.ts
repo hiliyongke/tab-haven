@@ -16,7 +16,7 @@ function isBareIpv6(host: string): boolean {
   // 先做字符集筛查（含 `[` `]` `@` 等的一律不是裸地址），再交给解析做权威判定。
   if (!/^[0-9a-fA-F:.]+$/.test(host)) return false;
   try {
-    return new URL(`http://[${host}]/`).hostname === `[${host}]`;
+    return new URL(`http://[${host}]/`).hostname.startsWith('[');
   } catch {
     return false;
   }
@@ -25,6 +25,15 @@ function isBareIpv6(host: string): boolean {
 /** 白名单 host 归一：常规归一 + IDN 转 punycode（浏览器 hostname 已是 punycode，中文原文永不命中）；只在此链转码，`normalizeHostname` 保持不编码不解码。 */
 function normalizeHostPart(hostname: string): string {
   const normalized = normalizeHostname(hostname);
+  // 方括号只用于 IPv6 字面量：交给 URL 解析验证地址并输出浏览器同口径的规范形式。
+  if (normalized.startsWith('[') || normalized.endsWith(']')) {
+    try {
+      const parsedHostname = new URL(`http://${normalized}/`).hostname;
+      return parsedHostname.startsWith('[') ? parsedHostname : '';
+    } catch {
+      return '';
+    }
+  }
   // 含空白一律判空：`a b.com` 在 URL 解析处必然抛错、白名单永不命中，留着就是白占额度。
   // 只拦空白、不校验 DNS 标签合法性：`a..com` / `-a.com` / `a_b.com` 实测能原样回环，收紧只会误伤合法条目。
   if (/\s/.test(normalized)) return '';
@@ -37,13 +46,14 @@ function normalizeHostPart(hostname: string): string {
   }
 }
 
-/** 休眠白名单条目归一化（用户可粘贴整串 URL），额外处理 scheme / 路径；必须落在 schema 层，因导入/同步/直写 storage 不经设置页，UI 侧归一会让尾斜杠条目永久失配。 */
+/** 休眠白名单条目归一化（用户可粘贴整串 URL），额外处理 scheme / 路径 / query / fragment；必须落在 schema 层，因导入/同步/直写 storage 不经设置页，UI 侧归一会让尾斜杠条目永久失配。 */
 export function normalizeWhitelistHost(rawEntry: string): string {
   const host = rawEntry
     .trim()
     // 剥离任意 scheme 且大小写不敏感：否则 `HTTPS://A.com` 匹配不上，去路径后会归一出 `https:` 这种垃圾条目。
     .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
-    .replace(/\/.*$/, '');
+    // 路径、query、fragment 都不是主机身份；无斜杠的 `a.com?x=1` / `a.com#top` 同样要剥离。
+    .replace(/[/?#].*$/, '');
   // 凭据串（`user@host`）不是 hostname，落盘即是一条永不命中又白占额度的条目。
   if (host.includes('@')) return '';
   // 裸 IPv6 先补方括号：URL 解析与 `SiteResolver` 产出的都是 `[::1]`，不补会把合法条目判空、白名单与站点归组口径不一致。

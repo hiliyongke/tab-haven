@@ -86,3 +86,55 @@ export function pulseTabRows(tabIds: readonly number[]): void {
     pulseRow(target);
   }
 }
+
+/**
+ * 浮层关闭时的焦点归还（Dialog / ContextMenu 共用）。
+ *
+ * 触发元素在浮层打开期间可能被卸载——最典型的是右键菜单「关闭该标签」：菜单项
+ * 先关闭标签、触发行随即从列表移除，关闭回调里的 `trigger.focus()` 打在已断开的
+ * 节点上静默失败，焦点掉回 `<body>`，键盘 / 读屏用户须从页面开头重新 Tab。
+ *
+ * 归还策略：
+ *  1. trigger 仍在 DOM（isConnected）→ 直接还给它（常规 Esc 关闭路径，同步完成）；
+ *  2. trigger 已卸载 → 不能在 cleanup 同步聚焦：此时背景 inert 可能尚未解除，
+ *     聚焦会被 inert 屏蔽。延后到微任务，在 inert 解除后落到面板内首个可聚焦元素。
+ *
+ * 兜底目标限定在 `.app`（侧边栏根）内的可交互元素，范围可控；找不到时安全放弃，
+ * 不抛错。零侵入：不要求调用方在业务节点上挂任何标记，也不改变快照结构。
+ */
+export function restoreFocus(trigger: HTMLElement | null | undefined): void {
+  if (trigger?.isConnected) {
+    trigger.focus();
+    return;
+  }
+  queueMicrotask(() => {
+    const scope = document.querySelector<HTMLElement>('.app');
+    if (!scope) return;
+    const fallback = scope.querySelector<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    fallback?.focus();
+  });
+}
+
+/**
+ * 折叠分区前保住焦点：某些交互下焦点可能停在即将被卸载的分区 body 内（例如通过键盘
+ * 漫游进某行后由程序化 / 快捷键触发折叠，或 jsdom 等焦点不自动转移到 toggle 的环境）。
+ * body 卸载会让焦点掉回 `<body>`，键盘 / 读屏用户须从页面开头重新 Tab。
+ *
+ * 由所有折叠的公共出口 `SectionHead` 的 toggle 按钮在调用外部 onToggle **之前**调用：
+ * 仅当 `document.activeElement` 确在某 `.section-card` 的 `.section-body` 内时，才把焦点
+ * 移到同一分区头存活的 `button.toggle`。正常鼠标 / 键盘点击 toggle 时焦点本就在 toggle
+ * 上（不在 body 内），此函数空操作，不改变既有行为。
+ *
+ * DOM 查询集中在此文件（与定位/漫游同一处），调用方不散落选择器字面量。
+ */
+export function preserveFocusBeforeCollapse(): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  const card = active.closest('.section-card');
+  if (!card) return;
+  const body = card.querySelector('.section-body');
+  if (!body?.contains(active)) return;
+  card.querySelector<HTMLElement>('button.toggle')?.focus();
+}

@@ -74,6 +74,21 @@ afterEach(() => {
   fakeBrowser.reset();
 });
 
+describe('首次镜像恢复闸门', () => {
+  it('恢复待完成时禁止镜像写，完成后才放行', () => {
+    const { ctx, state } = build();
+    state.settings = { ...DEFAULT_SETTINGS, syncMirrorEnabled: true };
+
+    ctx.setMirrorRestorePending(true);
+    ctx.scheduleMirror(state as DataState);
+    expect(mocks.schedule).not.toHaveBeenCalled();
+
+    ctx.setMirrorRestorePending(false);
+    ctx.scheduleMirror(state as DataState);
+    expect(mocks.schedule).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('镜像写失败态', () => {
   it('镜像写失败时设置失败标记与降级横幅', () => {
     // Given 开启同步、镜像写正常

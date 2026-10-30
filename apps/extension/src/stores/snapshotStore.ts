@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { translate } from '@/i18n';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
+import type { TabRecord } from '@/core/tab-types';
 import { structuralSignature } from '@/core/util/signature';
 import {
   closeTabs,
   queryCurrentWindowTabs,
   queryWindowGroups,
-  queryWindowTabs,
   resolveRestoreWindowId
 } from '@/platform/tabs';
 import { sendMessageWithAck } from '@/platform/messages';
@@ -30,33 +30,15 @@ import { isHttpUrl } from '@/core/url/UrlInspector';
 import { DEFAULT_SNAPSHOT_NAMES } from '@/core/snapshot/defaultNames';
 import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 
-/** 把恢复新建的标签记为可撤销项：用前后差分（恢复后多出的 tabId），避免误把原有标签当恢复产物。 */
-async function recordRestoreForUndo(
-  beforeIds: ReadonlySet<number>,
-  windowId: number
-): Promise<void> {
+/** 只登记恢复引擎真实创建的标签；不做窗口前后差分，避免误纳并发新建的无关标签。 */
+async function recordRestoreForUndo(createdTabs: readonly TabRecord[]): Promise<void> {
+  if (createdTabs.length === 0) return;
   try {
-    const after = await queryWindowTabs(windowId);
-    const created = after.filter((tab) => !beforeIds.has(tab.id));
-    if (created.length === 0) return;
-    await useUndoStore.getState().recordClosedBatch(created, 'restore');
+    await useUndoStore.getState().recordClosedBatch(createdTabs, 'restore');
   } catch (error) {
     // 记录失败不影响恢复结果本身，但必须留痕。
     logFailure('snapshotStore', '快照恢复的撤销登记失败，本次恢复无法一键撤销', error);
   }
-}
-
-/** 捕获恢复前现场（差分基线）。读不到就返回 undefined 不记账：那等于把用户原有标签当恢复产物，撤销会误关。 */
-async function captureWindowTabIds(
-  windowId: number | undefined
-): Promise<ReadonlySet<number> | undefined> {
-  if (windowId === undefined) return undefined;
-  return queryWindowTabs(windowId)
-    .then((tabs) => new Set(tabs.map((tab) => tab.id)))
-    .catch((error: unknown) => {
-      logDegraded('snapshotStore', `窗口 ${windowId} 恢复前现场读取失败，本次不登记撤销`, error);
-      return undefined;
-    });
 }
 
 /** 注册淘汰提示：快照超限移除最旧的，经 notifyEviction 合并（连续导入 Workona 会连续淘汰，逐次提示会刷屏）。 */
@@ -79,8 +61,8 @@ interface SnapshotState {
   load: () => Promise<void>;
   /** 存当前窗口为命名快照。返回是否落盘：空现场返回 false（失败原因由 notifyError 承载）。 */
   saveCurrentWindow: (name?: string) => Promise<boolean>;
-  /** 存当前窗口为轻量工作区快照。返回值同 saveCurrentWindow。 */
-  saveSpace: (name?: string) => Promise<boolean>;
+  /** 存当前窗口为轻量工作区快照；成功返回本次新建快照 id，空现场返回 undefined。 */
+  saveSpace: (name?: string) => Promise<string | undefined>;
   /** 归档当前窗口：保存并关闭全部标签，返回保存标签数。 */
   archiveCurrentWindow: (name?: string) => Promise<number>;
   /** 从 OneTab 文本导入为快照；truncated 表示有效条目超过上限、超出部分被丢弃。 */
@@ -176,7 +158,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     // 同 saveCurrentWindow：空工作区不落盘（换过去等于清空窗口且无从恢复）。
     if (snapTabs.length === 0) {
       useUndoStore.getState().notifyError(translate('没有可保存的当前标签'));
-      return false;
+      return undefined;
     }
     const snapshot = buildSnapshot({
       name: name ?? '',
@@ -187,7 +169,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
     });
     const next = await persistSnapshot(snapshot);
     set({ snapshots: next });
-    return true;
+    return snapshot.id;
   },
 
   archiveCurrentWindow: async (name) => {
@@ -286,7 +268,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   deleteSnapshot: async (id) => {
     // 锁内 RMW：面板打开期间 background 可能写入关窗快照，锁外会覆盖丢失。
     const next = await withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
-      const current = await snapshotsRepository.read();
+      const current = await snapshotsRepository.readStrict();
       const updated = current.filter((snap) => snap.id !== id);
       const ok = await snapshotsRepository.write(updated);
       if (!ok) throw new Error('deleteSnapshot: storage write failed');
@@ -302,7 +284,7 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       return;
     }
     const next = await withCrossPageLock(SNAPSHOTS_RMW_LOCK, async () => {
-      const current = await snapshotsRepository.read();
+      const current = await snapshotsRepository.readStrict();
       const updated = current.map((snap) => (snap.id === id ? { ...snap, name: trimmed } : snap));
       const ok = await snapshotsRepository.write(updated);
       if (!ok) throw new Error('renameSnapshot: storage write failed');
@@ -312,8 +294,8 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
   },
 
   /**
-   * 恢复快照：把本次新建的标签记为可关闭批次（kind='restore'），由 undoStore 的 restore
-   * 分支关闭它们实现「撤销本次恢复」。差分取目标窗口，避免跨窗恢复时匹配不到新建项。
+   * 恢复快照：把引擎实际新建的标签记为可关闭批次（kind='restore'），由 undoStore 的 restore
+   * 分支关闭它们实现「撤销本次恢复」。目标窗口只解析一次，恢复与登记使用同一结果。
    */
   restore: async (id, windowId) => {
     const snap = get().snapshots.find((entry) => entry.id === id);
@@ -323,11 +305,8 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       throw new Error(`snapshot-not-found:${id}`);
     }
     const targetWindowId = await resolveRestoreWindowId(windowId);
-    const beforeIds = await captureWindowTabIds(targetWindowId);
-    const result = await restoreSnapshot(snap, windowId);
-    if (result.count > 0 && beforeIds && targetWindowId !== undefined) {
-      await recordRestoreForUndo(beforeIds, targetWindowId);
-    }
+    const result = await restoreSnapshot(snap, targetWindowId);
+    if (result.count > 0) await recordRestoreForUndo(result.createdTabs);
     return result;
   },
 
@@ -348,14 +327,12 @@ export const useSnapshotStore = create<SnapshotState>()((set, get) => ({
       throw new Error(`snapshot-not-found:${id}`);
     }
     // 空勾选不是失败：返回 0 即「本次没有新建任何标签」的真实结果。
-    if (selectedTabs.length === 0) return { count: 0, degraded: false };
+    if (selectedTabs.length === 0) return { count: 0, degraded: false, createdTabs: [] };
     // 撤销账本与整份恢复同口径：勾选恢复同样登记可撤销批次。
     const targetWindowId = await resolveRestoreWindowId(undefined);
-    const beforeIds = await captureWindowTabIds(targetWindowId);
-    const result = await restoreSnapshot(buildPartialSnapshot(snap, selectedTabs));
-    if (result.count > 0 && beforeIds && targetWindowId !== undefined) {
-      await recordRestoreForUndo(beforeIds, targetWindowId);
-    }
+    const partial = buildPartialSnapshot(snap, selectedTabs);
+    const result = await restoreSnapshot(partial, targetWindowId);
+    if (result.count > 0) await recordRestoreForUndo(result.createdTabs);
     return result;
   },
 

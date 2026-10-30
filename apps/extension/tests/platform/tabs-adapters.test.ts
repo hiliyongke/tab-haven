@@ -144,12 +144,12 @@ describe('翻转 / 确保类操作以实时值为准', () => {
       update
     });
 
-    await toggleMute(1, false);
+    await expect(toggleMute(1, false)).resolves.toBe(true);
 
     expect(update).toHaveBeenCalledWith(1, { muted: false });
   });
 
-  it('toggleMute：拿不到实时值时回落到快照值', async () => {
+  it('toggleMute：实时值读取失败时返回 false，不盲目更新', async () => {
     const update = vi.fn(async () => undefined);
     Object.assign(fakeBrowser.tabs, {
       get: vi.fn(async () => {
@@ -158,9 +158,20 @@ describe('翻转 / 确保类操作以实时值为准', () => {
       update
     });
 
-    await toggleMute(1, true);
+    await expect(toggleMute(1, true)).resolves.toBe(false);
 
-    expect(update).toHaveBeenCalledWith(1, { muted: false });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('toggleMute：更新失败时返回 false（不误报成功）', async () => {
+    Object.assign(fakeBrowser.tabs, {
+      get: vi.fn(async () => rawTab({ mutedInfo: { muted: false } })),
+      update: vi.fn(async () => {
+        throw new Error('cannot mute');
+      })
+    });
+
+    await expect(toggleMute(1, false)).resolves.toBe(false);
   });
 
   it('togglePinned：实时值优先，失败返回 false（不误报成功）', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveSections } from '@/core/site/Sections';
+import { deriveSections, parseLangSiteKey } from '@/core/site/Sections';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 
 /**
@@ -36,6 +36,20 @@ describe('deriveSections 语言模式', () => {
     expect(sections).toHaveLength(1);
     expect(sections[0]?.title).toBe('未知语言');
     expect(sections[0]?.tabs.map((item) => item.id).sort()).toEqual([1, 2]);
+  });
+
+  it('语言分区键不与合法的单标签 hostname 冲突', () => {
+    expect(parseLangSiteKey('lang-en')).toBeUndefined();
+    expect(parseLangSiteKey('lang:en')).toBe('en');
+    expect(parseLangSiteKey('lang:80')).toBeUndefined();
+
+    const sections = deriveSections({
+      tabs: [tab(1, 'https://lang-en/', 'en'), tab(2, 'https://lang-en/', 'en')],
+      groups: [],
+      groupMode: 'language',
+      threshold: 1
+    });
+    expect(sections[0]).toMatchObject({ kind: 'site', siteKey: 'lang:en' });
   });
 
   it('已知语言码按标签展开，不落到未知分组', () => {

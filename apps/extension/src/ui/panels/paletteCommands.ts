@@ -73,8 +73,8 @@ export interface CommandItem {
   run: () => void | boolean;
 }
 
-/** 空查询时标签项的挂载上限（含 Favicon 的行有真实渲染成本；输入后过滤路径不受限）。 */
-export const EMPTY_QUERY_TAB_LIMIT = 20;
+/** 标签项的挂载上限：空查询与关键词命中同口径，避免宽泛关键词一次挂载整窗标签。 */
+export const PALETTE_TAB_LIMIT = 20;
 /** dashboard 里「最近关闭批次」与「最近快照」各展示的条数。 */
 const DASHBOARD_RECENT_LIMIT = 3;
 
@@ -343,8 +343,8 @@ export function usePaletteCommands({
         folderItems: folderCmds,
         commandItems: base,
         recentItems,
-        tabItems: tabCmds.slice(0, EMPTY_QUERY_TAB_LIMIT),
-        tabTruncated: tabCmds.length > EMPTY_QUERY_TAB_LIMIT
+        tabItems: tabCmds.slice(0, PALETTE_TAB_LIMIT),
+        tabTruncated: tabCmds.length > PALETTE_TAB_LIMIT
       };
     }
     const match = (c: CommandItem) => c.label.toLowerCase().includes(q);
@@ -363,8 +363,8 @@ export function usePaletteCommands({
       folderItems: matchedFolders,
       commandItems: base.filter(match),
       recentItems: [],
-      tabItems: matchedTabs,
-      tabTruncated: false
+      tabItems: matchedTabs.slice(0, PALETTE_TAB_LIMIT),
+      tabTruncated: matchedTabs.length > PALETTE_TAB_LIMIT
     };
   }, [
     query,

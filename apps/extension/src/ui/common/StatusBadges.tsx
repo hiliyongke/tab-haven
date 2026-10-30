@@ -51,8 +51,13 @@ export function StatusBadges({
     badges.push(
       /* 雪花必须包一层与同组徽章同构的 chip（胶囊底 + px-1）：裸图标并排时高度与
          水平度量都不同，看着像漏渲染。 */
-      <Chip key="frozen" className="status-badge status-keep" label={t('已休眠（点击唤醒）')}>
+      /* 可访问名走 sr-only 文本而非 Chip 的 label（aria-label）：span 是 ARIA generic
+         role，命名被禁止、aria-label 不生效；内部 Icon 又默认 aria-hidden，读屏会漏报
+         「已休眠」这条要不要唤醒/去重的决策信息。与同组其余徽章同构：可见图标
+         aria-hidden + sr-only 承载全量文案。title 单独保留供鼠标悬停提示。 */
+      <Chip key="frozen" className="status-badge status-keep" title={t('已休眠（点击唤醒）')}>
         <Icon d={Icons.snowflake} className="h-3 w-3" />
+        <span className="sr-only">{t('已休眠（点击唤醒）')}</span>
       </Chip>
     );
   }

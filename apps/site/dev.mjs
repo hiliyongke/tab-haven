@@ -63,7 +63,7 @@ const server = createHttpServer((req, res) => {
       console.error(`[site] 渲染 ${url} 失败：`, error);
       res.statusCode = 500;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.end(`SSR error: ${error instanceof Error ? error.message : String(error)}`);
+      res.end('Internal Server Error');
     }
   })();
 });
@@ -76,5 +76,5 @@ server.on('error', (error) => {
   process.exitCode = 1;
 });
 
-server.listen(5174);
-console.log('[site] dev → http://localhost:5174/ （英文 http://localhost:5174/en/）');
+server.listen(5174, '127.0.0.1');
+console.log('[site] dev → http://127.0.0.1:5174/ （英文 http://127.0.0.1:5174/en/）');

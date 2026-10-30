@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { collectFromFile, type CollectOptions } from 'i18n-kit/node';
+import { collectFromFile, walk, type CollectOptions } from 'i18n-kit/node';
 
 /**
  * 行为规格：源码词条抽取（`packages/i18n-kit/src/collect.ts`）。
@@ -25,6 +25,12 @@ function collect(
 }
 
 const sentences = (code: string): string[] => collect(code).entries.map((entry) => entry.sentence);
+
+describe('walk: 源码遍历', () => {
+  it('Given 目录不可读取 When 遍历 Then 抛出文件系统异常而不是静默跳过', () => {
+    expect(() => walk(join(dir, 'missing'))).toThrow();
+  });
+});
 
 describe('collectFromFile: t() 调用点', () => {
   it('Given 字面量原文 When 抽取 Then 登记该原文', () => {
@@ -114,6 +120,32 @@ describe('collectFromFile: 常量表与 Trans', () => {
     expect(sentences(`const a = <Trans>已选 <Slot content={count} /> 个标签</Trans>;`)).toEqual([
       '已选 <1></1> 个标签'
     ]);
+  });
+
+  it('Given <Trans> 条件子节点可能消失 When 抽取 Then 报 key 无法静态计算', () => {
+    const result = collect(
+      `const a = <Trans>已选 {pinned ? <Slot name="pin" /> : null} 个标签</Trans>;`
+    );
+
+    expect(result.errors.join('\n')).toContain('ConditionalExpression');
+    expect(result.errors.join('\n')).toContain('无法静态计算 key');
+  });
+
+  it('Given <Trans> 嵌套元素内含动态条件 When 抽取 Then 递归报错而非假绿', () => {
+    const result = collect(
+      `const a = <Trans>已选 <b>{pinned ? <Slot /> : null}</b> 个标签</Trans>;`
+    );
+
+    expect(result.errors.join('\n')).toContain('ConditionalExpression');
+  });
+
+  it('Given <Trans> 条件两支均为固定空元素 When 抽取 Then 接受稳定占位', () => {
+    const result = collect(
+      `const a = <Trans>已选 {pinned ? <Slot name="pin" /> : <Slot name="unpin" />} 个标签</Trans>;`
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.entries.map((entry) => entry.sentence)).toEqual(['已选 <1></1> 个标签']);
   });
 
   it('Given 文件顶部 @i18n-noscan When 抽取 Then 整文件跳过', () => {

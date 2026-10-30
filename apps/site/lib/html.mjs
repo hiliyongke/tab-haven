@@ -30,6 +30,10 @@ function jsonLd({ description, url, version }) {
   };
 }
 
+export function serializeJsonLd(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 /**
  * 每语言一份的 `<head>` 注入片段。
  *
@@ -59,7 +63,7 @@ export function renderHead({ lang, title, description, version }) {
     }
     tags.push(`<link rel="alternate" hreflang="x-default" href="${escapeHtml(`${SITE_URL}/`)}" />`);
     tags.push(
-      `<script type="application/ld+json">${JSON.stringify(jsonLd({ description, url, version }))}</script>`
+      `<script type="application/ld+json">${serializeJsonLd(jsonLd({ description, url, version }))}</script>`
     );
   } else {
     // 注释刻意全英文：中英文页面共用这段 head，中文注释会让英文产物残留汉字

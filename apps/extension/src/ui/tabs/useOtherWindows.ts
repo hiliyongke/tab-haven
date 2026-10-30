@@ -54,15 +54,18 @@ export function useOtherWindows(enabled: boolean): {
     // 开关由关→开（或重试）时重新进入查询：必须先回到 loading，
     // 否则上一次的 error 会一直挂着，用户点了重试却看不到任何变化。
     setStatus('loading');
+    let latestRequest = 0;
     const refreshSafely = () => {
+      const request = ++latestRequest;
       void queryAllWindowTabs()
         .then((tabs) => {
-          if (cancelled) return;
+          // 节流只合并事件，不会等待上一轮查询；旧响应晚到时不得覆盖新快照。
+          if (cancelled || request !== latestRequest) return;
           setAllTabs(tabs);
           setStatus('ready');
         })
         .catch((error: unknown) => {
-          if (cancelled) return;
+          if (cancelled || request !== latestRequest) return;
           // 查询失败保持旧数据（下次事件再试），但必须把态置为 error，
           // 否则「没有任何其他窗口」与「一直在失败」在 UI 上无法分辨。
           logDegraded('windows', '其他窗口查询失败', error);

@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
-import { PENDING_ACTIONS_KEY, PENDING_ACTIONS_LIMIT } from '@/platform/messages';
+import {
+  PENDING_ACTIONS_KEY,
+  PENDING_ACTIONS_LIMIT,
+  watchPendingActions,
+  type PendingAction
+} from '@/platform/messages';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import {
@@ -27,6 +32,27 @@ function lastDiagnostic(): string | undefined {
   return readDiagnostics().at(-1)?.message;
 }
 
+/** 按锁名串行执行回调，模拟面板与 SW 共享的 Web Locks。 */
+function installSerialLocks(): void {
+  const tails = new Map<string, Promise<unknown>>();
+  vi.stubGlobal('navigator', {
+    locks: {
+      request: (name: string, optionsOrCallback: unknown, maybeCallback?: unknown) => {
+        const callback = (
+          typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
+        ) as (lock: { name: string }) => Promise<unknown>;
+        const previous = tails.get(name) ?? Promise.resolve();
+        const run = previous.then(() => callback({ name }));
+        tails.set(
+          name,
+          run.catch(() => undefined)
+        );
+        return run;
+      }
+    }
+  });
+}
+
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -34,6 +60,7 @@ beforeEach(() => {
 afterEach(() => {
   fakeBrowser.reset();
   clearDiagnostics();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -171,6 +198,26 @@ describe('queueAction 挂起队列', () => {
     expect(rec[PENDING_ACTIONS_KEY]).toHaveLength(3);
   });
 
+  it('同一毫秒内入队的不同动作以独立 id 区分', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1234);
+    const send = vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue(undefined as never);
+
+    await Promise.all([
+      queueAction({ type: 'focus-search' }),
+      queueAction({ type: 'locate-active' })
+    ]);
+
+    const rec = await fakeBrowser.storage.session.get(PENDING_ACTIONS_KEY);
+    const list = rec[PENDING_ACTIONS_KEY] as { type: string; actionId: string; at: number }[];
+    expect(list.map((action) => action.type)).toEqual(['focus-search', 'locate-active']);
+    expect(list.map((action) => action.at)).toEqual([1234, 1234]);
+    expect(new Set(list.map((action) => action.actionId)).size).toBe(2);
+    const broadcastIds = send.mock.calls.map(
+      ([message]) => (message as unknown as { actionId: string }).actionId
+    );
+    expect(broadcastIds).toEqual(list.map((action) => action.actionId));
+  });
+
   it('超过上限时丢弃最旧条目（会话存储不无界增长）', async () => {
     vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue(undefined as never);
 
@@ -207,5 +254,45 @@ describe('queueAction 挂起队列', () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(lastDiagnostic()).toContain('挂起动作入队失败');
     session.set = original;
+  });
+
+  it('面板清理旧队列时，并发入队的新动作不会被旧快照删除', async () => {
+    // Given: 面板已读出旧动作，删除仍在途；随后面板关闭且 SW 写入新动作
+    installSerialLocks();
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue(undefined as never);
+    await fakeBrowser.storage.session.set({
+      [PENDING_ACTIONS_KEY]: [{ type: 'focus-search', actionId: 'old', at: 1 }]
+    });
+    let finishRemove: (() => void) | undefined;
+    const originalRemove = fakeBrowser.storage.session.remove.bind(fakeBrowser.storage.session);
+    const remove = vi.spyOn(fakeBrowser.storage.session, 'remove').mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          finishRemove = () => {
+            originalRemove(PENDING_ACTIONS_KEY)
+              .then(() => resolve())
+              .catch(reject);
+          };
+        })
+    );
+    const actions: PendingAction[] = [];
+    const off = watchPendingActions((action) => actions.push(action));
+    await vi.waitFor(() => {
+      expect(actions).toHaveLength(1);
+      expect(remove).toHaveBeenCalledTimes(1);
+    });
+    off();
+
+    // When: 旧删除尚未完成时，新动作开始入队
+    const enqueueing = queueAction({ type: 'locate-active' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finishRemove?.();
+    await enqueueing;
+
+    // Then: 入队等待旧消费结束后写入，新动作仍留在挂起队列
+    const record = await fakeBrowser.storage.session.get(PENDING_ACTIONS_KEY);
+    expect(record[PENDING_ACTIONS_KEY]).toEqual([
+      expect.objectContaining({ type: 'locate-active' })
+    ]);
   });
 });

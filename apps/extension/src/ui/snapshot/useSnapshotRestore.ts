@@ -67,7 +67,7 @@ export function useSnapshotRestore(params: {
         const { count, degraded } = await restore(id);
         notify(
           degraded
-            ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', {
+            ? t('已恢复 {{count}} 个标签；部分恢复结果可能不完整，请检查标签列表', {
                 count
               })
             : t('已恢复 {{count}} 个标签', { count })
@@ -118,7 +118,7 @@ export function useSnapshotRestore(params: {
         const { count, degraded } = await restoreSelected(partial.id, partial.tabs);
         notify(
           degraded
-            ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', {
+            ? t('已恢复 {{count}} 个标签；部分恢复结果可能不完整，请检查标签列表', {
                 count
               })
             : t('已恢复 {{count}} 个标签', { count })

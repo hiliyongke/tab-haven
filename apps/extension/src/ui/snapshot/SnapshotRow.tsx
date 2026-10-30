@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { isImeComposing } from '@/core/util/keyboard';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
@@ -70,6 +70,18 @@ export function SnapshotRow({
 }: SnapshotRowProps) {
   const { t } = useTranslation();
   const detailScrollRef = useRef<HTMLUListElement>(null);
+  /**
+   * 重命名编辑会话去重标尺。Enter 提交 / Escape 取消都会让父级卸载本输入框，
+   * 卸载时若输入框持有焦点，浏览器会派发一次 blur —— 无条件 onBlur 提交会把
+   * 「Escape 取消」反提交为保存、让 Enter 写两次。父级 commitRename 的
+   * `if (!editingId) return` 用的是渲染期闭包值，同一 tick 内尚未清空，挡不住。
+   * 标尺由 Enter/Escape/blur 先到者占住；onChange 重置以放行「空名提交失败、
+   * 编辑态保留」后用户继续输入再提交的场景。
+   */
+  const renameSettledRef = useRef(false);
+  useEffect(() => {
+    if (isEditing) renameSettledRef.current = false;
+  }, [isEditing]);
   // 详情列表是条件渲染的，必须把开关作为依赖传入，否则容器出现后不会补挂监听
   useScrollFade(detailScrollRef, isDetailOpen);
   /**
@@ -128,14 +140,33 @@ export function SnapshotRow({
               size="sm"
               value={editingName}
               ariaLabel={t('重命名')}
-              onChange={onEditingNameChange}
+              onChange={(next) => {
+                // 用户继续输入 = 本次会话重新活跃，放行后续 Enter/blur 提交
+                // （父级遇空名提交失败会保留编辑态并 notify，此时必须能再次提交）。
+                renameSettledRef.current = false;
+                onEditingNameChange(next);
+              }}
               onKeyDown={(event) => {
                 // 输入法组合中的 Enter/Esc 是选词与取消候选，不提交/不取消重命名。
                 if (isImeComposing(event)) return;
-                if (event.key === 'Enter') void onCommitRename();
-                if (event.key === 'Escape') onCancelRename();
+                if (event.key === 'Enter') {
+                  if (renameSettledRef.current) return;
+                  renameSettledRef.current = true;
+                  void onCommitRename();
+                }
+                if (event.key === 'Escape') {
+                  if (renameSettledRef.current) return;
+                  renameSettledRef.current = true;
+                  onCancelRename();
+                }
               }}
-              onBlur={() => void onCommitRename()}
+              onBlur={() => {
+                // Escape 取消 / Enter 提交已置位时，这里是卸载派发的 blur，跳过；
+                // 否则是用户真实失焦，提交一次。
+                if (renameSettledRef.current) return;
+                renameSettledRef.current = true;
+                void onCommitRename();
+              }}
             />
           ) : (
             <span className="block truncate text-xs font-medium text-gray-700">{snap.name}</span>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n';
 import { useDataStore } from '@/stores/dataStore';
+import { ImportDataError } from '@/stores/data/transferSlice';
 import { useUndoStore } from '@/stores/undoStore';
 import { useSnapshotStore } from '@/stores/snapshotStore';
 import type { Settings } from '@/core/schema/models';
@@ -146,18 +147,35 @@ export function SettingsPage() {
       .catch((error: unknown) => {
         // 版本不兼容要说得清下一步：笼统「导入失败」会让用户以为备份坏了。
         const raw = error instanceof Error ? error.message : '';
-        const message =
-          raw === 'export-version-mismatch'
-            ? t('备份文件格式与当前版本不匹配，请选择当前版本导出的备份文件。')
-            : // 写盘失败带分区名（transferSlice 抛 `import-write-failed:<分区>`）。
-              // 一律落到「文件无效」会掩盖真实原因（存储不可用），用户会反复
-              // 重试导入、甚至以为备份损坏。分区名让人知道卡在哪一步。
-              raw.startsWith('import-write-failed:')
-              ? t(
-                  '导入失败：写入「{{name}}」时存储不可用，已回滚（本地数据保持导入前的状态）。请确认浏览器存储空间后重试。',
-                  { name: partitionLabel(raw.slice('import-write-failed:'.length), t) }
-                )
-              : t('导入失败：备份文件无效或无法读取');
+        let message = t('导入失败：备份文件无效或无法读取');
+        if (raw === 'export-version-mismatch') {
+          message = t('备份文件格式与当前版本不匹配，请选择当前版本导出的备份文件。');
+        } else if (raw.startsWith('import-write-failed:')) {
+          // 写盘失败带分区名；只有结构化错误明确给出空 rollbackFailures 时，
+          // 才能宣称本地保持导入前。回滚失败或缺少结构信息都必须披露混合态风险。
+          const name = partitionLabel(raw.slice('import-write-failed:'.length), t);
+          if (error instanceof ImportDataError && error.rollbackFailures.length === 0) {
+            message = t(
+              '导入失败：写入「{{name}}」时存储不可用，已回滚（本地数据保持导入前的状态）。请确认浏览器存储空间后重试。',
+              { name }
+            );
+          } else if (error instanceof ImportDataError) {
+            message = t(
+              '导入失败：写入「{{name}}」时存储不可用；回滚未完成的分区：{{partitions}}。本地数据可能处于混合状态，请勿重复导入。',
+              {
+                name,
+                partitions: error.rollbackFailures
+                  .map((partition) => partitionLabel(partition, t))
+                  .join(', ')
+              }
+            );
+          } else {
+            message = t(
+              '导入失败：写入「{{name}}」时存储不可用，且无法确认回滚是否完整。本地数据可能处于混合状态，请勿重复导入。',
+              { name }
+            );
+          }
+        }
         setTransferStatus(message);
       });
     setPendingImport(null);
@@ -263,7 +281,7 @@ export function SettingsPage() {
     const matchesSearch = (spec: SettingSpec): boolean => {
       if (!q) return true;
       const label = t(spec.labelKey).toLowerCase();
-      const hint = spec.kind !== 'custom' && spec.hintKey ? t(spec.hintKey).toLowerCase() : '';
+      const hint = spec.hintKey ? t(spec.hintKey).toLowerCase() : '';
       if (label.includes(q) || hint.includes(q) || spec.labelKey.toLowerCase().includes(q)) {
         return true;
       }
@@ -289,16 +307,10 @@ export function SettingsPage() {
     });
   }, [sections, settings, settingsSearch, t]);
 
-  /** 目录条目：静态区块 + 当前可见的设置分区（被搜索过滤掉的分区不进目录，避免点了没反应）。 */
-  const outlineItems = useMemo<OutlineItem[]>(() => {
-    const dynamic: OutlineItem[] = visibleSections
-      .filter((entry) => entry.specs.length > 0)
-      // 锚点用 section.id（稳定标识），文案用 titleKey——两者不可混用
-      .map(({ section }) => ({ id: section.id, label: t(section.titleKey) }));
-    // 静态区块（预置 / 概念图 / 快捷键 / 数据 / 关于）按标题过滤：
-    // 不参与过滤时，搜「导出」目录里仍挂着「数据」以外的块，点了不会有任何反应。
+  /** 静态区块的唯一可见集合：目录、正文与空态共用，禁止各自按不同口径过滤。 */
+  const visibleStaticItems = useMemo<OutlineItem[]>(() => {
     const q = settingsSearch.trim().toLowerCase();
-    const statics: OutlineItem[] = [
+    return [
       { id: 'presets.title', label: t('快速预设') },
       { id: 'settings.capabilitiesGuide', label: t('你能做什么') },
       { id: 'fixedMap.title', label: t('固定概念一览') },
@@ -306,8 +318,20 @@ export function SettingsPage() {
       { id: 'settings.data', label: t('数据备份') },
       { id: 'about.title', label: t('关于 Tabs') }
     ].filter((item) => !q || item.label.toLowerCase().includes(q));
-    return [...statics.slice(0, 3), ...dynamic, ...statics.slice(3)];
-  }, [t, visibleSections, settingsSearch]);
+  }, [settingsSearch, t]);
+  const visibleStaticIds = useMemo(
+    () => new Set(visibleStaticItems.map((item) => item.id)),
+    [visibleStaticItems]
+  );
+
+  /** 目录条目：静态区块 + 当前可见的设置分区（被搜索过滤掉的分区不进目录，避免点了没反应）。 */
+  const outlineItems = useMemo<OutlineItem[]>(() => {
+    const dynamic: OutlineItem[] = visibleSections
+      .filter((entry) => entry.specs.length > 0)
+      // 锚点用 section.id（稳定标识），文案用 titleKey——两者不可混用
+      .map(({ section }) => ({ id: section.id, label: t(section.titleKey) }));
+    return [...visibleStaticItems.slice(0, 3), ...dynamic, ...visibleStaticItems.slice(3)];
+  }, [t, visibleSections, visibleStaticItems]);
 
   if (!ready) {
     return (
@@ -381,27 +405,35 @@ export function SettingsPage() {
           />
         </div>
 
-        <div id="presets.title" className="scroll-mt-6">
-          <PresetsPanel />
-        </div>
-
-        <div id="settings.capabilitiesGuide" className="scroll-mt-6">
-          <CapabilitiesGuide />
-        </div>
-
-        <Section id="fixedMap.title" title={t('固定概念一览')}>
-          <div className="p-4">
-            <FixedConceptsMap />
+        {visibleStaticIds.has('presets.title') && (
+          <div id="presets.title" className="scroll-mt-6">
+            <PresetsPanel />
           </div>
-        </Section>
-
-        {isSearching && visibleSections.every((entry) => entry.specs.length === 0) && (
-          /* 搜索无命中的空态反馈：所有分区静默消失时，用户分不清
-             「没有这个设置」还是「搜索没生效」。 */
-          <p className="mb-4 rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-xs text-gray-500">
-            {t('没有找到匹配的设置')}
-          </p>
         )}
+
+        {visibleStaticIds.has('settings.capabilitiesGuide') && (
+          <div id="settings.capabilitiesGuide" className="scroll-mt-6">
+            <CapabilitiesGuide />
+          </div>
+        )}
+
+        {visibleStaticIds.has('fixedMap.title') && (
+          <Section id="fixedMap.title" title={t('固定概念一览')}>
+            <div className="p-4">
+              <FixedConceptsMap />
+            </div>
+          </Section>
+        )}
+
+        {isSearching &&
+          visibleStaticItems.length === 0 &&
+          visibleSections.every((entry) => entry.specs.length === 0) && (
+            /* 搜索无命中的空态反馈：所有分区静默消失时，用户分不清
+             「没有这个设置」还是「搜索没生效」。 */
+            <p className="mb-4 rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-xs text-gray-500">
+              {t('没有找到匹配的设置')}
+            </p>
+          )}
         {visibleSections.map(({ section, specs }) => {
           if (specs.length === 0) return null;
           return (
@@ -418,120 +450,128 @@ export function SettingsPage() {
           );
         })}
 
-        <div id="settings.shortcuts" className="scroll-mt-6">
-          <ShortcutsSection onOpenShortcutSettings={openShortcutSettings} />
-        </div>
+        {visibleStaticIds.has('settings.shortcuts') && (
+          <div id="settings.shortcuts" className="scroll-mt-6">
+            <ShortcutsSection onOpenShortcutSettings={openShortcutSettings} />
+          </div>
+        )}
 
-        <Section id="settings.data" title={t('数据备份')}>
-          <Row
-            label={t('导出本地数据')}
-            hint={t(
-              '导出文件夹、常驻磁贴、折叠状态、设置，以及全部快照与归档；不包含当前打开的标签与撤销记录'
-            )}
-          >
-            <Button variant="secondary" onClick={() => void handleExport()}>
-              {t('导出备份')}
-            </Button>
-          </Row>
-          <Row
-            label={t('导入本地数据')}
-            hint={t(
-              '先在本地校验 JSON，再覆盖导出范围内的数据，不会修改当前打开的标签；任一分区写入失败会整体回滚'
-            )}
-          >
-            <>
-              {/* 裸 <input type="file"> 的显式豁免：ui 层没有 FilePicker 原语，
+        {visibleStaticIds.has('settings.data') && (
+          <Section id="settings.data" title={t('数据备份')}>
+            <Row
+              label={t('导出本地数据')}
+              hint={t(
+                '导出文件夹、常驻磁贴、折叠状态、设置，以及全部快照与归档；不包含当前打开的标签与撤销记录'
+              )}
+            >
+              <Button variant="secondary" onClick={() => void handleExport()}>
+                {t('导出备份')}
+              </Button>
+            </Row>
+            <Row
+              label={t('导入本地数据')}
+              hint={t(
+                '先在本地校验 JSON，再覆盖导出范围内的数据，不会修改当前打开的标签；任一分区写入失败会整体回滚'
+              )}
+            >
+              <>
+                {/* 裸 <input type="file"> 的显式豁免：ui 层没有 FilePicker 原语，
                   本元素只是被上方「导入 JSON」按钮以 ref.click() 触发的隐藏文件
                   选择器，不承载任何视觉形态，故不套 TextField / Button。 */}
-              <input
-                ref={importInputRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                disabled={importing}
-                onChange={(event) => void handleImport(event)}
-              />
-              {/* 事务进行中禁用入口：并发导入会被 importData 拒绝（只能看到一个泛化的
-                「操作失败」），不如直接让用户点不动。 */}
-              <Button
-                variant="secondary"
-                disabled={importing}
-                onClick={() => importInputRef.current?.click()}
-              >
-                {t('导入 JSON')}
-              </Button>
-            </>
-          </Row>
-          <Row
-            label={t('从书签导入文件夹')}
-            hint={t('将书签栏顶层文件夹导入为收藏夹的文件夹（同名合并、网址全局去重）')}
-          >
-            <Button variant="secondary" onClick={handleImportBookmarks}>
-              {t('导入')}
-            </Button>
-          </Row>
-          {/* 导出引导：**不依赖 onboarded** —— 引导只在首次运行时出现，
-              而「卸载即丢数据」的风险对每个用户、每次打开设置页都存在。 */}
-          <div className="mx-4 mb-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-            <p className="font-medium text-gray-700">{t('建议定期导出备份')}</p>
-            <p className="mt-0.5">
-              {t(
-                'Tabs 没有服务器：数据只存在这台设备的浏览器里。卸载扩展、清除浏览数据或重置浏览器配置都会一并删除它们，且无法找回。建议定期导出一份备份文件。'
-              )}
-            </p>
-          </div>
-          <Row
-            label={t('导出诊断信息')}
-            hint={
-              quarantineCount > 0
-                ? t(
-                    '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带。坏数据隔离区另有 {{count}} 条留档，会一并导出',
-                    { count: quarantineCount }
-                  )
-                : t(
-                    '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带'
-                  )
-            }
-          >
-            <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
-              {t('导出报告')}
-            </Button>
-          </Row>
-          <Row
-            label={t('清除所有数据')}
-            hint={t(
-              '删除收藏夹、常驻磁贴、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复'
-            )}
-          >
-            <Button
-              variant="danger-ghost"
-              onClick={() => {
-                setClearAck(false);
-                setConfirmingClear(true);
-              }}
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  disabled={importing}
+                  onChange={(event) => void handleImport(event)}
+                />
+                {/* 事务进行中禁用入口：并发导入会被 importData 拒绝（只能看到一个泛化的
+                「操作失败」），不如直接让用户点不动。aria-busy + 「导入中…」文案让
+                大文件数秒的事务对视觉与读屏都是「进行中」，而非「点了没反应」。 */}
+                <Button
+                  variant="secondary"
+                  disabled={importing}
+                  busy={importing}
+                  onClick={() => importInputRef.current?.click()}
+                >
+                  {importing ? t('导入中…') : t('导入 JSON')}
+                </Button>
+              </>
+            </Row>
+            <Row
+              label={t('从书签导入文件夹')}
+              hint={t('将书签栏顶层文件夹导入为收藏夹的文件夹（同名合并、网址全局去重）')}
             >
-              {t('永久清除')}
-            </Button>
-          </Row>
-          {transferStatus && (
-            /* 操作结果对读屏播报（与侧边栏搜索命中数同口径：<output> + aria-live） */
-            <output className="px-4 py-2 text-xs text-gray-600" role="status" aria-live="polite">
-              {transferStatus}
-            </output>
-          )}
-        </Section>
+              <Button variant="secondary" onClick={handleImportBookmarks}>
+                {t('导入')}
+              </Button>
+            </Row>
+            {/* 导出引导：**不依赖 onboarded** —— 引导只在首次运行时出现，
+              而「卸载即丢数据」的风险对每个用户、每次打开设置页都存在。 */}
+            <div className="mx-4 mb-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              <p className="font-medium text-gray-700">{t('建议定期导出备份')}</p>
+              <p className="mt-0.5">
+                {t(
+                  'Tabs 没有服务器：数据只存在这台设备的浏览器里。卸载扩展、清除浏览数据或重置浏览器配置都会一并删除它们，且无法找回。建议定期导出一份备份文件。'
+                )}
+              </p>
+            </div>
+            <Row
+              label={t('导出诊断信息')}
+              hint={
+                quarantineCount > 0
+                  ? t(
+                      '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带。坏数据隔离区另有 {{count}} 条留档，会一并导出',
+                      { count: quarantineCount }
+                    )
+                  : t(
+                      '把最近记录的降级情况另存为本地报告（仅含时间与错误描述，不含页面标题与网址），便于反馈问题时附带'
+                    )
+              }
+            >
+              <Button variant="secondary" onClick={() => void handleExportDiagnostics()}>
+                {t('导出报告')}
+              </Button>
+            </Row>
+            <Row
+              label={t('清除所有数据')}
+              hint={t(
+                '删除收藏夹、常驻磁贴、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复'
+              )}
+            >
+              <Button
+                variant="danger-ghost"
+                onClick={() => {
+                  setClearAck(false);
+                  setConfirmingClear(true);
+                }}
+              >
+                {t('永久清除')}
+              </Button>
+            </Row>
+            {transferStatus && (
+              /* 操作结果对读屏播报（与侧边栏搜索命中数同口径：<output> + aria-live） */
+              <output className="px-4 py-2 text-xs text-gray-600" role="status" aria-live="polite">
+                {transferStatus}
+              </output>
+            )}
+          </Section>
+        )}
 
         {/* 关于：能力总览在独立页面（宽版式的能力网格），设置页只放入口 */}
-        <Section id="about.title" title={t('关于 Tabs')}>
-          <Row
-            label={t('本地优先、无账号、无云端的标签工作台')}
-            hint={t('打开独立页面，完整浏览产品的全部能力与快捷键')}
-          >
-            <Button variant="secondary" onClick={openAboutPage}>
-              {t('查看能力总览')}
-            </Button>
-          </Row>
-        </Section>
+        {visibleStaticIds.has('about.title') && (
+          <Section id="about.title" title={t('关于 Tabs')}>
+            <Row
+              label={t('本地优先、无账号、无云端的标签工作台')}
+              hint={t('打开独立页面，完整浏览产品的全部能力与快捷键')}
+            >
+              <Button variant="secondary" onClick={openAboutPage}>
+                {t('查看能力总览')}
+              </Button>
+            </Row>
+          </Section>
+        )}
 
         {pendingImport !== null && (
           <ConfirmDialog

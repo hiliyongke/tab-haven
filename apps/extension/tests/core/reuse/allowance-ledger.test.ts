@@ -99,6 +99,39 @@ describe('AllowanceLedger', () => {
     expect(ledger.consume(1, 'https://a.com/')).toBe(false);
   });
 
+  it('restore 在 incoming 令牌更少时也合并较晚有效期，并保留内存令牌数', () => {
+    // Given 内存有 2 枚较早过期的令牌，迟到的镜像只有 1 枚但有效期更晚
+    let now = 1_000;
+    const ledger = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    ledger.grant(1, 'https://a.com/');
+    ledger.grant(1, 'https://a.com/');
+
+    // When 合并镜像
+    ledger.restore({ '1:https://a.com/': { tokens: 1, expiresAt: 20_000 } });
+
+    // Then 有效期不被缩短、令牌数不被覆盖，原过期时间之后仍可消费两枚
+    now = 15_000;
+    expect(ledger.consume(1, 'https://a.com/')).toBe(true);
+    expect(ledger.consume(1, 'https://a.com/')).toBe(true);
+    expect(ledger.consume(1, 'https://a.com/')).toBe(false);
+  });
+
+  it('restore 先清理过期 current，避免它挡住令牌更少的有效镜像', () => {
+    // Given 内存授权已经过期，镜像里有一枚仍有效的授权
+    let now = 1_000;
+    const ledger = new AllowanceLedger({ ttlMs: 10_000, now: () => now });
+    ledger.grant(1, 'https://a.com/');
+    ledger.grant(1, 'https://a.com/');
+    now = 15_000;
+
+    // When 恢复有效镜像
+    ledger.restore({ '1:https://a.com/': { tokens: 1, expiresAt: 20_000 } });
+
+    // Then 过期 current 不参与数量比较，有效镜像可以正常消费一次
+    expect(ledger.consume(1, 'https://a.com/')).toBe(true);
+    expect(ledger.consume(1, 'https://a.com/')).toBe(false);
+  });
+
   it('onMutate 在发放/消费/过期清理时携带最新快照', () => {
     let now = 1_000;
     const snapshots: number[] = [];

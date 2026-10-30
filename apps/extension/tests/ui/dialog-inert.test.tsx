@@ -90,6 +90,63 @@ describe('背景惰性化的 inert 特性检测', () => {
     expect(app.inert).toBe(false);
   });
 
+  it('背景原本就 inert 时，弹窗关闭后仍保持原态（不被无条件解禁）', () => {
+    app.setAttribute('inert', '');
+    const values = new WeakMap<HTMLElement, boolean>();
+    Object.defineProperty(HTMLElement.prototype, 'inert', {
+      configurable: true,
+      get(this: HTMLElement): boolean {
+        return values.get(this) ?? false;
+      },
+      set(this: HTMLElement, value: boolean): void {
+        values.set(this, value);
+      }
+    });
+
+    const { unmount } = render(
+      <DialogShell title="弹窗" onClose={vi.fn()}>
+        <p>内容</p>
+      </DialogShell>
+    );
+    unmount();
+
+    expect(app.inert).toBe(true);
+  });
+
+  it('嵌套弹窗关闭内层时不提前恢复背景，全部关闭后才复位', () => {
+    const values = new WeakMap<HTMLElement, boolean>();
+    Object.defineProperty(HTMLElement.prototype, 'inert', {
+      configurable: true,
+      get(this: HTMLElement): boolean {
+        return values.get(this) ?? false;
+      },
+      set(this: HTMLElement, value: boolean): void {
+        values.set(this, value);
+      }
+    });
+    const view = (withInner: boolean) => (
+      <>
+        <DialogShell title="外层" onClose={vi.fn()}>
+          <p>外层内容</p>
+        </DialogShell>
+        {withInner && (
+          <DialogShell title="内层" onClose={vi.fn()}>
+            <p>内层内容</p>
+          </DialogShell>
+        )}
+      </>
+    );
+
+    const { rerender } = render(view(true));
+    expect(app.inert).toBe(true);
+
+    rerender(view(false));
+    expect(app.inert).toBe(true);
+
+    rerender(<></>);
+    expect(app.inert).toBe(false);
+  });
+
   it('不支持 inert 时退化为 aria-hidden，关闭后恢复「原本没有该属性」', () => {
     // 不装原型属性 = jsdom 的默认形态，即降级分支（真实浏览器不会走到）。
     const { unmount } = render(

@@ -131,10 +131,18 @@ describe('组件一致性：收口用的语义类必须真实存在', () => {
       '.input-line',
       '.row-action',
       '.chip',
-      '.menu-item'
+      '.menu-item',
+      // 触屏「更多操作」入口：桌面 hidden、无悬停设备显形（P1-6，删了会让触屏丢失复制网址等菜单动作）。
+      '.row-action--touch-only'
     ]) {
       expect(cssText, `main.css 缺少语义类 ${className}`).toContain(className);
     }
+  });
+
+  it('Button 显式收口 busy 并透传 aria-busy（调用方的 busy 不得被静默丢弃）', () => {
+    const buttonSrc = readFileSync(join(SRC_DIR, 'ui', 'common', 'Button.tsx'), 'utf8');
+    expect(buttonSrc, 'Button 缺少 busy prop').toMatch(/busy\?: boolean/);
+    expect(buttonSrc, 'Button 未把 busy 透传到 aria-busy').toMatch(/aria-busy=\{busy/);
   });
 
   it('输入框聚焦态使用 2px 下边框，不叠加 inset 指示条', () => {
@@ -161,5 +169,20 @@ describe('组件一致性：收口用的语义类必须真实存在', () => {
   it('超紧凑密度下置顶磁贴保持 36px', () => {
     // 超紧凑密度调整磁贴条留白，不改变置顶磁贴尺寸。
     expect(cssText).not.toMatch(/\[data-density='tight'\]\s+\.pinned-tile\s*\{[^}]*width:\s*32px/);
+  });
+
+  it('≤300px 播放胶囊保留动作入口：不整块 display:none，仅隐藏装饰脉冲点', () => {
+    // §4④ 产品裁决：媒体播放胶囊是「一键定位到播放标签」的动作入口，窄面板整块隐藏
+    // 是丢功能而非省宽度。守卫锁住：300px 档只隐藏装饰脉冲点，不得再整块隐藏胶囊。
+    const block = cssText.match(/@container \(max-width: 300px\)\s*\{([\s\S]*?)\n\}/);
+    expect(block, '未找到 ≤300px 容器查询块').not.toBeNull();
+    const body = block![1]!;
+    // 判据自测：块内确实有胶囊规则，否则下面的 not.toMatch 会在空串上恒绿。
+    expect(body, '块内应有 .section-media-indicator 规则').toMatch(/\.section-media-indicator/);
+    // 胶囊本身不能被 display:none（丢动作），但装饰脉冲点应被隐藏（省宽度）。
+    expect(body).not.toMatch(/\.section-media-indicator\s*\{[^}]*display:\s*none/);
+    expect(body).toMatch(
+      /\.section-media-indicator\s+\.section-media-dot\s*\{[^}]*display:\s*none/
+    );
   });
 });

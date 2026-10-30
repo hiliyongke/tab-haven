@@ -71,10 +71,10 @@ describe('planAutoGroups', () => {
   it('单标签语言分组不产出计划（噪音）', () => {
     const langSection: TemporarySection = {
       kind: 'site',
-      key: 'site-lang-en',
+      key: 'site-lang:en',
       title: 'English',
       tabs: [makeTab(1)],
-      siteKey: 'lang-en'
+      siteKey: 'lang:en'
     };
     expect(planAutoGroups([langSection])).toHaveLength(0);
     // planRegroup（options 形式，内部派生语言 section）同样不下发单标签语言组

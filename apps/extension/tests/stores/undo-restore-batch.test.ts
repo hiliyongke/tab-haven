@@ -2,7 +2,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS, type UndoBatch } from '@/core/schema/models';
-import { settingsRepository } from '@/platform/storage/repositories';
+import {
+  redoRepository,
+  settingsRepository,
+  undoRepository
+} from '@/platform/storage/repositories';
 import { useUndoStore } from '@/stores/undoStore';
 
 /**
@@ -129,5 +133,48 @@ describe('撤销 kind=restore 的批次', () => {
     expect(closeTabs).not.toHaveBeenCalled();
     expect(state.batches).toHaveLength(1);
     expect(state.toast?.message).toContain('Could not locate the tabs restored this time');
+  });
+
+  it('部分关闭成功时成功项进反向批次，未关闭项留在原 restore 批次并同步持久化', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
+    const original = restoreBatch('restore-partial');
+    await undoRepository.write([original]);
+    queryWindowTabs.mockResolvedValue(records);
+    closeTabs.mockResolvedValueOnce([1]);
+    useUndoStore.setState({ batches: [original], ready: true });
+
+    await useUndoStore.getState().undo();
+
+    const state = useUndoStore.getState();
+    const retry = state.batches.find((batch) => batch.id === 'restore-partial');
+    const reverse = state.batches.find((batch) => batch.kind === 'restore-undo');
+    expect(retry?.entries.map((entry) => entry.url)).toEqual([URLS[1]]);
+    expect(reverse?.entries.map((entry) => entry.url)).toEqual([URLS[0]]);
+    const stored = await undoRepository.read();
+    expect(
+      stored.find((batch) => batch.id === original.id)?.entries.map((entry) => entry.url)
+    ).toEqual([URLS[1]]);
+    expect(stored.find((batch) => batch.kind === 'restore-undo')?.entries).toHaveLength(1);
+  });
+
+  it('重做部分关闭成功时未关闭项留在 redo，成功项进入 redo-close 并同步持久化', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
+    const original = { ...restoreBatch('redo-partial'), kind: 'close' };
+    await redoRepository.write([original]);
+    queryWindowTabs.mockResolvedValue(records);
+    closeTabs.mockResolvedValueOnce([1]);
+    useUndoStore.setState({ batches: [], redoBatches: [original], ready: true });
+
+    await useUndoStore.getState().redo();
+
+    const state = useUndoStore.getState();
+    expect(state.redoBatches).toHaveLength(1);
+    expect(state.redoBatches[0]?.entries.map((entry) => entry.url)).toEqual([URLS[1]]);
+    const reverse = state.batches.find((batch) => batch.kind === 'redo-close');
+    expect(reverse?.entries.map((entry) => entry.url)).toEqual([URLS[0]]);
+    expect((await redoRepository.read())[0]?.entries.map((entry) => entry.url)).toEqual([URLS[1]]);
+    expect(
+      (await undoRepository.read()).find((batch) => batch.kind === 'redo-close')
+    ).toBeDefined();
   });
 });

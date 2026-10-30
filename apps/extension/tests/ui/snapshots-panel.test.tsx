@@ -6,6 +6,7 @@ import i18n, { translate } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { SnapshotsPanel } from '@/ui/snapshot/SnapshotsPanel';
 import { useSnapshotStore } from '@/stores/snapshotStore';
+import { useUndoStore } from '@/stores/undoStore';
 
 /**
  * 快照面板行为规格：按来源分类展示快照，恢复前确认影响范围，保存工作区操作互斥。
@@ -26,6 +27,7 @@ function makeSnap(partial: Partial<Snapshot>): Snapshot {
 afterEach(() => {
   cleanup();
   useSnapshotStore.setState({ snapshots: [], ready: false });
+  useUndoStore.setState({ toast: null });
 });
 
 /** 渲染面板（洞察行动出口统一注入 noop，本文件不测其副作用）。 */
@@ -87,7 +89,7 @@ describe('SnapshotsPanel 分组', () => {
 
 describe('SnapshotsPanel 恢复确认', () => {
   it('行内恢复先弹摘要确认（名称 + 标签数 + 分组数），确认后才执行', () => {
-    const restore = vi.fn(async () => ({ count: 2, degraded: false }));
+    const restore = vi.fn(async () => ({ count: 2, degraded: false, createdTabs: [] }));
     useSnapshotStore.setState({
       snapshots: [
         makeSnap({
@@ -120,7 +122,7 @@ describe('SnapshotsPanel 恢复确认', () => {
   });
 
   it('取消确认弹窗：不执行恢复', () => {
-    const restore = vi.fn(async () => ({ count: 2, degraded: false }));
+    const restore = vi.fn(async () => ({ count: 2, degraded: false, createdTabs: [] }));
     useSnapshotStore.setState({
       snapshots: [
         makeSnap({
@@ -175,10 +177,10 @@ describe('SnapshotsPanel 习惯洞察直达', () => {
 describe('SnapshotsPanel 保存工作区在途互斥', () => {
   /** 保存工作区时保持操作互斥，连续点击只执行一次。 */
   it('连续点击期间只执行一次工作区保存', async () => {
-    let release: ((saved: boolean) => void) | undefined;
+    let release: ((saved: string | undefined) => void) | undefined;
     const saveSpace = vi.fn(
       () =>
-        new Promise<boolean>((resolve) => {
+        new Promise<string | undefined>((resolve) => {
           release = resolve;
         })
     );
@@ -191,7 +193,68 @@ describe('SnapshotsPanel 保存工作区在途互斥', () => {
 
     expect(saveSpace).toHaveBeenCalledTimes(1);
 
-    release?.(true);
+    release?.('saved-space');
     await waitFor(() => expect(button).not.toBeDisabled());
+  });
+});
+
+describe('SnapshotsPanel 删除不可逆操作回执（P1-3）', () => {
+  it('确认删除成功后给出可见/可听回执，焦点归还到存活的列表容器', async () => {
+    // Given: 一个可删除快照，delete 成功正常 resolve
+    const deleteSnapshot = vi.fn(async () => undefined);
+    useUndoStore.setState({ toast: null });
+    useSnapshotStore.setState({
+      snapshots: [makeSnap({ id: 'm1', name: '待删除', createdAt: 300 })],
+      ready: true,
+      deleteSnapshot
+    });
+    renderPanel();
+
+    // When: 行内删除 → 确认删除
+    fireEvent.click(screen.getByRole('button', { name: translate('删除') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('确认删除') }));
+
+    // Then: 执行删除，且成功后写入一条可见回执（读屏播报由此驱动）
+    await waitFor(() => expect(deleteSnapshot).toHaveBeenCalledWith('m1'));
+    await waitFor(() =>
+      expect(useUndoStore.getState().toast?.message).toBe(translate('已删除快照'))
+    );
+  });
+});
+
+describe('SnapshotsPanel 导入在途互斥（P1-2）', () => {
+  it('导入写入期间连点只提交一次，按钮给出进行中反馈', async () => {
+    // Given: importOneTab 返回一个受控 pending promise（模拟写盘在途）
+    let release: ((result: { count: number; truncated: boolean }) => void) | undefined;
+    const importOneTab = vi.fn(
+      () =>
+        new Promise<{ count: number; truncated: boolean }>((resolve) => {
+          release = resolve;
+        })
+    );
+    useSnapshotStore.setState({ snapshots: [], ready: true, importOneTab });
+    renderPanel('import');
+
+    // 填入文本让「导入」按钮可用（空文本时按钮禁用）
+    const textarea = screen.getByRole('textbox', { name: translate('导入') });
+    fireEvent.change(textarea, { target: { value: 'https://example.com - Example' } });
+
+    // When: 在途连点两次「导入」
+    fireEvent.click(screen.getByRole('button', { name: translate('导入') }));
+    // 第一次点击后按钮进入「导入中…」且 disabled，第二次按新文案已查不到按钮；
+    // 直接对同一 DOM 节点连点，验证 ref 标尺拦住并发
+    const importBtn = screen.getByRole('button', { name: translate('导入中…') });
+    expect(importBtn).toBeDisabled();
+    expect(importBtn).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(importBtn);
+
+    // Then: 只调用一次 importOneTab（同 tick 连点被 ref 拦）
+    expect(importOneTab).toHaveBeenCalledTimes(1);
+
+    // 释放 promise，按钮恢复可用（finally 复位）
+    release?.({ count: 1, truncated: false });
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: translate('导入中…') })).toBeNull()
+    );
   });
 });

@@ -40,7 +40,7 @@ export function createSettingsSlice(
           // 折叠状态是整表写、各页面内存副本独立。必须「锁内重读磁盘 → 合并 → 写」：
           // 只把内存基线包进锁不构成互斥，另一页刚写的折叠项仍会被本页旧基线整表抹掉。
           const ok = await withCrossPageLock(COLLAPSE_RMW_LOCK, async () => {
-            const disk = await ctx.repos.collapse.read();
+            const disk = await ctx.repos.collapse.readStrict();
             const merged = collapsed
               ? disk.includes(siteKey)
                 ? disk
@@ -66,7 +66,7 @@ export function createSettingsSlice(
         // 跨页锁内「重读 → 合并 → 写」：各页面 dataStore 实例独立，以本页内存为基线整对象写
         // 会覆盖其他页面刚写入的字段（watcher 回放收敛到胜方，败方修改静默消失）。
         await withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
-          const disk = await ctx.repos.settings.read();
+          const disk = await ctx.repos.settings.readStrict();
           const parsed = SettingsSchema.safeParse({ ...disk, ...partial });
           if (!parsed.success) {
             // 校验失败必须与落盘失败同口径留痕：只 throw 会让这条路径在诊断里消失
@@ -82,6 +82,8 @@ export function createSettingsSlice(
           }
           const wasMirrorEnabled = disk.syncMirrorEnabled;
           mirrorJustEnabled = partial.syncMirrorEnabled === true && !wasMirrorEnabled;
+          if (mirrorJustEnabled) ctx.setMirrorRestorePending(true);
+          if (partial.syncMirrorEnabled === false) ctx.setMirrorRestorePending(false);
           ctx.set({ settings: parsed.data });
           // 首次开启同步先不镜像：需先在锁外做反向恢复（恢复要取 FOLDERS/PINS 锁，
           // 嵌套在 SETTINGS 锁内有锁序风险），否则本地空态会被推上云覆盖旧设备镜像。
@@ -105,7 +107,10 @@ export function createSettingsSlice(
             );
             return 'failed' as const;
           });
-          if (outcome !== 'failed') ctx.scheduleMirror(ctx.get());
+          if (outcome !== 'failed') {
+            ctx.setMirrorRestorePending(false);
+            ctx.scheduleMirror(ctx.get());
+          }
         }
       }),
 
@@ -124,7 +129,7 @@ export function createSettingsSlice(
         withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
           // 默认值里同步是关闭的：若当前开着，恢复默认等同「关闭同步」，
           // 必须一并清掉已上传镜像。读取磁盘现值（并发页可能刚改过）。
-          const wasMirrorEnabled = (await ctx.repos.settings.read()).syncMirrorEnabled;
+          const wasMirrorEnabled = (await ctx.repos.settings.readStrict()).syncMirrorEnabled;
           const ok = await ctx.repos.settings.write(DEFAULT_SETTINGS);
           if (!ok) {
             ctx.reportPersistenceFailure('dataStore', '恢复默认设置失败，设置未变更');
@@ -135,6 +140,7 @@ export function createSettingsSlice(
             ctx.resetMirrorFailure();
           }
           ctx.set({ settings: DEFAULT_SETTINGS });
+          ctx.setMirrorRestorePending(false);
           applyTheme(DEFAULT_SETTINGS.themePreference, DEFAULT_SETTINGS.colorTheme);
           ctx.scheduleMirror(ctx.get());
           ctx.broadcastSettingsSynced();
@@ -161,6 +167,7 @@ export function createSettingsSlice(
           await ctx.cancelWrites();
           // 整体清空后复位降级记账；失败记录已不再对应现存数据。
           ctx.resetDegraded();
+          ctx.setMirrorRestorePending(false);
           ctx.set({
             folders: [],
             pins: [],

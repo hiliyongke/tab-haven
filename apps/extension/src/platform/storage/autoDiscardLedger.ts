@@ -24,14 +24,14 @@ export function readAutoDiscardBatches(): Promise<AutoDiscardBatch[]> {
 /**
  * 跨页锁内 read → apply → write。
  * `apply` 返回 `null` 表示无变更，跳过写盘（淘汰扫描每分钟跑一次，无变更时不该产生写放大）。
- * 返回值为「磁盘上的台账是否与意图一致」：写盘失败（配额/不可用）为 false，调用方不得据此宣称可撤销。
+ * 返回值为「磁盘上的台账是否与意图一致」：基线读取或写盘失败为 false，调用方不得据此宣称可撤销。
  */
 export async function mutateAutoDiscardLedger(
   apply: (batches: AutoDiscardBatch[]) => AutoDiscardBatch[] | null
 ): Promise<boolean> {
   try {
     return await withCrossPageLock(AUTO_DISCARD_RMW_LOCK, async () => {
-      const disk = await autoDiscardRepository.read();
+      const disk = await autoDiscardRepository.readStrict();
       const next = apply(disk);
       if (next === null) return true;
       return autoDiscardRepository.write(next);

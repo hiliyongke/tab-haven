@@ -169,6 +169,7 @@ export function parseWorkona(
    * 快照里的标签。两者并列展示时含义是「落盘 N / 丢弃 M」，不是同一分母的分配。
    */
   let truncatedTabs = 0;
+  let truncatedSnapshots = 0;
 
   const emit = (workspace: WorkonaWorkspace, origin: Snapshot['origin']): void => {
     const { tabs, dropped } = tabsOfWorkspace(workspace);
@@ -177,6 +178,10 @@ export function parseWorkona(
       // workspace 存在但无可恢复标签：不是错误（可能全是不支持协议的条目），
       // 计数反馈给用户「识别了但跳过」。
       skippedWorkspaces += 1;
+      return;
+    }
+    if (snapshots.length >= SNAPSHOTS_LIMIT) {
+      truncatedSnapshots += 1;
       return;
     }
     snapshots.push({
@@ -208,16 +213,11 @@ export function parseWorkona(
       : [];
   for (const workspace of archived) emit(workspace, 'archive');
 
-  // 快照族上限：备份导入侧由 schema 的 `.max(SNAPSHOTS_LIMIT)` 把住，Workona
-  // 导入同样按此上限收敛 —— 否则 1MB 输入可产出任意份快照，远超落盘裁剪能收敛的范围。
-  // 丢弃的份数如实回传（不静默丢量）。
-  const kept = snapshots.slice(0, SNAPSHOTS_LIMIT);
-  const truncatedSnapshots = snapshots.length - kept.length;
-  // totalTabs 按**实际落盘的份**重算：在 emit 阶段累加会把被截断掉的快照的标签数
-  // 也算进来，UI 报「导入 N 条」大于真实落盘数 —— 正是要消除的「不知少了多少」。
-  const totalTabs = kept.reduce((sum, snapshot) => sum + snapshot.tabs.length, 0);
+  // 快照族上限与备份导入一致。超限 workspace 在 emit 阶段只计数，不构造 Snapshot 或生成 id。
+  // totalTabs 按**实际落盘的份**计算，不把被截断掉的快照标签计入导入数。
+  const totalTabs = snapshots.reduce((sum, snapshot) => sum + snapshot.tabs.length, 0);
   return {
-    snapshots: kept,
+    snapshots,
     skippedWorkspaces,
     totalTabs,
     truncatedTabs,

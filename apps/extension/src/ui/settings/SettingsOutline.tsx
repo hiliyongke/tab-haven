@@ -53,6 +53,11 @@ export function SettingsOutline({ items }: { items: OutlineItem[] }) {
     event.preventDefault();
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    // preventDefault 取消了原生锚点的焦点转移：键盘/读屏点目录后焦点仍停在链接上，
+    // 没真正进入分区。目标可能是 section 或普通 div，统一临时补 tabIndex=-1 再聚焦
+    // （-1 不进入 Tab 序列，仅作程序化焦点落点；不覆盖已有 tabindex）。
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+    el.focus({ preventScroll: true });
     setActiveId(id);
     // 同步 hash：刷新后仍停在原处，也便于分享具体设置位置
     window.history.replaceState(null, '', `#${id}`);

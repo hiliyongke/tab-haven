@@ -1907,9 +1907,21 @@ body.dnd-dragging .fixed-area {
   }
 }
 
+/* 触屏「更多操作」入口：桌面端右键菜单可靠（右键 / Shift+F10），无需额外按钮；
+   触屏无右键、长按 contextmenu 不保证触发，故常驻一个按钮打开同一菜单，补上
+   「复制网址 / 休眠」等仅菜单可达的动作。默认隐藏不占行尾宽度预算，
+   仅无悬停设备显形（与下方 hover:none 常显操作组同源）。
+   用单类选择器（0,1,0）与 .row-action 同特异性，靠书写顺序覆盖其 display:grid。 */
+.row-action--touch-only {
+  display: none;
+}
+
 /* 无悬停设备（触屏）：常显悬停态操作，否则无法呼出；同时隐藏次要徽标避免重叠，
    决策徽章（重复/休眠）保留 —— 触屏用户同样需要判断依据。 */
 @media (hover: none) {
+  .row-action--touch-only {
+    display: grid;
+  }
   .pinned-tile .pinned-unpin {
     opacity: 1;
   }
@@ -2400,8 +2412,12 @@ body.dnd-dragging .fixed-area {
 }
 
 /* 更窄档（≤300px，Chrome 侧边栏拖到最窄）：再退一级，
-   只保留标题、计数与核心动作；「新建标签页」收为纯图标，
-   媒体播放指示整块隐藏（其信息已由行内徽章承载，不丢状态）。
+   只保留标题、计数与核心动作；「新建标签页」收为纯图标。
+
+   媒体播放胶囊**刻意不整块隐藏**：它不只是状态指示（信息已由行内徽章承载），
+   还是「一键定位到播放标签」的动作入口。整块 display:none 会让这个动作在窄面板
+   彻底消失，属于丢功能而非省宽度。≤360px 已隐藏胶囊文字标签，这里再隐藏纯装饰的
+   脉冲点并收紧内距即可，用最小宽度保住可点击的图标按钮。
 
    刻意**不**收窄 .section-body：收窄会让内容竖线与 .section-head 的 8px 错开，
    且 .pinned-grid 仍是 8px，一屏出现三条左边缘。内容竖线必须与宽度档位无关：
@@ -2414,7 +2430,11 @@ body.dnd-dragging .fixed-area {
   .add-tab-btn {
     padding: 4px;
   }
+  /* 保留可点击的播放定位图标，仅隐藏装饰脉冲点 + 收紧内距，动作不丢。 */
   .section-media-indicator {
+    padding: 2px 4px;
+  }
+  .section-media-indicator .section-media-dot {
     display: none;
   }
   /* 固定空间是 flex:none 的定高块，窄面板下必须让位给主列表 */

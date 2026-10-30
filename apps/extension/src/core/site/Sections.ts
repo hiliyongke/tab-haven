@@ -12,7 +12,7 @@ import { siteResolver } from '@/core/site/SiteResolver';
  */
 
 /** 语言分区 siteKey 的前缀：构造与反解的唯一口径，判定用 `parseLangSiteKey(...) !== undefined`。 */
-export const LANG_SITE_KEY_PREFIX = 'lang-';
+export const LANG_SITE_KEY_PREFIX = 'lang:';
 
 /** 语言分区的成组下限：单标签语言组没有组织意义（与站点阈值语义不同，故独立成常量）。 */
 export const MIN_LANGUAGE_GROUP_SIZE = 2;
@@ -25,13 +25,16 @@ function makeLangSiteKey(code: string): string {
 /**
  * 反解语言分区 siteKey；不是语言分区时返回 undefined。
  *
- * 语言 code 是 BCP-47（不含点），真实站点的 siteKey 是注册域字符串（必含点）——
- * 注册域以 `lang-` 开头的站点（如 lang-8.com）据此被排除，两个集合不相交。
+ * 语言 code 必须是有效 BCP-47 标签，避免 `lang:80` 这类真实 host:port 键被识别为语言分区。
  */
 export function parseLangSiteKey(siteKey: string): string | undefined {
   if (!siteKey.startsWith(LANG_SITE_KEY_PREFIX)) return undefined;
   const code = siteKey.slice(LANG_SITE_KEY_PREFIX.length);
-  return code.includes('.') ? undefined : code;
+  try {
+    return Intl.getCanonicalLocales(code).length === 1 ? code : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export type TemporarySection =
@@ -209,10 +212,10 @@ function isSameSiteKey(groupKey: SiteKey, candidate: SiteMergeCandidate): boolea
  * 合并到站点分区，避免相同域名同时显示在原生组与站点聚合组中。
  *
  * 归并条件（保守，只吸收本质上是站点组的原生组）：
- *  1. 组内所有成员解析为同一 (注册域, 子域)；
+ *  1. 组内所有成员解析为同一站点桶（本地/IP 含端口）；
  *  2. 组标题 === 该站点的展示标签（即域名命名的组；用户自定义名如「工作」绝不归并，
  *     标题漂移的组——成员已不在标题所指站点——同样不满足条件 1，不会归并）；
- *  3. 未分组标签中存在同一 (注册域, 子域) 的标签（确有碎片化才归并）。
+ *  3. 未分组标签中存在同一站点桶的标签（确有碎片化才归并）。
  *
  * 归并只调整展示分区（成员并入站点分区渲染），不改动浏览器侧任何分组状态。
  */
@@ -240,10 +243,8 @@ function collectSiteMergeCandidates(
         first = site;
         continue;
       }
-      if (
-        site.registrableDomain !== first.registrableDomain ||
-        site.subdomain !== first.subdomain
-      ) {
+      // 必须比较完整站点桶：本地/IP 的端口属于站点身份，混端口原生组不是同站点组。
+      if (siteBucketId(site) !== siteBucketId(first)) {
         sameSite = false;
         break;
       }

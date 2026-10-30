@@ -110,11 +110,12 @@ function resolveEntry(from: string, id: string): string {
 }
 
 /** 由入口路径反推包目录：`.../.pnpm/react@19.2.8/node_modules/react/index.js` → `.../react/`。 */
-function packageDirOf(entry: string, id: string): string {
+export function packageDirOf(entry: string, id: string): string {
+  const normalizedEntry = entry.replaceAll('\\', '/');
   const marker = `/node_modules/${id}/`;
-  const at = entry.lastIndexOf(marker);
+  const at = normalizedEntry.lastIndexOf(marker);
   if (at < 0) throw new Error(`无法从 ${entry} 定位 ${id} 的包目录`);
-  return entry.slice(0, at + marker.length);
+  return normalizedEntry.slice(0, at + marker.length);
 }
 
 function versionFrom(from: string, id: string): string {
@@ -123,6 +124,15 @@ function versionFrom(from: string, id: string): string {
 }
 
 describe('依赖单副本（跨 workspace 包）', () => {
+  it('Windows 反斜杠入口也能定位包目录', () => {
+    expect(
+      packageDirOf(
+        'C:\\repo\\node_modules\\.pnpm\\react@19.2.8\\node_modules\\react\\index.js',
+        'react'
+      )
+    ).toBe('C:/repo/node_modules/.pnpm/react@19.2.8/node_modules/react/');
+  });
+
   it('共享包清单与 importer 清单都解析自配置（空清单会让逐包比对恒绿）', () => {
     // 两份清单都是动态解析的：解析失败（配置改名/挪走）会退化成空数组，
     // 而「0 个待比对项」正是这条守卫最危险的失效形态 —— 必须显式挡住。

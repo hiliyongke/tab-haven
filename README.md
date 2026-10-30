@@ -297,7 +297,7 @@ Tabs 的底线是**无自有服务器、无自有账号、无遥测、零出站�
 ### 本地预览
 
 ```bash
-pnpm site:dev      # http://localhost:5174/ （英文 http://localhost:5174/en/）
+pnpm site:dev      # http://127.0.0.1:5174/ （英文 http://127.0.0.1:5174/en/）
 pnpm site:preview  # 预览已构建产物，http://localhost:5175/
 ```
 
@@ -306,13 +306,14 @@ pnpm site:preview  # 预览已构建产物，http://localhost:5175/
 ### 构建与发布
 
 ```bash
-pnpm build && pnpm zip   # 先产出扩展包（下载按钮指向它）
-pnpm site:build          # 再构建官网；产物 apps/site/dist 可直接整体上传
+pnpm build && pnpm zip       # 先产出扩展包（下载按钮指向它）
+pnpm site:build:release      # 发布构建；必须先配置正式 SITE_URL
+pnpm site:preview            # 发布前预览 apps/site/dist
 ```
 
-产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入并按版本号精确匹配；缺少对应版本 ZIP 时，`pnpm site:build` 默认失败。
+产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入并按版本号精确匹配；缺少对应版本 ZIP 时构建失败。
 
-**发布前必须做的一件事**：把真实域名填进 `apps/site/site.config.ts` 的 `SITE_URL`。留空时构建会跳过 canonical / hreflang / JSON-LD 与 `sitemap.xml` 并打印告警 —— 宁可缺标签，也不能把占位域名发出去。
+`pnpm site:build` 用于验证页面和安全检查。正式发布必须使用 `pnpm site:build:release`；该命令要求在 `apps/site/site.config.ts` 配置真实站点根 URL `SITE_URL`，并在未配置时直接失败。发布构建会生成 canonical、hreflang、JSON-LD 与 `sitemap.xml`。
 
 ### 实现要点
 

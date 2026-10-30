@@ -73,6 +73,52 @@ describe('定时自动快照', () => {
     expect(await snapshotsRepository.read()).toHaveLength(1);
   });
 
+  it('多窗口按各自 windowId 的最新指纹去重，不互相覆盖判定', async () => {
+    // Given：窗口 1 现场未变，窗口 2 现场已变化；全局最新快照恰好属于窗口 1。
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, autoSaveSnapshots: true });
+    await snapshotsRepository.write([
+      makeSnapshot({ id: 'w1-latest', windowId: 1, createdAt: 200 }),
+      makeSnapshot({
+        id: 'w2-old',
+        windowId: 2,
+        createdAt: 100,
+        tabs: [{ url: 'https://old.com/', title: 'Old', pinned: false, muted: false }]
+      })
+    ]);
+    (fakeBrowser.windows as unknown as { getAll: unknown }).getAll = vi.fn(async () => [
+      { id: 1 },
+      { id: 2 }
+    ]);
+    (fakeBrowser.tabs as unknown as { query: unknown }).query = vi.fn(
+      async ({ windowId }: { windowId: number }) => [
+        {
+          id: windowId,
+          windowId,
+          index: 0,
+          url: windowId === 1 ? 'https://a.com/' : 'https://new.com/',
+          title: 'tab',
+          active: false,
+          pinned: false,
+          incognito: false,
+          groupId: -1
+        }
+      ]
+    );
+
+    // When：执行一轮多窗口自动快照。
+    await runAutoSnapshot();
+
+    // Then：只保存窗口 2；窗口 1 与自己的最新指纹相同而跳过。
+    const all = await snapshotsRepository.read();
+    expect(all.map((snapshot) => snapshot.id).sort()).toEqual(
+      expect.arrayContaining(['w1-latest', 'w2-old'])
+    );
+    expect(all).toHaveLength(3);
+    const added = all.find((snapshot) => !['w1-latest', 'w2-old'].includes(snapshot.id));
+    expect(added?.windowId).toBe(2);
+    expect(added?.tabs[0]?.url).toBe('https://new.com/');
+  });
+
   it('闹钟周期等于设置值，关闭开关时清除闹钟', async () => {
     await syncAutoSnapshotAlarm({
       ...DEFAULT_SETTINGS,

@@ -72,6 +72,7 @@ function stubStores(options: {
   openPin: ReturnType<typeof vi.fn>;
   removePin: ReturnType<typeof vi.fn>;
   closeTabs: ReturnType<typeof vi.fn>;
+  toggleMute: ReturnType<typeof vi.fn>;
   closeWithUndo: ReturnType<typeof vi.fn>;
   undoBatch: ReturnType<typeof vi.fn>;
   tryUpdateSettings: ReturnType<typeof vi.fn>;
@@ -92,6 +93,7 @@ function stubStores(options: {
     openPin: vi.fn(async () => undefined),
     removePin: vi.fn(async () => undefined),
     closeTabs: vi.fn(async () => [1]),
+    toggleMute: vi.fn(async () => true),
     closeWithUndo: vi.fn(async () => undefined),
     undoBatch: vi.fn(async () => undefined),
     tryUpdateSettings: vi.fn(async () => true),
@@ -118,7 +120,8 @@ function stubStores(options: {
     currentWindowId: 1,
     tabSyncReady: true,
     highlightedIds: new Set<number>(),
-    closeTabs: spies.closeTabs
+    closeTabs: spies.closeTabs,
+    toggleMute: spies.toggleMute
   } as never);
   useUndoStore.setState({
     notify: spies.notify,
@@ -483,6 +486,59 @@ describe('FolderRow 定位事件自动展开', () => {
   });
 });
 
+describe('FolderItemRow 固定条目静音反馈', () => {
+  const renderAudibleItem = (muted = false) => {
+    const folder = folderWith('工作', ['https://a.com/']);
+    const spies = stubStores({
+      folders: [folder],
+      tabs: [tab({ id: 7, url: 'https://a.com/', audible: true, muted })]
+    });
+    renderInDnd(<FolderRow folder={folder} />);
+    return spies;
+  };
+
+  it('平台返回 false 时提示失败，不发送成功回执', async () => {
+    const spies = renderAudibleItem();
+    spies.toggleMute.mockResolvedValueOnce(false);
+
+    fireEvent.click(screen.getByRole('button', { name: translate('静音') }));
+
+    await waitFor(() =>
+      expect(spies.notifyError).toHaveBeenCalledWith(translate('操作失败，请稍后重试'))
+    );
+    expect(spies.notify).not.toHaveBeenCalled();
+    expect(spies.notifyFailure).not.toHaveBeenCalled();
+  });
+
+  it('平台拒绝时提示失败并保留诊断', async () => {
+    const spies = renderAudibleItem();
+    const error = new Error('browser rejected');
+    spies.toggleMute.mockRejectedValueOnce(error);
+
+    fireEvent.click(screen.getByRole('button', { name: translate('静音') }));
+
+    await waitFor(() =>
+      expect(spies.notifyFailure).toHaveBeenCalledWith(
+        'sidepanel',
+        translate('操作失败，请稍后重试'),
+        error
+      )
+    );
+    expect(spies.notify).not.toHaveBeenCalled();
+    expect(spies.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('平台成功时按操作前状态提示已取消静音', async () => {
+    const spies = renderAudibleItem(true);
+
+    fireEvent.click(screen.getByRole('button', { name: translate('取消静音') }));
+
+    await waitFor(() => expect(spies.notify).toHaveBeenCalledWith(translate('已取消静音')));
+    expect(spies.notifyError).not.toHaveBeenCalled();
+    expect(spies.notifyFailure).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * 移出文件夹是「删长期资产 + 关掉对应标签」的复合破坏操作：撤销必须同时回滚两者，
  * 而且只能回滚**本次** —— 撤销到更早的批次等于把无关的旧标签重新打开一次。
@@ -505,6 +561,7 @@ describe('FolderItemRow 移出文件夹的可撤销性', () => {
       useUndoStore.setState({
         batches: [...useUndoStore.getState().batches, { id: 'new-batch' }]
       } as never);
+      return 'new-batch';
     });
 
     renderFolder();
@@ -522,6 +579,64 @@ describe('FolderItemRow 移出文件夹的可撤销性', () => {
     expect(spies.undoBatch).not.toHaveBeenCalledWith('old-2');
     // 条目本身也要回来，且快照必须是删除前的 folders
     expect(spies.restoreFolders).toHaveBeenCalledWith([folder]);
+  });
+
+  it('关闭完成但未新建批次时只恢复条目，不误撤销历史', async () => {
+    const folder = folderWith('工作', ['https://a.com/']);
+    const spies = stubStores({
+      folders: [folder],
+      tabs: [tab({ id: 7, url: 'https://a.com/' })]
+    });
+    useUndoStore.setState({ batches: [{ id: 'historical-batch' }] } as never);
+    spies.closeWithUndo.mockResolvedValueOnce(undefined);
+
+    renderFolder();
+    fireEvent.click(removeButton());
+    await waitFor(() => expect(spies.notify).toHaveBeenCalled());
+
+    const action = spies.notify.mock.calls.at(-1)?.[1];
+    action?.run();
+
+    await waitFor(() => expect(spies.restoreFolders).toHaveBeenCalledWith([folder]));
+    expect(spies.undoBatch).not.toHaveBeenCalled();
+  });
+
+  it('删除条目等待期间出现新批次时仍撤销本次关闭', async () => {
+    const folder = folderWith('工作', ['https://a.com/']);
+    const spies = stubStores({
+      folders: [folder],
+      tabs: [tab({ id: 7, url: 'https://a.com/' })]
+    });
+    spies.closeWithUndo.mockImplementation(async () => {
+      useUndoStore.setState({ batches: [{ id: 'remove-item-batch' }] } as never);
+      return 'remove-item-batch';
+    });
+    let finishRemove: (() => void) | undefined;
+    spies.removeFolderItem.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRemove = resolve;
+        })
+    );
+
+    renderFolder();
+    fireEvent.click(removeButton());
+    await waitFor(() => expect(spies.removeFolderItem).toHaveBeenCalled());
+
+    // Given 删除写盘尚未完成，另一操作已把自己的批次推到栈尾
+    useUndoStore.setState({
+      batches: [...useUndoStore.getState().batches, { id: 'unrelated-batch' }]
+    } as never);
+    finishRemove?.();
+    await waitFor(() => expect(spies.notify).toHaveBeenCalled());
+
+    // When 用户撤销本次移出
+    const action = spies.notify.mock.calls.at(-1)?.[1];
+    action?.run();
+
+    // Then 仍精确撤销关闭条目时的批次，而非删除完成时的栈尾
+    await waitFor(() => expect(spies.undoBatch).toHaveBeenCalledWith('remove-item-batch'));
+    expect(spies.undoBatch).not.toHaveBeenCalledWith('unrelated-batch');
   });
 
   it('条目没有对应标签时不产生撤销批次，也不误撤销历史批次', async () => {

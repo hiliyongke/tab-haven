@@ -349,7 +349,7 @@ export default function App() {
     [notify]
   );
 
-  // 挂起动作（面板未开时）与 runtime 消息消费：双通道按 at 去重、回调经 ref 取值，
+  // 挂起动作（面板未开时）与 runtime 消息消费：双通道按 actionId 优先、at 回退去重，回调经 ref 取值，
   // 使 runtime 监听与 session 挂起队列监听只在挂载时注册一次（细则见该 hook 注释）。
   usePendingActions({
     focusSearch: focusSearchInput,
@@ -560,6 +560,31 @@ export default function App() {
     onActivate: smartActivate
   });
 
+  /**
+   * 键盘漫游读屏播报：↑↓ 只驱动视觉高亮（.is-search-active），读屏用户得不到任何
+   * 「现在选中了哪条」的反馈。这里按当前漫游序列算出序号与标题，交给常驻的
+   * aria-live 区播报。
+   *
+   * 刻意用 live region 而非 aria-activedescendant：侧栏结果列表是分区 + 虚拟化结构
+   * （非 listbox），活动行可能尚未挂载，activedescendant 会指向不存在的元素；
+   * 且把输入框从原生 searchbox 改成 combobox 会破坏既有键盘语义与测试。live 区常驻
+   * App（不随 toast 条件挂载），满足「预先存在且为空、之后内容变化才播报」的可靠性约束。
+   * 标题从 filteredTabs 取（搜索态含全窗口标签），两态漫游共用同一播报口径。
+   */
+  const roamAnnouncement = useMemo(() => {
+    if (selectedNavTabId === undefined) return '';
+    const sequence = isFiltering ? searchHitTabIds : roamTabIds;
+    const index = sequence.indexOf(selectedNavTabId);
+    if (index < 0) return '';
+    const tab = filteredTabs.find((entry) => entry.id === selectedNavTabId);
+    const title = tab?.title || tab?.url || '';
+    return t('第 {{index}} 项，共 {{count}} 项：{{title}}', {
+      index: index + 1,
+      count: sequence.length,
+      title
+    });
+  }, [selectedNavTabId, isFiltering, searchHitTabIds, roamTabIds, filteredTabs, t]);
+
   /** 搜索框按键：漫游（↑↓ / Enter）优先；未消费的交给搜索自身（Esc 清空并失焦）。 */
   const handleSearchInputKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -603,9 +628,9 @@ export default function App() {
   useEffect(() => onTabHighlighted(setHighlighted), [setHighlighted]);
 
   // 按语言分组时，异步探测未分组标签的语言。
-  // 批量探测 + 一次 set：逐条 setLanguage 会让 N 个标签产生 N 轮全量派生 + 整树重渲染；
-  // in-flight 登记防「探测未回期间来了新快照」对同一标签重复发起探测。
+  // 批量探测 + 一次 set：逐条 setLanguage 会让 N 个标签产生 N 轮全量派生 + 整树重渲染。
   const langInFlightRef = useRef<Set<number>>(new Set());
+  const [languageProbeRevision, setLanguageProbeRevision] = useState(0);
   useEffect(() => {
     if (settings.groupMode !== 'language') return;
     const eligible = tabs.filter(
@@ -616,15 +641,26 @@ export default function App() {
         !langInFlightRef.current.has(tab.id)
     );
     if (eligible.length === 0) return;
-    let cancelled = false;
     for (const tab of eligible) langInFlightRef.current.add(tab.id);
     void Promise.all(eligible.map((tab) => detectLanguage(tab.id)))
       .then((langs) => {
         for (const tab of eligible) langInFlightRef.current.delete(tab.id);
-        if (cancelled) return;
-        useTabStore
-          .getState()
-          .setLanguages(eligible.map((tab, index) => [tab.id, langs[index] ?? 'und']));
+        if (useDataStore.getState().settings.groupMode !== 'language') return;
+        const liveTabs = new Map(useTabStore.getState().tabs.map((tab) => [tab.id, tab]));
+        let navigationChanged = false;
+        const results = eligible.flatMap((tab, index) => {
+          const current = liveTabs.get(tab.id);
+          if (!current || current.pinned || current.groupId !== NO_GROUP || current.language) {
+            return [];
+          }
+          if (current.url !== tab.url || current.pendingUrl !== tab.pendingUrl) {
+            navigationChanged = true;
+            return [];
+          }
+          return [[current.id, langs[index] ?? 'und'] as const];
+        });
+        useTabStore.getState().setLanguages(results);
+        if (navigationChanged) setLanguageProbeRevision((revision) => revision + 1);
       })
       .catch((error: unknown) => {
         // detectLanguage 内部有 'und' 兜底，此处兜住意外 rejection（polyfill
@@ -634,11 +670,22 @@ export default function App() {
         // 否则「语言分区一直不出现」无法归因。
         logDegraded('sidepanel', '标签语言探测失败', error);
         for (const tab of eligible) langInFlightRef.current.delete(tab.id);
+        const liveTabs = new Map(useTabStore.getState().tabs.map((tab) => [tab.id, tab]));
+        const navigationChanged = eligible.some((tab) => {
+          const current = liveTabs.get(tab.id);
+          return (
+            current &&
+            !current.pinned &&
+            current.groupId === NO_GROUP &&
+            !current.language &&
+            (current.url !== tab.url || current.pendingUrl !== tab.pendingUrl)
+          );
+        });
+        if (navigationChanged && useDataStore.getState().settings.groupMode === 'language') {
+          setLanguageProbeRevision((revision) => revision + 1);
+        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [settings.groupMode, tabs]);
+  }, [languageProbeRevision, settings.groupMode, tabs]);
 
   /** 手动重试数据初始化（自动重试失败后错误态的出口）。 */
   const handleRetryLoad = useCallback(() => {
@@ -883,9 +930,18 @@ export default function App() {
       // 静音必须有明确反馈：它的视觉信号只是按钮图标变化，而操作按钮默认
       // hover 才出现（rowActionsVisible 默认关），用户常常根本没看到那个图标。
       onToggleMute: (tab: TabRecord) => {
-        void Promise.resolve(toggleMute(tab)).then(() =>
-          notify(tab.muted ? t('已取消静音') : t('已静音'))
-        );
+        void Promise.resolve(toggleMute(tab))
+          .then((ok) => {
+            // 平台已记录具体失败原因；false 时只给出真实失败回执，不谎报已静音。
+            if (!ok) {
+              notifyError(t('操作失败，请稍后重试'));
+              return;
+            }
+            notify(tab.muted ? t('已取消静音') : t('已静音'));
+          })
+          .catch((error: unknown) =>
+            useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+          );
       },
       onTogglePin: handleTogglePin,
       onCloseTab: handleCloseTab,
@@ -919,6 +975,7 @@ export default function App() {
       handleReorder,
       handleMoveTab,
       notify,
+      notifyError,
       t
     ]
   );
@@ -1088,7 +1145,7 @@ export default function App() {
           .then(({ count, degraded }) =>
             notify(
               degraded
-                ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', {
+                ? t('已恢复 {{count}} 个标签；部分恢复结果可能不完整，请检查标签列表', {
                     count
                   })
                 : t('已恢复 {{count}} 个标签', { count })
@@ -1128,6 +1185,11 @@ export default function App() {
         {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status）：视觉用户有列表过滤反馈，读屏用户没有 */}
         <output className="sr-only" aria-live="polite">
           {isFiltering ? t('命中 {{count}} 个标签', { count: filteredTabs.length }) : ''}
+        </output>
+        {/* 键盘漫游当前项播报：独立于命中数 live 区，避免 ↑↓ 移动与输入过滤的播报互相打断。
+            常驻挂载（内容为空时不播报），保证读屏对内容变化的可靠订阅。 */}
+        <output className="sr-only" aria-live="polite">
+          {roamAnnouncement}
         </output>
         {/* 落盘失败横幅由最近一次持久化结果驱动，表示当前存储可能不可写；成功写入会清除标志，避免数据丢失被静默处理。 */}
         {storageDegraded && (
@@ -1394,7 +1456,7 @@ export default function App() {
                 .then(({ count, degraded }) =>
                   notify(
                     degraded
-                      ? t('已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面', {
+                      ? t('已恢复 {{count}} 个标签；部分恢复结果可能不完整，请检查标签列表', {
                           count
                         })
                       : t('已恢复 {{count}} 个标签', { count })

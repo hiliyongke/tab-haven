@@ -61,6 +61,14 @@ describe('pinFromTab / dedupePins', () => {
     expect(a?.identity).toBe(b?.identity);
     expect(dedupePins([a!, b!])).toHaveLength(1);
   });
+
+  it('空 identity 的磁贴按非空 id 独立保留', () => {
+    const pins = [
+      { id: 'p1', identity: '', url: 'about:blank', title: 'A' },
+      { id: 'p2', identity: '', url: 'about:blank', title: 'B' }
+    ];
+    expect(dedupePins(pins)).toHaveLength(2);
+  });
 });
 
 describe('FolderOps', () => {

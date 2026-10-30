@@ -46,7 +46,7 @@ interface DataRepositoryOptions {
   rmwLock?: string;
 }
 
-/** 单 key 读写仓库：读出经 zod 校验，键缺失/存储不可用/校验失败统一落回默认值深拷贝。 */
+/** 单 key 读写仓库：读出经 zod 校验；read 允许 I/O 降级，readStrict 为写前基线保留故障。 */
 export class DataRepository<T> {
   constructor(
     private readonly key: string,
@@ -127,28 +127,34 @@ export class DataRepository<T> {
     return reparsed.data as T;
   }
 
-  async read(): Promise<T> {
+  /**
+   * 写入前的严格读取：存储区域不可用或读取失败时抛出，调用方必须中止 RMW。
+   * 缺键与坏数据仍按仓库契约恢复为默认值；只有「无法知道真实基线」的 I/O 故障不放行。
+   */
+  async readStrict(): Promise<T> {
     const area = browser.storage?.local;
-    if (!area) {
-      this.options.onUnavailable?.();
-      return this.cloneDefault();
+    if (!area) throw new Error(`Storage area unavailable: ${this.key}`);
+    const stored = await area.get(this.key);
+    const raw = stored[this.key];
+    if (raw === undefined) return this.cloneDefault();
+    const parsed = this.schema.safeParse(raw);
+    if (parsed.success) return parsed.data;
+
+    // 数组类数据：逐元素恢复，丢弃坏元素而非整块丢弃（单个坏条目不应连累全部）。
+    if (this.schema instanceof z.ZodArray && Array.isArray(raw)) {
+      const recovered = await this.recoverElements(raw, zodArrayElement(this.schema));
+      if (recovered !== RECOVERY_FAILED) return recovered;
     }
+
+    // 坏数据隔离：不扩散、可诊断。
+    await this.isolateCorrupted(raw);
+    return this.cloneDefault();
+  }
+
+  /** 展示/初始化读取：I/O 故障允许降级为默认值；写前取基线必须用 readStrict。 */
+  async read(): Promise<T> {
     try {
-      const stored = await area.get(this.key);
-      const raw = stored[this.key];
-      if (raw === undefined) return this.cloneDefault();
-      const parsed = this.schema.safeParse(raw);
-      if (parsed.success) return parsed.data;
-
-      // 数组类数据：逐元素恢复，丢弃坏元素而非整块丢弃（单个坏条目不应连累全部）。
-      if (this.schema instanceof z.ZodArray && Array.isArray(raw)) {
-        const recovered = await this.recoverElements(raw, zodArrayElement(this.schema));
-        if (recovered !== RECOVERY_FAILED) return recovered;
-      }
-
-      // 坏数据隔离：不扩散、可诊断。
-      await this.isolateCorrupted(raw);
-      return this.cloneDefault();
+      return await this.readStrict();
     } catch (error) {
       logDegraded('storage', `数据读取失败（${this.key}）`, error);
       this.options.onUnavailable?.();

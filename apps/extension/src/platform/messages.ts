@@ -2,6 +2,8 @@ import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { UndoTabRecordSchema } from '@/core/schema/models';
 import { PENDING_ACTIONS_KEY } from '@/platform/storage/keys';
+import { PENDING_ACTIONS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
+import { logDegraded } from '@/platform/log';
 
 /**
  * 类型安全消息协议（background ↔ UI）。
@@ -54,16 +56,20 @@ const ReuseClosedMessageSchema = z.object({
 /** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
 const SearchFocusMessageSchema = z.object({
   type: z.literal('focus-search'),
-  /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
-  at: z.number().optional()
+  /** 双通道投递使用的独立动作标识。 */
+  actionId: z.string().min(1).max(64).optional(),
+  /** 触发时间，仅作时间信息，不作为动作唯一键。 */
+  at: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()
 });
 
 /** SW → UI：请求按关键词搜索（右键菜单「搜索此域名」触发，面板未开时先开面板）。 */
 const SearchDomainMessageSchema = z.object({
   type: z.literal('search-domain'),
   query: z.string().max(MESSAGE_QUERY_MAX),
-  /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
-  at: z.number().optional()
+  /** 双通道投递使用的独立动作标识。 */
+  actionId: z.string().min(1).max(64).optional(),
+  /** 触发时间，仅作时间信息，不作为动作唯一键。 */
+  at: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()
 });
 
 /**
@@ -85,8 +91,10 @@ const AutoDiscardedMessageSchema = z.object({
 /** SW → UI：请求定位当前激活标签（浏览器级快捷键触发）。 */
 const LocateActiveMessageSchema = z.object({
   type: z.literal('locate-active'),
-  /** 触发时间戳：面板双通道（即时消息 + session 挂起）去重用。 */
-  at: z.number().optional()
+  /** 双通道投递使用的独立动作标识。 */
+  actionId: z.string().min(1).max(64).optional(),
+  /** 触发时间，仅作时间信息，不作为动作唯一键。 */
+  at: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()
 });
 
 /** UI → SW：下一次该窗口关闭时跳过关窗自动快照（归档流程已自行保存，防重复保存）。 */
@@ -188,35 +196,52 @@ export function onRuntimeMessage(handler: (message: Message) => void): () => voi
  */
 export function watchPendingActions(handler: (action: PendingAction) => void): () => void {
   const sessionArea = browser.storage?.session;
-  // 已消费动作的 at 去重集（有界）：初始 get 与 onChanged 双通道可能读到同一批动作（SW 侧 RMW 合并写入时
-  // newValue 含面板已消费过的旧动作），协议层必须自防重，不能依赖消费方各自实现 at 去重。
+  let active = true;
+  // 已消费动作 id 去重集（有界）；没有 id 的协议输入才回退使用安全整数时间戳。
+  const consumedIds = new Set<string>();
   const consumedAts = new Set<number>();
-  /** 执行并清除队列：执行即清，杜绝历史动作随下次写入重放。 */
-  const consume = (list: unknown[]): void => {
-    for (const action of list) {
-      // 队列里的每一项都可能是任意形状，统一走挂起动作 schema 校验。
-      const parsed = PendingActionSchema.safeParse(action);
-      if (!parsed.success) continue;
-      const at = parsed.data.at;
-      // 无 at 的动作无法去重（协议允许缺省），照常执行。
-      if (at !== undefined && consumedAts.has(at)) continue;
-      if (at !== undefined) {
-        consumedAts.add(at);
-        // 有界：去重集只服务「面板挂载前后」的短暂窗口，超限整体重置，最坏退化为重复执行一次。
-        if (consumedAts.size > 64) consumedAts.clear();
+  /**
+   * 初始读取与 onChanged 都只负责触发；真正消费时在同一把跨页锁内重读并删除。
+   * 后台入队使用同一把锁，因此不会用事件里的旧 list 删掉随后入队的新动作。
+   */
+  const consume = (): void => {
+    if (!sessionArea) return;
+    void withCrossPageLock(PENDING_ACTIONS_RMW_LOCK, async () => {
+      if (!active) return;
+      const record = await sessionArea.get(PENDING_ACTIONS_KEY);
+      const list = record[PENDING_ACTIONS_KEY];
+      if (!active || !Array.isArray(list) || list.length === 0) return;
+      for (const action of list) {
+        // 队列里的每一项都可能是任意形状，统一走挂起动作 schema 校验。
+        const parsed = PendingActionSchema.safeParse(action);
+        if (!parsed.success) continue;
+        const actionId = parsed.data.actionId;
+        const at = parsed.data.at;
+        if (actionId !== undefined) {
+          if (consumedIds.has(actionId)) continue;
+          consumedIds.add(actionId);
+          if (consumedIds.size > 64) {
+            const oldest = consumedIds.values().next().value;
+            if (oldest !== undefined) consumedIds.delete(oldest);
+          }
+        } else if (at !== undefined) {
+          if (consumedAts.has(at)) continue;
+          consumedAts.add(at);
+          if (consumedAts.size > 64) {
+            const oldest = consumedAts.values().next().value;
+            if (oldest !== undefined) consumedAts.delete(oldest);
+          }
+        }
+        if (!active) return;
+        handler(parsed.data);
       }
-      handler(parsed.data);
-    }
-    void sessionArea?.remove(PENDING_ACTIONS_KEY).catch(() => {});
+      await sessionArea.remove(PENDING_ACTIONS_KEY);
+    }).catch((error) => {
+      logDegraded('messages', '挂起动作消费失败，将保留队列等待下次触发', error);
+    });
   };
 
-  void sessionArea
-    ?.get(PENDING_ACTIONS_KEY)
-    .then((record) => {
-      const list = record[PENDING_ACTIONS_KEY];
-      if (Array.isArray(list) && list.length > 0) consume(list);
-    })
-    .catch(() => undefined);
+  consume();
 
   const onStorageChanged = (
     changes: Record<string, { newValue?: unknown }>,
@@ -224,9 +249,12 @@ export function watchPendingActions(handler: (action: PendingAction) => void): (
   ): void => {
     if (areaName !== 'session' || !changes[PENDING_ACTIONS_KEY]) return;
     const list = changes[PENDING_ACTIONS_KEY]?.newValue;
-    // 即时消息通道已按 at 去重，此处仅执行新动作并立即消费清除。
-    if (Array.isArray(list) && list.length > 0) consume(list);
+    // 即时消息与 session 变更通道按 actionId 去重，再消费并清除队列。
+    if (Array.isArray(list) && list.length > 0) consume();
   };
   browser.storage?.onChanged?.addListener(onStorageChanged);
-  return () => browser.storage?.onChanged?.removeListener(onStorageChanged);
+  return () => {
+    active = false;
+    browser.storage?.onChanged?.removeListener(onStorageChanged);
+  };
 }

@@ -195,8 +195,13 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
   );
 
   /* 右键菜单：文件夹的 5 个操作不能只有无文字图标按钮一条路 —— 窄面板下容易误点
-     相邻的删除，键盘用户也无法唤出。这里补齐与标签行一致的右键入口。 */
-  const { menu: contextMenu, open: openContextMenu, close: closeContextMenu } = useRowContextMenu();
+     相邻的删除。右键 + ContextMenu 键/Shift+F10 补齐与标签行一致的键盘唤入口。 */
+  const {
+    menu: contextMenu,
+    open: openContextMenu,
+    openFromKeyboard,
+    close: closeContextMenu
+  } = useRowContextMenu();
   const contextMenuItems = useMemo<ContextMenuItem[]>(
     () => [
       { id: 'openAll', label: t('打开文件夹全部条目'), onSelect: handleOpenAll },
@@ -226,7 +231,7 @@ export const FolderRow = memo(function FolderRow({ folder }: { folder: FixedFold
 
   return (
     <>
-      <div onContextMenu={openContextMenu}>
+      <div onContextMenu={openContextMenu} onKeyDown={openFromKeyboard}>
         <GroupCard
           id={`folder:${folder.id}`}
           dragData={folderDragData}

@@ -97,6 +97,35 @@ describe('logDegraded / logFailure', () => {
     expect(all.some((entry) => entry.message === 'shared-entry')).toBe(true);
   });
 
+  it('另一上下文清空后，清空前 pending 的记录不得复活，新记录仍可落盘', async () => {
+    vi.useFakeTimers();
+    try {
+      // Given：两个独立模块上下文，第一个上下文持有尚未 flush 的旧记录。
+      vi.setSystemTime('2026-01-01T00:00:00.000Z');
+      vi.resetModules();
+      const first = await import('@/platform/diagnostics');
+      vi.resetModules();
+      const second = await import('@/platform/diagnostics');
+      first.logDegraded('s', 'pending-before-clear');
+
+      // When：第二个上下文清空，随后第一个上下文才 flush。
+      vi.setSystemTime('2026-01-01T00:00:01.000Z');
+      await second.clearDiagnostics();
+      const afterClear = await first.readAllDiagnostics();
+
+      // Then：共享墓碑淘汰旧 pending；清空后的新记录不受墓碑影响。
+      expect(afterClear.some((entry) => entry.message === 'pending-before-clear')).toBe(false);
+      vi.setSystemTime('2026-01-01T00:00:02.000Z');
+      first.logDegraded('s', 'created-after-clear');
+      const afterNewEntry = await first.readAllDiagnostics();
+      expect(afterNewEntry.some((entry) => entry.message === 'pending-before-clear')).toBe(false);
+      expect(afterNewEntry.some((entry) => entry.message === 'created-after-clear')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.resetModules();
+    }
+  });
+
   it('导出内容只含技术上下文（不含标签标题/URL 等浏览内容）', () => {
     logFailure('s', '崩了', new Error('boom'));
     const text = exportDiagnostics(readDiagnostics());

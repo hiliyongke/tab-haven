@@ -38,7 +38,7 @@ async function filterStalePlans(
 ): Promise<{ plan: AutoGroupPlan; tabIds: number[] }[]> {
   let live: Map<number, number> | null = null;
   try {
-    const tabs = await browser.tabs.query({ currentWindow: true });
+    const tabs = await browser.tabs.query({});
     live = new Map(
       tabs
         .filter((tab): tab is typeof tab & { id: number } => tab.id !== undefined)
@@ -84,17 +84,19 @@ async function runSyncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<numbe
   if (createdIds.length > 0) {
     // 跨页锁内 RMW：两个窗口的侧边栏可并发 syncAutoGroups，锁外交错丢 id → 关闭开关时漏解散（孤儿组）。
     const recorded = await withCrossPageLock(AUTO_GROUPS_RMW_LOCK, async () => {
-      const existing = await autoGroupsRepository.read();
+      let existing: number[];
+      try {
+        existing = await autoGroupsRepository.readStrict();
+      } catch (error) {
+        logDegraded('auto-group', '自动分组记账基线读取失败，本次创建将回滚', error);
+        return false;
+      }
       return autoGroupsRepository.write([...new Set([...existing, ...createdIds])]);
     });
     if (recorded === false) {
-      // 记账写入失败（配额）：组已创建但记录缺失，关闭开关时该组永不被解散。此时立即解散
+      // 记账失败（读取故障/配额）：组已创建但记录缺失，关闭开关时该组永不被解散。此时立即解散
       // 刚创建的组并留痕，宁可「自动分组未生效」也不留下无法回收的原生组。
-      logDegraded(
-        'auto-group',
-        '自动分组记账写入失败，已回滚本次创建的组（避免孤儿组）',
-        createdIds
-      );
+      logDegraded('auto-group', '自动分组记账失败，已回滚本次创建的组（避免孤儿组）', createdIds);
       for (const groupId of createdIds) {
         await removeGroup(groupId);
       }
@@ -168,7 +170,13 @@ async function runDisbandAutoGroups(): Promise<number> {
   // 与 syncAutoGroups 的记账写同锁：解散进行中若并发创建了新组，锁外 read→write 会把新 id
   // 覆盖丢失（组已建、记录没了 → 孤儿组）。
   return withCrossPageLock(AUTO_GROUPS_RMW_LOCK, async () => {
-    const ids = await autoGroupsRepository.read();
+    let ids: number[];
+    try {
+      ids = await autoGroupsRepository.readStrict();
+    } catch (error) {
+      logDegraded('auto-group', '解散自动组前读取记账失败，本次未改动任何组', error);
+      return 0;
+    }
     if (ids.length === 0) return 0;
     let count = 0;
     const failed: number[] = [];
@@ -216,7 +224,7 @@ async function runReconcileAutoGroupDomains(
       moved += correction.tabIds.length;
     } catch (error) {
       // 单组失败不影响其余组：成员可能已被关闭或用户手动移出，下一轮快照重新判定
-      logDegraded('auto-group', `校正自动组「${correction.title}」的异域名成员失败`, error);
+      logDegraded('auto-group', '校正自动组的异域名成员失败', error);
     }
   }
   return moved;

@@ -4,10 +4,12 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import {
   collectSnapshotTabs,
+  persistSnapshot,
   replaceSpaceSnapshot,
   restoreSnapshot
 } from '@/platform/snapshot/snapshots';
 import { snapshotsRepository } from '@/platform/storage/repositories';
+import { clearDiagnosticBuffer, readDiagnostics } from '@/platform/log';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 
 /**
@@ -19,6 +21,18 @@ import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
  */
 
 const WINDOW_ID = 1;
+const SNAPSHOTS_KEY = 'tabs.snapshots.v1';
+
+/** 只对目标键注入读取故障，其余存储读取仍走 fake-browser。 */
+function failLocalGet(key: string): ReturnType<typeof vi.spyOn> {
+  const original = fakeBrowser.storage.local.get.bind(fakeBrowser.storage.local);
+  return vi.spyOn(fakeBrowser.storage.local, 'get').mockImplementation((async (
+    requested: string
+  ) => {
+    if (requested === key) throw new Error('storage read failed');
+    return original(requested);
+  }) as never);
+}
 
 /** fake-browser 要求先建窗口：不带有效 windowId 创建的标签会落到 windowId 0。 */
 async function ensureWindow(): Promise<void> {
@@ -65,6 +79,7 @@ function stubTabsApi(): {
 
 afterEach(() => {
   fakeBrowser.reset();
+  clearDiagnosticBuffer();
   vi.restoreAllMocks();
 });
 
@@ -81,11 +96,45 @@ describe('restoreSnapshot（加法恢复）', () => {
       snapTab({ url: 'https://b.com/' }), // 已存在 → 跳过
       snapTab({ url: 'https://c.com/' }) // 缺失 → 新建
     ]);
-    const { count: created } = await restoreSnapshot(snap, WINDOW_ID);
+    const { count, createdTabs } = await restoreSnapshot(snap, WINDOW_ID);
 
-    expect(created).toBe(1);
+    expect(count).toBe(1);
     const all = await fakeBrowser.tabs.query({ windowId: WINDOW_ID });
     expect(all).toHaveLength(3); // 2 个原有 + 1 个新建，无一被关闭
+    const created = all.find((tab) => tab.url === 'https://c.com/');
+    expect(createdTabs).toHaveLength(1);
+    expect(createdTabs[0]).toMatchObject({
+      id: created?.id,
+      windowId: WINDOW_ID,
+      url: 'https://c.com/'
+    });
+  });
+
+  it('恢复期间其他操作新建的标签不混入 createdTabs', async () => {
+    // Given: 恢复创建目标标签期间，另一操作并发创建了无关标签
+    stubTabsApi();
+    await ensureWindow();
+    const originalCreate = fakeBrowser.tabs.create.bind(fakeBrowser.tabs);
+    vi.spyOn(fakeBrowser.tabs, 'create').mockImplementation((async (options: {
+      windowId: number;
+      url: string;
+    }) => {
+      const created = await originalCreate(options);
+      if (options.url === 'https://a.com/') {
+        await originalCreate({ windowId: WINDOW_ID, url: 'https://concurrent.com/' });
+      }
+      return created;
+    }) as never);
+
+    // When: 恢复快照
+    const result = await restoreSnapshot(
+      snapshotOf([snapTab({ url: 'https://a.com/' })]),
+      WINDOW_ID
+    );
+
+    // Then: 结果只含恢复引擎自己创建的记录，不靠窗口前后差分猜测
+    expect(result.createdTabs.map((tab) => tab.url)).toEqual(['https://a.com/']);
+    expect(await fakeBrowser.tabs.query({ windowId: WINDOW_ID })).toHaveLength(2);
   });
 
   it('快照内重复 URL 只恢复一次', async () => {
@@ -104,7 +153,7 @@ describe('restoreSnapshot（加法恢复）', () => {
     await ensureWindow();
     await fakeBrowser.tabs.create({ windowId: WINDOW_ID, url: 'https://a.com/' });
     const snap = snapshotOf([snapTab({ url: 'https://a.com/' })]);
-    expect(await restoreSnapshot(snap, WINDOW_ID)).toMatchObject({ count: 0 });
+    expect(await restoreSnapshot(snap, WINDOW_ID)).toMatchObject({ count: 0, createdTabs: [] });
   });
 
   it('还原固定与静音状态', async () => {
@@ -136,10 +185,16 @@ describe('restoreSnapshot（加法恢复）', () => {
       snapTab({ url: 'https://b.com/', groupTitle: '研究', groupColor: 'blue' }),
       snapTab({ url: 'https://c.com/' }) // 无组：保持未分组
     ]);
-    await restoreSnapshot(snap, WINDOW_ID);
+    const result = await restoreSnapshot(snap, WINDOW_ID);
 
     // 两个同组标签一次成组，组名/颜色写入
     expect(updateMock).toHaveBeenCalledWith(102, { title: '研究', color: 'blue' });
+    expect(result.createdTabs.slice(0, 2).map((tab) => tab.groupId)).toEqual([102, 102]);
+    // fake-browser 用 0 表示未分组（真实 Chrome 为 -1），记录应与浏览器实际值一致。
+    const ungrouped = (await fakeBrowser.tabs.query({ windowId: WINDOW_ID })).find(
+      (tab) => tab.url === 'https://c.com/'
+    );
+    expect(result.createdTabs[2]?.groupId).toBe(ungrouped?.groupId);
   });
 
   it('固定标签不参与分组（Chrome 限制）', async () => {
@@ -161,6 +216,45 @@ describe('restoreSnapshot（加法恢复）', () => {
 
     expect(count).toBe(1);
     expect(degraded).toBe(true);
+  });
+
+  it('分组恢复失败反馈 degraded 且不记录用户组名', async () => {
+    const { groupMock } = stubTabsApi();
+    groupMock.mockImplementation(async () => {
+      throw new Error('group unavailable');
+    });
+    await ensureWindow();
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue({ ok: true } as never);
+
+    const result = await restoreSnapshot(
+      snapshotOf([snapTab({ url: 'https://a.com/', groupTitle: '私人标签组名称' })]),
+      WINDOW_ID
+    );
+
+    expect(result).toMatchObject({ count: 1, degraded: true });
+    expect(result.createdTabs).toHaveLength(1);
+    expect(readDiagnostics().some((entry) => entry.message.includes('私人标签组名称'))).toBe(false);
+  });
+
+  it('原生组查询失败时保留已创建标签但跳过分组还原，避免创建重复组', async () => {
+    const { groupMock } = stubTabsApi();
+    await ensureWindow();
+    const groups = fakeBrowser.tabGroups as unknown as {
+      query: (q: object) => Promise<{ id: number; title?: string }[]>;
+    };
+    groups.query = vi.fn(async () => {
+      throw new Error('groups unavailable');
+    });
+
+    const result = await restoreSnapshot(
+      snapshotOf([snapTab({ url: 'https://a.com/', groupTitle: '私人标签组名称' })]),
+      WINDOW_ID
+    );
+
+    expect(result).toMatchObject({ count: 1, degraded: true });
+    expect(result.createdTabs).toHaveLength(1);
+    expect(groupMock).not.toHaveBeenCalled();
+    expect(await fakeBrowser.tabs.query({ windowId: WINDOW_ID })).toHaveLength(1);
   });
 
   it('窗口已有同名组时并入既有组', async () => {
@@ -305,5 +399,51 @@ describe('replaceSpaceSnapshot（空间原地更新，C1）', () => {
     expect(result.replaced).toBe(false);
     // 原内容仍在（用户手工关光标签后切空间不会丢现场）
     expect(result.snapshots.find((snapshot) => snapshot.id === 'space-1')!.tabCount).toBe(1);
+  });
+});
+
+describe('快照写前基线故障', () => {
+  it('新增快照前读取失败时中止写入并保留原列表', async () => {
+    // Given: 磁盘已有快照，但合并前无法读取真实基线
+    const existing = { ...snapshotOf([snapTab({ url: 'https://old.com/' })]), id: 'existing' };
+    await snapshotsRepository.write([existing]);
+    const writeSpy = vi.spyOn(snapshotsRepository, 'write');
+    const getSpy = failLocalGet(SNAPSHOTS_KEY);
+
+    // When: 持久化新快照
+    await expect(
+      persistSnapshot({ ...snapshotOf([snapTab({ url: 'https://new.com/' })]), id: 'new' })
+    ).rejects.toThrow('storage read failed');
+
+    // Then: 不以空列表裁剪覆盖，磁盘仍保留原快照
+    expect(writeSpy).not.toHaveBeenCalled();
+    getSpy.mockRestore();
+    expect(await fakeBrowser.storage.local.get(SNAPSHOTS_KEY)).toEqual({
+      [SNAPSHOTS_KEY]: [existing]
+    });
+  });
+
+  it('空间快照更新前读取失败时中止写回并保留原现场', async () => {
+    // Given: 目标空间已有现场，更新前读取发生 I/O 故障
+    const space = {
+      ...snapshotOf([snapTab({ url: 'https://old.com/' })]),
+      id: 'space-1',
+      origin: 'space' as const
+    };
+    await snapshotsRepository.write([space]);
+    const writeSpy = vi.spyOn(snapshotsRepository, 'write');
+    const getSpy = failLocalGet(SNAPSHOTS_KEY);
+
+    // When: 把最新现场写回空间
+    await expect(
+      replaceSpaceSnapshot('space-1', [snapTab({ url: 'https://new.com/' })], 1)
+    ).rejects.toThrow('storage read failed');
+
+    // Then: 不用默认空列表生成更新结果，原现场仍在
+    expect(writeSpy).not.toHaveBeenCalled();
+    getSpy.mockRestore();
+    expect(await fakeBrowser.storage.local.get(SNAPSHOTS_KEY)).toEqual({
+      [SNAPSHOTS_KEY]: [space]
+    });
   });
 });

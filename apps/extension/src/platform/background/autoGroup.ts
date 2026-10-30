@@ -136,6 +136,14 @@ async function drainReconcile(): Promise<void> {
     );
   } finally {
     running = false;
+    // 达到单轮上限只限制一次 drain 的占用，不得把仍未收敛的窗口永久留在 pending。
+    // 重新经定时器调度，后续事件合并语义不变，病态循环也仍受每轮上限约束。
+    if (pendingWindowIds.size > 0 && timer === null) {
+      timer = setTimeout(() => {
+        timer = null;
+        void drainReconcile();
+      }, RECONCILE_DELAY_MS);
+    }
   }
 }
 

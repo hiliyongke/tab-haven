@@ -221,7 +221,8 @@ export function CommandPalette({
             ariaLabel={t('输入命令或搜索标签…')}
             inputProps={{
               role: 'combobox',
-              'aria-expanded': commands.length > 0,
+              // listbox 始终可见，无结果时空态也属于展开的 popup。
+              'aria-expanded': true,
               'aria-controls': listId,
               'aria-autocomplete': 'list',
               'aria-activedescendant': commands[index]
@@ -272,16 +273,13 @@ export function CommandPalette({
                     useUndoStore.getState().notify(t('该快照没有可恢复的标签'));
                     return;
                   }
-                  useUndoStore
-                    .getState()
-                    .notify(
-                      degraded
-                        ? t(
-                            '已恢复 {{count}} 个标签；未能读取窗口现状，可能多开了已经打开着的页面',
-                            { count }
-                          )
-                        : t('已恢复 {{count}} 个标签', { count })
-                    );
+                  useUndoStore.getState().notify(
+                    degraded
+                      ? t('已恢复 {{count}} 个标签；部分恢复结果可能不完整，请检查标签列表', {
+                          count
+                        })
+                      : t('已恢复 {{count}} 个标签', { count })
+                  );
                 })
                 .catch((error: unknown) =>
                   useUndoStore

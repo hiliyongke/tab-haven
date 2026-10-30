@@ -8,8 +8,7 @@ import { dedupePins } from '@/core/fixed/FolderOps';
 import {
   FOLDERS_LIMIT,
   InboundFixedFolderSchema,
-  InboundPersistentPinSchema,
-  PINS_LIMIT
+  InboundPersistentPinListSchema
 } from '@/core/schema/models';
 import type { DataContext } from './types';
 
@@ -34,7 +33,7 @@ type MirrorRestoreOutcome =
   | 'failed';
 
 export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<MirrorRestoreOutcome> {
-  const seeded = await ctx.repos.seeded.read();
+  const seeded = await ctx.repos.seeded.readStrict();
   if (seeded) return 'already-seeded';
   const mirror = await syncMirror.pull();
   // 落地 pull 分类（ok/none/chunk-limit/unreadable），区分成因并让成功路径复位上次降级提示。
@@ -54,7 +53,7 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
   const parsedFolders = InboundFixedFolderSchema.array()
     .max(FOLDERS_LIMIT)
     .safeParse(mirror.folders);
-  const parsedPins = InboundPersistentPinSchema.array().max(PINS_LIMIT).safeParse(mirror.pins);
+  const parsedPins = InboundPersistentPinListSchema.safeParse(mirror.pins);
   // 单边解析失败：不恢复、不置 seeded、不推镜像——推了会把本地空值覆盖云端对应分区，永久失去恢复机会。
   if (!parsedFolders.success || !parsedPins.success) {
     ctx.reportPersistenceFailure('dataStore', '同步镜像数据异常，已跳过恢复（下次启动重试）');
@@ -74,11 +73,11 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
   // 跨页锁 + 锁内重读：并发上下文刚写过本地数据时以本地为准。
   let nextFolders = ctx.get().folders;
   const foldersOk = await withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
-    if (await ctx.repos.seeded.read()) {
+    if (await ctx.repos.seeded.readStrict()) {
       seededInLock = true;
       return true;
     }
-    const disk = await ctx.repos.folders.read();
+    const disk = await ctx.repos.folders.readStrict();
     if (disk.length > 0) {
       nextFolders = disk;
       return true;
@@ -99,7 +98,7 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
 
   let nextPins = ctx.get().pins;
   const pinsOk = await withCrossPageLock(PINS_RMW_LOCK, async () => {
-    const disk = await ctx.repos.pins.read();
+    const disk = await ctx.repos.pins.readStrict();
     if (disk.length > 0) {
       nextPins = disk;
       return true;
@@ -120,6 +119,11 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
     ctx.set({ mirrorIssue: 'unreadable' });
     return 'failed';
   }
-  await ctx.repos.seeded.write(true);
+  const seededOk = await ctx.repos.seeded.write(true);
+  if (!seededOk) {
+    ctx.reportPersistenceFailure('dataStore', '镜像恢复完成标记写入失败（下次启动重试）');
+    ctx.set({ mirrorIssue: 'unreadable' });
+    return 'failed';
+  }
   return 'restored';
 }

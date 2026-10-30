@@ -14,14 +14,20 @@ interface UrlInspection {
 }
 
 /**
- * http(s) 绝对 URL 的严格前缀判定（全仓唯一实现），用于外部输入白名单（导入备份、地址栏直开）：
- * `https:example.com` 这类不带 `//` 的写法不该放行去 `tabs.create`。
- * 与 `isWebUrl`（解析后协议判定，输入形态由浏览器保证）分工不同，不要互相替换。
+ * http(s) 绝对 URL 的外部输入校验（全仓唯一实现），用于导入备份、地址栏直开：
+ * 先要求 `://` 前缀，再由 URL 解析确认协议与非空主机；畸形 authority 不放行去 `tabs.create`。
+ * 与 `isWebUrl`（输入形态由浏览器保证）分工不同，不要互相替换。
  */
 const HTTP_SCHEME_PREFIX = /^https?:\/\//i;
 
 export function isHttpUrl(url: string | undefined): url is string {
-  return url !== undefined && HTTP_SCHEME_PREFIX.test(url);
+  if (url === undefined || !HTTP_SCHEME_PREFIX.test(url)) return false;
+  try {
+    const parsed = new URL(url);
+    return WEB_PROTOCOLS.has(parsed.protocol) && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);

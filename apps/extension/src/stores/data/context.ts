@@ -63,6 +63,8 @@ export function buildDataContext(
   const writePinsCoalesced = createCoalescedWriter<PersistentPin[], boolean>({
     write: (value) => withCrossPageLock(PINS_RMW_LOCK, () => repos.pins.write(value))
   });
+  /** 首次恢复完成前禁止所有镜像写；仅开关已落盘不能证明本地已可覆盖旧镜像。 */
+  let mirrorRestorePending = false;
 
   /**
    * 镜像写结果回执：失败置起降级横幅、成功清掉。
@@ -89,7 +91,7 @@ export function buildDataContext(
   /** 把最新本地数据镜像到浏览器同步通道（写合并 + 配额降级）。 */
   const scheduleMirror = (state: MirrorState): void => {
     // 开关即闸门：未开启时一次 sync 写入都不发，否则会在用户无感知下把收藏 URL 推上账号通道。
-    if (!state.settings.syncMirrorEnabled) return;
+    if (!state.settings.syncMirrorEnabled || mirrorRestorePending) return;
     syncMirror.schedule({ folders: state.folders, pins: state.pins, settings: state.settings });
   };
 
@@ -133,7 +135,7 @@ export function buildDataContext(
 
   async function writeFolders(
     arg: FixedFolder[] | ((current: FixedFolder[]) => FixedFolder[])
-  ): Promise<void> {
+  ): Promise<boolean> {
     // 导入事务进行中：高频拖拽写入挂起，避免与导入的串行写交错覆盖导入结果；内存态由 importData 统一提交。
     if (importing) {
       // 丢弃必须可观测，但同一原因本会话只留一次（见 importDropLogged），否则刷满诊断缓冲。
@@ -141,7 +143,7 @@ export function buildDataContext(
         importDropLogged.add(FOLDERS_SCOPE);
         logDegraded('dataStore', '导入事务进行中，本次固定空间写入已丢弃（内存态不更新）');
       }
-      return;
+      return false;
     }
     // updater 形态在执行这一刻取最新基线重算：get→算→set 无 await 间隙，入口基线过期互覆窗口归零。
     const folders = typeof arg === 'function' ? arg(get().folders) : arg;
@@ -157,6 +159,7 @@ export function buildDataContext(
     }
     // 本地落盘失败时不镜像：否则把未落盘的内存态推上 sync，造成 local/sync 终态不一致。
     if (ok !== false) scheduleMirror(get());
+    return ok;
   }
 
   /** 应用会话变更结果并同步绑定集合。persisted 为 false 时置起 storageDegraded 供 UI 提示。 */
@@ -194,15 +197,21 @@ export function buildDataContext(
 
   // 跨页面设置同步：设置页与侧边栏各自持有独立 dataStore 实例，通过 storage.onChanged
   // 感知其他页面写入的设置并实时应用；另提供 refreshSettings 与 settings-synced 广播作为双保险。
+  let settingsReadGeneration = 0;
+  const applySyncedSettings = (next: DataState['settings']): void => {
+    // 回显守卫：本页面自身写入触发的回放内容相同，跳过 set 避免双倍渲染。
+    if (structuralSignature(next) !== structuralSignature(get().settings)) set({ settings: next });
+    applyTheme(next.themePreference, next.colorTheme);
+  };
   const syncSettingsFromStorage = async (): Promise<void> => {
     // 导入事务进行中：内存态由事务统一提交，watcher 不得插手。
     if (watchersSuspended) return;
+    const generation = ++settingsReadGeneration;
     try {
       const next = await repos.settings.read();
-      // 回显守卫：本页面自身写入触发的回放内容相同，跳过 set 避免双倍渲染。
-      if (structuralSignature(next) !== structuralSignature(get().settings))
-        set({ settings: next });
-      applyTheme(next.themePreference, next.colorTheme);
+      // latest-request-wins：旧回读晚于 watcher/新回读完成时不得覆盖新设置与主题。
+      if (generation !== settingsReadGeneration || watchersSuspended) return;
+      applySyncedSettings(next);
     } catch (error) {
       // 读取失败保持当前状态，且必须走诊断管道而非 console.warn（后者无法被「导出诊断」读到）。
       logDegraded('dataStore', '设置回读失败，保持当前设置', error);
@@ -216,7 +225,14 @@ export function buildDataContext(
   const startSettingsWatcher = (): void => {
     if (settingsWatcherStarted) return;
     settingsWatcherStarted = true;
-    watcherUnsubscribers.push(repos.settings.watch(() => void syncSettingsFromStorage()));
+    watcherUnsubscribers.push(
+      repos.settings.watch((next) => {
+        if (watchersSuspended) return;
+        // watch 已携带校验后的新值，直接消费并使在途旧回读失效，避免二次读盘与乱序覆盖。
+        settingsReadGeneration += 1;
+        applySyncedSettings(next);
+      })
+    );
   };
 
   /** 数据分区 watcher（folders / pins / collapse）每个 store 实例只注册一次，初始化重试沿用同一组监听器。 */
@@ -261,6 +277,9 @@ export function buildDataContext(
     writePins,
     cancelWrites,
     scheduleMirror,
+    setMirrorRestorePending: (value) => {
+      mirrorRestorePending = value;
+    },
     reportPersistenceFailure,
     clearDegraded,
     resetDegraded,

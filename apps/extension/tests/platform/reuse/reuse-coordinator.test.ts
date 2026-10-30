@@ -227,6 +227,46 @@ describe('ReuseCoordinator', () => {
     expect(h.calls.close).toEqual([11]);
   });
 
+  it('scanWindow 在途期间关闭开关后，不再激活或关闭任何标签', async () => {
+    // Given：复用判定已经读到旧开关，但窗口扫描尚未返回。
+    let releaseScan!: () => void;
+    let markScanStarted!: () => void;
+    const scanGate = new Promise<void>((resolve) => (releaseScan = resolve));
+    const scanStarted = new Promise<void>((resolve) => (markScanStarted = resolve));
+    const calls = { activate: [] as number[], close: [] as number[], notifications: 0 };
+    const coordinator = new ReuseCoordinator(
+      {
+        scanWindow: async () => {
+          markScanStarted();
+          await scanGate;
+          return [makeTab({ id: 1, url: 'https://a.com/' })];
+        },
+        activate: async (tabId) => {
+          calls.activate.push(tabId);
+        },
+        close: async (tabId) => {
+          calls.close.push(tabId);
+        },
+        notifyReuse: () => {
+          calls.notifications += 1;
+        }
+      },
+      { enabled: true }
+    );
+    coordinator.handleCreated(makeTab({ id: 10, url: 'https://a.com/', status: 'complete' }));
+    await scanStarted;
+
+    // When：扫描在途时用户关闭同 URL 唯一化。
+    coordinator.setEnabled(false);
+    releaseScan();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Then：在途旧任务不得继续产生破坏性副作用。
+    expect(calls.activate).toEqual([]);
+    expect(calls.close).toEqual([]);
+    expect(calls.notifications).toBe(0);
+  });
+
   it('单任务异常（标签恰被用户关闭）不中断调度，后续任务照常结算', async () => {
     const calls = { activate: [] as number[], close: [] as number[] };
     const windowTabs = [

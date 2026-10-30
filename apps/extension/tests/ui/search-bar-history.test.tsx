@@ -33,23 +33,26 @@ describe('SearchBar 历史开关', () => {
     expect(screen.queryByRole('button', { name: translate('包含历史（快照/归档）') })).toBeNull();
   });
 
-  it('开关渲染且默认关闭态：aria-pressed=false、提示为「仅当前」文案', () => {
+  it('开关渲染且默认关闭态：可访问名稳定、aria-pressed=false', () => {
     renderSearchBar({ showHistoryToggle: true, historyOn: false, onToggleHistory: vi.fn() });
-    const toggle = screen.getByRole('button', { name: translate('仅搜索当前标签') });
+    // 稳定名：不随开/关切换，状态由 aria-pressed 表达（WAI-ARIA toggle button）。
+    const toggle = screen.getByRole('button', { name: translate('包含历史（快照/归档）') });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveAttribute('title', translate('仅搜索当前标签'));
   });
 
-  it('开启态：aria-pressed=true、类名带 is-active、提示为「包含历史」文案', () => {
+  it('开启态：可访问名不变、aria-pressed=true、类名带 is-active', () => {
     renderSearchBar({ showHistoryToggle: true, historyOn: true, onToggleHistory: vi.fn() });
     const toggle = screen.getByRole('button', { name: translate('包含历史（快照/归档）') });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveAttribute('title', translate('包含历史（快照/归档）'));
     expect(toggle.className).toContain('is-active');
   });
 
   it('点击开关：回调触发一次，焦点回归输入框', () => {
     const onToggleHistory = vi.fn();
     renderSearchBar({ showHistoryToggle: true, historyOn: false, onToggleHistory });
-    fireEvent.click(screen.getByRole('button', { name: translate('仅搜索当前标签') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('包含历史（快照/归档）') }));
     expect(onToggleHistory).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(screen.getByRole('searchbox'));
   });

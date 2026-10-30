@@ -312,7 +312,21 @@ export function createFolderSlice(
       // 说明 —— 否则固定空间凭空多一个空夹、界面还提示「已保存」，看似丢数据。
       if (items.length === 0) return false;
       const folder = createFolderModel(name);
-      await ctx.writeFolders((current) => [...current, { ...folder, items }]);
+      let accepted = false;
+      const persisted = await ctx.writeFolders((current) => {
+        // 上限必须按 updater 的最新基线判定；超限/并发冲突时不得建立指向未落盘条目的绑定。
+        if (current.length >= FOLDERS_LIMIT) return current;
+        accepted = true;
+        return [...current, { ...folder, items }];
+      });
+      if (!accepted) {
+        ctx.reportPersistenceFailure(
+          'dataStore',
+          `固定文件夹数量已达上限 ${FOLDERS_LIMIT} 个，本次未创建（请先删除不再需要的文件夹）`
+        );
+        return false;
+      }
+      if (!persisted) return false;
 
       // 建立绑定：精确 URL 匹配（串行化内完成，防并发覆盖）
       const result = await mutateSession((session) => {

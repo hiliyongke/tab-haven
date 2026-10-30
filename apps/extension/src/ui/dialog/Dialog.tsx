@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { isImeComposing } from '@/core/util/keyboard';
+import { restoreFocus } from '@/ui/domContract';
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
 import { Icons } from '@/ui/common/Icon';
@@ -76,7 +77,19 @@ function applyBackgroundInert(inert: boolean): void {
   const useInert = supportsInert();
   for (const el of targets) {
     if (useInert) {
-      el.inert = inert;
+      if (inert) {
+        // inert 会反射到同名 attribute；先读 attribute 可在不触发 WebIDL getter 的前提下
+        // 记录原态。嵌套弹窗由外层统一恢复，本就对读屏/焦点隐藏的区域不得被顺手解禁。
+        if (el.dataset.inertPrevious === undefined) {
+          el.dataset.inertPrevious = el.hasAttribute('inert') ? 'true' : 'false';
+        }
+        el.inert = true;
+      } else {
+        const previous = el.dataset.inertPrevious;
+        if (previous === undefined) continue;
+        delete el.dataset.inertPrevious;
+        el.inert = previous === 'true';
+      }
     } else if (inert) {
       // 记下原本的 aria-hidden：解除时若无条件 removeAttribute 会摘掉元素自带的
       // aria-hidden（本就对读屏隐藏的内容）。用 dataset 而非模块级 Map：元素可能在
@@ -202,7 +215,9 @@ export function useModalA11y(
         root.style.overflow = previousOverflow;
         root.style.paddingRight = previousPaddingRight ?? '';
       }
-      trigger?.focus?.();
+      // 触发元素若已在浮层期间卸载（如「关闭该标签」使行消失），restoreFocus 会在
+      // 背景 inert 解除后把焦点落到面板内首个可聚焦元素，避免掉回 body。
+      restoreFocus(trigger);
     };
     // eslint 依赖提示：onClose 已通过 ref 持有，effect 仅需挂载/卸载各执行一次。
   }, [shellRef]);

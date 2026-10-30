@@ -7,21 +7,25 @@
   "scripts": {
     "dev": "node dev.mjs",
     "build": "node build.mjs",
+    "build:release": "node build.mjs --release",
     "preview": "vite preview --port 5175 --strictPort",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings 0",
+    "test": "node --test lib/security.test.mjs",
     "i18n": "i18n-kit scan && i18n-kit apply && i18n-kit check",
-    "check": "npm run typecheck && npm run lint && npm run i18n && npm run build"
+    "check": "npm run typecheck && npm run lint && npm run i18n && npm test && npm run build"
   },
   "//scriptDocs": "JSON 不支持注释，逐命令说明放在这里。根 package.json 的 site:* 只做转发（pnpm --filter site）。",
   "scriptDocs": {
-    "dev": "开发预览：Vite middlewareMode + SSR 即时渲染，端口 5174（避开扩展 dev 占用的 3000）",
-    "build": "构建：客户端打包 → SSR 打包 → 预渲染 zh-CN/en 两份静态页 → 注入 SEO head → 拷贝扩展 zip → 零外链与译文自检；产物 dist（顺序不能反：SSR 的 emptyOutDir 会清空上一步产物）",
+    "dev": "开发预览：Vite middlewareMode + SSR 即时渲染，仅监听 127.0.0.1:5174（避开扩展 dev 占用的 3000）",
+    "build": "验证构建：客户端打包 → SSR 打包 → 预渲染 zh-CN/en 静态页 → 注入可用 SEO head → 拷贝扩展 zip → 零外链与译文自检；产物 dist",
+    "build:release": "发布构建：强制要求 site.config.ts 配置正式 SITE_URL 后执行构建",
     "preview": "预览 dist/ 产物，端口 5175；部署前验证用",
     "typecheck": "tsc --noEmit：官网独立 tsconfig，不复用扩展的 .wxt 配置",
     "lint": "eslint . --max-warnings 0：官网独立 lint 配置（根 lint 已忽略 site/）",
+    "test": "官网构建安全回归测试（Node 内置测试运行器）",
     "i18n": "文案一条龙：扫描 src/ 的中文原文 → 编译进 src/i18n/locales → 跑守卫。词典在 i18n/ 下，与扩展的 i18n/ 完全隔离",
-    "check": "官网门禁：typecheck → lint → i18n → build"
+    "check": "官网门禁：typecheck → lint → i18n → test → build"
   },
   "dependencies": {
     "i18n-kit": "workspace:*",

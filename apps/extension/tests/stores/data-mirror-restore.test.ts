@@ -43,6 +43,7 @@ async function harness(
     localPins?: unknown[];
     foldersWriteOk?: boolean;
     pinsWriteOk?: boolean;
+    seededWriteOk?: boolean;
   } = {}
 ): Promise<Harness> {
   const set = vi.fn();
@@ -55,16 +56,28 @@ async function harness(
   );
   const foldersWrite = vi.fn(async () => options.foldersWriteOk ?? true);
   const pinsWrite = vi.fn(async () => options.pinsWriteOk ?? true);
-  const seededWrite = vi.fn(async () => true);
+  const seededWrite = vi.fn(async () => options.seededWriteOk ?? true);
   const reportPersistenceFailure = vi.fn();
 
   const ctx = {
     set,
     get,
     repos: {
-      seeded: { read: vi.fn(async () => options.seeded ?? false), write: seededWrite },
-      folders: { read: vi.fn(async () => options.localFolders ?? []), write: foldersWrite },
-      pins: { read: vi.fn(async () => options.localPins ?? []), write: pinsWrite }
+      seeded: {
+        read: vi.fn(async () => options.seeded ?? false),
+        readStrict: vi.fn(async () => options.seeded ?? false),
+        write: seededWrite
+      },
+      folders: {
+        read: vi.fn(async () => options.localFolders ?? []),
+        readStrict: vi.fn(async () => options.localFolders ?? []),
+        write: foldersWrite
+      },
+      pins: {
+        read: vi.fn(async () => options.localPins ?? []),
+        readStrict: vi.fn(async () => options.localPins ?? []),
+        write: pinsWrite
+      }
     },
     reportPersistenceFailure
   } as unknown as DataContext;
@@ -181,6 +194,40 @@ describe('restoreFromMirrorOnEnable', () => {
     expect(h.reportPersistenceFailure).toHaveBeenCalled();
     // 没有数据成功落盘时，状态分类为 unreadable。
     expect(h.set).toHaveBeenLastCalledWith({ mirrorIssue: 'unreadable' });
+  });
+
+  it('seeded 写失败时返回 failed，不把恢复当成功', async () => {
+    mocks.pull.mockResolvedValueOnce({
+      folders: [folder('from-mirror')],
+      pins: [],
+      settings: DEFAULT_SETTINGS
+    });
+    const h = await harness({ seededWriteOk: false });
+
+    await expect(h.run()).resolves.toBe('failed');
+
+    expect(h.seededWrite).toHaveBeenCalledWith(true);
+    expect(h.reportPersistenceFailure).toHaveBeenCalledWith(
+      'dataStore',
+      '镜像恢复完成标记写入失败（下次启动重试）'
+    );
+    expect(h.set).toHaveBeenLastCalledWith({ mirrorIssue: 'unreadable' });
+  });
+
+  it('锁内基线读取故障时中止，不写 folders/pins 或 seeded', async () => {
+    mocks.pull.mockResolvedValueOnce({
+      folders: [folder('from-mirror')],
+      pins: [],
+      settings: DEFAULT_SETTINGS
+    });
+    const h = await harness();
+    vi.spyOn(h.ctx.repos.folders, 'readStrict').mockRejectedValue(new Error('storage down'));
+
+    await expect(h.run()).rejects.toThrow('storage down');
+
+    expect(h.foldersWrite).not.toHaveBeenCalled();
+    expect(h.pinsWrite).not.toHaveBeenCalled();
+    expect(h.seededWrite).not.toHaveBeenCalled();
   });
 
   /** 镜像恢复时按备份导入使用的规则校验和归一化 URL 与 favicon。 */

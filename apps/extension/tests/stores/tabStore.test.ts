@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   setGroupCollapsed: vi.fn<(id: number, collapsed: boolean) => Promise<void>>(
     async () => undefined
   ),
-  toggleMute: vi.fn<(id: number, muted: boolean) => Promise<void>>(async () => undefined),
+  toggleMute: vi.fn<(id: number, muted: boolean) => Promise<boolean>>(async () => true),
   togglePinned: vi.fn<(id: number, pinned: boolean) => Promise<boolean>>(async () => true),
   grantReuseAllowance: vi.fn<(windowId: number, key: string) => Promise<void>>(
     async () => undefined
@@ -118,8 +118,12 @@ describe('平台调用透传', () => {
     expect(mocks.discardTab).toHaveBeenCalledWith(9);
   });
 
-  it('toggleMute 把标签的静音快照转成平台层的 currentlyMuted 参数', async () => {
-    await useTabStore.getState().toggleMute(tab({ id: 1, muted: true }));
+  it('toggleMute 透传静音参数与平台失败结果', async () => {
+    mocks.toggleMute.mockResolvedValueOnce(false);
+
+    await expect(useTabStore.getState().toggleMute(tab({ id: 1, muted: true }))).resolves.toBe(
+      false
+    );
 
     expect(mocks.toggleMute).toHaveBeenCalledWith(1, true);
   });

@@ -12,8 +12,7 @@ import { structuralSignature } from '@/core/util/signature';
 import {
   FOLDERS_LIMIT,
   InboundFixedFolderSchema,
-  InboundPersistentPinSchema,
-  PINS_LIMIT,
+  InboundPersistentPinListSchema,
   SettingsSchema
 } from '@/core/schema/models';
 import type { DataContext, DataSlice } from './types';
@@ -53,6 +52,14 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
       if (initialized) return;
       initialized = true;
       ctx.startSettingsWatcher();
+      // 先注册全部 watcher 再读盘；最终提交按分区保留读取期间回放的新值。
+      ctx.startValueWatchers();
+      const before = {
+        folders: ctx.get().folders,
+        pins: ctx.get().pins,
+        collapsedSites: ctx.get().collapsedSites,
+        settings: ctx.get().settings
+      };
       try {
         const [folders, pins, collapsedSites, settings, session, seeded] = await Promise.all([
           ctx.repos.folders.read(),
@@ -69,6 +76,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
         let settingsPatch: Record<string, unknown> = {};
         /** 最近一次镜像拉取的分类；未拉取（已 seeded / 开关关闭）时为 null。 */
         let mirrorIssue: MirrorSyncIssue | null = null;
+        ctx.setMirrorRestorePending(!seeded && settings.syncMirrorEnabled);
         if (!seeded && settings.syncMirrorEnabled) {
           // 新设备首次启动：从同步通道镜像恢复（本地有数据以本地为准）。
           // 开关关闭时不拉取——「不上传」与「不下载」必须同开同关，否则关同步的用户换机仍被旧镜像回灌。
@@ -85,9 +93,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
             const parsedFolders = InboundFixedFolderSchema.array()
               .max(FOLDERS_LIMIT)
               .safeParse(mirror.folders);
-            const parsedPins = InboundPersistentPinSchema.array()
-              .max(PINS_LIMIT)
-              .safeParse(mirror.pins);
+            const parsedPins = InboundPersistentPinListSchema.safeParse(mirror.pins);
             const parsedSettings = SettingsSchema.safeParse(mirror.settings);
             /**
              * 只取镜像**显式给出**的设置键。SettingsSchema 每字段带 `.default()`，safeParse 恒产出全字段对象，
@@ -109,7 +115,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
             // 跨页锁 + 锁内重读：整表写与另一上下文并发时锁外会互相覆盖；
             // 锁内发现本地已有数据说明并发上下文刚写过，以本地为准放弃覆盖。
             const ok = await withCrossPageLock(FOLDERS_RMW_LOCK, async () => {
-              const disk = await ctx.repos.folders.read();
+              const disk = await ctx.repos.folders.readStrict();
               if (disk.length > 0) {
                 effectiveFolders = disk;
                 return true;
@@ -123,7 +129,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
           }
           if (effectivePins !== pins) {
             const ok = await withCrossPageLock(PINS_RMW_LOCK, async () => {
-              const disk = await ctx.repos.pins.read();
+              const disk = await ctx.repos.pins.readStrict();
               if (disk.length > 0) {
                 effectivePins = disk;
                 return true;
@@ -140,7 +146,7 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
             // settings 无「本地为空」判据，须与 settingsSlice 同口径「锁内重读 → 合并 → 写」，
             // 否则整对象覆盖会抹掉并发页刚写入、而镜像里没有的字段。
             const ok = await withCrossPageLock(SETTINGS_RMW_LOCK, async () => {
-              const disk = await ctx.repos.settings.read();
+              const disk = await ctx.repos.settings.readStrict();
               // 以磁盘为基线、只覆盖镜像显式给出的字段。
               const merged = SettingsSchema.safeParse({ ...disk, ...settingsPatch });
               if (!merged.success) return false;
@@ -167,13 +173,32 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
           )
             mirrorIssue = 'local';
           // 仅在镜像数据全部解析并成功落盘后写入 seeded；pull 为空或解析失败时保留下次重试机会。
-          if (mirror && restoreWritesOk && mirrorParseOk) await ctx.repos.seeded.write(true);
+          if (mirror && restoreWritesOk && mirrorParseOk) {
+            const seededOk = await ctx.repos.seeded.write(true);
+            if (seededOk) {
+              ctx.setMirrorRestorePending(false);
+            } else {
+              ctx.reportPersistenceFailure('dataStore', '镜像恢复完成标记写入失败（下次启动重试）');
+              mirrorIssue = 'unreadable';
+            }
+          } else if (!mirror && mirrorIssue !== 'chunk-limit') {
+            // 确无镜像（或按既定策略自愈 unreadable）时，本地可成为首份镜像。
+            ctx.setMirrorRestorePending(false);
+          }
         }
+        const current = ctx.get();
+        // 读盘期间 watcher 已回放的分区以内存新值为准，不能用本次旧 read 结果收尾。
+        if (current.folders !== before.folders) effectiveFolders = current.folders;
+        if (current.pins !== before.pins) effectivePins = current.pins;
+        if (current.settings !== before.settings) effectiveSettings = current.settings;
         ctx.set({
           folders: effectiveFolders,
           // 仓库 read 不去重，磁盘/镜像里的重复身份会直接渲染成两块磁贴（与 pins watcher 同口径）。
           pins: dedupePins(effectivePins),
-          collapsedSites,
+          collapsedSites:
+            current.collapsedSites !== before.collapsedSites
+              ? current.collapsedSites
+              : collapsedSites,
           settings: effectiveSettings,
           boundTabIds: Object.values(session.itemTabBindings),
           mirrorIssue,
@@ -181,7 +206,6 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
         });
         // 数据加载后立即同步主题镜像，确保防闪烁初始化与最新设置一致（单一数据源）。
         applyTheme(effectiveSettings.themePreference, effectiveSettings.colorTheme);
-        ctx.startValueWatchers();
       } catch (error) {
         // 初始化失败：回滚守卫以允许重试（否则面板永久停在 Loading 骨架屏）。
         initialized = false;

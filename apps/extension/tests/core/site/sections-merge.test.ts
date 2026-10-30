@@ -193,6 +193,26 @@ describe('deriveSections 同站点归并', () => {
     expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([3]);
   });
 
+  it('同一原生组混有 localhost 不同端口时不作为同站点候选归并', () => {
+    // Given 原生组标题指向 3000，但组内同时有 3000 与 8080 成员
+    const tabs = [
+      makeTab(1, 'http://localhost:3000/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'http://localhost:8080/b', { groupId: 7, index: 2 }),
+      makeTab(3, 'http://localhost:3000/c', { index: 3 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'localhost:3000' }];
+
+    // When 派生站点分区
+    const sections = deriveSections({ tabs, groups, threshold: 2 });
+
+    // Then 混端口原生组保持原样，8080 成员不会被吞进 3000 分区
+    const native = sections.find((s) => s.kind === 'native');
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    expect(sections.some((s) => s.kind === 'site' && s.siteKey === 'localhost:3000')).toBe(false);
+    const ungrouped = sections.find((s) => s.kind === 'ungrouped');
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([3]);
+  });
+
   it('IP 站点同样按端口区分：127.0.0.1:8080 的唯一标签不被 3000 归并吞掉', () => {
     // IP 主机的不同端口分别作为独立站点身份。
     const tabs = [

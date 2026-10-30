@@ -48,6 +48,7 @@ export function Button({
   type = 'button',
   className,
   disabled,
+  busy,
   label,
   tooltip,
   onClick,
@@ -58,6 +59,9 @@ export function Button({
   type?: 'button' | 'submit';
   className?: string;
   disabled?: boolean;
+  /** 异步在途：透传 aria-busy=true（读屏据此播报「忙」），不改变视觉与禁用语义。
+   *  Button 接口不展开原生属性，aria-busy 必须显式收口，否则调用方写的会被静默丢弃。 */
+  busy?: boolean;
   /** 可访问名（icon-only 按钮必填）：落到 aria-label。有可见文字时可省略，此时由 children
    *  承担；传了 label 会以它为准（覆盖可见文字）。 */
   label?: string;
@@ -79,6 +83,7 @@ export function Button({
         (className ? ' ' + className : '')
       }
       disabled={disabled}
+      aria-busy={busy || undefined}
       title={tooltip ?? label}
       aria-label={label}
       onClick={onClick}

@@ -43,6 +43,7 @@ vi.mock('@/platform/theme/ThemeApplier', () => ({
 function repo<T>(value: T, writeOk = true) {
   return {
     read: vi.fn(async () => value),
+    readStrict: vi.fn(async () => value),
     write: vi.fn(async () => writeOk)
   };
 }
@@ -63,6 +64,7 @@ async function harness(options: {
   pins?: unknown[];
   diskSettings?: typeof DEFAULT_SETTINGS;
   seeded?: boolean;
+  seededWriteOk?: boolean;
   foldersWriteOk?: boolean;
 }): Promise<Harness> {
   const { createSettingsSlice } = await import('@/stores/data/settingsSlice');
@@ -74,7 +76,7 @@ async function harness(options: {
   };
   const folders = repo(options.folders ?? [], options.foldersWriteOk ?? true);
   const pins = repo(options.pins ?? []);
-  const seeded = repo(options.seeded ?? false);
+  const seeded = repo(options.seeded ?? false, options.seededWriteOk ?? true);
   const scheduleMirror = vi.fn();
   const reportPersistenceFailure = vi.fn();
 
@@ -88,6 +90,7 @@ async function harness(options: {
       seeded
     },
     scheduleMirror,
+    setMirrorRestorePending: vi.fn(),
     broadcastSettingsSynced: vi.fn(),
     reportPersistenceFailure,
     // 关闭同步路径会调用它复位镜像失败态（真实 ctx 由 buildDataContext 提供）
@@ -206,6 +209,50 @@ describe('开启同步的反向恢复（新设备换机恢复）', () => {
 
     expect(h.scheduleMirror).not.toHaveBeenCalled();
     expect(h.seeded.write).not.toHaveBeenCalled();
+  });
+
+  it('镜像中重复 pin id 拒绝首次恢复且不覆盖镜像', async () => {
+    mocks.pull.mockResolvedValueOnce({
+      ...mirror,
+      pins: [
+        { id: 'same', identity: 'a.com', url: 'https://a.com/', title: 'A' },
+        { id: 'same', identity: 'b.com', url: 'https://b.com/', title: 'B' }
+      ]
+    });
+    const h = await harness({ seeded: false });
+
+    await h.updateSettings({ syncMirrorEnabled: true });
+
+    expect(h.pins.write).not.toHaveBeenCalled();
+    expect(h.scheduleMirror).not.toHaveBeenCalled();
+    expect(h.seeded.write).not.toHaveBeenCalled();
+  });
+
+  it('seeded 写失败时恢复不算完成，不推首次镜像', async () => {
+    mocks.pull.mockResolvedValueOnce(mirror);
+    const h = await harness({ seeded: false, seededWriteOk: false });
+
+    await h.updateSettings({ syncMirrorEnabled: true });
+
+    expect(h.seeded.write).toHaveBeenCalledWith(true);
+    expect(h.scheduleMirror).not.toHaveBeenCalled();
+    expect(h.reportPersistenceFailure).toHaveBeenCalledWith(
+      'dataStore',
+      '镜像恢复完成标记写入失败（下次启动重试）'
+    );
+    expect(h.ctx.setMirrorRestorePending).toHaveBeenCalledWith(true);
+    expect(h.ctx.setMirrorRestorePending).not.toHaveBeenCalledWith(false);
+  });
+
+  it('设置基线读取故障时中止修改，不写盘也不更新内存', async () => {
+    const h = await harness({ seeded: true });
+    vi.spyOn(h.ctx.repos.settings, 'readStrict').mockRejectedValue(new Error('storage down'));
+    const write = vi.spyOn(h.ctx.repos.settings, 'write');
+
+    await expect(h.updateSettings({ pinyinSearch: false })).rejects.toThrow('storage down');
+
+    expect(write).not.toHaveBeenCalled();
+    expect(h.state.settings).toEqual(DEFAULT_SETTINGS);
   });
 });
 

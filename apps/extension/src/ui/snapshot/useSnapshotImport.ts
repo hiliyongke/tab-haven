@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { isOneTabTooLarge } from '@/core/snapshot/oneTabImport';
 import type { Translate } from '@/i18n';
 import { useSnapshotStore } from '@/stores/snapshotStore';
@@ -29,12 +29,21 @@ export function useSnapshotImport(params: {
   setSource: (source: ImportSource) => void;
   setText: (text: string) => void;
   setName: (name: string) => void;
+  /** 导入在途态：驱动按钮禁用与 busy 文案，避免并发提交。 */
+  importing: boolean;
   runImport: () => Promise<void>;
 } {
   const { t, notify, notifyFailure, onDone } = params;
   const [source, setSource] = useState<'onetab' | 'workona'>('onetab');
   const [text, setText] = useState('');
   const [name, setName] = useState('');
+  /**
+   * 导入在途标尺：importOneTab / importWorkona 是异步写盘（Workona 会循环逐份
+   * persistSnapshot），渲染期 state（importing）同 tick 连点读到旧值会并发穿透，
+   * 生成重复快照。importing 只承担按钮禁用态，同 tick 连点靠 ref 拦。
+   */
+  const [importing, setImporting] = useState(false);
+  const importInFlight = useRef(false);
 
   const clear = useCallback(() => {
     setText('');
@@ -42,6 +51,10 @@ export function useSnapshotImport(params: {
   }, []);
 
   const runImport = useCallback(async () => {
+    // 同 tick 连点用 ref 拦（importing state 驱动按钮禁用，但反应比重渲染慢一拍）。
+    if (importInFlight.current) return;
+    importInFlight.current = true;
+    setImporting(true);
     try {
       const { importOneTab, importWorkona } = useSnapshotStore.getState();
       if (source === 'workona') {
@@ -127,8 +140,12 @@ export function useSnapshotImport(params: {
       // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
       // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
       notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
+    } finally {
+      // 所有出口（成功 return / 失败分流 return / 抛错）都复位，避免按钮永久禁用。
+      importInFlight.current = false;
+      setImporting(false);
     }
   }, [clear, name, notify, notifyFailure, onDone, source, t, text]);
 
-  return { source, text, name, setSource, setText, setName, runImport };
+  return { source, text, name, setSource, setText, setName, importing, runImport };
 }

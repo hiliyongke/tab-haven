@@ -84,6 +84,26 @@ describe('TabRow', () => {
     expect(screen.queryByRole('button', { name: translate('静音') })).toBeNull();
   });
 
+  it('真实行转发虚拟列表位置并标记激活项', () => {
+    renderTabRow(tabOf({ active: true }), {
+      isActive: true,
+      autoScrollActive: false,
+      'aria-posinset': 4,
+      'aria-setsize': 20
+    });
+
+    const row = screen.getByRole('listitem');
+    expect(row).toHaveAttribute('aria-posinset', '4');
+    expect(row).toHaveAttribute('aria-setsize', '20');
+    expect(row).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('非激活行不提供 aria-current', () => {
+    renderTabRow(tabOf(), { isActive: false });
+
+    expect(screen.getByRole('listitem')).not.toHaveAttribute('aria-current');
+  });
+
   it('点击主按钮激活标签', () => {
     const props = renderTabRow(tabOf());
     fireEvent.click(screen.getByTitle(translate('切换到：{{title}}', { title: '示例页面' })));

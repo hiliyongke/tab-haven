@@ -101,6 +101,21 @@ export const FolderItemRow = memo(function FolderItemRow({
 
   const handleOpen = useCallback(() => void openSavedItem(item), [openSavedItem, item]);
 
+  const handleToggleMute = useCallback(() => {
+    if (!runtimeTab) return;
+    void Promise.resolve(toggleMute(runtimeTab))
+      .then((ok) => {
+        if (!ok) {
+          useUndoStore.getState().notifyError(t('操作失败，请稍后重试'));
+          return;
+        }
+        useUndoStore.getState().notify(runtimeTab.muted ? t('已取消静音') : t('已静音'));
+      })
+      .catch((error: unknown) =>
+        useUndoStore.getState().notifyFailure('sidepanel', t('操作失败，请稍后重试'), error)
+      );
+  }, [runtimeTab, t, toggleMute]);
+
   /**
    * 移出文件夹：关闭对应标签并删除长期保存的条目，两个操作由同一撤销回执恢复。
    * 关闭先写入撤销栈，再删除条目；行内按钮与右键菜单共用此流程。
@@ -115,13 +130,18 @@ export const FolderItemRow = memo(function FolderItemRow({
     // 批次 —— 只有真会关掉的标签才谈得上「本次批次」。
     const closable = targetTab && !targetTab.pinned ? targetTab : undefined;
     const foldersSnapshot = useDataStore.getState().folders;
+    let closedBatchId: string | undefined;
     void (
-      closable ? useUndoStore.getState().closeWithUndo(allTabs, [closable.id]) : Promise.resolve()
+      closable
+        ? useUndoStore.getState().closeWithUndo(allTabs, [closable.id])
+        : Promise.resolve(undefined)
     )
-      .then(() => removeFolderItem(folder.id, item.id))
+      .then((batchId) => {
+        // 只消费本次关闭实际新建的批次；等待删除期间栈尾可能已属于其他操作。
+        closedBatchId = batchId;
+        return removeFolderItem(folder.id, item.id);
+      })
       .then(() => {
-        // 撤销栈末尾是最新批次（pushBatch 追加到末尾，undo 取 at(-1)），用于精确撤销本次关闭。
-        const closedBatchId = closable ? useUndoStore.getState().batches.at(-1)?.id : undefined;
         useUndoStore.getState().notify(t('已移出文件夹'), {
           label: t('撤销'),
           run: () => {
@@ -136,8 +156,8 @@ export const FolderItemRow = memo(function FolderItemRow({
   }, [folder.id, item.id, item.pendingTabId, item.url, removeFolderItem, t]);
 
   /* 右键菜单：条目的移出不能只有行尾一个 24px 的 ×（且会一并关标签），
-     窄面板下易误触。右键给出带文字的明确操作。 */
-  const { menu, open: openMenu, close: closeMenu } = useRowContextMenu();
+     窄面板下易误触。右键 + ContextMenu 键/Shift+F10 给出带文字的明确操作。 */
+  const { menu, open: openMenu, openFromKeyboard, close: closeMenu } = useRowContextMenu();
   const menuItems = useMemo<ContextMenuItem[]>(
     () => [
       { id: 'open', label: t('打开'), onSelect: handleOpen },
@@ -172,7 +192,7 @@ export const FolderItemRow = memo(function FolderItemRow({
           <RowActionButton
             icon={runtimeTab.muted ? Icons.volumeOff : Icons.volumeOn}
             label={runtimeTab.muted ? t('取消静音') : t('静音')}
-            onClick={() => void toggleMute(runtimeTab)}
+            onClick={handleToggleMute}
           />
         )}
         {runtimeTab &&
@@ -194,7 +214,7 @@ export const FolderItemRow = memo(function FolderItemRow({
         />
       </RowActions>
     ),
-    [runtimeTab, t, importing, toggleMute, discardTab, handleRemove]
+    [runtimeTab, t, importing, handleToggleMute, discardTab, handleRemove]
   );
 
   // container 依赖 useSortable 的返回值：其内部对象每次渲染都是新引用，
@@ -242,7 +262,11 @@ export const FolderItemRow = memo(function FolderItemRow({
     // 与标签行共用该属性时，⌘J 定位的 querySelector 取「第一个命中」，固定区
     // DOM 在列表之前 → 同 URL 未绑定时定位永远落在条目上而非列表行。
     // 定位工具按「真实行优先、条目兜底」两段查找（见 useLocateActive）。
-    <li {...folderItemRowIdProps(runtimeTab?.id)} onContextMenu={openMenu}>
+    <li
+      {...folderItemRowIdProps(runtimeTab?.id)}
+      onContextMenu={openMenu}
+      onKeyDown={openFromKeyboard}
+    >
       <RowItem
         faviconPageUrl={item.url}
         faviconTitle={item.title}

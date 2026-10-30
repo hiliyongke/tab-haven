@@ -79,17 +79,21 @@ export function createUndoBatch(
 }
 
 /**
- * 重做目标：当前窗口中 URL 与撤销记录相同的标签。
- * 按 URL 匹配（记录不含 tabId，标签 id 关闭后失效）；一对一配对，只关刚恢复的那批，
- * 不误伤窗口里本就开着的同 URL 副本。
+ * 重做目标：优先按本次实际恢复的标签 id 精确匹配，避免关掉窗口里原有的同 URL keeper。
+ * 旧重做记录没有 id 时回退为 URL 匹配（标签 id 关闭后失效）；一对一配对，只关记录对应的数量。
+ * restoredTabIds 一旦传入（包括空数组）就是权威身份集，不再用 URL 猜测或补位。
  * includePinned=true 用于撤销「快照恢复」批次：那批固定标签正是要关掉的对象，须纳入匹配。
  */
 export function selectRedoTargets(
   tabs: readonly TabRecord[],
   records: readonly UndoTabRecord[],
-  options: { includePinned?: boolean } = {}
+  options: { includePinned?: boolean; restoredTabIds?: readonly number[] } = {}
 ): TabRecord[] {
   const includePinned = options.includePinned ?? false;
+  if (options.restoredTabIds !== undefined) {
+    const restoredIds = new Set(options.restoredTabIds);
+    return tabs.filter((tab) => restoredIds.has(tab.id) && (includePinned || !tab.pinned));
+  }
   const taken = new Set<number>();
   const targets: TabRecord[] = [];
   // 按比较键建索引（O(n+m)）。内部页无 web 键，另按原始 URL 兜底；空 URL 不参与。

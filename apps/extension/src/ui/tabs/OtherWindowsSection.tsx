@@ -86,8 +86,10 @@ export function OtherWindowsSection({
   // 首帧在途：给骨架占位，避免「正在查」被误读成「没有其他窗口」。
   if (status === 'loading') {
     return (
-      <section className="mt-1">
+      // role=status + aria-busy：读屏用户得到「正在查询」反馈，与空态/错误态三态对读屏同形的问题一并解决。
+      <section className="mt-1" role="status" aria-busy="true">
         <p className="group-label px-2 pb-1 pt-2">{t('其他窗口')}</p>
+        <span className="sr-only">{t('正在查询其他窗口…')}</span>
         <div className="mb-1.5 rounded-lg border border-gray-100 bg-surface px-2.5 py-2">
           <span className="skeleton block h-3 w-24" />
           <span className="skeleton mt-1.5 block h-3 flex-1" />

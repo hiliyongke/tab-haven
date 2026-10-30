@@ -4,10 +4,12 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from '@/i18n';
+import { restoreFocus } from '@/ui/domContract';
 import { useModalA11y } from '@/ui/dialog/Dialog';
 
 /**
@@ -43,8 +45,18 @@ export function useRowContextMenu() {
     }
     setMenu({ x: event.clientX, y: event.clientY });
   }, []);
+  /** 键盘唤出口：ContextMenu 键 / Shift+F10。与 TabRow 的键盘路径同口径，供
+   *  磁贴 / 文件夹条目 / 文件夹行复用（它们同样只有 onContextMenu 时键盘唤不出）。
+   *  用元素下沿定位，菜单贴着被操作的行。 */
+  const openFromKeyboard = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      setMenu({ x: rect.left, y: rect.bottom });
+    }
+  }, []);
   const close = useCallback(() => setMenu(null), []);
-  return { menu, open, close };
+  return { menu, open, openFromKeyboard, close };
 }
 
 export function ContextMenu({
@@ -89,8 +101,10 @@ export function ContextMenu({
     const first = ref.current?.querySelector<HTMLElement>(FOCUSABLE);
     first?.focus();
     // 关闭时把焦点还给触发元素，否则 Esc 后焦点掉到 body，得从头 Tab 回来。
+    // 触发元素若已被卸载（如菜单项「关闭该标签」使行消失），restoreFocus 兜底到
+    // 面板内首个可聚焦元素，避免焦点掉回 body。
     return () => {
-      if (trigger?.isConnected) trigger.focus();
+      restoreFocus(trigger);
     };
   }, []);
 

@@ -70,23 +70,30 @@ const buffer: DiagnosticEntry[] = [];
  */
 const REDACT_PATTERNS: RegExp[] = [
   // ① 带协议头的完整 URL（含 user:pass@ / 端口 / 查询串）
-  /[a-z][a-z0-9+.-]*:\/\/[^\s'")\]}]+/gi,
+  /[a-z][a-z0-9+.-]*:\/\/[^\s'")\]}；，。！？]+/gi,
   // ② 裸域名 + 可选端口 + 可选路径：至少一个点分级，避免把普通英文词误判成域名。TLD 取 2-24 位字母。
-  /\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,24}(?::\d{1,5})?(?:\/[^\s'")\]}]*)?/gi,
-  // ③ 无点分级的主机名 + 端口（如 localhost:8080/admin）：② 要求点分级，抓不到，故单列。
-  /(?<![.\w-])[a-z0-9-]*[a-z][a-z0-9-]*:\d{1,5}(?:\/[^\s'")\]}]*)?/gi,
-  // ④ 含 @ 的凭据段（兜底）
-  /\b[a-z0-9._%+-]+:[^\s@]+@[^\s'")\]}]+/gi,
-  // ⑤ 裸 IPv4（可带端口与路径）：② 要求 TLD 是字母、③ 要求主机名含字母，两者都抓不到内网地址。
-  /\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:\/[^\s'")\]}]*)?/g
+  /\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,24}(?::\d{1,5})?(?:\/[^\s'")\]}；，。！？]*)?/gi,
+  // ③ 裸 IPv4 必须先于单标签路径处理，否则端口后的路径会被单独替换，留下「<url>:<url>」。
+  /\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:\/[^\s'")\]}；，。！？]*)?/g,
+  // ④ 单标签主机名 + 路径（如 intranet/private/path）；含歧义时优先保护可能的内网 URL。
+  /(?<![.\w-])[a-z0-9-]+(?::\d{1,5})?\/[^\s'")\]}；，。！？]*/gi,
+  // ⑤ 无点分级的主机名 + 端口（如 localhost:8080/admin）。
+  /(?<![.\w-])[a-z0-9-]*[a-z][a-z0-9-]*:\d{1,5}(?:\/[^\s'")\]}；，。！？]*)?/gi,
+  // ⑥ 含 @ 的凭据段（兜底）
+  /\b[a-z0-9._%+-]+:[^\s@]+@[^\s'")\]}；，。！？]+/gi
 ];
 
 /**
- * ② 会误伤「文件名:行号」（如 file.ts:42 —— ts 被当成 TLD）。源码/文档扩展名不会是真实域名的 TLD，
- * 故在脱敏前先保护这类 token。代价：真实域名若以这些串结尾且紧跟 :数字 会漏掉 —— 现实中不成立。
+ * ② 会误伤「文件名:行号」（如 file.ts:42 —— ts 被当成 TLD），故在脱敏前保护明确的源码 token。
+ * md / sh 等真实公共后缀绝不豁免：歧义时优先脱敏，不能让浏览 URL 借文件白名单进入日志。
  */
 const FILE_LINE_TOKEN =
-  /\b[\w.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|css|scss|html|htm|xml|yml|yaml|svg|png|jpg|jpeg|gif|webp|py|rb|go|rs|java|kt|c|h|cpp|sh|txt|csv|log|map|lock):\d+(?::\d+)?\b/gi;
+  /(?<![\w./:-])(?:\/[\w.-]+|\.{1,2}|[\w.-]+)(?:\/[\w.-]+)*\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|html|htm|xml|yml|yaml|svg|png|jpg|jpeg|gif|webp|py|rb|go|rs|java|kt|c|h|cpp|txt|csv|log|map|lock):\d+(?::\d+)?\b/gi;
+const FILE_PATH_TOKEN =
+  /(?<![\w./:-])(?:\/[\w.-]+|\.{1,2}|[\w.-]+)(?:\/[\w.-]+)*\.(?:ts|tsx|js|jsx|mjs|cjs|json|css|scss|html|htm)(?=$|[\s:),\]}])/gi;
+
+/** 已知代码标识符仅按完整 token 豁免；真实同名域名带路径/端口时仍会脱敏。 */
+const CODE_API_TOKEN = /(?<![\w./:-])sidePanel\.open(?![\w./:-])/g;
 
 /**
  * 存储键 token：与 FILE_LINE_TOKEN 同机制（脱敏前占位、脱敏后还原）。
@@ -113,7 +120,9 @@ function redactUrls(text: string): string {
   // 先占位保护文件名:行号与存储键名，脱敏后还原 —— 比写一条巨型负向断言更易读也更易验证。
   const protectedTokens: string[] = [];
   let out = protectTokens(text, FILE_LINE_TOKEN, protectedTokens);
+  out = protectTokens(out, FILE_PATH_TOKEN, protectedTokens);
   out = protectTokens(out, STORAGE_KEY_TOKEN, protectedTokens);
+  out = protectTokens(out, CODE_API_TOKEN, protectedTokens);
   for (const pattern of REDACT_PATTERNS) out = out.replace(pattern, '<url>');
   // 还原不到就原样保留占位串而非替换为空串：日志本就含 U+E000 段同形串时，空串会把那段内容静默吞掉。
   return out.replace(/\uE000(\d+)\uE000/g, (m, i) => protectedTokens[Number(i)] ?? m);
@@ -156,23 +165,26 @@ export function logDegraded(
   error?: unknown,
   options?: { quiet?: boolean }
 ): void {
-  push({ at: new Date().toISOString(), scope, message, detail: detailOf(error) });
+  const safeMessage = redactUrls(message);
+  const detail = detailOf(error);
+  push({ at: new Date().toISOString(), scope, message: safeMessage, detail });
   // console 输出只在开发期保留：生产构建里 import.meta.env.DEV 被替换为 false，整段由 DCE 移除。
   // 诊断记录已在上一行 push() 完成，移除 console 不影响「导出诊断」的完整性。
   if (!import.meta.env.DEV) return;
-  const line = `[Tabs][${scope}] ${message}`;
-  if (options?.quiet) console.debug(line, error ?? '');
-  else console.warn(line, error ?? '');
+  const line = `[Tabs][${scope}] ${safeMessage}`;
+  if (options?.quiet) console.debug(line, detail ?? '');
+  else console.warn(line, detail ?? '');
 }
 
 /** 记录一次真实失败（操作未达成且无法自动恢复）。 */
 export function logFailure(scope: string, message: string, error?: unknown): void {
   // 脱敏值算一次并两条出口共用：落盘前过脱敏而 console 直出原始 error 会让控制台成为绕过脱敏的通道
   // （用户常把 chrome://extensions 错误面板内容贴进 issue，那是脱敏唯一想防的泄露面）。
+  const safeMessage = redactUrls(message);
   const detail = detailOf(error);
-  push({ at: new Date().toISOString(), scope, message, detail });
+  push({ at: new Date().toISOString(), scope, message: safeMessage, detail });
   // 真实失败保留 error 级输出：chrome://extensions 的「错误」面板会收录，这是现场发现故障的最后一条可见路径。
-  console.error(`[Tabs][${scope}] ${message}`, detail ?? '');
+  console.error(`[Tabs][${scope}] ${safeMessage}`, detail ?? '');
 }
 
 /** 本上下文内存快照（按时间升序）。跨上下文全量请用 readAllDiagnostics。 */

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     count: 1,
     failed: [] as never[],
     skippedAlreadyOpen: [] as never[],
+    createdTabIds: [2],
     degraded: false
   }))
 }));

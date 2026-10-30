@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { NO_GROUP } from '@/core/tab-types';
 import type { UndoTabRecord } from '@/core/schema/models';
+import { clearDiagnosticBuffer, readDiagnostics } from '@/platform/log';
 import { restoreTabRecordsDetailed } from '@/platform/undo/RestoreEngine';
 
 /**
@@ -46,6 +47,7 @@ function stubGroupApis(): GroupStub {
 
 afterEach(() => {
   fakeBrowser.reset();
+  clearDiagnosticBuffer();
   vi.restoreAllMocks();
 });
 
@@ -59,6 +61,7 @@ describe('restoreTabRecordsDetailed', () => {
     // fake-browser 预置了一个无 url 的默认标签页，只断言本次恢复出来的。
     const created = (await fakeBrowser.tabs.query({})).filter((tab) => Boolean(tab.url));
     expect(created.map((tab) => tab.url)).toEqual(['https://a.com/', 'https://c.com/']);
+    expect(result.createdTabIds).toEqual(created.map((tab) => tab.id));
   });
 
   it('恢复固定与静音状态', async () => {
@@ -96,6 +99,91 @@ describe('restoreTabRecordsDetailed', () => {
     expect(update).toHaveBeenCalledWith(77, { title: '工作' });
   });
 
+  it('同批同一旧组的多个标签只重建一个组并返回实际新建 id', async () => {
+    const { group, update } = stubGroupApis();
+    group.mockImplementation(async (options: { tabIds?: number[]; groupId?: number }) => {
+      if (options.groupId === 5) throw new Error('group gone');
+      return 77;
+    });
+    const getStub = vi.fn(async () => {
+      throw new Error('group gone');
+    });
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+
+    const result = await restoreTabRecordsDetailed(
+      [
+        record({ url: 'https://g1.com/', index: 0, groupId: 5, groupName: '工作' }),
+        record({ url: 'https://g2.com/', index: 1, groupId: 5, groupName: '工作' })
+      ],
+      WINDOW_ID
+    );
+
+    expect(group).toHaveBeenCalledTimes(2);
+    expect(group.mock.calls[0]![0]).toEqual({ tabIds: [expect.any(Number)] });
+    expect(group.mock.calls[1]![0]).toEqual({ tabIds: [expect.any(Number)], groupId: 77 });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(result.createdTabIds).toHaveLength(2);
+  });
+
+  it('不同旧组即使同名也分别重建', async () => {
+    const { group } = stubGroupApis();
+    let nextGroupId = 77;
+    group.mockImplementation(async (options: { tabIds?: number[]; groupId?: number }) => {
+      if (options.groupId !== undefined) throw new Error('group gone');
+      const id = nextGroupId;
+      nextGroupId += 1;
+      return id;
+    });
+    const getStub = vi.fn(async () => {
+      throw new Error('group gone');
+    });
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+
+    await restoreTabRecordsDetailed(
+      [
+        record({ url: 'https://g1.com/', groupId: 5, groupName: '工作' }),
+        record({ url: 'https://g2.com/', groupId: 6, groupName: '工作' })
+      ],
+      WINDOW_ID
+    );
+
+    expect(group).toHaveBeenCalledTimes(2);
+    expect(group.mock.calls.every((call) => call[0].groupId === undefined)).toBe(true);
+  });
+
+  it('新建组 id 撞上另一旧组 id 时仍分别重建同名组', async () => {
+    // Given 旧组 5 重建后恰好得到 id=6，而另一条记录的旧组 id 也是 6。
+    const { group, update } = stubGroupApis();
+    let nextGroupId = 6;
+    group.mockImplementation(async (options: { tabIds?: number[]; groupId?: number }) => {
+      if (options.groupId !== undefined) return options.groupId;
+      const id = nextGroupId;
+      nextGroupId += 1;
+      return id;
+    });
+    const getStub = vi.fn(async (groupId: number) => {
+      if (groupId === 5) throw new Error('group gone');
+      return { id: groupId, title: '工作' };
+    });
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+
+    // When 恢复两个同名但来源不同的旧组。
+    const result = await restoreTabRecordsDetailed(
+      [
+        record({ url: 'https://g1.com/', groupId: 5, groupName: '工作' }),
+        record({ url: 'https://g2.com/', groupId: 6, groupName: '工作' })
+      ],
+      WINDOW_ID
+    );
+
+    // Then 第二个旧组不得把第一个新建组误认为自己的原组。
+    expect(group).toHaveBeenCalledTimes(2);
+    expect(group.mock.calls.every((call) => call[0].groupId === undefined)).toBe(true);
+    expect(update).toHaveBeenNthCalledWith(1, 6, { title: '工作' });
+    expect(update).toHaveBeenNthCalledWith(2, 7, { title: '工作' });
+    expect(result.createdTabIds).toHaveLength(2);
+  });
+
   it('groupId 指向名称不符的组时按组名重建', async () => {
     const { group, update } = stubGroupApis();
     const getStub = vi.fn(async () => ({ id: 5, title: '无关组' }));
@@ -131,6 +219,7 @@ describe('restoreTabRecordsDetailed', () => {
     );
     expect(result.count).toBe(1);
     expect(result.failed).toHaveLength(0);
+    expect(result.degraded).toBe(true);
   });
 
   it('固定标签不入组（Chrome 不允许固定标签进组）', async () => {
@@ -167,6 +256,7 @@ describe('restoreTabRecordsDetailed', () => {
       (tab) => tab.url === 'https://open.com/'
     );
     expect(opened).toHaveLength(1);
+    expect(result.createdTabIds).toEqual([]);
   });
 
   it('无 URL 的记录计入失败明细（而非静默跳过）', async () => {
@@ -193,6 +283,105 @@ describe('restoreTabRecordsDetailed', () => {
     const result = await restoreTabRecordsDetailed([record({ url: 'https://a.com/' })], WINDOW_ID);
 
     expect(result.degraded).toBe(false);
+  });
+
+  it('标签创建成功但静音回写失败时不把记录留作无法重试的失败项', async () => {
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue({ ok: true } as never);
+    vi.spyOn(fakeBrowser.tabs, 'update').mockRejectedValue(
+      new Error('muted update failed') as never
+    );
+
+    const result = await restoreTabRecordsDetailed(
+      [record({ url: 'https://muted.example/', muted: true })],
+      WINDOW_ID
+    );
+
+    expect(result.count).toBe(1);
+    expect(result.failed).toEqual([]);
+    expect(result.degraded).toBe(true);
+    expect(
+      (await fakeBrowser.tabs.query({ windowId: WINDOW_ID })).filter(
+        (tab) => tab.url === 'https://muted.example/'
+      )
+    ).toHaveLength(1);
+  });
+
+  it('新建组标题回写失败时保留组 id，同旧组后续标签仍加入该组', async () => {
+    // Given 首个新组已创建，但标题回写失败。
+    const { group, update } = stubGroupApis();
+    update.mockRejectedValue(new Error('title update failed'));
+    const getStub = vi.fn(async () => {
+      throw new Error('group gone');
+    });
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+
+    // When 同一旧组恢复两条记录。
+    const result = await restoreTabRecordsDetailed(
+      [
+        record({ url: 'https://g1.com/', groupId: 5, groupName: '工作' }),
+        record({ url: 'https://g2.com/', groupId: 5, groupName: '工作' })
+      ],
+      WINDOW_ID
+    );
+
+    // Then 不因标题失败而再建重复组；标签已创建，仅整体标记降级。
+    expect(group).toHaveBeenCalledTimes(2);
+    expect(group.mock.calls[0]![0]).toEqual({ tabIds: [expect.any(Number)] });
+    expect(group.mock.calls[1]![0]).toEqual({ tabIds: [expect.any(Number)], groupId: 77 });
+    expect(result.count).toBe(2);
+    expect(result.failed).toEqual([]);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('加入本批重建组失败时保留新建标签并反馈 degraded', async () => {
+    // Given 首个标签建组成功，第二个标签加入该组失败。
+    const { group } = stubGroupApis();
+    group.mockImplementation(async (options: { tabIds?: number[]; groupId?: number }) => {
+      if (options.groupId === 5) throw new Error('group gone');
+      if (options.groupId === 77) throw new Error('join failed');
+      return 77;
+    });
+    const getStub = vi.fn(async () => {
+      throw new Error('group gone');
+    });
+    (fakeBrowser.tabGroups as unknown as { get: typeof getStub }).get = getStub;
+
+    // When 同一旧组恢复两条记录。
+    const result = await restoreTabRecordsDetailed(
+      [
+        record({ url: 'https://g1.com/', groupId: 5, groupName: '工作' }),
+        record({ url: 'https://g2.com/', groupId: 5, groupName: '工作' })
+      ],
+      WINDOW_ID
+    );
+
+    // Then 加入失败不把已创建标签误记为可重试失败项。
+    expect(result.count).toBe(2);
+    expect(result.createdTabIds).toHaveLength(2);
+    expect(result.failed).toEqual([]);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('分组最终恢复失败时反馈 degraded，且诊断不记录用户组名', async () => {
+    vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue({ ok: true } as never);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const group = vi.fn(async () => {
+      throw new Error('group unavailable');
+    });
+    (fakeBrowser.tabs as unknown as { group: typeof group }).group = group as never;
+    const get = vi.fn(async () => ({ id: 5, title: '私人标签组名称' }));
+    (fakeBrowser.tabGroups as unknown as { get: typeof get }).get = get as never;
+
+    const result = await restoreTabRecordsDetailed(
+      [record({ url: 'https://grouped.example/', groupId: 5, groupName: '私人标签组名称' })],
+      WINDOW_ID
+    );
+
+    expect(result.count).toBe(1);
+    expect(result.failed).toEqual([]);
+    expect(result.degraded).toBe(true);
+    expect(group).toHaveBeenCalledTimes(2);
+    expect(readDiagnostics().some((entry) => entry.message.includes('私人标签组名称'))).toBe(false);
   });
 
   it('单条创建失败不影响同批其余标签，且失败项进入明细', async () => {

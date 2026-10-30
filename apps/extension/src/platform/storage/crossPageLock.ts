@@ -56,6 +56,8 @@ export const SETTINGS_RMW_LOCK = 'tabs.settings-rmw';
 export const COLLAPSE_RMW_LOCK = 'tabs.collapse-rmw';
 /** session：itemTabBindings 整表 RMW，面板与弹窗各持一份内存。 */
 export const SESSION_RMW_LOCK = 'tabs.session-rmw';
+/** 挂起动作：SW 入队与面板「读取 → 消费 → 删除」须互斥，否则旧快照会删掉新动作。 */
+export const PENDING_ACTIONS_RMW_LOCK = 'tabs.pending-actions-rmw';
 /** 撤销库写盘：撤销栈整表写，两窗口并发入栈/出栈会互相覆盖。 */
 export const UNDO_PERSIST_LOCK = 'tabs.undo-persist';
 /** 撤销执行互斥：两窗口可同时撤销同一批次（同批标签恢复两次），执行体经本锁串行化。 */
@@ -66,6 +68,8 @@ export const AUTO_DISCARD_RMW_LOCK = 'tabs.auto-discard-rmw';
 export const SNAPSHOTS_RMW_LOCK = 'tabs.snapshots-rmw';
 /** 诊断环形缓冲：所有 platform 模块的降级留痕，锁外交替会在截断边界互相截断。 */
 export const DIAG_RMW_LOCK = 'tabs.diagnostics-rmw';
+/** 同步镜像：写块、切换 meta、清理与拉取须跨上下文互斥。 */
+export const SYNC_MIRROR_LOCK = 'tabs.sync-mirror-rmw';
 /**
  * 坏数据隔离区：所有持久化键的读取降级都写它。与分区锁是不同锁名（隔离发生在分区锁内），
  * 两者不存在反向嵌套，无死锁面。

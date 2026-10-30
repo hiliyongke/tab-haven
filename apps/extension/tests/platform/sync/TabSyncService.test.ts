@@ -161,6 +161,39 @@ describe('TabSyncService', () => {
     stop();
   });
 
+  it('trailing 定时器消费 pending，等待期间的新事件不多带一次空查询', async () => {
+    // Given：首查在途时产生一次 pending，trailing 等待期间又产生一次事件。
+    stubEvents();
+    const service = new TabSyncService();
+    let queryCalls = 0;
+    let releaseFirst!: () => void;
+    let markFirstQuery!: () => void;
+    const firstGate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const firstQuery = new Promise<void>((resolve) => (markFirstQuery = resolve));
+    vi.spyOn(fakeBrowser.tabs, 'query').mockImplementation(async () => {
+      queryCalls += 1;
+      if (queryCalls === 1) {
+        markFirstQuery();
+        await firstGate;
+      }
+      return [makeTab({ id: 1 })];
+    });
+    vi.spyOn(fakeBrowser.tabGroups, 'query').mockResolvedValue([] as never);
+    const stop = service.start(() => {});
+    await firstQuery;
+    triggerEvent(fakeBrowser.tabs.onCreated);
+    releaseFirst();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // When：定时器已排定但尚未执行时再来一个事件，然后等待所有 trailing 窗口结束。
+    triggerEvent(fakeBrowser.tabs.onCreated);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Then：首查 + 一次 trailing 即可；pending 已在定时器回调中消费。
+    expect(queryCalls).toBe(2);
+    stop();
+  });
+
   it('onUpdated：只含 favicon 等无关字段的变化不触发查询', async () => {
     stubEvents();
     const service = new TabSyncService();
