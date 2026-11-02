@@ -85,6 +85,12 @@ interface SectionDerivation {
   /** 网站聚合成组阈值（同注册域达到该数量才成组），默认 2。 */
   threshold?: number;
   /**
+   * 是否把「域名命名的原生组」里域名不符的成员拆出、按自身域名渲染（默认 true，展示视图）。
+   * background 的自动分组对账须传 false：它要看到真实组成员才能校正 Chrome 组继承造成的
+   * 域名漂移（planAutoGroupDomainCorrections），拆分会让漂移成员从 native 分区消失。
+   */
+  splitDriftedNativeTabs?: boolean;
+  /**
    * 文案翻译函数（可选）。core 不依赖 i18n，调用方（UI）注入 i18next 的 t。
    * 缺省回退为恒等函数，便于纯逻辑单测（标题退化为 i18n key，不影响分区结构）。
    */
@@ -204,6 +210,91 @@ function isSameSiteKey(groupKey: SiteKey, candidate: SiteMergeCandidate): boolea
     return false;
   }
   return candidate.subdomain !== '' || groupKey.value === candidate.key.value;
+}
+
+/** 原生组派生视图条目：组元信息 + 组内标签。 */
+interface NativeGroupEntry {
+  group: TabGroupRecord;
+  groupTabs: TabRecord[];
+}
+
+interface NativeGroupDrift {
+  /** 拆分后的原生组（供渲染与归并候选识别）。 */
+  visibleNativeGroups: NativeGroupEntry[];
+  /** 从原生组拆出、改按自身域名聚合的标签。 */
+  detachedTabs: TabRecord[];
+  /** 本轮发生过拆分的组：状态不稳定，不参与同站点归并。 */
+  detachedGroupIds: Set<number>;
+}
+
+/** 展示层站点标签：只用已提交的 url，与 aggregateBySite 同一口径；无 URL 返回 null。 */
+function nativeTabSiteLabel(tab: TabRecord): string | null {
+  const site = tab.url ? siteResolver.resolve(tab.url) : null;
+  return site ? siteLabelOf(site) : null;
+}
+
+/**
+ * 组标题是否为「域名命名的组」：把标题当作主机还原成站点展示标签，能原样还原才算。
+ * 判据只看标题本身，不看组内成员 —— 组内同域名成员可能被固定空间排除、已关闭或不在
+ * 当前快照里；若要求「组内必须有锚点」，跨域新标签反而会成为该组唯一可见成员。
+ * 中文自定义名会被 URL 转成 punycode，显式排除，避免误判成域名组。
+ */
+function isDomainNamedGroupTitle(title: string): boolean {
+  if (/\s/.test(title)) return false;
+  const rawUrl = `https://${title}`;
+  try {
+    if (new URL(rawUrl).hostname.includes('xn--')) return false;
+  } catch {
+    return false;
+  }
+  const site = siteResolver.resolve(rawUrl);
+  return site !== null && siteLabelOf(site) === title;
+}
+
+/**
+ * 拆出「域名命名的原生组」里域名与组标题不符的成员。
+ *
+ * Chrome 会把「从组内标签点开的链接」自动加入同一个原生组，这类跨域新标签一出生就带
+ * groupId；若原样渲染，它们会永久挂在旧域名标题的分区里，再也进不了域名分桶。
+ * 拆分与同站点归并一样只调整展示分区，不改动浏览器侧任何分组状态（见
+ * collectSiteMergeCandidates 注释）。
+ *
+ * 保守边界：
+ *  - 组标题必须能还原成站点展示标签（域名命名的组），自定义命名/未命名组整组保留；
+ *  - URL 尚未提交时无法判定，成员留在原组，等下一次快照再拆；
+ *  - 整组都是漂移成员时不渲染空分区；
+ *  - 仅站点模式生效，来源树/语言模式刻意保留原生组分区。
+ */
+function splitNativeGroupDrift(
+  groupsByFirstTab: readonly NativeGroupEntry[],
+  enabled: boolean
+): NativeGroupDrift {
+  const detachedTabs: TabRecord[] = [];
+  const detachedGroupIds = new Set<number>();
+  if (!enabled) {
+    return { visibleNativeGroups: [...groupsByFirstTab], detachedTabs, detachedGroupIds };
+  }
+  const visibleNativeGroups: NativeGroupEntry[] = [];
+  for (const { group, groupTabs } of groupsByFirstTab) {
+    const title = group.title;
+    if (!title || !isDomainNamedGroupTitle(title)) {
+      visibleNativeGroups.push({ group, groupTabs });
+      continue;
+    }
+    const kept: TabRecord[] = [];
+    for (const tab of groupTabs) {
+      const label = nativeTabSiteLabel(tab);
+      if (label !== null && label !== title) {
+        detachedTabs.push(tab);
+        detachedGroupIds.add(group.id);
+      } else {
+        kept.push(tab);
+      }
+    }
+    // 整组都是漂移成员时不渲染空分区：拆出的标签已按自身域名参与聚合。
+    if (kept.length > 0) visibleNativeGroups.push({ group, groupTabs: kept });
+  }
+  return { visibleNativeGroups, detachedTabs, detachedGroupIds };
 }
 
 /**
@@ -397,6 +488,7 @@ export function deriveSections({
   sortMode = 'browser',
   groupMode = 'site',
   threshold,
+  splitDriftedNativeTabs = true,
   translate
 }: SectionDerivation): TemporarySection[] {
   const t = translate ?? ((key: string) => key);
@@ -453,19 +545,31 @@ export function deriveSections({
     )
     .sort(sortCmp);
 
+  // 拆出被 Chrome 组继承「粘」在旧域名原生组里的跨域标签，让它们按自身域名参与聚合。
+  // 不改 groupId：只调整展示分区（见 splitNativeGroupDrift 注释）。
+  const { visibleNativeGroups, detachedTabs, detachedGroupIds } = splitNativeGroupDrift(
+    groupsByFirstTab,
+    groupMode === 'site' && splitDriftedNativeTabs
+  );
+  const aggregationEligible =
+    detachedTabs.length > 0 ? [...eligible, ...detachedTabs].sort(sortCmp) : eligible;
+
   // 站点模式先完成聚合与同站点归并，将符合条件的域名原生组并入站点分区。
-  // opener/language 模式保留原生组分区。
+  // opener/language 模式保留原生组分区。本轮被拆过的组不参与归并：组状态刚变化，
+  // 保守起见不把「看起来已纯净」的组立刻吸收，避免与下一帧快照来回搬动。
   const sitePlan =
     groupMode === 'site'
       ? buildSitePlan({
-          eligible,
+          eligible: aggregationEligible,
           threshold,
-          candidates: collectSiteMergeCandidates(groupsByFirstTab, eligible),
+          candidates: collectSiteMergeCandidates(visibleNativeGroups, aggregationEligible).filter(
+            (candidate) => !detachedGroupIds.has(candidate.groupId)
+          ),
           sortCmp
         })
       : null;
 
-  for (const { group, groupTabs } of groupsByFirstTab) {
+  for (const { group, groupTabs } of visibleNativeGroups) {
     if (sitePlan?.absorbedGroupIds.has(group.id)) continue;
     sections.push({
       kind: 'native',

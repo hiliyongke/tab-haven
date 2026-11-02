@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveSections } from '@/core/site/Sections';
-import { planAutoGroups } from '@/core/group/AutoGrouping';
+import { planAutoGroupDomainCorrections, planAutoGroups } from '@/core/group/AutoGrouping';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 import { NO_GROUP } from '@/core/tab-types';
 
@@ -64,17 +64,27 @@ describe('deriveSections 同站点归并', () => {
     expect(site?.kind === 'site' ? site.mergedGroupIds : []).toEqual([]);
   });
 
-  it('成员跨子域漂移的原生组（标题与成员站点不符）不归并', () => {
+  it('成员跨站点漂移的原生组不归并，跨域成员按自身域名拆分', () => {
+    // Given 域名命名的组 7 里混入一个 beta 子域成员（Chrome 组继承的跨域新标签）
     const tabs = [
       makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
       makeTab(2, 'https://beta.example.com/b', { groupId: 7, index: 2 }),
       makeTab(3, 'https://beta.example.com/c', { index: 3 })
     ];
     const groups: TabGroupRecord[] = [{ id: 7, title: 'alpha.example.com' }];
+
+    // When 派生展示视图
     const sections = deriveSections({ tabs, groups, threshold: 1 });
 
+    // Then 组 7 仍是独立原生分区（不归并），只留域名锚点
     const native = sections.find((s) => s.kind === 'native');
-    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1]);
+    // 拆出的成员与同站点未分组标签一起按自身域名成组；浏览器侧 groupId 未被改写
+    const beta = sections.find((s) => s.kind === 'site' && s.siteKey === 'beta.example.com');
+    expect(beta?.kind === 'site' ? beta.tabs.map((tab) => tab.id).sort() : []).toEqual([2, 3]);
+    expect(beta?.kind === 'site' ? beta.tabs.find((tab) => tab.id === 2)?.groupId : undefined).toBe(
+      7
+    );
   });
 
   it('无同子域未分组标签时不归并（原生组照常渲染）', () => {
@@ -205,12 +215,14 @@ describe('deriveSections 同站点归并', () => {
     // When 派生站点分区
     const sections = deriveSections({ tabs, groups, threshold: 2 });
 
-    // Then 混端口原生组保持原样，8080 成员不会被吞进 3000 分区
+    // Then 组 7 仍不归并；8080 成员被拆出，不再挂在 3000 标题下，与 3000 未分组标签同进未分组
     const native = sections.find((s) => s.kind === 'native');
-    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1]);
     expect(sections.some((s) => s.kind === 'site' && s.siteKey === 'localhost:3000')).toBe(false);
     const ungrouped = sections.find((s) => s.kind === 'ungrouped');
-    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([3]);
+    expect(
+      ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id).sort() : []
+    ).toEqual([2, 3]);
   });
 
   it('IP 站点同样按端口区分：127.0.0.1:8080 的唯一标签不被 3000 归并吞掉', () => {
@@ -329,5 +341,153 @@ describe('planAutoGroups 同站点吸收', () => {
     expect(plans).toHaveLength(1);
     expect(plans[0]).toMatchObject({ title: 'beta.example.com', tabIds: [2] });
     expect(plans[0]?.absorbIntoGroupId).toBeUndefined();
+  });
+});
+
+describe('deriveSections 原生组域名漂移拆分（Chrome 组继承）', () => {
+  const domainGroup: TabGroupRecord[] = [{ id: 7, title: 'github.com' }];
+  const groupedTab = (id: number, url: string, partial: Partial<TabRecord> = {}): TabRecord =>
+    makeTab(id, url, { groupId: 7, ...partial });
+
+  it('组内锚点成员不在快照里时，跨域标签仍被拆出且不留下空分组', () => {
+    // Given 域名命名的组里只剩一个从该站点文档点开的跨域新标签
+    // （同域名锚点成员已被固定空间排除或关闭，这是实际复现场景）
+    const tabs = [groupedTab(1, 'https://buy.cloud.tencent.com/edgeone', { index: 1 })];
+
+    // When 派生展示视图
+    const sections = deriveSections({
+      tabs,
+      groups: [{ id: 7, title: 'doc.weixin.qq.com' }]
+    });
+
+    // Then 旧域名分区消失（不留空卡片），跨域标签按自身域名进未分组，groupId 未变
+    expect(sections.some((s) => s.kind === 'native')).toBe(false);
+    const ungrouped = sections.find((s) => s.kind === 'ungrouped');
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([1]);
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs[0]?.groupId : undefined).toBe(7);
+  });
+
+  it('含点的中文自定义名不会被误判为域名组', () => {
+    // Given 自定义名含点，URL 会把它转成 punycode，但不是域名命名的组
+    const tabs = [
+      makeTab(1, 'https://github.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://notion.so/x', { groupId: 7, index: 2 })
+    ];
+
+    const sections = deriveSections({ tabs, groups: [{ id: 7, title: '企微.文档' }] });
+
+    const native = sections.find((s) => s.kind === 'native');
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+  });
+
+  it('从域名组里点开的跨域新标签不再显示在旧域名分组下', () => {
+    // Given 组 7（github.com）里有一个 notion.so 的跨域新标签，该域名数量不足阈值
+    const tabs = [
+      groupedTab(1, 'https://github.com/a', { index: 1 }),
+      groupedTab(2, 'https://notion.so/x', { index: 2 })
+    ];
+
+    // When 派生展示视图
+    const sections = deriveSections({ tabs, groups: domainGroup });
+
+    // Then 旧域名分区只剩锚点，跨域标签进未分组；TabRecord 的 groupId 未被伪造
+    const native = sections.find((s) => s.kind === 'native');
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1]);
+    const ungrouped = sections.find((s) => s.kind === 'ungrouped');
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs.map((tab) => tab.id) : []).toEqual([2]);
+    expect(ungrouped?.kind === 'ungrouped' ? ungrouped.tabs[0]?.groupId : undefined).toBe(7);
+  });
+
+  it('拆出的跨域标签达阈值时按自身域名成组', () => {
+    // Given 两个跨域新标签，达到默认阈值 2
+    const tabs = [
+      groupedTab(1, 'https://github.com/a', { index: 1 }),
+      groupedTab(2, 'https://notion.so/x', { index: 2 }),
+      groupedTab(3, 'https://notion.so/y', { index: 3 })
+    ];
+
+    // When 派生展示视图
+    const sections = deriveSections({ tabs, groups: domainGroup });
+
+    // Then 新域名独立成区，旧分区只剩锚点
+    const notion = sections.find((s) => s.kind === 'site' && s.siteKey === 'notion.so');
+    expect(notion?.kind === 'site' ? notion.tabs.map((tab) => tab.id).sort() : []).toEqual([2, 3]);
+    expect(sections.find((s) => s.kind === 'native')?.tabs.map((tab) => tab.id)).toEqual([1]);
+  });
+
+  it('用户自定义命名的组整组保留（绝不打扰手动分组）', () => {
+    // Given 组标题是「工作台」，没有域名锚点
+    const tabs = [
+      makeTab(1, 'https://github.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://notion.so/x', { groupId: 7, index: 2 })
+    ];
+
+    // When 派生展示视图
+    const sections = deriveSections({ tabs, groups: [{ id: 7, title: '工作台' }] });
+
+    // Then 组内成员原样保留，不进未分组
+    const native = sections.find((s) => s.kind === 'native');
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    expect(sections.find((s) => s.kind === 'ungrouped')).toBeUndefined();
+  });
+
+  it('未命名组没有域名锚点，整组保留', () => {
+    const tabs = [
+      makeTab(1, 'https://github.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://notion.so/x', { groupId: 7, index: 2 })
+    ];
+
+    const sections = deriveSections({ tabs, groups: [{ id: 7 }] });
+
+    const native = sections.find((s) => s.kind === 'native');
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+  });
+
+  it('URL 尚未提交的新标签留在原组，下一次快照再判定', () => {
+    // Given 导航早期：url 为空，只有 pendingUrl
+    const tabs = [
+      groupedTab(1, 'https://github.com/a', { index: 1 }),
+      groupedTab(2, '', { index: 2, pendingUrl: 'https://notion.so/x' })
+    ];
+
+    const sections = deriveSections({ tabs, groups: domainGroup });
+
+    const native = sections.find((s) => s.kind === 'native');
+    expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+  });
+
+  it('来源树与语言模式保留原生组分区，不拆分', () => {
+    const tabs = [
+      groupedTab(1, 'https://github.com/a', { index: 1 }),
+      groupedTab(2, 'https://notion.so/x', { index: 2 })
+    ];
+
+    for (const groupMode of ['opener', 'language'] as const) {
+      const sections = deriveSections({ tabs, groups: domainGroup, groupMode });
+      const native = sections.find((s) => s.kind === 'native');
+      expect(native?.kind === 'native' ? native.tabs.map((tab) => tab.id) : []).toEqual([1, 2]);
+    }
+  });
+
+  it('对账视图保留真实组成员，域名漂移校正仍可命中', () => {
+    // Given 展示视图与 background 对账视图拿到同一份快照
+    const tabs = [
+      groupedTab(1, 'https://github.com/a', { index: 1 }),
+      groupedTab(2, 'https://notion.so/x', { index: 2 })
+    ];
+
+    // When 分别派生两种视图
+    const shown = deriveSections({ tabs, groups: domainGroup });
+    const reconciled = deriveSections({
+      tabs,
+      groups: domainGroup,
+      splitDriftedNativeTabs: false
+    });
+
+    // Then 展示视图已无漂移成员；对账视图仍能看到，交给 ungroup 修正浏览器侧分组
+    expect(planAutoGroupDomainCorrections(shown, new Set([7]))).toEqual([]);
+    expect(planAutoGroupDomainCorrections(reconciled, new Set([7]))).toMatchObject([
+      { groupId: 7, tabIds: [2] }
+    ]);
   });
 });

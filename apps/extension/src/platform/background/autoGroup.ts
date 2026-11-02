@@ -172,6 +172,9 @@ async function reconcileWindow(windowId: number): Promise<boolean> {
       excludedTabIds,
       groupMode: settings.groupMode,
       threshold: settings.aggregationThreshold,
+      // 对账视图保留真实组成员：域名漂移校正要据此把跨域新标签移出自动组。
+      // 展示视图的拆分（splitNativeGroupDrift）只作用于面板渲染，不在这里生效。
+      splitDriftedNativeTabs: false,
       // 与面板同一份词条（语言模式的组标题需要它）；标题不参与任何判定，只是展示。
       translate: t
     });
