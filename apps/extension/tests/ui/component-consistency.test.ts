@@ -185,4 +185,55 @@ describe('组件一致性：收口用的语义类必须真实存在', () => {
       /\.section-media-indicator\s+\.section-media-dot\s*\{[^}]*display:\s*none/
     );
   });
+
+  it('危险行内按钮 hover 不被 .section-card 高特异性规则压成品牌色（V-1）', () => {
+    const guarded = /\.section-card:hover \.row-action:not\(:disabled\):not\(\.is-danger\):hover/;
+    // 判据自测：正则必须能命中目标写法，否则下面的 toMatch 会在旧写法上恒绿。
+    expect(
+      guarded.test('.section-card:hover .row-action:not(:disabled):not(.is-danger):hover')
+    ).toBe(true);
+    expect(cssText).toMatch(guarded);
+    // 不带 :not(.is-danger) 的旧选择器不得残留（它会让关闭按钮「鼠标绿、键盘红」）。
+    expect(cssText).not.toMatch(/\.section-card:hover \.row-action:not\(:disabled\):hover/);
+  });
+
+  it('行尾操作按钮焦点环内缩，避免被 .row-actions 的 overflow 裁掉右侧（V-4）', () => {
+    const rule = /\.row-actions \.row-action:focus-visible\s*\{[^}]*outline-offset:\s*-2px/;
+    expect(rule.test('.row-actions .row-action:focus-visible { outline-offset: -2px; }')).toBe(
+      true
+    );
+    expect(cssText).toMatch(rule);
+  });
+
+  it('触屏磁贴按钮随名称长高，网格两行封顶按新行高重算（V-2）', () => {
+    const blocks = cssText.match(/@media \(hover: none\)\s*\{([\s\S]*?)\n\}/g);
+    expect(blocks, '未找到 hover:none 媒体块').not.toBeNull();
+    const joined = blocks!.join('\n');
+    const mainRule = /\.pinned-main\s*\{[^}]*height:\s*auto[^}]*min-height:\s*36px/;
+    expect(mainRule.test('.pinned-main { width: 100%; height: auto; min-height: 36px; }')).toBe(
+      true
+    );
+    expect(joined, '触屏分支缺少 .pinned-main 自适应高度').toMatch(mainRule);
+    // 名称变高后 86px 会裁掉第二行；必须在该媒体块内重算两行封顶。
+    expect(joined, '触屏分支缺少 .pinned-grid 新 max-height').toMatch(
+      /\.pinned-grid\s*\{[^}]*max-height:\s*110px/
+    );
+  });
+
+  it('固定空间行不自带 density 类：三档密度由 .app 祖先属性驱动', () => {
+    // 判据自测：属性选择器正则必须能命中目标写法。
+    const attrRule = /\[data-density='tight'\][^{]*\.row-item/;
+    expect(attrRule.test("[data-density='tight'] .row-item {")).toBe(true);
+
+    // RowItem 若给 density 默认 cozy，固定区（FolderItemRow 不传 density）会带上
+    // .density-cozy 类；它与 tight 属性规则同特异性但书写更靠后，超紧凑档被覆盖。
+    const rowSrc = readFileSync(join(SRC_DIR, 'ui', 'common', 'RowItem.tsx'), 'utf8');
+    expect(rowSrc, 'RowItem 不得给 density 设 cozy 默认值').not.toMatch(/density\s*=\s*'cozy'/);
+
+    // 去掉默认类后，固定区靠这三条祖先规则拿到三档内距，缺一档即失效。
+    for (const d of ['tight', 'cozy', 'large']) {
+      const rule = new RegExp(`\\[data-density='${d}'\\][^{]*\\.row-item`);
+      expect(cssText, `缺少 [data-density='${d}'] 行内距规则`).toMatch(rule);
+    }
+  });
 });

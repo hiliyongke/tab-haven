@@ -258,3 +258,44 @@ describe('SnapshotsPanel 导入在途互斥（P1-2）', () => {
     );
   });
 });
+
+describe('SnapshotsPanel 视图切换不残留进行中状态', () => {
+  it('命名态输入半截名字后切周报再返回，命名框与旧名字都已清空', () => {
+    // Given: 列表视图进入命名态，输入未提交的名字
+    useSnapshotStore.setState({ snapshots: [], ready: true });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: translate('保存当前窗口为快照') }));
+    const nameBox = screen.getByRole('textbox', {
+      name: translate('为这个快照起个名字（可留空）')
+    });
+    fireEvent.change(nameBox, { target: { value: '半截名字' } });
+
+    // When: 切到周报，再点「取消」返回列表
+    fireEvent.click(screen.getByRole('button', { name: translate('本周周报') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('取消') }));
+
+    // Then: 顶部恢复两个保存按钮，命名框不再出现（也不带旧文字）
+    expect(
+      screen.getByRole('button', { name: translate('保存当前窗口为快照') })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', { name: translate('为这个快照起个名字（可留空）') })
+    ).toBeNull();
+  });
+
+  it('导入视图取消后再进入，表单草稿不跨视图残留', () => {
+    // Given: 进入导入视图并粘贴内容（不提交）
+    useSnapshotStore.setState({ snapshots: [], ready: true });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: translate('从 OneTab 导入') }));
+    const textarea = screen.getByRole('textbox', { name: translate('导入') });
+    fireEvent.change(textarea, { target: { value: 'https://a.com - A' } });
+
+    // When: 取消后再次进入导入视图
+    fireEvent.click(screen.getByRole('button', { name: translate('取消') }));
+    fireEvent.click(screen.getByRole('button', { name: translate('从 OneTab 导入') }));
+
+    // Then: 文本框为空（放弃草稿），不是上次留下的半截内容
+    expect(screen.getByRole('textbox', { name: translate('导入') })).toHaveValue('');
+  });
+});

@@ -101,7 +101,7 @@ export function SnapshotRow({
 
   /* 右键菜单：快照的删除不可恢复，而行尾只有一排无文字图标（与恢复、重命名相邻），
      误触代价高。右键给出带文字的明确操作列表。 */
-  const { menu, open: openMenu, close: closeMenu } = useRowContextMenu();
+  const { menu, open: openMenu, openFromKeyboard, close: closeMenu } = useRowContextMenu();
   const menuItems = useMemo<ContextMenuItem[]>(
     () => [
       {
@@ -132,7 +132,7 @@ export function SnapshotRow({
   );
   return (
     // key 由父级（SnapshotsPanel 的 group.items.map）下发，根节点自带的 key 是死值
-    <li className="px-3 py-2" onContextMenu={openMenu}>
+    <li className="px-3 py-2" onContextMenu={openMenu} onKeyDown={openFromKeyboard}>
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           {isEditing ? (

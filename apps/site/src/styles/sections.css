@@ -192,7 +192,7 @@
 }
 .start-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: var(--sp-4);
   align-items: start;
 }
@@ -204,7 +204,7 @@
 /* ---------- 5. 文档 ---------- */
 .doc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: var(--sp-4);
   align-items: start;
 }

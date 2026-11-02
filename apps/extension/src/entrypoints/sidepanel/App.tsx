@@ -234,7 +234,8 @@ export default function App() {
     searchHitTabIds,
     noCacheTabIds,
     historyHits,
-    handleSearchKeyDown
+    handleSearchKeyDown,
+    pinyinFailed
   } = useSearchController({
     tabs,
     t,
@@ -1182,6 +1183,13 @@ export default function App() {
           historyOn={settings.searchHistory}
           onToggleHistory={() => void tryUpdateSettings({ searchHistory: !settings.searchHistory })}
         />
+        {/* 拼音词典加载失败：降级说明必须可见，否则「打拼音搜不到」会被误读成
+            「没有匹配的标签」，且设置项仍显示已开启。用 alert 即时播报（动态插入合规）。 */}
+        {pinyinFailed && (
+          <p className="px-2 py-1 text-3xs leading-relaxed text-gray-600" role="alert">
+            {t('拼音词典加载失败，当前仅按标题与网址匹配')}
+          </p>
+        )}
         {/* 搜索命中数对读屏播报（<output> 原生隐含 role=status）：视觉用户有列表过滤反馈，读屏用户没有 */}
         <output className="sr-only" aria-live="polite">
           {isFiltering ? t('命中 {{count}} 个标签', { count: filteredTabs.length }) : ''}
@@ -1369,7 +1377,7 @@ export default function App() {
 
         {/* 历史命中分区：仅过滤态且设置开启时展示；当前标签在上方列表，
             历史是回溯补充，刻意放列表之后。 */}
-        {isFiltering && settings.searchHistory && historyHits.length > 0 && (
+        {isFiltering && settings.searchHistory && (
           <HistoryHitsSection
             hits={historyHits}
             onOpenUrl={handleHistoryOpenUrl}

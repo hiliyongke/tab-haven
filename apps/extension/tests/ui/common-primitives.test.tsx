@@ -11,6 +11,7 @@ import { ColorSwatchGroup } from '@/ui/common/ColorSwatchGroup';
 import { RowActionButton } from '@/ui/common/RowActionButton';
 import { RowItem } from '@/ui/common/RowItem';
 import { StatusBadges } from '@/ui/common/StatusBadges';
+import { OnboardingTour } from '@/ui/common/OnboardingTour';
 import { Icons } from '@/ui/common/Icon';
 import type { TabRecord } from '@/core/tab-types';
 
@@ -401,5 +402,22 @@ describe('RowItem 密度档位', () => {
     expect(row).not.toHaveClass('density-tight');
     expect(row).not.toHaveClass('density-cozy');
     expect(row).not.toHaveClass('density-large');
+  });
+});
+
+describe('OnboardingTour 切步播报', () => {
+  it('常驻 live region 首次为空，切步后填入新步骤标题', () => {
+    // Given: 引导打开在第 1 步
+    render(<OnboardingTour onDone={() => {}} onDismiss={() => {}} />);
+    const live = document.querySelector('dialog [aria-live="polite"]');
+    expect(live, '缺少常驻播报区').not.toBeNull();
+    // 首次打开由 aria-labelledby 播报标题，region 保持空以免重复
+    expect(live?.textContent).toBe('');
+
+    // When: 点「下一步」
+    fireEvent.click(screen.getByRole('button', { name: translate('下一步') }));
+
+    // Then: 读屏能听到新步骤标题
+    expect(live?.textContent).toContain(translate('把常用页面固定起来'));
   });
 });

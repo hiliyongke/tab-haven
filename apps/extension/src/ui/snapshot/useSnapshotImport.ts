@@ -32,6 +32,8 @@ export function useSnapshotImport(params: {
   /** 导入在途态：驱动按钮禁用与 busy 文案，避免并发提交。 */
   importing: boolean;
   runImport: () => Promise<void>;
+  /** 离开导入视图时清空表单草稿（失败仍留在视图内，草稿保留）。 */
+  reset: () => void;
 } {
   const { t, notify, notifyFailure, onDone } = params;
   const [source, setSource] = useState<'onetab' | 'workona'>('onetab');
@@ -147,5 +149,5 @@ export function useSnapshotImport(params: {
     }
   }, [clear, name, notify, notifyFailure, onDone, source, t, text]);
 
-  return { source, text, name, setSource, setText, setName, importing, runImport };
+  return { source, text, name, setSource, setText, setName, importing, runImport, reset: clear };
 }

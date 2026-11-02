@@ -35,22 +35,31 @@ export function ShortcutsSection({
           <span className="text-3xs text-gray-500">{t('浏览器级')}</span>
         </Row>
       ))}
-      <Row label={<Kbd>{modKey('K')}</Kbd>} hint={t('侧边栏内聚焦搜索')}>
+      <Row label={<Kbd>{modKey('K')}</Kbd>} hint={t('聚焦搜索')}>
         <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
-      <Row label={<Kbd>{modKey('P')}</Kbd>} hint={t('侧边栏内打开命令面板（搜索并直接执行动作）')}>
+      <Row label={<Kbd>{modKey('P')}</Kbd>} hint={t('打开命令面板')}>
         <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
-      <Row label={<Kbd>{modKey('J')}</Kbd>} hint={t('侧边栏内定位激活标签')}>
+      <Row label={<Kbd>{modKey('J')}</Kbd>} hint={t('定位当前标签')}>
         <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
-      <Row label={<Kbd>{modKey('Z')}</Kbd>} hint={t('侧边栏内撤销最近一次关闭')}>
+      <Row label={<Kbd>{modKey('Z')}</Kbd>} hint={t('撤销最近关闭')}>
         <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row
         label={<Kbd>{modShiftKey('Z')}</Kbd>}
-        hint={t('侧边栏内重做最近一次撤销（再次关闭刚恢复的标签）')}
+        hint={t('重做最近一次撤销（再次关闭刚恢复的标签）')}
       >
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
+      </Row>
+      <Row label={<Kbd>↑ ↓ Enter</Kbd>} hint={t('在列表中漫游 / 激活')}>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
+      </Row>
+      <Row label={<Kbd>Alt ↑/↓</Kbd>} hint={t('重排当前标签')}>
+        <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
+      </Row>
+      <Row label={<Kbd>Space</Kbd>} hint={t('键盘拖拽')}>
         <span className="text-3xs text-gray-500">{t('侧边栏内')}</span>
       </Row>
       <Row label={t('自定义快捷键')} hint={t('在浏览器「扩展快捷键」设置页中调整按键')}>

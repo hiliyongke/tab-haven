@@ -35,7 +35,12 @@ export function HistoryHitsSection({
   const { t } = useTranslation();
   const listRef = useRef<HTMLUListElement>(null);
   useScrollFade(listRef, hits.length);
-  if (hits.length === 0) return null;
+  if (hits.length === 0) {
+    // 0 命中也要给答案：否则「历史里确实没有 / 开关没生效 / 索引还在加载」无从区分，
+    // 与 NoSearchResults 主动解释「为什么没结果」的既有原则不一致。只占一行，
+    // 不渲染 <ul> 与 40vh 滚动容器。
+    return <p className="px-2 py-1 text-3xs text-gray-500">{t('历史中也没有匹配的快照或归档')}</p>;
+  }
   return (
     // 本区块挂在主滚动容器**之外**，是 flex 列的直接子项：刚性高度（最多 20 条 ×
     // 约 40px ≈ 800px）会把主列表压成 0 高并顶走底栏 —— 命中越多界面越崩。

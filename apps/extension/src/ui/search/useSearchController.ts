@@ -83,6 +83,8 @@ interface SearchController {
   historyHits: HistorySearchHit[];
   /** 搜索框按键：仅 Esc（清空 + 失焦）；↑↓ / Enter 由 useListNavigation 承担。 */
   handleSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  /** 拼音词典加载失败：界面需给出可见降级说明（不只落诊断日志）。 */
+  pinyinFailed: boolean;
 }
 
 export function useSearchController(options: SearchControllerOptions): SearchController {
@@ -146,7 +148,7 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
   // 拼音是构造入参：词典就绪前后各建一次引擎（构造只是轻量 prepare），
   // 不给「引擎内部异步补齐」留位置——那会让引擎成为可变对象，命中结果
   // 在 React 看来毫无变化（拼音命中静默失效的根因）。
-  const pinyinUsable = usePinyinDictionary(pinyinSearch);
+  const { usable: pinyinUsable, failed: pinyinFailed } = usePinyinDictionary(pinyinSearch);
   const engine = useMemo(
     () =>
       isFiltering
@@ -196,10 +198,10 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
   }, [historyEngine, deferredQuery, isFiltering, snapshots]);
 
   const filteredTabs = useMemo(() => {
-    if (!query.trim()) return effectiveTabs;
+    if (!deferredQuery.trim()) return effectiveTabs;
     const hitIds = new Set(searchHits.map((hit) => hit.tabId));
     return effectiveTabs.filter((tab) => hitIds.has(tab.id));
-  }, [query, searchHits, effectiveTabs]);
+  }, [deferredQuery, searchHits, effectiveTabs]);
 
   /** 命中序列（按相关度）：键盘漫游在搜索态的序列来源，见 useListNavigation。 */
   const searchHitTabIds = useMemo(() => searchHits.map((hit) => hit.tabId), [searchHits]);
@@ -226,6 +228,8 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
     searchHitTabIds,
     noCacheTabIds,
     historyHits,
-    handleSearchKeyDown
+    handleSearchKeyDown,
+    /** 拼音词典加载失败：界面需给出可见降级说明，见 StatusToast 同款反馈口径。 */
+    pinyinFailed
   };
 }

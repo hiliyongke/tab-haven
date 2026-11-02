@@ -88,7 +88,10 @@ export const RowItem = memo(
       isSearchActive,
       isDropTarget,
       isDropRejected,
-      density = 'cozy',
+      // 刻意不设 cozy 默认值：固定空间（FolderItemRow）不传 density，须靠 .app 上的
+      // [data-density] 祖先规则驱动。默认加 density-cozy 类会以同特异性、更靠后的
+      // 顺序压掉 [data-density='tight'] 的 0 内距，超紧凑档对收藏夹失效。
+      density,
       indent,
       onClick,
       onAuxClick,

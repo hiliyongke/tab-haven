@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Snapshot } from '@/core/schema/models';
 import { computeInsights } from '@/core/insights/tabInsights';
@@ -76,22 +76,6 @@ export function SnapshotsPanel({
   const [editingName, setEditingName] = useState('');
   /** 视图切换：initialView 由入口指定（洞察直达为 'report'，见 Props 注释）。 */
   const [view, setView] = useState<'list' | 'import' | 'report'>(initialView);
-  /** 导入子流程（表单态 + 失败分流）抽在 useSnapshotImport，面板只装配。 */
-  const {
-    source: importSource,
-    text: importText,
-    name: importName,
-    setSource: setImportSource,
-    setText: setImportText,
-    setName: setImportName,
-    importing: importingSnapshot,
-    runImport: handleImport
-  } = useSnapshotImport({
-    t,
-    notify,
-    notifyFailure,
-    onDone: () => setView('list')
-  });
   /** 当前展开查看标签清单的快照 id（再次点击收起）。 */
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
@@ -104,6 +88,40 @@ export function SnapshotsPanel({
    * 是为了取消某几条，而不是从零挑起。detailId 切换时重置为新快照的全选集。
    */
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+
+  /**
+   * 切视图统一收口：命名态 / 重命名 / 详情 / 勾选集都是「进行中」的临时状态，
+   * 跨视图带回会出现「刚导完快照却看到一个未提交的保存表单」。同步清理（不用
+   * effect）避免切视图后先渲染一帧旧状态。
+   */
+  const switchView = useCallback((next: 'list' | 'import' | 'report') => {
+    setSaving(false);
+    setName('');
+    setEditingId(null);
+    setEditingName('');
+    setDetailId(null);
+    setSelectedKeys(new Set());
+    setView(next);
+  }, []);
+
+  /** 导入子流程（表单态 + 失败分流）抽在 useSnapshotImport，面板只装配。
+   *  放在 switchView 之后：onDone 要复用同一套切视图清理。 */
+  const {
+    source: importSource,
+    text: importText,
+    name: importName,
+    setSource: setImportSource,
+    setText: setImportText,
+    setName: setImportName,
+    importing: importingSnapshot,
+    runImport: handleImport,
+    reset: resetImport
+  } = useSnapshotImport({
+    t,
+    notify,
+    notifyFailure,
+    onDone: () => switchView('list')
+  });
 
   /**
    * 恢复链路（在途互斥 + 两道影响面确认 + 执行体）抽在 useSnapshotRestore。
@@ -224,9 +242,7 @@ export function SnapshotsPanel({
       // chrome:// 页），此时 store 已给出可见回执，这里不能再补一条「已保存快照」
       // ——两条互相矛盾的提示同时出现，用户无法判断到底存没存。
       const saved = await saveCurrentWindow(name.trim() || undefined);
-      if (!saved) return;
-      setName('');
-      notify(t('已保存快照'));
+      if (saved) notify(t('已保存快照'));
     } catch (error) {
       // 走 notifyFailure：保存/导入/恢复/删除/重命名都是写路径，失败必须进诊断
       // 导出，否则「点了没反应」在用户与开发者两侧都无从定位。
@@ -234,6 +250,8 @@ export function SnapshotsPanel({
     } finally {
       saveInFlight.current = false;
       setSaving(false);
+      // 失败 / 无可保存标签也清草稿：否则命名框收起后下次进入又冒出旧名字。
+      setName('');
     }
   };
 
@@ -346,7 +364,11 @@ export function SnapshotsPanel({
           onNameChange={setImportName}
           text={importText}
           onTextChange={setImportText}
-          onCancel={() => setView('list')}
+          onCancel={() => {
+            // 取消等于放弃草稿；失败时用户仍留在导入视图，草稿不受影响。
+            resetImport();
+            switchView('list');
+          }}
           onImport={() => void handleImport()}
           importing={importingSnapshot}
         />
@@ -362,7 +384,7 @@ export function SnapshotsPanel({
           onCleanDuplicates={onCleanDuplicates}
           onDiscardInactive={onDiscardInactive}
           onArchiveWindow={onArchiveWindow}
-          onBack={() => setView('list')}
+          onBack={() => switchView('list')}
         />
       ) : (
         <SnapshotListView
@@ -399,8 +421,8 @@ export function SnapshotsPanel({
           restoringId={restoringId}
           onRequestRestore={requestRestore}
           onDelete={handleDelete}
-          onOpenImport={() => setView('import')}
-          onOpenReport={() => setView('report')}
+          onOpenImport={() => switchView('import')}
+          onOpenReport={() => switchView('report')}
           listRef={listFocusRef}
         />
       )}

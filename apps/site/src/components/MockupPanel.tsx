@@ -161,7 +161,7 @@ export function MockupPanel({ variant }: MockupPanelProps) {
   const placeholder = t('搜索标签、网址或拼音');
 
   return (
-    <div className="mockup">
+    <div className="mockup" aria-hidden="true">
       <div className="mockup-window">
         <div className="mockup-chrome" aria-hidden="true">
           <span className="mockup-dots">

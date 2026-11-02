@@ -11,28 +11,45 @@ import { logDegraded } from '@/platform/diagnostics';
  * 不需要任何「失效计数器」。
  *
  *
- * @param enabled 设置项 `pinyinSearch`：关闭时既不加载词典，也恒返回 false。
+ * @param enabled 设置项 `pinyinSearch`：关闭时既不加载词典，也恒返回不可用/未失败。
  */
-export function usePinyinDictionary(enabled: boolean): boolean {
+export interface PinyinDictionaryState {
+  /** 此刻能否把拼音作为构造参数传给搜索引擎。 */
+  usable: boolean;
+  /** 词典加载失败：界面必须给出可见降级说明，不能只落诊断日志。 */
+  failed: boolean;
+}
+
+export function usePinyinDictionary(enabled: boolean): PinyinDictionaryState {
   const [ready, setReady] = useState(() => isPinyinDictionaryReady());
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!enabled || ready) return;
     let cancelled = false;
-    void preloadPinyinDictionary().then((loaded) => {
-      if (cancelled) return;
-      if (loaded) {
-        setReady(true);
-        return;
-      }
-      // 词典加载失败只降级拼音匹配（标题 / URL 匹配不受影响），但必须留痕：
-      // 否则用户看到的「打拼音搜不到」无从归因。
-      logDegraded('search', '拼音词典加载失败，当前无法使用拼音匹配');
-    });
+    void preloadPinyinDictionary()
+      .then((loaded) => {
+        if (cancelled) return;
+        if (loaded) {
+          setReady(true);
+          setFailed(false);
+          return;
+        }
+        // 词典加载失败只降级拼音匹配（标题 / URL 匹配不受影响），但必须留痕：
+        // 否则用户看到的「打拼音搜不到」无从归因。
+        logDegraded('search', '拼音词典加载失败，当前无法使用拼音匹配');
+        setFailed(true);
+      })
+      .catch((error: unknown) => {
+        // 动态 chunk 本身加载失败也会走到这里；不接住会变成无归属的 rejection。
+        if (cancelled) return;
+        logDegraded('search', '拼音词典加载失败，当前无法使用拼音匹配', error);
+        setFailed(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [enabled, ready]);
 
-  return enabled && ready;
+  return { usable: enabled && ready, failed: enabled && failed };
 }

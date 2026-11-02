@@ -335,7 +335,7 @@ const GLOBAL_SHORTCUTS: { labelKey: string; keys: string[] }[] = COMMANDS.map((c
  */
 const PRIVACY_BADGES: { labelKey: string }[] = [
   { labelKey: '数据只在本机' },
-  { labelKey: '无账号' },
+  { labelKey: '无自有账号' },
   { labelKey: '无遥测' },
   { labelKey: '零网络请求' }
 ];
@@ -344,7 +344,7 @@ const PRIVACY_BADGES: { labelKey: string }[] = [
 const PRIVACY_FACTS: { titleKey: string; bodyKey: string }[] = [
   {
     titleKey: '本地优先存储',
-    bodyKey: '主存储是浏览器本地存储（chrome.storage.local）；无自有服务器、无账号、无云端。'
+    bodyKey: '主存储是浏览器本地存储（chrome.storage.local）；无自有账号、无自有服务器。'
   },
   {
     titleKey: '零出站网络请求',
@@ -507,7 +507,9 @@ export function AboutPage() {
           {/* 与设置页 h1 同为 text-lg：两个 Chrome 扩展内页面是同级入口，
               一级标题字号不同会让跨页跳转时页面「重量感」突变。 */}
           <h1 className="text-lg font-semibold text-gray-900">{t('Tabs')}</h1>
-          <p className="mt-1 text-sm text-gray-600">{t('本地优先、无账号、无云端的标签工作台')}</p>
+          <p className="mt-1 text-sm text-gray-600">
+            {t('本地优先、无自有账号、无自有服务器的标签工作台')}
+          </p>
         </div>
         {version && (
           /* 版本胶囊走 Chip 中性档（gray-600，满足 AA）：gray-500 在 gray-100 底上仅 3.92:1。 */
@@ -640,7 +642,7 @@ export function AboutPage() {
       {/* 页脚 */}
       <footer className="mt-10 border-t border-gray-200 pt-4">
         <p className="max-w-[65ch] text-3xs leading-relaxed text-gray-500">
-          {t('无自有服务器 · 无账号 · 无遥测 · 零出站网络请求；数据默认只存在于你的浏览器里。')}
+          {t('无自有服务器 · 无自有账号 · 无遥测 · 零出站网络请求；数据默认只存在于你的浏览器里。')}
         </p>
       </footer>
     </div>

@@ -35,7 +35,7 @@ export function SnapshotReportView({
       <p className="text-3xs text-gray-600">{t('本地聚合，不涉及任何网络或账号')}</p>
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg border border-gray-200 bg-surface px-3 py-2">
-          <p className="text-base font-semibold text-gray-800">{stats.snapCount}</p>
+          <p className="text-lg font-semibold text-gray-800">{stats.snapCount}</p>
           {/* 这个数字**已包含**下面「归档」「工作区」两类（同一批数据的三种切片），
               并排会让人误以为三者相加才是总数，故标签必须点明「总数」语义。 */}
           <p className="text-3xs text-gray-500">{t('本周快照总数（含下面两类）')}</p>

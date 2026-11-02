@@ -230,12 +230,12 @@ export function WhitelistEditor({
           {t('添加')}
         </Button>
       </div>
-      {notice !== null && (
-        /* text-3xs(11px)：正文说明的最小字号（10px 仅用于图标内文与徽角）。 */
-        <p id={whitelistNoticeId} role="status" className="text-3xs text-red-600">
-          {notice}
-        </p>
-      )}
+      {/* 常驻空 role=status：插入时才带内容会被读屏漏掉首次播报；同时让
+          aria-describedby 的 IDREF 目标始终存在。空 <p> 无内距，不占版面。
+          text-3xs(11px)：正文说明的最小字号（10px 仅用于图标内文与徽角）。 */}
+      <p id={whitelistNoticeId} role="status" className="text-3xs text-red-600">
+        {notice ?? ''}
+      </p>
     </div>
   );
 }

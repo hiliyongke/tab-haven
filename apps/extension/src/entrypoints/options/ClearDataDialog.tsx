@@ -50,7 +50,7 @@ export function ClearDataDialog({
       <div className="flex flex-col gap-3">
         <p className="text-3xs leading-relaxed text-gray-600">{t('以下数据将被永久删除：')}</p>
         <ul className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-3xs text-gray-700">
-          <li>· {t('收藏夹与常驻磁贴')}</li>
+          <li>· {t('文件夹与常驻磁贴')}</li>
           <li>· {t('全部快照与归档')}</li>
           <li>· {t('可撤销的关闭记录')}</li>
           <li>· {t('全部设置（恢复为默认值）')}</li>

@@ -377,18 +377,16 @@ export function SettingsPage() {
 
         {/* 页面级写入失败提示：紧贴页头，改哪一项都在同一屏内看到结果。
             导出/导入结果仍留在「数据备份」分区（那是该动作的发生地）。 */}
+        {/* 可见告警仍条件渲染（空态不留描边占位）；播报下沉到常驻 sr-only region，
+            避免「插入时才带内容」导致读屏首次漏报。 */}
         {settingsStatus !== null && (
-          <Callout
-            role="status"
-            aria-live="polite"
-            tone="warn"
-            density="page"
-            className="mb-4"
-            icon={Icons.infoAlert}
-          >
+          <Callout tone="warn" density="page" className="mb-4" icon={Icons.infoAlert}>
             <p className="text-xs">{settingsStatus}</p>
           </Callout>
         )}
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {settingsStatus ?? ''}
+        </span>
 
         {/* mb-6 sm:mb-8：与分区间距同档。恒为 24px 时在 sm 以上反而小于
             区块之间的 32px，层级关系倒置（"搜索框离首块更近"读起来像属于首块）。 */}
@@ -537,7 +535,7 @@ export function SettingsPage() {
             <Row
               label={t('清除所有数据')}
               hint={t(
-                '删除收藏夹、常驻磁贴、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复'
+                '删除文件夹、常驻磁贴、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复'
               )}
             >
               <Button
@@ -550,12 +548,15 @@ export function SettingsPage() {
                 {t('永久清除')}
               </Button>
             </Row>
-            {transferStatus && (
-              /* 操作结果对读屏播报（与侧边栏搜索命中数同口径：<output> + aria-live） */
-              <output className="px-4 py-2 text-xs text-gray-600" role="status" aria-live="polite">
-                {transferStatus}
-              </output>
-            )}
+            {/* 常驻 live region：容器预先存在且为空，AT 才能订阅后续内容变化。
+                空态切 sr-only 不占版面，有结果时恢复可见（与侧栏命中数同口径）。 */}
+            <output
+              className={transferStatus ? 'px-4 py-2 text-xs text-gray-600' : 'sr-only'}
+              role="status"
+              aria-live="polite"
+            >
+              {transferStatus ?? ''}
+            </output>
           </Section>
         )}
 
@@ -563,7 +564,7 @@ export function SettingsPage() {
         {visibleStaticIds.has('about.title') && (
           <Section id="about.title" title={t('关于 Tabs')}>
             <Row
-              label={t('本地优先、无账号、无云端的标签工作台')}
+              label={t('本地优先、无自有账号、无自有服务器的标签工作台')}
               hint={t('打开独立页面，完整浏览产品的全部能力与快捷键')}
             >
               <Button variant="secondary" onClick={openAboutPage}>
@@ -576,7 +577,9 @@ export function SettingsPage() {
         {pendingImport !== null && (
           <ConfirmDialog
             title={t('导入备份')}
-            message={t('导入会覆盖你的常驻磁贴、文件夹、设置与快照，是否继续？')}
+            message={t(
+              '导入会覆盖你的文件夹、常驻磁贴、折叠状态、设置，以及全部快照与归档，是否继续？'
+            )}
             confirmLabel={t('导入')}
             danger
             onCancel={() => setPendingImport(null)}

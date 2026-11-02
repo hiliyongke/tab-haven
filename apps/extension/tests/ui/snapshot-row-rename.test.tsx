@@ -107,3 +107,34 @@ describe('SnapshotRow 重命名三方去重', () => {
     expect(onCommitRename).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('SnapshotRow 键盘唤出右键菜单', () => {
+  it('行内按钮上按 Shift+F10 可唤出菜单（与磁贴/文件夹行同口径）', () => {
+    // Given: 非编辑态快照行，行尾有可聚焦的操作按钮
+    render(
+      <ul>
+        <SnapshotRow
+          snap={makeSnap()}
+          isEditing={false}
+          editingName=""
+          isDetailOpen={false}
+          onEditingNameChange={vi.fn()}
+          onBeginRename={vi.fn()}
+          onCommitRename={vi.fn()}
+          onCancelRename={vi.fn()}
+          onToggleDetail={vi.fn()}
+          onRestore={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </ul>
+    );
+    const trigger = screen.getByRole('button', { name: translate('恢复') });
+
+    // When: keydown 由按钮冒泡到 <li> 的 onKeyDown
+    fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true });
+
+    // Then: 右键菜单出现，键盘用户与鼠标用户拿到同一组动作
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: translate('查看快照内标签') })).toBeInTheDocument();
+  });
+});

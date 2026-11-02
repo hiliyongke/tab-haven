@@ -50,6 +50,19 @@ export function OnboardingTour({
   const current = ONBOARDING_STEPS[step - 1] ?? ONBOARDING_STEPS[0];
   const panelRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  // 切步播报：新标题/正文不是 live region，aria-labelledby 指向的文本变化在焦点位于
+  // 内部按钮时也不可靠播报。常驻空 region + 切步后填内容，读屏才能听到第 2/3 步。
+  const [stepAnnouncement, setStepAnnouncement] = useState('');
+  const firstStepRender = useRef(true);
+  const stepLabel = `${t('第 {{current}} / {{total}} 步', { current: step, total: TOTAL })} · ${t(current.titleKey)}`;
+  useEffect(() => {
+    // 首次打开已由 dialog 的 aria-labelledby 播报标题，跳过以免重复念一遍。
+    if (firstStepRender.current) {
+      firstStepRender.current = false;
+      return;
+    }
+    setStepAnnouncement(stepLabel);
+  }, [stepLabel]);
   // 与弹窗族统一：焦点陷阱 + 关闭后焦点恢复；不加遮罩点击关闭，避免误点写回 onboarded 标记。
   useModalA11y(panelRef, onDismiss);
 
@@ -89,6 +102,9 @@ export function OnboardingTour({
           {t(current.titleKey)}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">{t(current.bodyKey)}</p>
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {stepAnnouncement}
+        </div>
 
         {last && (
           <div className="mt-4 rounded-lg bg-accent-50 p-3">

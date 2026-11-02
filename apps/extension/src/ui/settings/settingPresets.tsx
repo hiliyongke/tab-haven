@@ -169,11 +169,15 @@ export function PresetsPanel() {
           </div>
         )}
       </div>
-      {status !== null && (
-        <output className="mt-2 block text-3xs text-gray-600" role="status" aria-live="polite">
-          {status}
-        </output>
-      )}
+      {/* 常驻 live region：容器预先存在且为空，AT 才能可靠订阅后续内容变化。
+          空态切到 sr-only（不占可见高度），有结果时恢复可见，避免拆成两个节点重复播报。 */}
+      <output
+        className={status === null ? 'sr-only' : 'mt-2 block text-3xs text-gray-600'}
+        role="status"
+        aria-live="polite"
+      >
+        {status ?? ''}
+      </output>
     </section>
   );
 }
@@ -192,7 +196,7 @@ const CAPABILITIES = [
   },
   {
     icon: Icons.shortcuts,
-    titleKey: '命令面板（⌘P）',
+    titleKey: '命令面板（⌘/Ctrl+P）',
     howKey: '搜索并直接执行动作：休眠全部、存快照、开设置'
   },
   {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from '@/i18n';
 import { useUndoStore } from '@/stores/undoStore';
 import { logDegraded } from '@/platform/diagnostics';
@@ -47,7 +48,13 @@ export function StatusToast() {
     </>
   ) : null;
 
-  return (
+  /**
+   * 播报节点必须脱离 `.app`：模态打开时 Dialog 会给 `.app` 加 inert（或 aria-hidden
+   * 退化路径），子树内的 live region 被移出可访问树，弹窗期间的保存 / 删除 / 导入
+   * 回执会静默漏播，关闭解除 inert 时内容已不再变化也补不回来。视觉条仍在原位
+   * （其 z-index 依赖 .app 层叠上下文），这里只把「播报」拆到 body。
+   */
+  const liveRegions = (
     <>
       {/* 失败提示走 assertive：读屏会打断当前播报立即念出，而不是排在普通提示之后。 */}
       <div className="sr-only" aria-live="assertive" aria-atomic="true">
@@ -56,6 +63,12 @@ export function StatusToast() {
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {!isError ? announce : null}
       </div>
+    </>
+  );
+
+  return (
+    <>
+      {createPortal(liveRegions, document.body)}
       {toast && (
         <div
           className={`status-toast flex items-center gap-2 py-1.5 pl-2.5 pr-2 text-xs ${
@@ -70,8 +83,16 @@ export function StatusToast() {
           />
           {/* note 是附属信息（淘汰告知）：与回执同槽展示，避免被回执顶掉后永久漏发。 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate">{toast.message}</span>
-            {toast.note && <span className="truncate text-gray-500">{toast.note}</span>}
+            {/* 窄面板会 truncate：补 title 让鼠标/触屏用户仍能取回完整回执
+                （读屏已由上方常驻 live region 全量播报）。 */}
+            <span className="truncate" title={toast.message}>
+              {toast.message}
+            </span>
+            {toast.note && (
+              <span className="truncate text-gray-500" title={toast.note}>
+                {toast.note}
+              </span>
+            )}
           </div>
           {toast.canUndo && (
             /* soft-outline：撤销是这条提示的核心动作，灰底弱按钮会让人找不到入口 */

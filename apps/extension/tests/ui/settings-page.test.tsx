@@ -221,5 +221,27 @@ describe('SettingsPage 导入回滚结果反馈', () => {
   });
 });
 
+describe('结果型播报容器常驻', () => {
+  it('无导入导出结果时 live region 仍在 DOM 且为空（首次结果不漏播）', async () => {
+    // Given: 设置页就绪、没有任何操作结果
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    render(<SettingsPage />);
+    await waitFor(() => {
+      expect(sectionHeading('数据备份')).toBeInTheDocument();
+    });
+
+    // When: 查结果型 polite 容器
+    const regions = document.querySelectorAll(
+      'output[role="status"][aria-live="polite"], span.sr-only[aria-live="polite"]'
+    );
+
+    // Then: 容器预先存在（AT 已订阅）且内容为空，不占可见版面
+    expect(regions.length).toBeGreaterThanOrEqual(1);
+    for (const region of regions) {
+      expect(region.textContent).toBe('');
+    }
+  });
+});
+
 // 抑制「设置仓库未被读取」的未用告警：导入即使用（SettingsPage 内部依赖同一仓库实例）
 void settingsRepository;

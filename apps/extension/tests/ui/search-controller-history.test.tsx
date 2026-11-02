@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { translate } from '@/i18n';
+import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import { useSearchController } from '@/ui/search/useSearchController';
@@ -160,5 +161,18 @@ describe('useSearchController 历史命中', () => {
     });
 
     expect(result.current.historyHits).toEqual([]);
+  });
+});
+
+describe('HistoryHitsSection 空命中反馈', () => {
+  it('0 命中时给出一行说明，而不是整段静默消失', () => {
+    // Given: 开启了历史搜索但一条历史都没命中
+    // When: 渲染历史命中分区
+    render(<HistoryHitsSection hits={[]} onOpenUrl={() => {}} onRestoreSnapshot={() => {}} />);
+
+    // Then: 用户能区分「历史里确实没有」与「开关没生效 / 索引还在加载」，
+    // 且不渲染 <ul>、不占 40vh 滚动区
+    expect(screen.getByText(translate('历史中也没有匹配的快照或归档'))).toBeInTheDocument();
+    expect(screen.queryByRole('list')).toBeNull();
   });
 });

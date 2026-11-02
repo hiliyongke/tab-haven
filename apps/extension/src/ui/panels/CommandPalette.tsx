@@ -70,7 +70,7 @@ export function CommandPalette({
   const pinyinSearch = useDataStore((state) => state.settings.pinyinSearch);
   // 拼音是引擎的构造入参（引擎构造后不可变）：词典就绪后本信号翻转，
   // 两个引擎随之重建，命中自然纳入拼音——不需要「失效计数器」这类外部触发器。
-  const pinyinUsable = usePinyinDictionary(pinyinSearch);
+  const { usable: pinyinUsable, failed: pinyinFailed } = usePinyinDictionary(pinyinSearch);
   const engine = useMemo(
     () =>
       new SearchEngine(
@@ -237,6 +237,13 @@ export function CommandPalette({
               放在输入框之后 —— 「打开聚焦首项」仍落在输入框上。 */}
           <IconButton icon={Icons.close} size="md" label={t('关闭')} dismiss onClick={onClose} />
         </div>
+        {/* 拼音词典加载失败：与侧边栏同口径的可见降级说明，放在输入框下方、
+            listbox 之外（不干扰 combobox/option 的键盘漫游序列）。 */}
+        {pinyinFailed && (
+          <p className="px-4 pb-1 text-3xs leading-relaxed text-gray-600" role="alert">
+            {t('拼音词典加载失败，当前仅按标题与网址匹配')}
+          </p>
+        )}
         {/*
           刻意不使用原生 <select> + <option>：可自定义 select（option 内可放图标）
           需 Chrome 135+，而本扩展最低支持 Chrome 114。低于该版本时 HTML 解析器

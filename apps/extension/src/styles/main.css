@@ -1028,6 +1028,11 @@ html.theme-transition *::after {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+/* .row-actions 有 overflow:hidden 且只有 padding-left：外扩环的右侧会被裁掉。
+   与 .menu-item:focus 同口径内缩，保证行尾最后一个按钮的焦点环四边完整。 */
+.row-actions .row-action:focus-visible {
+  outline-offset: -2px;
+}
 
 /* 危险操作（关闭/删除）：悬停/键盘聚焦转砖红。
    刻意只改 hover / focus-visible，静默态保持中性灰 ——
@@ -1536,6 +1541,14 @@ button:not([disabled]) {
     line-height: 1.2;
     color: var(--c-gray-600);
   }
+  /* 名称是 .pinned-main 的子节点：按钮若仍为 36×36，名称的 max-width:100%
+     解析到 36px 而非 56px 磁贴，会被截成 2–3 字并向下溢出。这里让按钮随
+     两个 grid 子项自然长高、宽度撑满磁贴内容区，名称才能独占一行。 */
+  .pinned-main {
+    width: 100%;
+    height: auto;
+    min-height: 36px;
+  }
 }
 .pinned-tile.is-dragging {
   z-index: 30;
@@ -1662,6 +1675,14 @@ button:not([disabled]) {
 }
 .pinned-grid::-webkit-scrollbar {
   display: none;
+}
+/* 必须写在上条 .pinned-grid 之后：@media 不增加特异性，同特异性下后写的 86px
+   会反过来盖掉触屏覆盖值。触屏磁贴变高（favicon + 名称两行）后按新行高重算两行
+   封顶：padding 4+4 + 行距 6 + 每行约 48px × 2 = 110px，保持「两行封顶 + 区内滚」。 */
+@media (hover: none) {
+  .pinned-grid {
+    max-height: 110px;
+  }
 }
 .pinned-tile .pinned-unpin {
   position: absolute;
@@ -2271,7 +2292,7 @@ body.dnd-dragging .fixed-area {
 /* 行内按钮自身 hover 时升级为品牌色背景。
    :not(:disabled) 不可省：本条特异性 (0,4,0) 高于 .row-action:disabled:hover，
    不加就会让卡内的禁用按钮在悬停时重新变色。 */
-.section-card:hover .row-action:not(:disabled):hover {
+.section-card:hover .row-action:not(:disabled):not(.is-danger):hover {
   background: var(--c-brand-100);
   color: var(--c-brand-700);
 }
