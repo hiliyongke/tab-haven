@@ -28,6 +28,14 @@ import { FOOTER_BUTTON_IDS, FOOTER_BUTTON_KEYS } from '@/core/layout/footerOrder
 export const FOLDER_ITEMS_LIMIT = 500;
 export const FOLDERS_LIMIT = 200;
 export const PINS_LIMIT = 200;
+
+/**
+ * 临时区未固定标签的聚合模式；持久化类型与 UI/领域层共享此唯一口径（禁止手抄联合类型）。
+ * site 一子域一组 / rootDomain 同注册域折叠 / opener 来源树 / language 语言 / none 平铺不分组。
+ */
+export const GROUP_MODES = ['site', 'rootDomain', 'opener', 'language', 'none'] as const;
+export const GroupModeSchema = z.enum(GROUP_MODES);
+export type GroupMode = z.infer<typeof GroupModeSchema>;
 export const SITE_COLLAPSE_LIMIT = 2_000;
 const DISCARD_WHITELIST_LIMIT = 500;
 /** DNS 主机名总长上限 253。 */
@@ -146,8 +154,8 @@ export const SettingsSchema = z
     autoDiscardEnabled: z.boolean().default(false),
     /** 自动休眠等待时长（分钟），5–240。 */
     autoDiscardMinutes: z.number().int().min(5).max(240).default(30),
-    /** 临时区非固定标签聚合模式：site 按网站 / opener 按来源树 / language 按语言。 */
-    groupMode: z.enum(['site', 'opener', 'language']).default('site'),
+    /** 临时区非固定标签聚合模式：取值口径见 GROUP_MODES。 */
+    groupMode: GroupModeSchema.default('site'),
     /** 自动创建浏览器原生标签组：把聚合结果写回 tabGroups；关闭开关会解散本功能创建的组。 */
     autoGroupNative: z.boolean().default(false),
     /** 工具栏图标点击行为：panel 打开侧边栏（默认）/ regroup 后台整理临时区标签，不弹面板。 */

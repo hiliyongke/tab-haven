@@ -491,3 +491,135 @@ describe('deriveSections 原生组域名漂移拆分（Chrome 组继承）', () 
     ]);
   });
 });
+
+describe('deriveSections 无分组与根域名模式', () => {
+  it('不分组模式：未固定标签含原生组成员全部平铺，固定标签仍独立', () => {
+    // Given 一个原生组成员、一个未分组标签、一个固定标签
+    const tabs = [
+      makeTab(1, 'https://a.com/1', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://b.com/2', { index: 2 }),
+      makeTab(3, 'https://c.com/3', { pinned: true, index: 0 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'a.com' }];
+
+    // When 派生不分组视图
+    const sections = deriveSections({ tabs, groups, groupMode: 'none' });
+
+    // Then 只有固定区与平铺区，原生组成员没有从列表里消失
+    expect(sections.map((section) => section.kind)).toEqual(['pinned', 'ungrouped']);
+    expect(sections[1]?.tabs.map((tab) => tab.id)).toEqual([1, 2]);
+    expect(sections[1]?.title).toBe('全部标签');
+  });
+
+  it('不分组模式：排序仍遵循 sortMode', () => {
+    const tabs = [
+      makeTab(1, 'https://a.com/1', { index: 3, lastAccessed: 30 }),
+      makeTab(2, 'https://b.com/2', { index: 1, lastAccessed: 10 })
+    ];
+    const sections = deriveSections({ tabs, groups: [], groupMode: 'none', sortMode: 'recency' });
+    expect(sections[0]?.tabs.map((tab) => tab.id)).toEqual([1, 2]);
+  });
+
+  it('按根域名：同注册域不同子域合成一个分区', () => {
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { index: 1 }),
+      makeTab(2, 'https://beta.example.com/b', { index: 2 }),
+      makeTab(3, 'https://example.com/c', { index: 3 }),
+      makeTab(4, 'https://other.com/d', { index: 4 })
+    ];
+
+    const sections = deriveSections({ tabs, groups: [], groupMode: 'rootDomain' });
+
+    const root = sections.find((section) => section.kind === 'site');
+    expect(root?.kind === 'site' ? root.siteKey : '').toBe('example.com');
+    expect(root?.title).toBe('example.com');
+    expect(root?.tabs.map((tab) => tab.id)).toEqual([1, 2, 3]);
+    expect(
+      sections.find((section) => section.kind === 'ungrouped')?.tabs.map((tab) => tab.id)
+    ).toEqual([4]);
+  });
+
+  it('按根域名：根域名组里的子域成员不被拆出', () => {
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://beta.example.com/b', { groupId: 7, index: 2 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'example.com' }];
+
+    const sections = deriveSections({ tabs, groups, groupMode: 'rootDomain' });
+
+    expect(
+      sections.find((section) => section.kind === 'native')?.tabs.map((tab) => tab.id)
+    ).toEqual([1, 2]);
+  });
+
+  it('按根域名：跨域新标签仍从域名组拆出并按自身域名呈现', () => {
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://notion.so/x', { groupId: 7, index: 2 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'example.com' }];
+
+    const sections = deriveSections({ tabs, groups, groupMode: 'rootDomain' });
+
+    expect(
+      sections.find((section) => section.kind === 'native')?.tabs.map((tab) => tab.id)
+    ).toEqual([1]);
+    const ungrouped = sections.find((section) => section.kind === 'ungrouped');
+    expect(ungrouped?.tabs.map((tab) => tab.id)).toEqual([2]);
+    expect(ungrouped?.tabs[0]?.groupId).toBe(7);
+  });
+
+  it('按根域名：对账视图保留真实组成员', () => {
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://beta.example.com/b', { groupId: 7, index: 2 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'example.com' }];
+
+    const sections = deriveSections({
+      tabs,
+      groups,
+      groupMode: 'rootDomain',
+      splitDriftedNativeTabs: false
+    });
+
+    expect(
+      sections.find((section) => section.kind === 'native')?.tabs.map((tab) => tab.id)
+    ).toEqual([1, 2]);
+  });
+
+  it('按根域名：子域名命名的旧组整组保留（不误拆用户手动组）', () => {
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://other.com/b', { groupId: 7, index: 2 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'alpha.example.com' }];
+
+    const sections = deriveSections({ tabs, groups, groupMode: 'rootDomain' });
+
+    expect(
+      sections.find((section) => section.kind === 'native')?.tabs.map((tab) => tab.id)
+    ).toEqual([1, 2]);
+  });
+
+  it('按根域名：根域名组与同注册域未分组标签归并到同一分区', () => {
+    // Given 一个跨子域的根域名组，外加同注册域的第三个子域标签
+    const tabs = [
+      makeTab(1, 'https://alpha.example.com/a', { groupId: 7, index: 1 }),
+      makeTab(2, 'https://beta.example.com/b', { groupId: 7, index: 2 }),
+      makeTab(3, 'https://gamma.example.com/c', { index: 3 })
+    ];
+    const groups: TabGroupRecord[] = [{ id: 7, title: 'example.com' }];
+
+    // When 派生按根域名视图
+    const sections = deriveSections({ tabs, groups, groupMode: 'rootDomain' });
+
+    // Then 归并判定按同一个根域桶生效：原生分区被吸收，三个标签进同一分区
+    expect(sections.filter((section) => section.kind === 'native')).toHaveLength(0);
+    const root = sections.find((section) => section.kind === 'site');
+    expect(root?.kind === 'site' ? root.siteKey : '').toBe('example.com');
+    expect(root?.tabs.map((tab) => tab.id).sort()).toEqual([1, 2, 3]);
+    expect(root?.kind === 'site' ? root.mergedGroupIds : []).toEqual([7]);
+  });
+});

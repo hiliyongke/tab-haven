@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { EXPORT_FILE_VERSION, ExportFileSchema, parseExportFile } from '@/core/schema/models';
+import {
+  EXPORT_FILE_VERSION,
+  ExportFileSchema,
+  GROUP_MODES,
+  parseExportFile
+} from '@/core/schema/models';
 
 /**
  * 导出文件契约：`format`、`version` 与五个数据分区均符合当前 schema。
@@ -55,6 +60,27 @@ describe('parseExportFile', () => {
     for (const raw of [null, undefined, 42, 'x', []]) {
       expect(parseExportFile(raw).success).toBe(false);
     }
+  });
+});
+
+describe('parseExportFile 聚合模式取值', () => {
+  it('五种模式都能随备份往返，旧备份缺省补 site', () => {
+    // Given 当前版本的备份，settings 可缺省
+    // When 逐档写入 groupMode
+    for (const groupMode of GROUP_MODES) {
+      const result = parseExportFile({ ...VALID, settings: { groupMode } });
+      // Then 均能导入且取值不丢失
+      expect(result.success).toBe(true);
+      expect(result.success && result.data.settings.groupMode).toBe(groupMode);
+    }
+    const legacy = parseExportFile(VALID);
+    expect(legacy.success && legacy.data.settings.groupMode).toBe('site');
+  });
+
+  it('未知聚合模式被判为损坏备份，不静默降级', () => {
+    const result = parseExportFile({ ...VALID, settings: { groupMode: 'byColor' } });
+    expect(result.success).toBe(false);
+    expect(result.success === false && result.reason).toBe('invalid');
   });
 });
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import i18n, { useTranslation, type Translate } from '@/i18n';
-import type { Settings } from '@/core/schema/models';
+import { GROUP_MODES, type GroupMode, type Settings } from '@/core/schema/models';
 import { COLOR_THEMES, type ColorTheme } from '@/core/theme/colorThemes';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
 import { useDataStore } from '@/stores/dataStore';
@@ -209,6 +209,15 @@ export function buildSections(
   t: Translate,
   sidePanelSide: string
 ): { id: string; titleKey: string; specs: SettingSpec[] }[] {
+  // 聚合方式选项由 schema 的 GROUP_MODES 驱动：取值、顺序、文案三处同源；
+  // Record 穷尽保证新增模式必须补中文原文（t() 保持字面量以便抽词）。
+  const groupModeLabels: Record<GroupMode, string> = {
+    site: t('按域名'),
+    rootDomain: t('按根域名'),
+    opener: t('按来源树'),
+    language: t('按语言'),
+    none: t('不分组')
+  };
   return [
     {
       // id 是稳定 DOM 锚点，与文案解耦：拿 titleKey 当 id 会随文案/语言变化失效。
@@ -378,7 +387,7 @@ export function buildSections(
           key: 'aggregationThreshold',
           labelKey: '站点聚合阈值（同一站点几个标签自动成组）',
           hintKey:
-            '同一站点（含子域）的标签达到该数量自动成组；设为 1 时只要有标签就成组（单标签站点也成组）',
+            '同一分组口径下的标签达到该数量自动成组（按域名按子域计，按根域名按主域累计）；设为 1 时只要有标签就成组',
           parse: (v) => Number(v),
           options: [
             { value: '1', label: t('1（只要有标签就分组）') },
@@ -454,18 +463,16 @@ export function buildSections(
           kind: 'select',
           key: 'groupMode',
           labelKey: '未固定标签的聚合方式',
-          options: [
-            { value: 'site', label: t('按域名') },
-            { value: 'opener', label: t('按来源树') },
-            { value: 'language', label: t('按语言') }
-          ]
+          hintKey:
+            '按域名：每个子域单独一组（a.example.com 与 b.example.com 分开）；按根域名：同一主域下的子域合并；按来源树：按打开来源缩进；按语言：按页面语言归类；不分组：全部标签平铺（仅改变侧边栏展示）',
+          options: GROUP_MODES.map((mode) => ({ value: mode, label: groupModeLabels[mode] }))
         },
         {
           kind: 'toggle',
           key: 'autoGroupNative',
           labelKey: '自动创建原生标签组',
           hintKey:
-            '开启后，按域名或语言聚合的标签会自动组成浏览器原生标签组（来源树模式除外）；关闭开关时会解散由本功能创建的组',
+            '开启后，按域名 / 按根域名 / 按语言聚合的标签会自动组成浏览器原生标签组（来源树与不分组模式除外）；切换聚合模式不会解散已有组，关闭开关才会解散由本功能创建的组',
           confirmOffKey: '关闭后会解散由 Tabs 创建的原生标签组，但不会关闭标签。确定继续吗？'
         },
         {
@@ -473,7 +480,7 @@ export function buildSections(
           key: 'actionClickMode',
           labelKey: '点击工具栏图标',
           hintKey:
-            '「打开侧边栏」即默认行为；「后台整理标签」点击时直接按域名整理临时区、不弹出面板（面板仍可从侧边栏入口或 Ctrl+Shift+O 打开）',
+            '「打开侧边栏」即默认行为；「后台整理标签」点击时按当前聚合方式整理临时区、不弹出面板（面板仍可从侧边栏入口或 Ctrl+Shift+O 打开）',
           options: [
             { value: 'panel', label: t('打开侧边栏') },
             { value: 'regroup', label: t('后台整理标签（不打开侧边栏）') }

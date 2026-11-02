@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import type { AutoGroupPlan } from '@/core/group/AutoGrouping';
 import { planAutoGroupDomainCorrections } from '@/core/group/AutoGrouping';
 import type { TemporarySection } from '@/core/site/Sections';
+import { SUBDOMAIN_POLICY, type SiteGroupingPolicy } from '@/core/site/SiteKey';
 import { NO_GROUP } from '@/core/tab-types';
 import { createSerialChain } from '@/core/util/concurrency';
 import { groupExists, removeGroup, updateGroupMeta } from '@/platform/tabs';
@@ -213,10 +214,11 @@ export function disbandAutoGroups(): Promise<number> {
  * 记录的组（本功能创建的），不触碰用户手动建的组。
  */
 async function runReconcileAutoGroupDomains(
-  sections: readonly TemporarySection[]
+  sections: readonly TemporarySection[],
+  policy: SiteGroupingPolicy
 ): Promise<number> {
   const autoGroupIds = new Set(await autoGroupsRepository.read());
-  const corrections = planAutoGroupDomainCorrections(sections, autoGroupIds);
+  const corrections = planAutoGroupDomainCorrections(sections, autoGroupIds, policy);
   let moved = 0;
   for (const correction of corrections) {
     try {
@@ -234,7 +236,10 @@ async function runReconcileAutoGroupDomains(
  * 自动组「域名漂移」校正。与 syncAutoGroups 共用串行链：建组与移出交叠会让同一标签在两轮里
  * 被反复搬动。无 native 分区时直接返回：这条响应式路径不该为此每轮多付一次 storage 读取。
  */
-export function reconcileAutoGroupDomains(sections: readonly TemporarySection[]): Promise<number> {
+export function reconcileAutoGroupDomains(
+  sections: readonly TemporarySection[],
+  policy: SiteGroupingPolicy = SUBDOMAIN_POLICY
+): Promise<number> {
   if (!sections.some((section) => section.kind === 'native')) return Promise.resolve(0);
-  return enqueue(() => runReconcileAutoGroupDomains(sections));
+  return enqueue(() => runReconcileAutoGroupDomains(sections, policy));
 }

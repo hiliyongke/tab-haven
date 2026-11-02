@@ -243,5 +243,48 @@ describe('结果型播报容器常驻', () => {
   });
 });
 
+describe('SettingsPage 聚合方式设置', () => {
+  it('下拉提供五种模式，选中新模式后写回设置', async () => {
+    // Given 设置页已就绪，搜索只留下「聚合方式」这一行
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    render(<SettingsPage />);
+    const search = await screen.findByPlaceholderText(translate('搜索设置…'));
+    fireEvent.change(search, { target: { value: translate('未固定标签的聚合方式') } });
+
+    // When 读取下拉选项
+    const select = await screen.findByRole('combobox');
+
+    // Then 五种模式齐备且与 schema 顺序一致
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent)
+    ).toEqual([
+      translate('按域名'),
+      translate('按根域名'),
+      translate('按来源树'),
+      translate('按语言'),
+      translate('不分组')
+    ]);
+
+    // Then 五种模式的对照说明常驻可见，避免只看选项名分不清差别
+    expect(
+      screen.getByText(
+        translate(
+          '按域名：每个子域单独一组（a.example.com 与 b.example.com 分开）；按根域名：同一主域下的子域合并；按来源树：按打开来源缩进；按语言：按页面语言归类；不分组：全部标签平铺（仅改变侧边栏展示）'
+        )
+      )
+    ).toBeInTheDocument();
+
+    // When 切到按根域名
+    fireEvent.change(select, { target: { value: 'rootDomain' } });
+
+    // Then 设置值写回 store
+    await waitFor(() => {
+      expect(useDataStore.getState().settings.groupMode).toBe('rootDomain');
+    });
+  });
+});
+
 // 抑制「设置仓库未被读取」的未用告警：导入即使用（SettingsPage 内部依赖同一仓库实例）
 void settingsRepository;

@@ -1,4 +1,5 @@
 import { domainToUnicode } from '@/core/url/punycode';
+import type { GroupMode } from '@/core/schema/models';
 
 /**
  * 归组键：站点身份标识。三种形态（由 SiteResolver 按主机类型产出）：
@@ -44,4 +45,53 @@ export function siteLabelOf(site: SiteKey): string {
  */
 export function siteBucketId(site: SiteKey): string {
   return `${site.value}\u0000${site.subdomain}`;
+}
+
+/**
+ * 站点身份策略：把「站点 → 分桶键 / 分区键 / 展示标签」收口成一份契约。
+ *
+ * 分桶、同站点归并、原生组漂移拆分、自动建组的锚点判定必须共用同一个策略实例，
+ * 否则按根域名分组时，子域成员会被按「子域全名」判成漂移并批量 ungroup。
+ *  - bucketId：分桶与同站点比较的唯一键；
+ *  - sectionKey：site 分区的 siteKey（也是折叠态持久化键，保留 punycode 原形）；
+ *  - label：分区标题 / 原生组标题 / 成员身份标签（Unicode 展示形态）。
+ */
+export interface SiteGroupingPolicy {
+  bucketId(site: SiteKey): string;
+  sectionKey(site: SiteKey): string;
+  label(site: SiteKey): string;
+}
+
+/** 一子域一组（site 模式的既有口径）。 */
+export const SUBDOMAIN_POLICY: SiteGroupingPolicy = {
+  bucketId: siteBucketId,
+  sectionKey: siteValueOf,
+  label: siteLabelOf
+};
+
+/**
+ * 同注册域折叠（rootDomain 模式）。
+ * value 已是站点身份：普通域名为 eTLD+1、托管域为 user.github.io、本地/IP 为 hostname:port；
+ * 用 value 而非 registrableDomain，才能保住端口并避免把 alice.github.io 与 bob.github.io 合并。
+ */
+export const ROOT_DOMAIN_POLICY: SiteGroupingPolicy = {
+  bucketId: (site) => site.value,
+  sectionKey: (site) => site.value,
+  label: (site) => domainToUnicode(site.value)
+};
+
+/**
+ * 各聚合模式的站点身份策略；Record 穷尽保证新增 GroupMode 时必须显式决定口径。
+ * opener / language / none 不按站点聚合，返回 null。
+ */
+const POLICY_BY_MODE: Record<GroupMode, SiteGroupingPolicy | null> = {
+  site: SUBDOMAIN_POLICY,
+  rootDomain: ROOT_DOMAIN_POLICY,
+  opener: null,
+  language: null,
+  none: null
+};
+
+export function siteGroupingPolicyFor(mode: GroupMode): SiteGroupingPolicy | null {
+  return POLICY_BY_MODE[mode];
 }

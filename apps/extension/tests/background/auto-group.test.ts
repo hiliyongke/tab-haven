@@ -16,7 +16,7 @@ import {
  *  1. 事件驱动的对账把达阈值的同域未分组标签建成原生组；
  *  2. **Chrome 的组继承** —— 从组内标签点开的跨域新标签会被移出自动组，
  *     并在下一轮按自己的域名重新聚合（这是「点链接打开的新网页不归类」的根因）；
- *  3. 开关关闭 / opener 模式不做任何写入；
+ *  3. 开关关闭或模式不支持原生组（来源树 / 不分组）时不做任何写入；
  *  4. 关闭开关时解散本功能创建的组（记账范围，不碰用户手动组）。
  */
 
@@ -290,5 +290,69 @@ describe('自动分组引擎（background 事件驱动）', () => {
 
     // Then：上限只约束单次 drain，pending 会经后续定时器继续消费。
     expect(stuckUngroup.mock.calls.length).toBeGreaterThan(4);
+  });
+});
+
+describe('自动分组引擎 新聚合模式', () => {
+  it('不分组模式：即使开关开启也不产出任何分组写入', async () => {
+    // Given 自动原生分组开启、聚合模式为不分组
+    await setSettings({ autoGroupNative: true, groupMode: 'none' });
+    const state = {
+      tabs: [tab(1, 'https://github.com/a'), tab(2, 'https://github.com/b')],
+      groups: []
+    };
+    const { groupMock, ungroupMock } = stubBrowser(state);
+
+    // When 触发一轮对账
+    scheduleAutoGroupReconcile(1);
+    await settle();
+
+    // Then 既不建组也不解散，模式本身不表达为原生组
+    expect(groupMock).not.toHaveBeenCalled();
+    expect(ungroupMock).not.toHaveBeenCalled();
+  });
+
+  it('按根域名模式：跨子域标签按同一注册域建成一个原生组', async () => {
+    // Given 两个不同子域的标签，按子域口径各自不足阈值
+    await setSettings({ autoGroupNative: true, groupMode: 'rootDomain' });
+    const state = {
+      tabs: [tab(1, 'https://alpha.example.com/a'), tab(2, 'https://beta.example.com/b')],
+      groups: []
+    };
+    const { groupMock } = stubBrowser(state);
+
+    // When 触发一轮对账
+    scheduleAutoGroupReconcile(1);
+    await settle();
+
+    // Then 合并成一个原生组
+    expect(groupMock).toHaveBeenCalledWith({ tabIds: [1, 2] });
+  });
+});
+
+describe('自动分组引擎 模式切换时的存量组', () => {
+  it('切到不分组模式时不解散已有自动组、也不产生新的分组写入', async () => {
+    // Given site 模式下已建组并记账
+    await setSettings({ autoGroupNative: true, groupMode: 'site' });
+    const state = {
+      tabs: [tab(1, 'https://github.com/a'), tab(2, 'https://github.com/b')],
+      groups: []
+    };
+    const { groupMock, ungroupMock } = stubBrowser(state);
+    scheduleAutoGroupReconcile(1);
+    await settle();
+    expect(groupMock).toHaveBeenCalledTimes(1);
+
+    // When 聚合模式切到 none（签名变化触发全窗口重新对账）
+    groupMock.mockClear();
+    ungroupMock.mockClear();
+    await setSettings({ autoGroupNative: true, groupMode: 'none' });
+    applyAutoGroupSetting({ autoGroupNative: true, groupMode: 'none', aggregationThreshold: 2 });
+    await settle();
+
+    // Then 存量组刻意保持原样：切换模式不自动解散，需关闭开关或快速整理
+    expect(groupMock).not.toHaveBeenCalled();
+    expect(ungroupMock).not.toHaveBeenCalled();
+    expect(state.tabs.map((item) => item.groupId)).toEqual([100, 100]);
   });
 });

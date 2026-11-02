@@ -9,6 +9,7 @@ import {
   InboundPersistentPinSchema,
   parseExportFile,
   PersistentPinSchema,
+  GROUP_MODES,
   SettingsSchema,
   UndoBatchSchema
 } from '@/core/schema/models';
@@ -298,5 +299,18 @@ describe('AutoDiscardBatchSchema', () => {
     expect(AutoDiscardBatchSchema.safeParse({ tabIds: [1, 2], at: 123, count: 5 }).success).toBe(
       false
     );
+  });
+});
+
+describe('SettingsSchema 聚合模式枚举', () => {
+  it('五种模式全部合法、默认值仍是 site、未知值拒绝', () => {
+    // Given GROUP_MODES 是 schema / 领域层 / UI 共享的唯一口径
+    // When 逐档写入
+    for (const groupMode of GROUP_MODES) {
+      expect(SettingsSchema.parse({ groupMode }).groupMode).toBe(groupMode);
+    }
+    // Then 默认值不变，未知值仍被拒
+    expect(SettingsSchema.parse({}).groupMode).toBe('site');
+    expect(SettingsSchema.safeParse({ groupMode: 'byColor' }).success).toBe(false);
   });
 });

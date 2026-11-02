@@ -1,8 +1,9 @@
 import { MIN_LANGUAGE_GROUP_SIZE, parseLangSiteKey } from '@/core/site/Sections';
 import type { TemporarySection } from '@/core/site/Sections';
 import { deriveSections } from '@/core/site/Sections';
-import { siteLabelOf } from '@/core/site/SiteKey';
+import { SUBDOMAIN_POLICY, type SiteGroupingPolicy } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
+import type { GroupMode } from '@/core/schema/models';
 import { AUTO_GROUP_COLOR_NAMES } from '@/core/group/groupColors';
 import { hash31 } from '@/core/util/hash';
 import { NO_GROUP } from '@/core/tab-types';
@@ -10,8 +11,22 @@ import type { TabRecord } from '@/core/tab-types';
 
 /**
  * 自动原生分组：把展示层 site section 落成浏览器原生 tabGroups。
- * 纯决策层，不触碰 browser.*；只创建不自动解散；opener 模式无法表达为原生组。
+ * 纯决策层，不触碰 browser.*；只创建不自动解散。
+ * 哪些模式可建原生组由 supportsNativeAutoGroups 收口，platform 不再手写黑名单。
  */
+const NATIVE_GROUP_SUPPORT: Record<GroupMode, boolean> = {
+  site: true,
+  rootDomain: true,
+  language: true,
+  opener: false,
+  none: false
+};
+
+/** 该模式是否支持自动创建浏览器原生标签组（Record 穷尽，新增模式必须显式表态）。 */
+export function supportsNativeAutoGroups(mode: GroupMode): boolean {
+  return NATIVE_GROUP_SUPPORT[mode];
+}
+
 export interface AutoGroupPlan {
   /** 组标题（域名 / 语言标签）。 */
   title: string;
@@ -36,19 +51,22 @@ function isLanguageSection(section: TemporarySection): boolean {
   return section.kind === 'site' && parseLangSiteKey(section.siteKey) !== undefined;
 }
 
-/** 站点展示标签；url 为空回退 pendingUrl（新标签导航早期只有 pendingUrl）。用 siteLabelOf 保端口，与聚合口径一致。 */
-function siteLabelOfTab(tab: TabRecord): string | null {
+/** 站点展示标签；url 为空回退 pendingUrl（新标签导航早期只有 pendingUrl）。标签口径由策略决定，与分区标题同源。 */
+function siteLabelOfTab(tab: TabRecord, policy: SiteGroupingPolicy): string | null {
   const rawUrl = tab.url || tab.pendingUrl;
   const site = rawUrl ? siteResolver.resolve(rawUrl) : null;
-  return site ? siteLabelOf(site) : null;
+  return site ? policy.label(site) : null;
 }
 
 /**
- * 从展示 sections 推导自动分组计划。
+ * 从展示 sections 推导自动分组计划；policy 必须与派生 sections 时的聚合模式同源。
  * 保守策略：同站点归并分区把未分组标签吸收进既有组；其余任何标签已入原生组则整组跳过
- * （绝不打扰用户手动分组）。
+ * （绝不打扰用户手动分组）。缺省按一子域一组，供纯逻辑单测直接调用。
  */
-export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroupPlan[] {
+export function planAutoGroups(
+  sections: readonly TemporarySection[],
+  policy: SiteGroupingPolicy = SUBDOMAIN_POLICY
+): AutoGroupPlan[] {
   const plans: AutoGroupPlan[] = [];
   for (const section of sections) {
     if (section.kind !== 'site') continue;
@@ -62,13 +80,13 @@ export function planAutoGroups(sections: readonly TemporarySection[]): AutoGroup
         section.mergedGroupIds?.length === 1 ? section.mergedGroupIds[0] : undefined;
       if (targetGroupId === undefined) continue;
       if (groupedTabs.some((tab) => tab.groupId !== targetGroupId)) continue;
-      // 吸收范围限同站点未分组标签（异子域留待后续轮次）。
+      // 吸收范围限「策略口径下与锚点同站点」的未分组标签；不同桶留待后续轮次。
       const anchorTab = groupedTabs[0];
       if (!anchorTab) continue;
-      const anchorLabel = siteLabelOfTab(anchorTab);
+      const anchorLabel = siteLabelOfTab(anchorTab, policy);
       if (!anchorLabel) continue;
       const absorbTabIds = section.tabs
-        .filter((tab) => tab.groupId === NO_GROUP && siteLabelOfTab(tab) === anchorLabel)
+        .filter((tab) => tab.groupId === NO_GROUP && siteLabelOfTab(tab, policy) === anchorLabel)
         .map((tab) => tab.id);
       if (absorbTabIds.length === 0) continue;
       plans.push({
@@ -106,11 +124,13 @@ interface AutoGroupDomainCorrection {
 
 /**
  * 自动组「域名漂移」校正：从组内标签点开的跨域新标签会被 Chrome 自动加入同组，
- * 需按域名锚点识别并移出。只处理 autoGroupIds 内的组；用户手动组一律不动。
+ * 需按策略口径识别并移出。只处理 autoGroupIds 内的组；用户手动组一律不动。
+ * policy 必须与派生 sections 时的聚合模式同源，否则根域名组里的子域成员会被批量误移出。
  */
 export function planAutoGroupDomainCorrections(
   sections: readonly TemporarySection[],
-  autoGroupIds: ReadonlySet<number>
+  autoGroupIds: ReadonlySet<number>,
+  policy: SiteGroupingPolicy = SUBDOMAIN_POLICY
 ): AutoGroupDomainCorrection[] {
   if (autoGroupIds.size === 0) return [];
   const corrections: AutoGroupDomainCorrection[] = [];
@@ -120,11 +140,11 @@ export function planAutoGroupDomainCorrections(
     let hasAnchor = false;
     const drifted: number[] = [];
     for (const tab of section.tabs) {
-      // 组内必须有「域名 === 组标题」的锚点，证明该组身份；否则（改名/成员全离开）跳过。
+      // 组内必须有「标签身份 === 组标题」的锚点，证明该组身份；否则（改名/成员全离开）跳过。
       const rawUrl = tab.url || tab.pendingUrl;
       const site = rawUrl ? siteResolver.resolve(rawUrl) : null;
       if (!site) continue;
-      if (siteLabelOf(site) === section.title) {
+      if (policy.label(site) === section.title) {
         hasAnchor = true;
         continue;
       }
@@ -138,9 +158,9 @@ export function planAutoGroupDomainCorrections(
 
 /** 快速整理的执行方案：先打散哪些组，再按什么方案重建。 */
 interface RegroupPlan {
-  /** 需移出现有原生组的标签（opener 模式仅打散不建组）。 */
+  /** 需移出现有原生组的标签；无法表达为原生组的模式只打散不重建。 */
   ungroupTabIds: number[];
-  /** 重新聚合的目标方案（site/language 非空；opener 为层级结构，plans 为空）。 */
+  /** 重新聚合的目标方案（站点/根域名/语言分区非空；来源树与不分组为空）。 */
   plans: AutoGroupPlan[];
 }
 
@@ -153,7 +173,7 @@ export function planRegroup({
 }: {
   tabs: readonly TabRecord[];
   excludedTabIds?: ReadonlySet<number>;
-  groupMode?: 'site' | 'opener' | 'language';
+  groupMode?: GroupMode;
   threshold?: number;
 }): RegroupPlan {
   const excluded = excludedTabIds ?? new Set<number>();

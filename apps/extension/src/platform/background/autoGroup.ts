@@ -1,5 +1,7 @@
-import { planAutoGroups } from '@/core/group/AutoGrouping';
+import { planAutoGroups, supportsNativeAutoGroups } from '@/core/group/AutoGrouping';
 import { deriveSections } from '@/core/site/Sections';
+import { SUBDOMAIN_POLICY, siteGroupingPolicyFor } from '@/core/site/SiteKey';
+import type { GroupMode } from '@/core/schema/models';
 import { t } from '@/i18n/headless';
 import {
   disbandAutoGroups,
@@ -50,7 +52,7 @@ function autoGroupSignature(settings: AutoGroupSettingKeys): string {
 /** applyAutoGroupSetting 关心的设置子集（自动分组不变量的全部输入）。 */
 interface AutoGroupSettingKeys {
   autoGroupNative: boolean;
-  groupMode: 'site' | 'opener' | 'language';
+  groupMode: GroupMode;
   aggregationThreshold: number;
 }
 
@@ -151,8 +153,8 @@ async function drainReconcile(): Promise<void> {
 async function reconcileWindow(windowId: number): Promise<boolean> {
   try {
     const settings = await settingsRepository.read();
-    // opener（来源树）无法表达为原生组；关闭开关时组生命周期由 applyAutoGroupSetting 负责。
-    if (!settings.autoGroupNative || settings.groupMode === 'opener') return false;
+    // 关闭开关时的组生命周期由 applyAutoGroupSetting 负责；可建组模式由 core 白名单收口。
+    if (!settings.autoGroupNative || !supportsNativeAutoGroups(settings.groupMode)) return false;
 
     const [tabs, excludedTabIds] = await Promise.all([
       queryWindowTabs(windowId),
@@ -179,12 +181,17 @@ async function reconcileWindow(windowId: number): Promise<boolean> {
       translate: t
     });
 
+    // 策略与派生 sections 的聚合模式同源：根域名组下子域成员不能被判成漂移。
+    // 非站点聚合模式（实际只剩 language）没有策略，沿用子域口径；其分区标题是语言名，
+    // 与任何站点标签都不相等，故域名漂移校正恒为空，不会误移出组内成员。
+    const policy = siteGroupingPolicyFor(settings.groupMode) ?? SUBDOMAIN_POLICY;
+
     // 1) 纠正域名漂移。有移出说明本次派生视图已过期（被移出的标签仍算在组内），
     //    本次对账不建组，交给下一轮重新聚合 —— 避免用过期视图产出重复组。
-    if ((await reconcileAutoGroupDomains(sections)) > 0) return true;
+    if ((await reconcileAutoGroupDomains(sections, policy)) > 0) return true;
 
     // 2) 建组 / 吸收同站点未分组标签。
-    const plans = planAutoGroups(sections);
+    const plans = planAutoGroups(sections, policy);
     if (plans.length > 0) await syncAutoGroups(plans);
     return false;
   } catch (error) {

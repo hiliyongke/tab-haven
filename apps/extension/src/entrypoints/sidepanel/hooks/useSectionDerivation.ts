@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { deriveSections } from '@/core/site/Sections';
+import type { GroupMode } from '@/core/schema/models';
 import type { Translate } from '@/i18n';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 
@@ -29,7 +30,7 @@ interface SectionDerivationOptions {
   isFiltering: boolean;
   excludedTabIds: ReadonlySet<number>;
   sortMode: 'browser' | 'recency';
-  groupMode: 'site' | 'opener' | 'language';
+  groupMode: GroupMode;
   aggregationThreshold: number;
   /** 翻译函数：切换语言时引用变化 → 分区标题重算。 */
   t: Translate;

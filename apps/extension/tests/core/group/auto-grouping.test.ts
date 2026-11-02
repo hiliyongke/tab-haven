@@ -3,10 +3,13 @@ import {
   groupColorForLabel,
   planAutoGroupDomainCorrections,
   planAutoGroups,
-  planRegroup
+  planRegroup,
+  supportsNativeAutoGroups
 } from '@/core/group/AutoGrouping';
 import { AUTO_GROUP_COLOR_NAMES, GROUP_COLOR_NAMES } from '@/core/group/groupColors';
+import { GROUP_MODES } from '@/core/schema/models';
 import type { TemporarySection } from '@/core/site/Sections';
+import { ROOT_DOMAIN_POLICY } from '@/core/site/SiteKey';
 import type { TabRecord } from '@/core/tab-types';
 import { NO_GROUP } from '@/core/tab-types';
 
@@ -306,5 +309,114 @@ describe('groupColorForLabel', () => {
     for (const label of ['github.com', 'zh-CN', 'a.com', 'b.io', 'c.net']) {
       expect(AUTO_GROUP_COLOR_NAMES).toContain(groupColorForLabel(label));
     }
+  });
+});
+
+describe('自动分组按站点身份策略判定', () => {
+  const nativeGroup = (title: string, tabs: TabRecord[]): TemporarySection => ({
+    kind: 'native',
+    key: 'group-7',
+    title,
+    tabs,
+    groupId: 7,
+    collapsed: false
+  });
+
+  it('根域名策略：子域成员不被判漂移（避免批量 ungroup）', () => {
+    // Given 一个根域名组，成员全在不同子域
+    const sections = [
+      nativeGroup('example.com', [
+        makeTab(1, { url: 'https://alpha.example.com/a' }),
+        makeTab(2, { url: 'https://beta.example.com/b' })
+      ])
+    ];
+
+    // When 按根域名策略校正
+    // Then 无任何移出计划
+    expect(planAutoGroupDomainCorrections(sections, new Set([7]), ROOT_DOMAIN_POLICY)).toEqual([]);
+  });
+
+  it('根域名策略：跨域标签仍被校正', () => {
+    const sections = [
+      nativeGroup('example.com', [
+        makeTab(1, { url: 'https://alpha.example.com/a' }),
+        makeTab(2, { url: 'https://notion.so/x' })
+      ])
+    ];
+
+    expect(
+      planAutoGroupDomainCorrections(sections, new Set([7]), ROOT_DOMAIN_POLICY)
+    ).toMatchObject([{ groupId: 7, tabIds: [2] }]);
+  });
+
+  it('默认子域策略仍把子域成员判为漂移（策略确实生效）', () => {
+    const sections = [
+      nativeGroup('example.com', [
+        makeTab(1, { url: 'https://example.com/a' }),
+        makeTab(2, { url: 'https://alpha.example.com/b' })
+      ])
+    ];
+
+    expect(planAutoGroupDomainCorrections(sections, new Set([7]))).toMatchObject([
+      { groupId: 7, tabIds: [2] }
+    ]);
+  });
+
+  it('根域名策略：planAutoGroups 吸收跨子域标签', () => {
+    const section: TemporarySection = {
+      kind: 'site',
+      key: 'site-example.com',
+      title: 'example.com',
+      siteKey: 'example.com',
+      mergedGroupIds: [7],
+      tabs: [
+        makeTab(1, { groupId: 7, url: 'https://alpha.example.com/a' }),
+        makeTab(2, { url: 'https://beta.example.com/b' })
+      ]
+    };
+
+    expect(planAutoGroups([section], ROOT_DOMAIN_POLICY)).toMatchObject([
+      { title: 'example.com', tabIds: [2], absorbIntoGroupId: 7 }
+    ]);
+  });
+
+  it('不分组模式快速整理：只打散、不重建原生组', () => {
+    // Given 两个已在原生组里的标签
+    const tabs = [makeTab(1, { groupId: 7 }), makeTab(2, { groupId: 7 })];
+
+    // When 按不分组模式重排
+    const plan = planRegroup({ tabs, groupMode: 'none' });
+
+    // Then 与来源树模式同语义：打散即目的，不产出新建组计划
+    expect(plan.plans).toEqual([]);
+    expect(plan.ungroupTabIds).toEqual([1, 2]);
+  });
+
+  it('按根域名模式快速整理：跨子域标签重建为一个根域名组', () => {
+    // Given 两个不同子域的标签，同属一个原生组
+    const tabs = [
+      makeTab(1, { groupId: 7, url: 'https://alpha.example.com/a' }),
+      makeTab(2, { groupId: 7, url: 'https://beta.example.com/b' })
+    ];
+
+    // When 按根域名模式重排
+    const plan = planRegroup({ tabs, groupMode: 'rootDomain' });
+
+    // Then 打散旧组后按注册域重建，标题是根域名而非子域全名
+    expect(plan.ungroupTabIds).toEqual([1, 2]);
+    expect(plan.plans).toMatchObject([{ title: 'example.com', tabIds: [1, 2] }]);
+  });
+});
+
+describe('supportsNativeAutoGroups 模式白名单', () => {
+  it('仅站点 / 根域名 / 语言三种模式可建原生组', () => {
+    // Given schema 的 GROUP_MODES 是唯一取值来源
+    // When 逐档判定
+    // Then 与 core 的 Record 穷尽一致；来源树与不分组不建组
+    expect(GROUP_MODES.filter(supportsNativeAutoGroups)).toEqual([
+      'site',
+      'rootDomain',
+      'language'
+    ]);
   });
 });

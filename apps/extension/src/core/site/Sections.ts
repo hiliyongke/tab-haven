@@ -1,7 +1,7 @@
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { aggregateBySite } from '@/core/site/SiteGrouping';
-import { DEFAULT_AGGREGATION_THRESHOLD } from '@/core/schema/models';
-import { siteBucketId, siteLabelOf, siteValueOf, type SiteKey } from '@/core/site/SiteKey';
+import { DEFAULT_AGGREGATION_THRESHOLD, type GroupMode } from '@/core/schema/models';
+import { siteGroupingPolicyFor, type SiteGroupingPolicy, type SiteKey } from '@/core/site/SiteKey';
 import { siteResolver } from '@/core/site/SiteResolver';
 
 /**
@@ -80,9 +80,9 @@ interface SectionDerivation {
   excludedTabIds?: ReadonlySet<number>;
   /** 排序方式：browser 原生顺序 / recency 最近访问优先。 */
   sortMode?: 'browser' | 'recency';
-  /** 非固定标签聚合模式：site 按网站 / opener 按来源树 / language 按语言。 */
-  groupMode?: 'site' | 'opener' | 'language';
-  /** 网站聚合成组阈值（同注册域达到该数量才成组），默认 2。 */
+  /** 非固定标签聚合模式；取值口径见 schema 的 GROUP_MODES。 */
+  groupMode?: GroupMode;
+  /** 同桶标签达到该数量才成组（桶口径由聚合模式决定），默认 2。 */
   threshold?: number;
   /**
    * 是否把「域名命名的原生组」里域名不符的成员拆出、按自身域名渲染（默认 true，展示视图）。
@@ -187,29 +187,12 @@ function buildOpenerTree(tabs: readonly TabRecord[]): {
 /** 同站点归并候选：一个"本质上是站点组"的原生组及其成员的站点坐标。 */
 interface SiteMergeCandidate {
   groupId: number;
-  registrableDomain: string;
-  subdomain: string;
-  /** 该站点的完整解析键（新建站点分区时用于构造与 aggregateBySite 同口径的 key）。 */
-  key: SiteKey;
+  /** 策略口径下的原始分桶键：与 site 分区的 bucketId 精确比较，不受展示键改写影响。 */
+  bucketId: string;
+  /** 组内首个可解析成员的站点键（新建分区时派生展示键用）。 */
+  sourceKey: SiteKey;
   /** 组内成员（非固定、未被固定空间排除），deriveSections 的排序已应用。 */
   memberTabs: TabRecord[];
-}
-
-/**
- * 站点分区与归并候选是否同一站点。
- *
- * 普通域名按 (注册域, 子域) 比较即可；本地/IP 的 registrableDomain 不含端口，
- * 必须再比 value（aggregateBySite 对无子域的分区保留解析器原始 value，含端口），
- * 否则 localhost:3000 的候选会命中 localhost:8080 的分区。
- */
-function isSameSiteKey(groupKey: SiteKey, candidate: SiteMergeCandidate): boolean {
-  if (
-    groupKey.subdomain !== candidate.subdomain ||
-    groupKey.registrableDomain !== candidate.registrableDomain
-  ) {
-    return false;
-  }
-  return candidate.subdomain !== '' || groupKey.value === candidate.key.value;
 }
 
 /** 原生组派生视图条目：组元信息 + 组内标签。 */
@@ -227,19 +210,20 @@ interface NativeGroupDrift {
   detachedGroupIds: Set<number>;
 }
 
-/** 展示层站点标签：只用已提交的 url，与 aggregateBySite 同一口径；无 URL 返回 null。 */
-function nativeTabSiteLabel(tab: TabRecord): string | null {
+/** 展示层站点标签：只用已提交的 url；身份口径由策略决定，无 URL 返回 null。 */
+function nativeTabSiteLabel(tab: TabRecord, policy: SiteGroupingPolicy): string | null {
   const site = tab.url ? siteResolver.resolve(tab.url) : null;
-  return site ? siteLabelOf(site) : null;
+  return site ? policy.label(site) : null;
 }
 
 /**
- * 组标题是否为「域名命名的组」：把标题当作主机还原成站点展示标签，能原样还原才算。
+ * 组标题是否为「该策略下域名命名的组」：把标题还原成站点，能按策略标签原样还原才算。
  * 判据只看标题本身，不看组内成员 —— 组内同域名成员可能被固定空间排除、已关闭或不在
  * 当前快照里；若要求「组内必须有锚点」，跨域新标签反而会成为该组唯一可见成员。
  * 中文自定义名会被 URL 转成 punycode，显式排除，避免误判成域名组。
+ * 策略参与判定：根域名模式下标题须是注册域，旧的子域名组整组保留、不被误拆。
  */
-function isDomainNamedGroupTitle(title: string): boolean {
+function isDomainNamedGroupTitle(title: string, policy: SiteGroupingPolicy): boolean {
   if (/\s/.test(title)) return false;
   const rawUrl = `https://${title}`;
   try {
@@ -248,7 +232,7 @@ function isDomainNamedGroupTitle(title: string): boolean {
     return false;
   }
   const site = siteResolver.resolve(rawUrl);
-  return site !== null && siteLabelOf(site) === title;
+  return site !== null && policy.label(site) === title;
 }
 
 /**
@@ -260,30 +244,30 @@ function isDomainNamedGroupTitle(title: string): boolean {
  * collectSiteMergeCandidates 注释）。
  *
  * 保守边界：
- *  - 组标题必须能还原成站点展示标签（域名命名的组），自定义命名/未命名组整组保留；
+ *  - 组标题必须能按策略还原成站点标签（域名命名的组），自定义命名/未命名组整组保留；
  *  - URL 尚未提交时无法判定，成员留在原组，等下一次快照再拆；
  *  - 整组都是漂移成员时不渲染空分区；
- *  - 仅站点模式生效，来源树/语言模式刻意保留原生组分区。
+ *  - 仅按站点聚合的模式生效；policy 为 null（含对账视图）时保留真实组成员。
  */
 function splitNativeGroupDrift(
   groupsByFirstTab: readonly NativeGroupEntry[],
-  enabled: boolean
+  policy: SiteGroupingPolicy | null
 ): NativeGroupDrift {
   const detachedTabs: TabRecord[] = [];
   const detachedGroupIds = new Set<number>();
-  if (!enabled) {
+  if (policy === null) {
     return { visibleNativeGroups: [...groupsByFirstTab], detachedTabs, detachedGroupIds };
   }
   const visibleNativeGroups: NativeGroupEntry[] = [];
   for (const { group, groupTabs } of groupsByFirstTab) {
     const title = group.title;
-    if (!title || !isDomainNamedGroupTitle(title)) {
+    if (!title || !isDomainNamedGroupTitle(title, policy)) {
       visibleNativeGroups.push({ group, groupTabs });
       continue;
     }
     const kept: TabRecord[] = [];
     for (const tab of groupTabs) {
-      const label = nativeTabSiteLabel(tab);
+      const label = nativeTabSiteLabel(tab, policy);
       if (label !== null && label !== title) {
         detachedTabs.push(tab);
         detachedGroupIds.add(group.id);
@@ -312,12 +296,13 @@ function splitNativeGroupDrift(
  */
 function collectSiteMergeCandidates(
   groupsByFirstTab: ReadonlyArray<{ group: TabGroupRecord; groupTabs: TabRecord[] }>,
-  eligible: readonly TabRecord[]
+  eligible: readonly TabRecord[],
+  policy: SiteGroupingPolicy
 ): SiteMergeCandidate[] {
-  const eligibleSiteKeys = new Set<string>();
+  const eligibleBucketIds = new Set<string>();
   for (const tab of eligible) {
     const site = tab.url ? siteResolver.resolve(tab.url) : null;
-    if (site) eligibleSiteKeys.add(siteBucketId(site));
+    if (site) eligibleBucketIds.add(policy.bucketId(site));
   }
   const candidates: SiteMergeCandidate[] = [];
   for (const { group, groupTabs } of groupsByFirstTab) {
@@ -334,23 +319,23 @@ function collectSiteMergeCandidates(
         first = site;
         continue;
       }
-      // 必须比较完整站点桶：本地/IP 的端口属于站点身份，混端口原生组不是同站点组。
-      if (siteBucketId(site) !== siteBucketId(first)) {
+      // 必须比较策略口径下的完整分桶键：端口属于本地/IP 的站点身份；
+      // 根域名模式下同注册域不同子域才算同站点。
+      if (policy.bucketId(site) !== policy.bucketId(first)) {
         sameSite = false;
         break;
       }
     }
     if (!sameSite || !first) continue;
     // 组标题与自动建组时的标题同口径（aggregateBySite 的 groupKey.label）。
-    // 一律用 subLabel（丢端口）时，localhost:3000 之类自动组标题含端口 → 永不匹配，
-    // 该站点的碎片化归并对本地/IP 站点完全失效。
-    if (group.title !== siteLabelOf(first)) continue;
-    if (!eligibleSiteKeys.has(siteBucketId(first))) continue;
+    // 策略参与判定，否则根域名组的子域成员会被当成漂移、归并整体失效。
+    if (group.title !== policy.label(first)) continue;
+    const bucketId = policy.bucketId(first);
+    if (!eligibleBucketIds.has(bucketId)) continue;
     candidates.push({
       groupId: group.id,
-      registrableDomain: first.registrableDomain,
-      subdomain: first.subdomain,
-      key: first,
+      bucketId,
+      sourceKey: first,
       memberTabs: groupTabs
     });
   }
@@ -383,19 +368,21 @@ function buildSitePlan({
   eligible,
   threshold,
   candidates,
+  policy,
   sortCmp
 }: {
   eligible: readonly TabRecord[];
   threshold: number | undefined;
   candidates: readonly SiteMergeCandidate[];
+  policy: SiteGroupingPolicy;
   sortCmp: (a: TabRecord | undefined, b: TabRecord | undefined) => number;
 }): SitePlan {
   const effectiveThreshold = threshold ?? DEFAULT_AGGREGATION_THRESHOLD;
-  const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold });
+  const { groups: siteGroups, singles } = aggregateBySite(eligible, { threshold, policy });
   const absorbedGroupIds = new Set<number>();
   for (const candidate of candidates) {
-    // 平铺模式下分区即单一子域站点，按站点桶键精确匹配（见 isSameSiteKey）。
-    const target = siteGroups.find((group) => isSameSiteKey(group.key, candidate));
+    // 分区与候选的「原始分桶键」精确匹配；展示键已被策略改写，不能拿来比较。
+    const target = siteGroups.find((group) => group.bucketId === candidate.bucketId);
     if (target) {
       absorbedGroupIds.add(candidate.groupId);
       target.tabs = [...target.tabs, ...candidate.memberTabs].sort(sortCmp);
@@ -406,14 +393,12 @@ function buildSitePlan({
     // 仍归并成站点分区。否则浏览器里已存在同站点原生组时，新打开的同站点标签会
     // 一直滞留「未分组」——只有「重排分组」（planRegroup 把临时区标签全部视为
     // 未分组重聚合）才能修好，两条路径的判定口径必须一致。
-    // 与分支 1（isSameSiteKey）和 aggregateBySite 共用同一谓词 siteBucketId：
-    // 本地/IP 站点的 registrableDomain 不含端口，只比 (注册域, 子域) 会把
+    // 与分支 1、aggregateBySite 共用策略的 bucketId：口径不一致会把
     // localhost:3000 的候选与 localhost:8080 的未分组标签判成同站，
     // 于是 8080 的唯一标签被塞进 3000 的分区、从「未分组」平空消失。
-    const candidateBucket = siteBucketId(candidate.key);
     const sameSiteSingles = singles.filter((tab) => {
       const site = tab.url ? siteResolver.resolve(tab.url) : null;
-      return site !== null && siteBucketId(site) === candidateBucket;
+      return site !== null && policy.bucketId(site) === candidate.bucketId;
     });
     if (sameSiteSingles.length === 0) continue;
     if (sameSiteSingles.length + candidate.memberTabs.length < effectiveThreshold) continue;
@@ -422,16 +407,16 @@ function buildSitePlan({
     for (let i = singles.length - 1; i >= 0; i -= 1) {
       if (takenIds.has(singles[i]!.id)) singles.splice(i, 1);
     }
-    // 分区 key 与 aggregateBySite 同口径：子域非空用「子域.注册域」，否则沿用解析器原始键。
-    // 标题通过 siteLabelOf 生成，与其他站点分区共享唯一口径。
+    // 分区展示键与 aggregateBySite 同口径，均由策略派生。
     const groupKey: SiteKey = {
-      value: siteValueOf(candidate.key),
-      label: siteLabelOf(candidate.key),
-      registrableDomain: candidate.registrableDomain,
-      subdomain: candidate.subdomain
+      value: policy.sectionKey(candidate.sourceKey),
+      label: policy.label(candidate.sourceKey),
+      registrableDomain: candidate.sourceKey.registrableDomain,
+      subdomain: candidate.sourceKey.subdomain
     };
     siteGroups.push({
       key: groupKey,
+      bucketId: candidate.bucketId,
       tabs: [...sameSiteSingles, ...candidate.memberTabs].sort(sortCmp)
     });
     absorbedGroupIds.add(candidate.groupId);
@@ -475,7 +460,8 @@ function buildSitePlan({
 /**
  * 派生临时分区：把「固定空间之外」的标签切成若干展示区块。
  *
- * 顺序恒为：浏览器固定 → 原生标签组 → 站点聚合（仅 groupMode='site'）→ 未分组。
+ * none 模式短路为「固定 → 全部标签」；其余模式顺序恒为：
+ * 浏览器固定 → 原生标签组 → 站点聚合（仅 site / rootDomain）→ 未分组。
  * 分区是渲染期派生的临时结构，不落盘；固定空间由调用方另行拼接。
  *
  * 边界：分组信息缺失的标签按未分组处理而非丢弃——跨窗口搜索时 groups 只含当前窗口，
@@ -512,6 +498,21 @@ export function deriveSections({
     });
   }
 
+  // 不分组模式：所有未固定标签（含原生组成员）平铺在一个区块，短路后续分桶。
+  // 必须在原生组分区之前返回，否则组内标签会被分走而从这个列表里消失。
+  if (groupMode === 'none') {
+    const flat = tabs.filter((tab) => !tab.pinned && !excluded.has(tab.id)).sort(sortCmp);
+    if (flat.length > 0) {
+      sections.push({
+        kind: 'ungrouped',
+        key: 'ungrouped',
+        title: t('全部标签'),
+        tabs: flat
+      });
+    }
+    return sections;
+  }
+
   // 原生标签组：组内标签按排序规则，排除绑定到固定空间的标签与固定标签。
   // 先按 groupId 单次分桶再排序：在 groups.map 内对每个组 filter 全量标签则
   // 复杂度 O(组数 × 标签数)（200 组 × 1000 标签 = 20 万次比较 + 200 次数组分配）。
@@ -545,29 +546,34 @@ export function deriveSections({
     )
     .sort(sortCmp);
 
+  // 按聚合模式选取站点身份策略：分桶、同站点归并、漂移拆分、自动建组共用同一口径。
+  // 非站点聚合模式（opener / language）没有策略，原生组分区原样保留。
+  const policy = siteGroupingPolicyFor(groupMode);
   // 拆出被 Chrome 组继承「粘」在旧域名原生组里的跨域标签，让它们按自身域名参与聚合。
   // 不改 groupId：只调整展示分区（见 splitNativeGroupDrift 注释）。
   const { visibleNativeGroups, detachedTabs, detachedGroupIds } = splitNativeGroupDrift(
     groupsByFirstTab,
-    groupMode === 'site' && splitDriftedNativeTabs
+    splitDriftedNativeTabs ? policy : null
   );
   const aggregationEligible =
     detachedTabs.length > 0 ? [...eligible, ...detachedTabs].sort(sortCmp) : eligible;
 
-  // 站点模式先完成聚合与同站点归并，将符合条件的域名原生组并入站点分区。
-  // opener/language 模式保留原生组分区。本轮被拆过的组不参与归并：组状态刚变化，
-  // 保守起见不把「看起来已纯净」的组立刻吸收，避免与下一帧快照来回搬动。
+  // 站点聚合 + 同站点归并：仅 site / rootDomain 模式执行。本轮被拆过的组不参与归并：
+  // 组状态刚变化，保守起见不把「看起来已纯净」的组立刻吸收，避免与下一帧快照来回搬动。
   const sitePlan =
-    groupMode === 'site'
-      ? buildSitePlan({
+    policy === null
+      ? null
+      : buildSitePlan({
           eligible: aggregationEligible,
           threshold,
-          candidates: collectSiteMergeCandidates(visibleNativeGroups, aggregationEligible).filter(
-            (candidate) => !detachedGroupIds.has(candidate.groupId)
-          ),
+          policy,
+          candidates: collectSiteMergeCandidates(
+            visibleNativeGroups,
+            aggregationEligible,
+            policy
+          ).filter((candidate) => !detachedGroupIds.has(candidate.groupId)),
           sortCmp
-        })
-      : null;
+        });
 
   for (const { group, groupTabs } of visibleNativeGroups) {
     if (sitePlan?.absorbedGroupIds.has(group.id)) continue;
@@ -619,7 +625,7 @@ export function deriveSections({
     return sections;
   }
 
-  // 站点聚合 + 未分组（默认）。子域密度自动展开与同站点归并由 buildSitePlan 处理。
+  // 站点聚合 + 未分组（site / rootDomain）。分桶与同站点归并由 buildSitePlan 按策略处理。
   if (sitePlan) {
     sections.push(...sitePlan.sections);
     if (sitePlan.singles.length > 0) {

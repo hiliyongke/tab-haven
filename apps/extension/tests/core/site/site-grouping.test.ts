@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { aggregateBySite } from '@/core/site/SiteGrouping';
 import { deriveSections } from '@/core/site/Sections';
+import { ROOT_DOMAIN_POLICY, SUBDOMAIN_POLICY, siteGroupingPolicyFor } from '@/core/site/SiteKey';
 import type { TabRecord } from '@/core/tab-types';
 
 function makeTab(partial: Partial<TabRecord>): TabRecord {
@@ -247,5 +248,67 @@ describe('deriveSections', () => {
 
   it('空输入返回空 sections', () => {
     expect(deriveSections({ tabs: [], groups: [] })).toHaveLength(0);
+  });
+});
+
+describe('站点身份策略', () => {
+  it('策略分派：仅站点聚合模式有策略', () => {
+    expect(siteGroupingPolicyFor('site')).toBe(SUBDOMAIN_POLICY);
+    expect(siteGroupingPolicyFor('rootDomain')).toBe(ROOT_DOMAIN_POLICY);
+    expect(siteGroupingPolicyFor('opener')).toBeNull();
+    expect(siteGroupingPolicyFor('language')).toBeNull();
+    expect(siteGroupingPolicyFor('none')).toBeNull();
+  });
+
+  it('根域名策略：同注册域不同子域累计达阈值后合并成一组', () => {
+    // Given 三个子域/裸域标签都属 example.com，另有一个异域标签
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://alpha.example.com/a' }),
+      makeTab({ id: 2, index: 1, url: 'https://beta.example.com/b' }),
+      makeTab({ id: 3, index: 2, url: 'https://example.com/c' }),
+      makeTab({ id: 4, index: 3, url: 'https://other.com/d' })
+    ];
+
+    // When 按根域名聚合
+    const { groups, singles } = aggregateBySite(tabs, { policy: ROOT_DOMAIN_POLICY });
+
+    // Then 一个 example.com 分区，桶键保留原始解析值，异域进独立
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key.value).toBe('example.com');
+    expect(groups[0]?.key.label).toBe('example.com');
+    expect(groups[0]?.bucketId).toBe('example.com');
+    expect(groups[0]?.tabs.map((tab) => tab.id)).toEqual([1, 2, 3]);
+    expect(singles.map((tab) => tab.id)).toEqual([4]);
+  });
+
+  it('根域名策略保住端口：localhost:3000 与 8080 不合并', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'http://localhost:3000/a' }),
+      makeTab({ id: 2, index: 1, url: 'http://localhost:3000/b' }),
+      makeTab({ id: 3, index: 2, url: 'http://localhost:8080/c' })
+    ];
+    const { groups, singles } = aggregateBySite(tabs, { policy: ROOT_DOMAIN_POLICY });
+    expect(groups.map((group) => group.key.value)).toEqual(['localhost:3000']);
+    expect(singles.map((tab) => tab.id)).toEqual([3]);
+  });
+
+  it('根域名策略保住托管域：不同用户页不合并到 github.io', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://alice.github.io/a' }),
+      makeTab({ id: 2, index: 1, url: 'https://bob.github.io/b' })
+    ];
+    const { groups } = aggregateBySite(tabs, { threshold: 1, policy: ROOT_DOMAIN_POLICY });
+    expect(groups.map((group) => group.key.value).sort()).toEqual([
+      'alice.github.io',
+      'bob.github.io'
+    ]);
+  });
+
+  it('默认仍是子域策略：不传 policy 时行为不变', () => {
+    const tabs = [
+      makeTab({ id: 1, index: 0, url: 'https://alpha.example.com/a' }),
+      makeTab({ id: 2, index: 1, url: 'https://beta.example.com/b' })
+    ];
+    expect(aggregateBySite(tabs).groups).toHaveLength(0);
   });
 });

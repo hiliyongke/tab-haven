@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from '@/i18n';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { Density } from '@/core/schema/models';
+import type { Density, GroupMode } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
 import { CategoryModule } from '@/ui/common/CategoryModule';
@@ -13,7 +13,8 @@ import type { SectionCallbacks } from '@/ui/tabs/sectionTypes';
 export const LOCATE_SECTION_EVENT = 'tabs:locate-section';
 
 /**
- * 临时区 section 列表：固定区（置顶）→ 原生组 → 网站组（含子域折叠）→ 未分组。
+ * 临时区 section 列表：固定区（置顶）→ 原生组 → 站点/根域名组 → 未分组；
+ * 不分组模式短路为固定区 + 全部标签。
  * 每个 section 渲染为独立卡片（.section-card），标题/计数清晰，分组辨识度更高。
  * 折叠状态由调用方（本地态）持有并通过 props 回传。
  *
@@ -59,7 +60,7 @@ function SectionListImpl({
   searchActiveTabId?: number;
   noCacheTabIds?: ReadonlySet<number>;
   /** 临时区聚合方式：分区标题必须与实际聚合维度一致（按域名时叫「站点分组」）。 */
-  groupMode?: 'site' | 'opener' | 'language';
+  groupMode?: GroupMode;
   callbacks: SectionCallbacks;
 }) {
   const { t } = useTranslation();
@@ -68,12 +69,16 @@ function SectionListImpl({
     [collapsedSites]
   );
   // 分区标题随聚合方式变化：按语言聚合时里面是语言组，写死「域名分组」会名不符实。
-  const groupsTitle =
-    groupMode === 'language'
-      ? t('语言分组')
-      : groupMode === 'opener'
-        ? t('来源树分组')
-        : t('站点分组');
+  // 用 Record 穷尽而非三元链：新增 GroupMode 取值时 typecheck 会强制补标题。
+  // none 模式没有 native/site 分区，CategoryModule 不渲染，此标题不会被展示。
+  const groupsTitles: Record<GroupMode, string> = {
+    site: t('站点分组'),
+    rootDomain: t('根域名分组'),
+    opener: t('来源树分组'),
+    language: t('语言分组'),
+    none: t('全部标签')
+  };
+  const groupsTitle = groupsTitles[groupMode ?? 'site'];
 
   // 定位事件处理器读取的是「触发那一刻」的最新值，但这些值（sections 等）
   // 每次过滤都会变。若直接进依赖数组，每次搜索输入都会解绑/重绑 window 监听。
