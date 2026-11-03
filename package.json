@@ -23,7 +23,7 @@
     "i18n:scan": "pnpm --filter tabs i18n:scan",
     "i18n:apply": "pnpm --filter tabs i18n:apply",
     "i18n:lint": "pnpm --filter tabs i18n:lint",
-    "check": "npm run typecheck && npm run lint && npm run check:i18n && npm run check:ui && npm run test && npm run build && npm run check:privacy",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run check:i18n && pnpm run check:ui && pnpm run test && pnpm run build && pnpm run check:privacy && pnpm run site:test",
     "zip": "pnpm --filter tabs zip",
     "crx": "pnpm --filter tabs crx",
     "site:dev": "pnpm --filter site dev",
@@ -31,7 +31,8 @@
     "site:build:release": "pnpm --filter site build:release",
     "site:preview": "pnpm --filter site preview",
     "site:i18n": "pnpm --filter site i18n",
-    "site:check": "pnpm --filter site check"
+    "site:test": "pnpm --filter site test",
+    "site:check": "pnpm zip && pnpm --filter site check"
   },
   "//scriptDocs": "JSON 不支持注释，逐命令说明放在这里（npm/pnpm 忽略未知字段）。README「脚本一览」只列简表，以本字段为准。",
   "scriptDocs": {
@@ -52,15 +53,16 @@
     "i18n:scan": "转发到 apps/extension：扫描源码抽词",
     "i18n:apply": "转发到 apps/extension：编译运行时词条",
     "i18n:lint": "转发到 apps/extension：检查裸露中文",
-    "check": "发布前聚合门禁，串行：typecheck → lint → check:i18n → check:ui → test → build → check:privacy",
+    "check": "发布前聚合门禁，串行：typecheck → lint → check:i18n → check:ui → test → build → check:privacy → site:test",
     "zip": "转发到 apps/extension：打包 .output/*.zip 用于上架",
     "crx": "转发到 apps/extension：构建并签名 CRX3",
     "site:dev": "转发到 apps/site（官网）：开发预览，端口 5174",
     "site:build": "转发到 apps/site（官网）：验证构建，域名配置前略过 SEO 根 URL 标签",
-    "site:build:release": "转发到 apps/site（官网）：发布构建，要求正式 SITE_URL",
+    "site:build:release": "转发到 apps/site（官网）：发布构建，要求 TABS_SITE_URL 配置正式站点根 URL",
     "site:preview": "转发到 apps/site（官网）：预览已构建产物，端口 5175",
     "site:i18n": "转发到 apps/site（官网）：文案一条龙（独立词典）",
-    "site:check": "转发到 apps/site（官网）：官网门禁，刻意不并入 pnpm check"
+    "site:test": "转发到 apps/site（官网）：构建安全回归测试",
+    "site:check": "先打包扩展 ZIP，再执行 apps/site（官网）门禁；刻意不并入 pnpm check"
   },
   "packageManager": "pnpm@11.1.3",
   "engines": {

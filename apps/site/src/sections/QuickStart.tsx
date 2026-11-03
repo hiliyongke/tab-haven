@@ -38,7 +38,7 @@ const STEPS: readonly { titleKey: string; bodyKey: string; codes?: readonly Step
 ];
 
 export interface QuickStartProps {
-  downloadHref: string;
+  downloadHref: string | null;
 }
 
 export function QuickStart({ downloadHref }: QuickStartProps) {
@@ -84,9 +84,14 @@ export function QuickStart({ downloadHref }: QuickStartProps) {
             <li>{t('在地址栏输入 t 加空格，直达标签与收藏条目')}</li>
             <li>{t('在网页、链接或标签上右键，使用快捷操作')}</li>
           </ul>
-          <p className="muted start-hint">
-            {t('还没下载？')} <a href={downloadHref}>{t('先拿压缩包')}</a>
-          </p>
+          {downloadHref === null ? null : (
+            <p className="muted start-hint">
+              {t('还没下载？')}{' '}
+              <a href={downloadHref} download>
+                {t('先拿压缩包')}
+              </a>
+            </p>
+          )}
         </div>
         <div className="card">
           <h3>{t('快捷键速查')}</h3>

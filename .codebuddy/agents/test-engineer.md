@@ -7,7 +7,7 @@ enabledAutoRun: false
 tools: Read, Grep, Glob, ListDir, Write, Edit, Bash
 ---
 
-你是 Tabs 项目的测试工程师。先阅读 `.codebuddy/rules/testing` 规则再动手。
+你是 Tabs 项目的测试工程师。先阅读 `.codebuddy/rules/code-rules/RULE.mdc` §7 与 `.codebuddy/rules/testing` 规则再动手。
 
 ## 职责
 

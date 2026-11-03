@@ -9,7 +9,8 @@ import {
   mutateAutoDiscardLedger,
   readAutoDiscardBatches
 } from '@/platform/storage/autoDiscardLedger';
-import { AUTO_DISCARDED_IDS_LIMIT, sendMessage } from '@/platform/messages';
+import { sendMessage } from '@/platform/messages';
+import { newId } from '@/core/util/id';
 import { t } from '@/i18n/headless';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { buildWhitelistMatcher, cachedSettings, hostnameOf, notifyUser } from './shared';
@@ -41,8 +42,9 @@ async function discardSafely(tabId: number): Promise<boolean> {
 async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
   if (tabIds.length === 0) return;
   const at = Date.now();
+  const batchId = newId('discard');
   // 走台账模块：追加是整表 RMW，必须与「面板全部唤醒」共用同一把跨页锁。
-  const persisted = await appendAutoDiscardBatch(tabIds, at);
+  const persisted = await appendAutoDiscardBatch(tabIds, at, batchId);
   if (!persisted) {
     if (cachedSettings.discardNotifyEnabled) {
       // 标签确实已休眠，但台账没落盘就没有可靠的一键唤醒入口，通知不得再作此承诺。
@@ -60,18 +62,7 @@ async function recordAutoDiscardBatch(tabIds: number[]): Promise<void> {
       'auto-discard'
     );
   }
-  // 协议层对单条消息的 id 数有上限。原样发送超限数据会让整条消息被 schema 拒绝并
-  // 静默丢弃——这一轮的「一键唤醒」入口就此消失。按上限截断并留痕（完整台账已在磁盘，
-  // 「全部唤醒」不受影响）。
-  const carried = tabIds.slice(0, AUTO_DISCARDED_IDS_LIMIT);
-  if (carried.length < tabIds.length) {
-    logDegraded(
-      'auto-discard',
-      `自动休眠 ${tabIds.length} 个标签，超出单条回执上限，已截断为 ${carried.length} 个`
-    );
-  }
-  // count 保持真实休眠数（截断只影响本条回执携带的 id 数）。
-  sendMessage({ type: 'auto-discarded', tabIds: carried, count: tabIds.length, at });
+  sendMessage({ type: 'auto-discarded', batchId, count: tabIds.length, at });
 }
 
 /** 清理已失效的自动休眠台账（批次标签全部不存在或已唤醒）。 */

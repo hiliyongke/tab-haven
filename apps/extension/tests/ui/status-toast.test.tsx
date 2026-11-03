@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StatusToast } from '@/ui/common/StatusToast';
 import { useUndoStore } from '@/stores/undoStore';
+import { translate } from '@/i18n';
 
 /**
  * StatusToast live region 行为规格（§4①）：
@@ -120,5 +121,31 @@ describe('StatusToast 常驻 live region', () => {
     // Then: 完整文案也挂在 title 上（读屏已由常驻 live region 全量播报）
     expect(spans[0]).toHaveAttribute('title', '已自动休眠 10 个标签');
     expect(spans[1]).toHaveAttribute('title', '其中 2 个标签因白名单被跳过');
+  });
+
+  it('动作失败时保留动作并给出可见错误与重试入口', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new Error('failed')).mockResolvedValue(undefined);
+    useUndoStore.setState({
+      toast: {
+        message: '已自动休眠 10 个标签',
+        canUndo: false,
+        batchId: undefined,
+        tone: 'info',
+        action: { label: translate('全部唤醒'), run }
+      }
+    });
+    render(<StatusToast />);
+
+    fireEvent.click(screen.getByRole('button', { name: translate('全部唤醒') }));
+
+    expect(
+      await screen.findByRole('alert', { name: translate('操作失败，请稍后重试') })
+    ).toBeInTheDocument();
+    expect(document.querySelector('[aria-live="assertive"]')).toHaveTextContent(
+      translate('操作失败，请稍后重试')
+    );
+    const retry = await screen.findByRole('button', { name: translate('重试') });
+    fireEvent.click(retry);
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
   });
 });

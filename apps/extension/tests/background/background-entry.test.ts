@@ -911,4 +911,53 @@ describe('重复标签复用的 SW 接线', () => {
     // Then: 撤销登记仍由面板负责，后台补登记通道不产生重复批次
     expect(await undoRepository.readStrict()).toEqual([]);
   });
+
+  it('超过 50 条 reuse-closed 记录按同一 batchId 分片，ACK 后清理 session 台账', async () => {
+    const windowId = 7024;
+    const listeners = await bootReuse(windowId, {
+      uniqueUrlTabs: true,
+      reuseNotifyEnabled: false
+    });
+    const closed = Array.from({ length: 51 }, (_, index) =>
+      rawTab({
+        id: 100 + index,
+        windowId,
+        index,
+        url: 'https://same.com/'
+      })
+    );
+    const scans = [closed.slice(0, 51), closed.slice(0, 51)];
+    Object.assign(fakeBrowser.tabs, {
+      query: vi.fn(async () => scans.shift() ?? closed),
+      update: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined)
+    });
+    Object.assign(fakeBrowser.tabGroups, { query: vi.fn(async () => []) });
+
+    listeners.get('tabs.onCreated')!(
+      rawTab({ id: 999, windowId, index: 51, url: 'https://same.com/' }) as never
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        sendMessageMock().mock.calls.filter(([message]) => message.type === 'reuse-closed')
+      ).toHaveLength(2)
+    );
+    const shards = sendMessageMock()
+      .mock.calls.map(
+        ([message]) =>
+          message as { type?: string; batchId?: string; tabs?: unknown[]; shardCount?: number }
+      )
+      .filter((message) => message.type === 'reuse-closed');
+    expect(new Set(shards.map((shard) => shard.batchId)).size).toBe(1);
+    expect(shards[0]?.shardCount).toBe(2);
+    expect(shards.flatMap((shard) => shard.tabs ?? [])).toHaveLength(51);
+
+    const { call } = messageHarness(listeners.get('runtime.onMessage')!);
+    call({ type: 'reuse-closed-ack', batchId: shards[0]!.batchId });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await undoRepository.readStrict()).toEqual([]);
+    const pending = await fakeBrowser.storage.session.get(null);
+    expect(Object.keys(pending).filter((key) => key.includes(shards[0]!.batchId!))).toEqual([]);
+  });
 });

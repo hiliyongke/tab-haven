@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import {
-  AUTO_DISCARDED_IDS_LIMIT,
   MessageSchema,
   PENDING_ACTIONS_KEY,
   PENDING_ACTIONS_LIMIT,
@@ -61,7 +60,7 @@ describe('MessageSchema 协议契约', () => {
       { type: 'focus-search' },
       { type: 'focus-search', at: 123 },
       { type: 'search-domain', query: 'example.com' },
-      { type: 'auto-discarded', tabIds: [1, 2], count: 2, at: 1 },
+      { type: 'auto-discarded', batchId: 'discard-1', count: 2, at: 1 },
       { type: 'locate-active' },
       { type: 'skip-auto-save-once', windowId: 7 },
       { type: 'settings-synced' }
@@ -106,26 +105,26 @@ describe('MessageSchema 协议契约', () => {
     );
   });
 
-  it('auto-discarded 的 tabIds 有上限（runtime 通道不是无界传输面）', () => {
-    const atLimit = Array.from({ length: AUTO_DISCARDED_IDS_LIMIT }, (_, i) => i + 1);
+  it('auto-discarded 以 batchId 引用完整台账，不随消息传输 tabIds', () => {
     expect(
       MessageSchema.safeParse({
         type: 'auto-discarded',
-        tabIds: atLimit,
-        count: atLimit.length,
+        batchId: 'discard-1',
+        count: 51,
         at: 1
       }).success
     ).toBe(true);
-    // 超出上限的消息整体被拒绝，发送侧需按上限提供 tabIds。
-    const overLimit = [...atLimit, atLimit.length + 1];
     expect(
       MessageSchema.safeParse({
         type: 'auto-discarded',
-        tabIds: overLimit,
-        count: overLimit.length,
+        batchId: 'a'.repeat(129),
+        count: 51,
         at: 1
       }).success
     ).toBe(false);
+    expect(MessageSchema.safeParse({ type: 'auto-discarded', count: 51, at: 1 }).success).toBe(
+      false
+    );
   });
 });
 
@@ -302,5 +301,51 @@ describe('watchPendingActions 挂起队列消费', () => {
 
   it('队列上限是 5（会话存储不无界增长）', () => {
     expect(PENDING_ACTIONS_LIMIT).toBe(5);
+  });
+
+  it('handler 失败时只保留失败动作及后续动作，不提前标记为已消费', async () => {
+    const first = { type: 'focus-search', actionId: 'ok', at: 1 } as const;
+    const failing = { type: 'locate-active', actionId: 'fail', at: 2 } as const;
+    const last = { type: 'search-domain', query: 'a.com', actionId: 'later', at: 3 } as const;
+    await fakeBrowser.storage.session.set({ [PENDING_ACTIONS_KEY]: [first, failing, last] });
+    const actions: PendingAction[] = [];
+    const { off } = registerPendingWatcher((action) => {
+      actions.push(action);
+      if (action.actionId === 'fail') throw new Error('handler failed');
+    });
+
+    await vi.waitFor(() => expect(actions).toHaveLength(3));
+    await vi.waitFor(async () => {
+      const rec = await fakeBrowser.storage.session.get(PENDING_ACTIONS_KEY);
+      expect(rec[PENDING_ACTIONS_KEY]).toEqual([failing]);
+    });
+    expect(actions.map((action) => action.actionId)).toEqual(['ok', 'fail', 'later']);
+    off();
+  });
+
+  it('复用关闭协议按 batchId 分片，单分片不超过 50 条', () => {
+    expect(
+      MessageSchema.safeParse({
+        type: 'reuse-closed',
+        windowId: 1,
+        batchId: 'batch-1',
+        tabs: [],
+        shardIndex: 0,
+        shardCount: 2
+      }).success
+    ).toBe(true);
+    expect(
+      MessageSchema.safeParse({
+        type: 'reuse-closed',
+        windowId: 1,
+        batchId: 'batch-1',
+        tabs: Array.from({ length: 51 }, () => ({})),
+        shardIndex: 0,
+        shardCount: 2
+      }).success
+    ).toBe(false);
+    expect(MessageSchema.safeParse({ type: 'reuse-closed-ack', batchId: 'batch-1' }).success).toBe(
+      true
+    );
   });
 });

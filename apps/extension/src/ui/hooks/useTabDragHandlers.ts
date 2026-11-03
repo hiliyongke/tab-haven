@@ -108,10 +108,14 @@ export function useTabDragHandlers() {
    * 故排序必须可撤销。操作前留 folders 快照，成功后 toast 给一次「撤销」。
    */
   const withFolderUndo = useCallback(
-    (message: string, mutate: () => Promise<void>) => {
+    (message: string, mutate: () => Promise<boolean>) => {
       const before = useDataStore.getState().folders;
       void mutate()
-        .then(() => {
+        .then((ok) => {
+          if (!ok) {
+            useUndoStore.getState().notifyError(t('操作失败，请稍后重试'));
+            return;
+          }
           useUndoStore.getState().notify(message, {
             label: t('撤销'),
             run: () => {
@@ -365,7 +369,11 @@ export function useTabDragHandlers() {
       const joinGroup = (groupId: number): void => {
         if (activeData.type !== DragType.Tab) return;
         void groupTabs([activeData.tabId], groupId)
-          .then(() => notify(t('已加入标签组')))
+          .then((result) =>
+            result === undefined
+              ? notifyError(t('操作失败，请稍后重试'))
+              : notify(t('已加入标签组'))
+          )
           .catch(fail);
       };
 
@@ -452,19 +460,23 @@ export function useTabDragHandlers() {
           return;
         }
         withFolderUndo(t('已调整顺序'), () =>
-          dataStore.reorderFolderItems({
-            folderId: activeData.folderId,
-            sourceId: activeData.itemId,
-            targetId: overData.itemId,
-            placeAfter
-          })
+          dataStore
+            .reorderFolderItems({
+              folderId: activeData.folderId,
+              sourceId: activeData.itemId,
+              targetId: overData.itemId,
+              placeAfter
+            })
+            .then(() => true)
         );
       };
 
       const moveFolderItem = (targetFolderId: string): void => {
         if (activeData.type !== DragType.FolderItem) return;
         withFolderUndo(t('已移动到目标文件夹'), () =>
-          dataStore.moveFolderItem(activeData.folderId, activeData.itemId, targetFolderId)
+          dataStore
+            .moveFolderItem(activeData.folderId, activeData.itemId, targetFolderId)
+            .then(() => true)
         );
       };
 
@@ -480,7 +492,7 @@ export function useTabDragHandlers() {
       const reorderFolders = (): void => {
         if (activeData.type !== DragType.Folder || overData?.type !== DragType.Folder) return;
         withFolderUndo(t('已调整顺序'), () =>
-          dataStore.moveFolder(activeData.folderId, overData.folderId, placeAfter)
+          dataStore.moveFolder(activeData.folderId, overData.folderId, placeAfter).then(() => true)
         );
       };
 

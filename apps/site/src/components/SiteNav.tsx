@@ -14,7 +14,7 @@ const NAV_ITEMS: readonly { id: string; labelKey: string }[] = [
 
 export interface SiteNavProps {
   lng: string;
-  downloadHref: string;
+  downloadHref: string | null;
 }
 
 export function SiteNav({ lng, downloadHref }: SiteNavProps) {
@@ -63,10 +63,12 @@ export function SiteNav({ lng, downloadHref }: SiteNavProps) {
                 </a>
               ))}
             </div>
-            <a className="btn btn-primary btn-sm" href={downloadHref} download>
-              <Download size={16} aria-hidden="true" />
-              {t('下载')}
-            </a>
+            {downloadHref === null ? null : (
+              <a className="btn btn-primary btn-sm" href={downloadHref} download>
+                <Download size={16} aria-hidden="true" />
+                {t('下载')}
+              </a>
+            )}
           </div>
         </div>
       </div>

@@ -8,11 +8,12 @@ allowed-tools: Read, Grep, Glob, ListDir, Edit, Bash
 
 流程（任一环节失败即停下报告，不带病推进）：
 
-1. **门禁**：`pnpm check` 全绿；失败转 `skills/quality-gates` 修复后复跑。
+0. 加载 `.codebuddy/rules/code-rules/RULE.mdc`，按 §6.5、§6.6、§7.4、§7.5、§8 核对发布字段、SHA 人工核验、干净工作区、静态守卫与文档一致性。
+1. **门禁**：`pnpm format:check && pnpm check && pnpm site:check` 全绿；失败转 `skills/quality-gates` 修复后复跑。
 2. **版本一致性**：若给了版本号，核对 `package.json` 的 version 是否一致；不一致则修改并说明（改 version 属发布动作，需用户确认后执行）。
 3. **生产构建**：运行 `pnpm build` 并确认 `.output/chrome-mv3/` 产物完整。
 4. **隐私审计**：按 `/privacy-audit` 全量清单核验（或委派 privacy-auditor），发布前必须「通过」。
 5. **打包**：`pnpm zip`（上架用）；如需离线分发再 `pnpm crx`（签名密钥由 `pack-crx` 默认存放在用户配置目录）。
-6. **汇报**：产物路径与大小清单、审计结论、自上一版本的变更摘要（基于 `git log` 只读生成，可附 CHANGELOG 草稿供用户确认）。
+6. **汇报**：产物路径与大小清单、审计结论、Action SHA 与真实浏览器人工核验状态、自上一版本的变更摘要（基于 `git log` 只读生成，可附 CHANGELOG 草稿供用户确认）。
 
 **禁止动作**：不执行 git tag / git push / 商店上传；不修改隐私检查白名单；不带失败门禁打包。

@@ -34,7 +34,7 @@ import { SNAPSHOTS_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossP
 async function recordRestoreForUndo(createdTabs: readonly TabRecord[]): Promise<void> {
   if (createdTabs.length === 0) return;
   try {
-    await useUndoStore.getState().recordClosedBatch(createdTabs, 'restore');
+    await useUndoStore.getState().recordRestoreBatch(createdTabs, createdTabs[0]?.windowId);
   } catch (error) {
     // 记录失败不影响恢复结果本身，但必须留痕。
     logFailure('snapshotStore', '快照恢复的撤销登记失败，本次恢复无法一键撤销', error);

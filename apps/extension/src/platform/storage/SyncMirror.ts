@@ -82,7 +82,12 @@ interface MirrorData {
  * 前四类是 pull() 的结果（区分「从未同步过」与「本该有镜像却拿不到」）；local 由初始化切片合成 ——
  * 本地已有数据且初始化未从镜像恢复时，应标记为 local，避免设置页误报「已生效」。
  */
-export type MirrorSyncIssue = 'ok' | 'none' | 'chunk-limit' | 'unreadable' | 'local';
+export type MirrorSyncIssue = 'ok' | 'none' | 'chunk-limit' | 'unreadable' | 'expired' | 'local';
+
+/** 只有镜像确无/可读/本地权威时才允许把当前本地态推上账号通道。 */
+export function mirrorIssueAllowsMirrorPush(issue: MirrorSyncIssue | null): boolean {
+  return issue === 'none' || issue === 'ok' || issue === 'local';
+}
 
 /** 镜像写失败成因：quota 是确定性（数据超配额，重试无意义），write 是暂时性（退避重试有机会成功）。 */
 export type MirrorWriteFailureReason = 'quota' | 'write';
@@ -396,7 +401,7 @@ class SyncMirror {
         return null;
       }
       if (Date.now() - parsed.data.at > MIRROR_TTL_MS) {
-        this.lastPullIssue = 'unreadable';
+        this.lastPullIssue = 'expired';
         logDegraded('sync-mirror', '同步镜像已过期（超过 30 天未更新），已跳过本次恢复');
         return null;
       }

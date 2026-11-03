@@ -44,13 +44,7 @@ export function SnapshotImportView({
         aria-label={t('选择导入源')}
         className="flex gap-1 self-start rounded-lg border border-gray-200 bg-gray-50 p-0.5"
       >
-        {/* 切到导入视图后焦点落进首个源选项：触发「从 OneTab 导入」的入口按钮已随
-            视图切换卸载，autoFocus 避免键盘/读屏用户焦点掉回 body。 */}
-        <SegmentedChip
-          autoFocus
-          selected={source === 'onetab'}
-          onSelect={() => onSourceChange('onetab')}
-        >
+        <SegmentedChip selected={source === 'onetab'} onSelect={() => onSourceChange('onetab')}>
           {t('从 OneTab 导入')}
         </SegmentedChip>
         <SegmentedChip selected={source === 'workona'} onSelect={() => onSourceChange('workona')}>

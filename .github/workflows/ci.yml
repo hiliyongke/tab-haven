@@ -45,9 +45,10 @@ jobs:
           pnpm -v
           pnpm install --frozen-lockfile
 
-      # 与本地 `pnpm check` 同源，另外补了三项本地不跑的：format:check、依赖审计、官网门禁。
-      # 顺序：format:check → typecheck → lint → check:i18n → check:ui → test → site:check
-      #       → audit → build → check:privacy
+      # 与本地 `pnpm check` 同源，另外补了 format:check、依赖审计与完整官网构建门禁。
+      # 官网安全测试已纳入本地 `pnpm check`，这里单独列出，便于 CI 日志定位。
+      # 顺序：format:check → typecheck → lint → check:i18n → check:ui → test
+      #       → site:test → audit → build → check:privacy → site:check
       - name: 格式一致性
         run: pnpm format:check
 
@@ -68,6 +69,9 @@ jobs:
       - name: 测试
         run: pnpm test
 
+      - name: 官网安全测试
+        run: pnpm site:test
+
       # 供应链安全分两级：
       # 1) 生产依赖 —— 高危及以上阻断合并（这些包会真正打进扩展产物，必须干净）。
       #    `--ignore-registry-errors`：Advisory 服务抖动/超时不该让构建变红（pnpm 官方为该
@@ -87,18 +91,13 @@ jobs:
       - name: 生产构建
         run: pnpm build
 
-      # 官网构建会把扩展上架包拷进 public/download/，缺包即 fail（见 apps/site/build.mjs）。
-      # 因此必须先打包、再跑官网门禁：顺序反了在干净 checkout 上必然红。
-      - name: 扩展打包（官网站点下载包来源）
-        run: pnpm zip
-
-      # 必须紧跟 zip：check:privacy 校验的是打包后 .output/manifest.json 的真实内容；
-      # 放在 zip 之前等于校验一个即将被重新构建覆盖的产物。
-      - name: 隐私回归（权限冻结 + 零网络调用）
-        run: pnpm check:privacy
-
       # 官网门禁（零外链自检在 apps/site/build.mjs 里）：刻意不并入 `pnpm check` ——
       # 扩展的发布门禁不该被官网构建拖住。但不进 CI 就等于没建：官网是唯一对外
       # 发布的页面，一条 CDN 外链就是一次真实出站请求，与产品宪法直接冲突。
+      # 根级 site:check 会先生成当前版本 ZIP，干净 checkout 不需要预置产物。
       - name: 官网门禁（零外链自检）
         run: pnpm site:check
+
+      # 必须紧跟 ZIP 准备：check:privacy 校验的是打包后 .output/manifest.json 的真实内容。
+      - name: 隐私回归（权限冻结 + 零网络调用）
+        run: pnpm check:privacy

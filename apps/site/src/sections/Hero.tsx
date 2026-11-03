@@ -6,7 +6,7 @@ import { useSiteI18n } from '../i18n';
 
 export interface HeroProps {
   version: string;
-  downloadHref: string;
+  downloadHref: string | null;
 }
 
 export function Hero({ version, downloadHref }: HeroProps) {
@@ -33,11 +33,13 @@ export function Hero({ version, downloadHref }: HeroProps) {
           </p>
 
           <div className="hero-actions">
-            <a className="btn btn-primary" href={downloadHref} download>
-              <Download size={18} aria-hidden="true" />
-              {t('下载扩展')}
-              <span className="btn-note">zip</span>
-            </a>
+            {downloadHref === null ? null : (
+              <a className="btn btn-primary" href={downloadHref} download>
+                <Download size={18} aria-hidden="true" />
+                {t('下载扩展')}
+                <span className="btn-note">zip</span>
+              </a>
+            )}
             <a className="btn btn-ghost" href="#demo">
               {t('看界面演示')}
             </a>

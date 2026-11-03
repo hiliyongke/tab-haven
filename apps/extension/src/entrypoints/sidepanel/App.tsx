@@ -22,12 +22,15 @@ import {
   reloadTabs
 } from '@/platform/tabs';
 import { downloadJsonFile, openAboutPage, openOptionsPage } from '@/platform/navigation';
-import { onRuntimeMessage } from '@/platform/messages';
+import { onRuntimeMessage, sendReuseClosedAck } from '@/platform/messages';
+import { readReuseClosedBatch } from '@/platform/reuse/reuseClosedPending';
 import { datedJsonFilename } from '@/core/util/filename';
 import {
   readAutoDiscardBatches,
+  readAutoDiscardBatchById,
   removeAutoDiscardBatch
 } from '@/platform/storage/autoDiscardLedger';
+import { autoDiscardBatchId } from '@/core/schema/models';
 import { logDegraded, logFailure } from '@/platform/diagnostics';
 import { regroupTempArea } from '@/platform/group/AutoGroupSync';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
@@ -305,16 +308,23 @@ export default function App() {
    * 用 `t` 会让切换语言重放该 effect —— 表现为重复弹出休眠提示。
    */
   const showDiscardUndoToast = useCallback(
-    (batch: { tabIds: number[]; count: number }) => {
+    (batch: { batchId: string; count: number; at: number }) => {
       notify(translate('已自动休眠 {{count}} 个标签', { count: batch.count }), {
         label: translate('唤醒这些标签'),
         run: async () => {
-          const woken = (await reloadTabs(batch.tabIds)).length;
+          const record = await readAutoDiscardBatchById(batch.batchId);
+          if (!record) {
+            useUndoStore.getState().notifyError(translate('操作失败，请稍后重试'));
+            return;
+          }
+          const woken = await reloadTabs(record.tabIds);
           // 只清掉这一轮：台账是多批次滚动保留的，整表清空会连带抹掉更早几轮
           // 仍处休眠的标签的唤醒出口。摘除走台账模块的跨页锁，避免与 SW 侧
           // 「追加新批次 / 淘汰失效批次」的整表写互相覆盖。
-          await removeAutoDiscardBatch(batch.tabIds);
-          useUndoStore.getState().notify(translate('已唤醒 {{count}} 个标签', { count: woken }));
+          if (woken.length > 0) await removeAutoDiscardBatch(batch.batchId);
+          useUndoStore
+            .getState()
+            .notify(translate('已唤醒 {{count}} 个标签', { count: woken.length }));
         }
       });
     },
@@ -442,7 +452,13 @@ export default function App() {
     void readAutoDiscardBatches()
       .then((batches) => {
         const latest = [...batches].sort((a, b) => b.at - a.at)[0];
-        if (latest && latest.tabIds.length > 0) showDiscardUndoToast(latest);
+        if (latest && latest.tabIds.length > 0) {
+          showDiscardUndoToast({
+            batchId: autoDiscardBatchId(latest),
+            count: latest.count,
+            at: latest.at
+          });
+        }
       })
       .catch((error: unknown) => {
         // 读取失败必须留痕：否则「没有可唤醒的批次」与「台账一直在读失败」无从分辨。
@@ -453,14 +469,23 @@ export default function App() {
   // 复用引擎（同网址唯一化）关闭的标签 → 登记进撤销栈。
   // 该能力默认开启，关闭发生在 SW 内（面板拿不到标签快照），不回传就形成一条
   // 「经Tabs执行却不可撤销」的关闭路径。消息经既有 runtime 协议，不自造通道。
-  useEffect(
-    () =>
-      onRuntimeMessage((message) => {
-        if (message.type !== 'reuse-closed') return;
-        void useUndoStore.getState().recordReuseClosed(message.windowId, message.tabs);
-      }),
-    []
-  );
+  useEffect(() => {
+    return onRuntimeMessage((message) => {
+      if (message.type !== 'reuse-closed') return;
+      void (async () => {
+        try {
+          const shards = await readReuseClosedBatch(message.batchId, message.shardCount);
+          const records = shards.flatMap((shard) => shard.records);
+          const persisted = await useUndoStore
+            .getState()
+            .recordReuseClosed(message.windowId, records, message.batchId);
+          if (persisted) sendReuseClosedAck(message.batchId);
+        } catch (error) {
+          logFailure('sidepanel', '复用关闭撤销登记失败，后台将补写入撤销库', error);
+        }
+      })();
+    });
+  }, []);
 
   // 首启引导延迟弹出：数据就绪后先让用户看到真实列表 TOUR_AUTO_OPEN_DELAY_MS，
   // 避免模态遮罩第一时间盖住被介绍的对象。引导完成（onboarded）后不再触发。

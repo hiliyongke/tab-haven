@@ -21,9 +21,10 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'vite';
-import { LANGUAGES, SITE_URL } from './site.config.ts';
+import { assertReleaseSiteUrl, LANGUAGES, SITE_URL } from './site.config.ts';
 import { applyTemplate, renderHead } from './lib/html.mjs';
 import { findExternalUrls, findNetworkApis } from './lib/external-requests.mjs';
+import { LOCAL_PREVIEW, toDownloadHref } from './lib/download.mjs';
 
 const siteDir = fileURLToPath(new URL('.', import.meta.url));
 // 官网在 apps/site 下，仓库根要再上一级（'..' 只会到 apps/）。
@@ -66,7 +67,7 @@ function stageDownloadZip(version) {
     // 跳过打包时必须清掉上一轮的包：页面 href 按当前版本号拼接，旧包留在 dist 里
     // 会被一起发布出去，用户下到的是别的版本。
     rmSync(targetDir, { recursive: true, force: true });
-    return null;
+    return LOCAL_PREVIEW;
   }
   // 按版本号精确匹配，而不是「取最新」：.output/ 里可能同时有 chrome 与 edge 两份包，
   // 按 mtime 取会挑错；按名字取则能挡住「改了版本号却没重新打包」的错配。
@@ -80,7 +81,7 @@ function stageDownloadZip(version) {
       `.output/ 下没有 tabs-${version}-*.zip：下载按钮将指向不存在的地址。请先跑 \`pnpm zip\`（版本改了必须重新打包）；仅构建页面时设 SITE_SKIP_ZIP=1`
     );
     rmSync(targetDir, { recursive: true, force: true });
-    return null;
+    return LOCAL_PREVIEW;
   }
   // 清空再拷：public/download 不在 dist 的清空范围内，上一轮构建留在这里的包会被一直发布出去。
   rmSync(targetDir, { recursive: true, force: true });
@@ -134,18 +135,21 @@ function findHanInEnglish(htmlPath) {
 
 async function main() {
   // 只有明确的发布构建要求配置正式域名；CI 门禁可在域名确定前验证页面与安全规则。
-  if (
-    (process.argv.includes('--release') || process.env.SITE_BUILD_TARGET === 'release') &&
-    !SITE_URL
-  ) {
-    throw new Error(
-      '[site] release 构建必须先在 site.config.ts 填写 SITE_URL（canonical/hreflang/sitemap 依赖它）'
-    );
-  }
+  const release = process.argv.includes('--release') || process.env.SITE_BUILD_TARGET === 'release';
+  const siteUrl = release ? assertReleaseSiteUrl(SITE_URL) : SITE_URL;
   const version = readVersion();
   // 页脚年份由构建期注入：写死年份每年都会过期一次，而这是唯一一处会暴露的日期。
   const year = String(new Date().getFullYear());
   const downloadPath = stageDownloadZip(version);
+  const downloadAvailable = downloadPath !== LOCAL_PREVIEW;
+  if (release && !downloadAvailable) {
+    throw new Error('[site] release 构建不得使用 SITE_SKIP_ZIP=1：下载入口会缺失');
+  }
+  const renderContext = {
+    version,
+    year,
+    downloadHref: toDownloadHref(downloadPath, version)
+  };
 
   console.log('[site] 客户端构建…');
   await build({ configFile, logLevel: 'warn' });
@@ -167,7 +171,7 @@ async function main() {
   const template = readFileSync(join(distDir, 'index.html'), 'utf8');
   console.log('[site] 预渲染…');
   for (const lang of LANGUAGES) {
-    const result = render(lang.code, { version, year });
+    const result = render(lang.code, renderContext);
     const html = applyTemplate(template, {
       lang,
       head: renderHead({ lang, title: result.title, description: result.description, version }),
@@ -188,28 +192,26 @@ async function main() {
 
   writeFileSync(
     join(distDir, 'robots.txt'),
-    SITE_URL
-      ? `User-agent: *\nAllow: /\nSitemap: ${SITE_URL}/sitemap.xml\n`
+    siteUrl
+      ? `User-agent: *\nAllow: /\nSitemap: ${new URL('sitemap.xml', siteUrl).href}\n`
       : 'User-agent: *\nAllow: /\n'
   );
-  if (SITE_URL) {
+  if (siteUrl) {
     const urls = LANGUAGES.map(
       (lang) =>
-        `  <url><loc>${SITE_URL}${lang.path}</loc><xhtml:link rel="alternate" hreflang="${lang.htmlLang}" href="${SITE_URL}${lang.path}"/></url>`
+        `  <url><loc>${new URL(lang.path.slice(1), siteUrl).href}</loc><xhtml:link rel="alternate" hreflang="${lang.htmlLang}" href="${new URL(lang.path.slice(1), siteUrl).href}"/></url>`
     );
     writeFileSync(
       join(distDir, 'sitemap.xml'),
       `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`
     );
   } else {
-    console.warn(
-      '[site] SITE_URL 未配置：已跳过 sitemap.xml 与 canonical/hreflang/JSON-LD（release 构建会直接失败）'
-    );
+    console.warn('[site] SITE_URL 未配置：已跳过 sitemap.xml 与 canonical/hreflang/JSON-LD');
   }
 
   // 页面 href 是按版本号拼的，与磁盘上是否真的有这个文件无关：缺件必须在构建期失败，
   // 否则「下载按钮 404」要等用户点击才暴露。
-  if (downloadPath !== null && !existsSync(join(distDir, downloadPath))) {
+  if (downloadAvailable && !existsSync(join(distDir, downloadPath))) {
     throw new Error(`[site] 下载按钮指向不存在的文件：${downloadPath}`);
   }
 
@@ -224,8 +226,12 @@ async function main() {
   }
 
   console.log(
-    `[site] 自检通过：零外链、零网络 API、英文页无残留中文。下载包 ${downloadPath ?? '（未拷贝）'}`
+    `[site] 自检通过：零外链、零网络 API、英文页无残留中文。下载包 ${
+      downloadAvailable ? downloadPath : '（SITE_SKIP_ZIP=1，仅本地预览）'
+    }`
   );
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

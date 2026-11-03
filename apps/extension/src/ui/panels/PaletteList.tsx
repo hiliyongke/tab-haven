@@ -17,6 +17,7 @@ import { PaletteOption } from '@/ui/panels/paletteOption';
  */
 export function PaletteList({
   listId,
+  describedBy,
   scrollRef,
   folderItems,
   commandItems,
@@ -28,6 +29,7 @@ export function PaletteList({
   onRun
 }: {
   listId: string;
+  describedBy?: string;
   scrollRef: RefObject<HTMLDivElement | null>;
   folderItems: CommandItem[];
   commandItems: CommandItem[];
@@ -39,9 +41,21 @@ export function PaletteList({
   onRun: (cmd: CommandItem) => void;
 }) {
   const { t } = useTranslation();
+  const descriptionId = describedBy ?? listId;
+  const emptyDescriptionId = descriptionId;
+  const truncatedDescriptionId = `${descriptionId}-truncated`;
+  const empty =
+    folderItems.length === 0 &&
+    commandItems.length === 0 &&
+    recentItems.length === 0 &&
+    tabItems.length === 0;
   const afterFolders = folderItems.length;
   const afterCommands = afterFolders + commandItems.length;
   const afterRecents = afterCommands + recentItems.length;
+  const descriptionIds = [
+    empty ? emptyDescriptionId : undefined,
+    tabTruncated ? truncatedDescriptionId : undefined
+  ].filter(Boolean);
 
   return (
     <>
@@ -49,25 +63,24 @@ export function PaletteList({
         id={listId}
         role="listbox"
         aria-label={t('命令面板')}
+        aria-describedby={descriptionIds.join(' ') || undefined}
         /* overscroll-contain：本列表是浮层内的独立滚动区，不隔离会带动外层页面
            scroll-fade：结果被 max-h-72 截断，底部渐隐提示「还有更多」 */
         ref={scrollRef}
         className="scroll-fade max-h-72 overflow-y-auto overscroll-contain py-1"
       >
-        {folderItems.length === 0 &&
-          commandItems.length === 0 &&
-          recentItems.length === 0 &&
-          tabItems.length === 0 && (
-            /* 与截断提示同口径：listbox 语义内只允许 option，说明性文本放外面
+        {empty && (
+          /* 与截断提示同口径：listbox 语义内只允许 option，说明性文本放外面
                （读屏可达，且不混入键盘漫游序列）。 */
-            <div
-              role="presentation"
-              className="px-4 py-3 text-center text-3xs text-gray-500"
-              aria-live="polite"
-            >
-              {t('没有匹配的命令或标签')}
-            </div>
-          )}
+          <div
+            id={emptyDescriptionId}
+            role="presentation"
+            aria-live="polite"
+            className="px-4 py-3 text-center text-3xs text-gray-500"
+          >
+            {t('没有匹配的命令或标签')}
+          </div>
+        )}
         {folderItems.length > 0 && (
           <div role="presentation" className="group-label px-4 pb-1 pt-2">
             {t('打开收藏夹文件夹')}
@@ -144,7 +157,11 @@ export function PaletteList({
       {tabTruncated && (
         /* 截断提示放在 listbox 外：listbox 语义内只允许 option，提示行若藏进
            listbox 只能 role=presentation，读屏用户无从得知列表被截断。 */
-        <div className="border-t border-gray-100 px-4 py-1.5 text-3xs text-gray-500">
+        <div
+          id={truncatedDescriptionId}
+          aria-live="polite"
+          className="border-t border-gray-100 px-4 py-1.5 text-3xs text-gray-500"
+        >
           {t('仅显示前 {{count}} 个标签，输入关键词以过滤更多', { count: PALETTE_TAB_LIMIT })}
         </div>
       )}

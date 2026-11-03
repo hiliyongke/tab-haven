@@ -36,9 +36,9 @@ vi.mock('@/platform/storage/repositories', () => ({
   snapshotsRepository: { watch: vi.fn(), read: vi.fn().mockResolvedValue([]) }
 }));
 
-const recordClosedBatch = vi.fn();
+const recordRestoreBatch = vi.fn();
 vi.mock('@/stores/undoStore', () => ({
-  useUndoStore: { getState: () => ({ recordClosedBatch }) }
+  useUndoStore: { getState: () => ({ recordRestoreBatch }) }
 }));
 
 const tab = (id: number) => ({
@@ -83,8 +83,8 @@ describe('snapshotStore.restore 撤销行为', () => {
     expect(vi.mocked(restoreSnapshot).mock.calls[0]?.[1]).toBe(1);
     // 不再读取窗口做差分，恢复期间其它任务创建的标签天然不会混入撤销批次。
     expect(queryWindowTabs).not.toHaveBeenCalled();
-    const [recorded, kind] = recordClosedBatch.mock.calls[0]!;
-    expect(kind).toBe('restore');
+    const [recorded, windowId] = recordRestoreBatch.mock.calls[0]!;
+    expect(windowId).toBe(1);
     expect(recorded.map((entry: { id: number }) => entry.id)).toEqual([901, 902]);
   });
 
@@ -97,7 +97,7 @@ describe('snapshotStore.restore 撤销行为', () => {
 
     await useSnapshotStore.getState().restore('s1');
 
-    expect(recordClosedBatch).not.toHaveBeenCalled();
+    expect(recordRestoreBatch).not.toHaveBeenCalled();
   });
 
   it('选择性恢复同样复用目标窗口，并只登记实际创建项', async () => {
@@ -110,8 +110,8 @@ describe('snapshotStore.restore 撤销行为', () => {
     await useSnapshotStore.getState().restoreSelected('s1', [snapshot.tabs[0]!]);
 
     expect(vi.mocked(restoreSnapshot).mock.calls[0]?.[1]).toBe(1);
-    const [recorded, kind] = recordClosedBatch.mock.calls[0]!;
-    expect(kind).toBe('restore');
+    const [recorded, windowId] = recordRestoreBatch.mock.calls[0]!;
+    expect(windowId).toBe(1);
     expect(recorded.map((entry: { id: number }) => entry.id)).toEqual([901]);
   });
 });

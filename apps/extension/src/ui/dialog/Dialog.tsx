@@ -30,6 +30,8 @@ interface DialogShellProps {
    * 只有渲染成 dialog 的后代才能交互（命令面板里的快照恢复确认即此情形）。
    */
   inline?: boolean;
+  /** 异步确认在途：供读屏感知整块弹窗处于忙态，调用方据此禁用关闭入口。 */
+  busy?: boolean;
 }
 
 /** 弹窗内可聚焦元素选择器。 */
@@ -39,9 +41,14 @@ const FOCUSABLE_SELECTOR =
 /**
  * 弹窗栈（挂载序即层级序）：各级都在 document capture 阶段监听 keydown，同级按注册序
  * 执行、stopPropagation 拦不住——只有栈顶（最后挂载）实例有权响应键盘，否则嵌套时
- * 外层会先响应 Esc 连内层一起关掉、Tab 陷阱互相抢焦。
+ * 外层会先响应 Esc 连内层一起关掉、Tab 陷阱互相抢焦。每层另存触发元素与引用，
+ * 内层关闭后把焦点交还外层，而非任其掉到 body。
  */
-const modalStack: symbol[] = [];
+const modalStack: {
+  shellRef: React.RefObject<HTMLElement | null>;
+  trigger: HTMLElement | null;
+  index: number;
+}[] = [];
 
 /**
  * 是否有模态正在打开。
@@ -134,7 +141,9 @@ export function useModalA11y(
   }, [trapFocus]);
 
   useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
+    const isOutermost = modalStack.length === 0;
+    const initialTrigger = document.activeElement as HTMLElement | null;
+    const self = { shellRef, trigger: initialTrigger, index: modalStack.length };
     // 初始聚焦推迟到微任务：原生 <dialog> 的 showModal() 注册在本 effect 之后，
     // 同步 effect 跑完才轮到微任务，此时子树可聚焦；否则 focus() 打在 display:none
     // 子树上静默失效。跳过关闭按钮（data-dialog-dismiss），让焦点落在输入框/主按钮。
@@ -143,13 +152,13 @@ export function useModalA11y(
         const focusable = Array.from(
           shellRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []
         ).filter((el) => !el.hasAttribute('data-dialog-dismiss'));
+        if (self.index > 0) self.trigger = document.activeElement as HTMLElement | null;
         focusable[0]?.focus();
       });
     }
 
     // 背景滚动锁定：模态打开时背景随滚轮滚动会让遮罩与内容错位。嵌套弹窗只在最外层
     // 上锁/解锁——内层卸载时不能直接解锁（外层还开着）。
-    const isOutermost = modalStack.length === 0;
     const root = document.documentElement;
     const previousOverflow = isOutermost ? root.style.overflow : undefined;
     const previousPaddingRight = isOutermost ? root.style.paddingRight : undefined;
@@ -164,14 +173,13 @@ export function useModalA11y(
       }
     }
 
-    const self = Symbol('modal');
     // 首个弹窗打开时才惰性化背景；嵌套弹窗沿用已有的 inert。
     if (modalStack.length === 0) applyBackgroundInert(true);
     modalStack.push(self);
 
     const onKeyDown = (event: KeyboardEvent) => {
       // 仅栈顶弹窗响应（嵌套场景下非栈顶实例的监听器直接放行）。
-      if (modalStack[modalStack.length - 1] !== self) return;
+      if (modalStack[modalStack.length - 1] !== self || !shellRef.current) return;
       // 输入法组合中 Esc 是「取消候选」，放行给输入法（组合态按键不属于模态语义）。
       if (isImeComposing(event)) return;
       if (event.key === 'Escape') {
@@ -184,7 +192,7 @@ export function useModalA11y(
       if (event.key !== 'Tab' || !shellRef.current) return;
       const focusableElements = Array.from(
         shellRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-      ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+      ).filter((el) => !el.hasAttribute('disabled') && !el.closest('[hidden]'));
       if (focusableElements.length === 0) return;
       const first = focusableElements[0]!;
       const last = focusableElements[focusableElements.length - 1]!;
@@ -202,7 +210,7 @@ export function useModalA11y(
         first.focus();
       }
     };
-    // 不抢陷阱的浮层自带 Esc/Tab 处理：两个监听器都在 document 捕获阶段，
+    // trapFocus=false 的浮层自带 Esc/Tab 处理：两个监听器都在 document 捕获阶段，
     // stopPropagation 拦不住彼此，同一次按键会关两次。
     if (trapFocusRef.current) document.addEventListener('keydown', onKeyDown, true);
     return () => {
@@ -217,7 +225,7 @@ export function useModalA11y(
       }
       // 触发元素若已在浮层期间卸载（如「关闭该标签」使行消失），restoreFocus 会在
       // 背景 inert 解除后把焦点落到面板内首个可聚焦元素，避免掉回 body。
-      restoreFocus(trigger);
+      if (trapFocusRef.current) restoreFocus(self.trigger);
     };
     // eslint 依赖提示：onClose 已通过 ref 持有，effect 仅需挂载/卸载各执行一次。
   }, [shellRef]);
@@ -234,7 +242,8 @@ export function DialogShell({
   footer,
   onClose,
   widthClassName = 'dialog-sm',
-  inline = false
+  inline = false,
+  busy = false
 }: DialogShellProps) {
   const { t } = useTranslation();
   const shellRef = useRef<HTMLDivElement>(null);
@@ -260,7 +269,8 @@ export function DialogShell({
         // overflow-hidden + 内容区滚动：标题与底栏常驻可见，圆角不被滚动内容切掉。
         className={`${widthClassName} modal-panel modal-surface flex max-h-[85vh] flex-col overflow-hidden`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={inline ? undefined : 'true'}
+        aria-busy={busy || undefined}
         aria-labelledby={titleId}
       >
         {/* px-4：与内容区同线，避免三段式缩进各自一条竖线。 */}
@@ -347,6 +357,8 @@ export function ConfirmDialog({
   danger = false,
   confirmLabel,
   onConfirm,
+  busy = false,
+  cancelDisabled = false,
   onCancel,
   inline = false
 }: {
@@ -357,6 +369,10 @@ export function ConfirmDialog({
   confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** 异步确认在途：保持弹窗打开，禁用重复提交并给读屏 busy 反馈。 */
+  busy?: boolean;
+  /** 有些调用方允许「取消」也先留在弹窗内处理失败重试。 */
+  cancelDisabled?: boolean;
   /** 见 DialogShellProps.inline：调用方在原生模态 dialog 内时必须置 true。 */
   inline?: boolean;
 }) {
@@ -366,12 +382,18 @@ export function ConfirmDialog({
       title={title}
       onClose={onCancel}
       inline={inline}
+      busy={busy}
       footer={
         <>
-          <Button variant="secondary" onClick={onCancel}>
+          <Button variant="secondary" disabled={cancelDisabled} onClick={onCancel}>
             {t('取消')}
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
+            disabled={busy}
+            busy={busy}
+            onClick={onConfirm}
+          >
             {confirmLabel ?? t('确定')}
           </Button>
         </>

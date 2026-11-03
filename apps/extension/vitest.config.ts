@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { WxtVitest } from 'wxt/testing/vitest-plugin';
+import type { InlineConfig } from 'wxt';
 
 /**
  * 测试配置。
@@ -9,10 +10,16 @@ import { WxtVitest } from 'wxt/testing/vitest-plugin';
  * `environmentMatchGlobs`，集中声明只能用 `projects`（为一个扩展项目引入多套
  * 配置，收益不抵复杂度）。注释方案版本无关且就近自解释，保留。
  */
+const DEV_SERVER_PORT = 3000;
+const wxtInlineConfig: InlineConfig = {
+  dev: { server: { port: DEV_SERVER_PORT, strictPort: true } }
+};
+const wxtPlugins = await WxtVitest(wxtInlineConfig);
+
 export default defineConfig({
   // WXT 官方测试插件：自动把 `wxt/browser` 别名到 fake-browser，
   // 并 stub 全局 `chrome` / `browser`，使平台层（tabs/tabGroups/events）可在单测中驱动。
-  plugins: [WxtVitest()],
+  plugins: wxtPlugins,
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

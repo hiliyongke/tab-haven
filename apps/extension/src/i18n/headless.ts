@@ -3,6 +3,7 @@ import { createTranslate, type TranslationOptions } from 'i18n-kit';
 import zhCN from './locales/zh-CN/translation.json';
 import en from './locales/en/translation.json';
 import { settingsRepository } from '@/platform/storage/repositories';
+import { resolveBrowserLanguage } from './language';
 
 /**
  * 无 UI 环境的文案轨道（background SW 等非 React 上下文）。
@@ -14,10 +15,8 @@ import { settingsRepository } from '@/platform/storage/repositories';
  * - Service Worker 每次启动都会执行模块初始化。
  */
 
-const browserLanguage = globalThis.navigator?.language ?? '';
-// 与 UI 轨道同一判定：只认中文前缀，其余落 en。方向反过来会让日文/德文用户拿到中文的右键菜单与通知，
-// 而同一浏览器里面板却是英文 —— 两条轨道必须同解。
-const initialLanguage = browserLanguage.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+// 与 UI 轨道同一判定：只认中文前缀，其余落 en。两条轨道必须同解。
+const initialLanguage = resolveBrowserLanguage(globalThis.navigator?.language);
 
 const instance = i18next.createInstance();
 void instance.init({
@@ -52,10 +51,14 @@ export async function initHeadlessI18n(): Promise<void> {
   started = true;
   try {
     const settings = await settingsRepository.read();
-    if (settings.language) await instance.changeLanguage(settings.language);
+    await instance.changeLanguage(
+      settings.language ? settings.language : resolveBrowserLanguage(globalThis.navigator?.language)
+    );
     settingsRepository.watch((next) => {
-      // 与 UI 轨道 SettingsSync 一致：有覆盖值才切换，否则回到浏览器语言判定。
-      if (next.language) void instance.changeLanguage(next.language);
+      // 与 UI 轨道 SettingsSync 一致：空覆盖值回到浏览器语言判定。
+      void instance.changeLanguage(
+        next.language ? next.language : resolveBrowserLanguage(globalThis.navigator?.language)
+      );
     });
   } catch {
     // settings 读取失败：保持 initialLanguage，后续 watch 纠正

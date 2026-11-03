@@ -2,7 +2,6 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import extensionConfig from '../../vitest.config';
 
 /**
  * 覆盖率阈值行为规格：各 glob 档位的每项指标不低于 coverage-baseline.json 中的基线，
@@ -19,15 +18,32 @@ interface Metric {
 const METRICS = ['lines', 'statements', 'branches', 'functions'] as const;
 
 const baselinePath = fileURLToPath(new URL('../../coverage-baseline.json', import.meta.url));
+const configPath = fileURLToPath(new URL('../../vitest.config.ts', import.meta.url));
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as {
   thresholds: Record<string, Metric>;
 };
 
-const current = (
-  extensionConfig as unknown as {
-    test?: { coverage?: { thresholds?: Record<string, Metric> } };
+function readConfigThresholds(): Record<string, Metric> {
+  const source = readFileSync(configPath, 'utf8');
+  const start = source.indexOf('thresholds:');
+  const end = source.indexOf('\n    }\n  }\n}', start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const body = source.slice(start + 'thresholds:'.length, end);
+  const thresholds: Record<string, Metric> = {};
+  for (const match of body.matchAll(/(?:'([^']+)'|global):\s*\{([^}]*)\}/g)) {
+    const glob = match[1] ?? 'global';
+    const metric: Metric = {};
+    for (const entry of match[2]?.matchAll(/(\w+):\s*(\d+)/g) ?? []) {
+      const name = entry[1] as (typeof METRICS)[number] | undefined;
+      if (name && METRICS.includes(name)) metric[name] = Number(entry[2]);
+    }
+    thresholds[glob] = metric;
   }
-).test?.coverage?.thresholds;
+  return thresholds;
+}
+
+const current = readConfigThresholds();
 
 describe('覆盖率棘轮（vitest.config ↔ coverage-baseline）', () => {
   it('基线文件非空且能取到当前阈值（空集合会让比对恒绿）', () => {

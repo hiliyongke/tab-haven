@@ -28,8 +28,8 @@ interface PendingActionHandlers {
   locateActive: () => void;
   /** 发生了一次重复标签复用（duplicate-reused，仅提示）。 */
   duplicateReused: () => void;
-  /** 自动休眠完成，需给出可撤销提示（auto-discarded）。 */
-  discardBatch: (batch: { tabIds: number[]; count: number }) => void;
+  /** 自动休眠完成，需按台账批次给出可撤销提示（auto-discarded）。 */
+  discardBatch: (batch: { batchId: string; count: number; at: number }) => void;
 }
 
 export function usePendingActions(handlers: PendingActionHandlers): void {
@@ -91,7 +91,11 @@ export function usePendingActions(handlers: PendingActionHandlers): void {
           handlePendingAction(message);
           return;
         case 'auto-discarded':
-          handlersRef.current.discardBatch(message);
+          handlersRef.current.discardBatch({
+            batchId: message.batchId,
+            count: message.count,
+            at: message.at
+          });
           return;
         case 'duplicate-reused':
           handlersRef.current.duplicateReused();

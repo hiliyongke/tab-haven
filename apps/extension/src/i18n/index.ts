@@ -4,6 +4,9 @@ import { createTranslate, type Translate, type TranslationOptions } from 'i18n-k
 import { createUseTranslation, Slot, Trans } from 'i18n-kit/react';
 import zhCN from './locales/zh-CN/translation.json';
 import en from './locales/en/translation.json';
+import { resolveBrowserLanguage } from './language';
+
+export { resolveBrowserLanguage, type UiLanguage } from './language';
 
 /**
  * UI 文案轨道。语言决策链：settings.language（用户覆盖，运行时切换）→ 浏览器 UI 语言 → en 兜底
@@ -14,9 +17,7 @@ import en from './locales/en/translation.json';
  * 哈希算法在 `packages/i18n-kit/src/hashKey.ts` 单一实现，扫描器与运行时同源。
  */
 
-const browserLanguage = globalThis.navigator?.language ?? '';
-// 只认中文前缀，其余落 en：日文/德文/法文用户读到中文比读到英文更不可解。
-const initialLanguage = browserLanguage.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+const initialLanguage = resolveBrowserLanguage(globalThis.navigator?.language);
 
 i18next.use(initReactI18next).init({
   resources: {
@@ -46,11 +47,15 @@ export const useTranslation = createUseTranslation(i18next, translate);
 export { Trans, Slot };
 export type { TranslationOptions, Translate };
 
-// 同步文档语言：切换后 <html lang> 跟随（读屏据此选发音与断词规则）。
-const syncDocumentLang = (lng: string): void => {
-  if (typeof document !== 'undefined') document.documentElement.lang = lng;
+// 同步文档语言与标签标题：<html lang> 供读屏选发音规则，英文用户最终也不再看到中文标题。
+const syncDocumentMetadata = (lng: string): void => {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = lng;
+  if (document.documentElement.dataset.scope === 'options') {
+    document.title = translate(lng === 'zh-CN' ? 'Tabs 设置' : 'Tabs Settings');
+  }
 };
-syncDocumentLang(i18next.language);
-i18next.on('languageChanged', syncDocumentLang);
+syncDocumentMetadata(i18next.language);
+i18next.on('languageChanged', syncDocumentMetadata);
 
 export default i18next;

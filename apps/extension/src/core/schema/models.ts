@@ -113,7 +113,12 @@ export const SettingsSchema = z
     /** 主题色预设（色号唯一来源 core/theme/colorThemes）：plain 默认无底色 / forest / ocean / violet / sunset / mono。 */
     colorTheme: z.enum(COLOR_THEME_IDS).default('plain'),
     /** 语言覆盖（BCP-47）。仅约束长度与格式。 */
-    language: z.string().min(2).max(32).optional(),
+    language: z
+      .string()
+      .min(2)
+      .max(32)
+      .optional()
+      .transform((value) => (value === 'zh-CN' || value === 'en' ? value : undefined)),
     /** 网站聚合阈值：同域名标签达到该数量自动成组。1 = 只要有标签就成组（单标签也分组）。 */
     aggregationThreshold: z.number().int().min(1).max(5).default(DEFAULT_AGGREGATION_THRESHOLD),
     /** 标签顺序双向同步：侧边栏拖拽重排写回原生顺序，原生改动反向同步。 */
@@ -268,6 +273,8 @@ export const UndoBatchSchema = z.object({
   createdAt: z.number(),
   /** 关闭发生时的窗口 id（缺省即未记录）。撤销必须回到原窗口，否则切到别的窗口撤销会恢复到错误窗口。 */
   windowId: z.number().int().optional(),
+  /** 快照恢复实际创建的标签 id；旧备份无此字段时仍按 URL 回退。 */
+  createdTabIds: z.array(z.number().int()).max(UNDO_BATCH_ENTRIES_LIMIT).optional(),
   entries: z.array(UndoTabRecordSchema).max(UNDO_BATCH_ENTRIES_LIMIT)
 });
 export type UndoBatch = z.infer<typeof UndoBatchSchema>;
@@ -275,6 +282,8 @@ export type UndoBatch = z.infer<typeof UndoBatchSchema>;
 /** 自动休眠批次台账：SW 自动休眠后记录，UI 据此提供「全部唤醒」撤销。 */
 export const AutoDiscardBatchSchema = z
   .object({
+    /** 批次 id；旧台账缺省时按 at + count 派生稳定 id。 */
+    batchId: z.string().min(1).max(128).optional(),
     tabIds: z.array(z.number().int()).max(UNDO_BATCH_ENTRIES_LIMIT),
     at: z.number(),
     count: z.number().int()
@@ -284,6 +293,11 @@ export const AutoDiscardBatchSchema = z
     message: 'count must equal tabIds.length'
   });
 export type AutoDiscardBatch = z.infer<typeof AutoDiscardBatchSchema>;
+
+/** 老台账没有 batchId 时按不可变字段派生，保证消息与补提示取到同一批。 */
+export function autoDiscardBatchId(batch: { batchId?: string; at: number; count: number }): string {
+  return batch.batchId ?? `${batch.at}:${batch.count}`;
+}
 
 /** 快照内单条标签（轻量，仅恢复所需字段）。 */
 export const SnapshotTabSchema = z.object({

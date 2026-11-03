@@ -61,6 +61,8 @@ interface CreateUndoBatchOptions {
   now?: number;
   /** 批次 id（默认 crypto.randomUUID()）。 */
   id?: string;
+  /** 快照恢复实际创建的标签 id；撤销时优先按身份关闭，避免误关同 URL 标签。 */
+  createdTabIds?: readonly number[];
 }
 
 /** 构造撤销批次：kind 决定恢复方式，entries 是影响的全部对象。 */
@@ -74,14 +76,15 @@ export function createUndoBatch(
     kind,
     createdAt: options.now ?? Date.now(),
     windowId: options.windowId,
-    entries
+    entries,
+    ...(options.createdTabIds ? { createdTabIds: [...options.createdTabIds] } : {})
   };
 }
 
 /**
  * 重做目标：优先按本次实际恢复的标签 id 精确匹配，避免关掉窗口里原有的同 URL keeper。
  * 旧重做记录没有 id 时回退为 URL 匹配（标签 id 关闭后失效）；一对一配对，只关记录对应的数量。
- * restoredTabIds 一旦传入（包括空数组）就是权威身份集，不再用 URL 猜测或补位。
+ * restoredTabIds 命中不到任何目标时（旧记录 / 标签 id 失效）才按 URL 降级配对。
  * includePinned=true 用于撤销「快照恢复」批次：那批固定标签正是要关掉的对象，须纳入匹配。
  */
 export function selectRedoTargets(
@@ -92,7 +95,8 @@ export function selectRedoTargets(
   const includePinned = options.includePinned ?? false;
   if (options.restoredTabIds !== undefined) {
     const restoredIds = new Set(options.restoredTabIds);
-    return tabs.filter((tab) => restoredIds.has(tab.id) && (includePinned || !tab.pinned));
+    const matched = tabs.filter((tab) => restoredIds.has(tab.id) && (includePinned || !tab.pinned));
+    if (matched.length > 0) return matched;
   }
   const taken = new Set<number>();
   const targets: TabRecord[] = [];

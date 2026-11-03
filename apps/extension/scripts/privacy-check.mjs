@@ -65,7 +65,8 @@ const ALLOWED_OPTIONAL_PERMISSIONS = new Set();
  * 覆盖直接调用与常见间接形式（EventSource / 远程 import / 图片打点 / 外部连接）。
  */
 const NETWORK_PATTERNS = [
-  /\bfetch\s*\(/,
+  /\bfetch\s*(?:\?\.)?\s*\(/,
+  /\(\s*0\s*,\s*fetch\s*\)\s*\(/,
   /\bXMLHttpRequest\b/,
   /\bWebSocket\b/,
   /\bsendBeacon\b/,

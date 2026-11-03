@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import i18n, { useTranslation, type Translate } from '@/i18n';
+import { useTranslation, type Translate } from '@/i18n';
 import { GROUP_MODES, type GroupMode, type Settings } from '@/core/schema/models';
 import { COLOR_THEMES, type ColorTheme } from '@/core/theme/colorThemes';
 import type { MirrorSyncIssue } from '@/platform/storage/SyncMirror';
@@ -186,7 +186,7 @@ export function MirrorSyncStatus({ t }: { t: Translate }) {
   const writeState: MirrorSyncState = quotaExceeded ? 'chunk-limit' : 'write-failed';
   const state: MirrorSyncState | null = writeFailed ? writeState : issue;
   if (state === null) return null;
-  // 五态给五句不同的话，用 Record 而非三元链：新增 MirrorSyncIssue 取值漏配即编译报错。
+  // 逐态给不同文案，用 Record 而非三元链：新增 MirrorSyncIssue 取值漏配即编译报错。
   const texts: Record<MirrorSyncState, string> = {
     'write-failed': t('未生效（本次改动未上传）：其他设备不会收到这份数据'),
     ok: t('已生效'),
@@ -194,11 +194,16 @@ export function MirrorSyncStatus({ t }: { t: Translate }) {
     // 本机已有数据且本次启动没有从镜像恢复：镜像存在，但启动时没有验证其内容。
     local: t('本机数据为准（本次未从镜像恢复）'),
     'chunk-limit': t('未生效（超出同步容量上限）：其他设备不会收到这份数据'),
-    unreadable: t('未生效（镜像损坏或已过期）：其他设备不会收到这份数据')
+    unreadable: t('未生效（镜像损坏或已过期）：其他设备不会收到这份数据'),
+    expired: t('镜像已过期，请确认后再同步')
   };
   const text = texts[state];
   // 只有「真的不生效」才标红：'none' 与 'local' 都是中性说明，不是故障。
-  const failed = state === 'write-failed' || state === 'chunk-limit' || state === 'unreadable';
+  const failed =
+    state === 'write-failed' ||
+    state === 'chunk-limit' ||
+    state === 'unreadable' ||
+    state === 'expired';
   return (
     <span className={failed ? 'text-3xs text-red-600' : 'text-3xs text-gray-500'}>{text}</span>
   );
@@ -323,10 +328,10 @@ export function buildSections(
           labelKey: '语言',
           render: ({ settings: currentSettings, update, t }) => (
             <Select
-              // 显示值与实际生效语言一致：缺省时由浏览器语言决定，硬编码兜底 zh-CN 会让英文用户看到「简体中文」。
-              value={currentSettings.language ?? i18n.language}
-              onChange={(v) => update('language', v)}
+              value={currentSettings.language ?? ''}
+              onChange={(v) => update('language', v === '' ? undefined : v)}
               options={[
+                { value: '', label: t('跟随浏览器') },
                 // 语言名用该语言自己的写法（autonym），与当前界面语言无关。
                 { value: 'zh-CN', label: t('简体中文') },
                 // 'English' 不含汉字，走语义 key 直通，不需要译文。

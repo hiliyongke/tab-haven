@@ -17,6 +17,7 @@ import { NO_GROUP } from '@/core/tab-types';
 import { webComparisonKey } from '@/core/url/UrlInspector';
 import { structuralSignature } from '@/core/util/signature';
 import { logDegraded } from '@/platform/diagnostics';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 import { mutateSession, readSession } from '@/platform/storage/session';
 import {
   activateTab as activateTabPlatform,
@@ -66,8 +67,8 @@ export function createFolderSlice(
         return null;
       }
       const folder = createFolderModel(name);
-      await ctx.writeFolders((current) => [...current, folder]);
-      return folder;
+      const ok = await ctx.writeFolders((current) => [...current, folder]);
+      return ok ? folder : null;
     },
 
     renameFolder: async (folderId, name) => {
@@ -276,6 +277,10 @@ export function createFolderSlice(
       }
       // 3) 新建并绑定
       if (windowId === undefined) return;
+      if (item.url !== undefined && !isHttpUrl(item.url)) {
+        logDegraded('dataStore', '打开固定条目失败：网址不是 http(s)');
+        return;
+      }
       const created = await createNewTabPlatform(windowId);
       // 豁免复用：显式打开的固定项不允许被自动合并（与 RestoreEngine 一致）。
       // 须在导航前发放（onUpdated 先到时令牌未就位会被合并），创建失败则不发放（避免令牌残留误豁免）。

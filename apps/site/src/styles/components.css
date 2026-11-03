@@ -61,9 +61,18 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--surface);
   border-bottom: 1px solid var(--border-subtle);
+}
+@supports (color: color-mix(in srgb, white 50%, transparent)) {
+  .site-nav {
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+  }
+}
+@supports (backdrop-filter: blur(10px)) {
+  .site-nav {
+    backdrop-filter: blur(10px);
+  }
 }
 .nav-inner {
   display: flex;
@@ -299,6 +308,15 @@
 }
 .doc-card[open] > *:not(summary),
 .faq-item[open] > *:not(summary) {
+  animation: reveal var(--dur-normal) var(--ease-out);
+}
+.js .doc-card:target,
+.js .doc-card:has(> :target) {
+  border-color: var(--c-brand-500);
+}
+.js .doc-card:target > *:not(summary),
+.js .doc-card:has(> :target) > *:not(summary) {
+  display: block;
   animation: reveal var(--dur-normal) var(--ease-out);
 }
 @keyframes reveal {

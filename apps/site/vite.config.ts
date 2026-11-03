@@ -18,6 +18,9 @@ export default defineConfig({
   // 一律绝对资源路径：/en/index.html 与 /index.html 必须命中同一份 assets。
   base: '/',
   plugins: [react()],
+  define: {
+    'globalThis.process.env.TABS_SITE_URL': JSON.stringify('')
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

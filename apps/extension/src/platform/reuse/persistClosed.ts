@@ -13,17 +13,19 @@ import { UNDO_PERSIST_LOCK, withCrossPageLock } from '@/platform/storage/crossPa
  */
 export async function persistReuseClosedBatch(
   windowId: number,
-  records: readonly UndoTabRecord[]
+  records: readonly UndoTabRecord[],
+  batchId?: string
 ): Promise<boolean> {
   if (records.length === 0) return true;
   const settings = await settingsRepository.readStrict();
   if (!settings.persistUndo) return true;
-  const batch = createUndoBatch('reuse', [...records], { windowId });
+  const batch = createUndoBatch('reuse', [...records], { windowId, id: batchId });
   return withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
     const [disk, redo] = await Promise.all([
       undoRepository.readStrict(),
       redoRepository.readStrict()
     ]);
+    if (disk.some((entry) => entry.id === batch.id)) return true;
     // 与面板 appendBatch 同口径：新关闭批次使旧重做目标失效。
     const redoWritten = redo.length === 0 || (await redoRepository.write([]));
     const undoWritten = await undoRepository.write(pushBatch(disk, batch, settings.undoStackLimit));

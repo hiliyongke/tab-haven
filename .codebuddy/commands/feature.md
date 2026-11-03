@@ -8,6 +8,8 @@ allowed-tools: Read, Grep, Glob, ListDir, Write, Edit, Bash, WebFetch
 
 $ARGUMENTS
 
+开始前加载 `.codebuddy/rules/code-rules/RULE.mdc`；每个阶段按 §10 执行矩阵自查，计划、落码、测试、评审与交付均不得跳过。
+
 ## 阶段 1：需求分析（产出计划，停在此处等确认）
 
 1. 对照 `privacy-security` 规则做宪法审查（本地优先/零网络/免费核心），冲突即驳回并说明。
@@ -17,7 +19,7 @@ $ARGUMENTS
 
 ## 阶段 2：分层落码
 
-- 遵守 architecture / code-style / privacy-security 三条 always 规则。
+- 遵守 `code-rules` §1–§9 及 architecture / code-style / privacy-security always 规则。
 - 动手前先查 `.codebuddy/skills/change-recipes`（高频任务文件地图）与 `.codebuddy/skills/ui-component`（组件复用清单），避免漏改与重复造轮子。
 - 持久化变更必须走 `.codebuddy/skills/schema-evolution` 五步流程。
 
@@ -27,9 +29,9 @@ core 改动补行为规格测试（`rules/testing` + `skills/behavior-spec-testi
 
 ## 阶段 4：自评审与门禁
 
-1. 按 `/review` 五维度自查（或委派 code-reviewer），Blocker/Major 清零。
-2. 跑 `pnpm check` 全绿；失败按 `skills/quality-gates` 修，禁止改门禁配置。
+1. 按 `/review` 的 §1–§10 矩阵自查（或委派 code-reviewer），P0/P1 清零。
+2. 跑 `pnpm format:check && pnpm check && pnpm site:check` 全绿；失败按 `skills/quality-gates` 修，禁止改门禁配置。
 
 ## 阶段 5：交付
 
-汇报：改动清单（`file:line`）、测试结果、门禁记录、遗留事项；用 `/commit` 生成提交信息草稿交用户。**全程不执行任何 git 写操作。**
+汇报：改动清单（`file:line`）、已核对章节、测试结果、门禁记录、外部未验证项、遗留事项；用 `/commit` 生成提交信息草稿交用户。**全程不执行任何 git 写操作。**

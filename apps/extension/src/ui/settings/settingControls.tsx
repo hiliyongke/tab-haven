@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from '@/i18n';
 import type { Settings } from '@/core/schema/models';
 import { NO_CACHE_PATTERNS_LIMIT, normalizeNoCachePattern } from '@/core/nocache/noCachePattern';
+import { isImeComposing } from '@/core/util/keyboard';
 import { normalizeWhitelistHost } from '@/core/url/hostname';
 import { hasPermissions, requestPermissions, type PermissionQuery } from '@/platform/permissions';
 import { logDegraded } from '@/platform/diagnostics';
@@ -223,7 +224,7 @@ export function WhitelistEditor({
             if (notice !== null) setNotice(null);
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') add();
+            if (event.key === 'Enter' && !isImeComposing(event)) add();
           }}
         />
         <Button variant="secondary" size="sm" onClick={add}>
@@ -326,7 +327,7 @@ export function NoCachePatternEditor({
         onBlur={commit}
         onKeyDown={(event) => {
           // ⌘/Ctrl+Enter 快捷保存（Enter 保持默认换行：列表编辑语义优先）
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isImeComposing(event)) {
             event.preventDefault();
             commit();
           }

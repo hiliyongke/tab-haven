@@ -11,8 +11,9 @@ $ARGUMENTS
 流程：
 
 1. 先读 `CODEBUDDY.md` 与 `.codebuddy/rules/architecture`、`privacy-security`，确认需求不触碰产品宪法（本地优先/零网络/免费核心）；若冲突，直接判定不可行并说明依据。
-2. 阅读相关代码，梳理影响面：涉及层与文件清单（`file:line`），点名是否触发三类特殊流程——持久化变更（core/schema + PRIVACY.md）、权限变更（wxt.config.ts + PRIVACY.md）、新增文案（双语 locale）。
-3. 产出 Markdown 计划：结论先行 → 问题陈述与 Goals/Non-Goals → 用户故事与验收标准 → 方案对比（取舍 + 粗略人日）→ 风险与开放问题。
-4. 结尾列出需要用户拍板的决策点，等待确认后再进入编码。
+2. 加载 `.codebuddy/rules/code-rules/RULE.mdc`，按 §1、§2、§3、§6、§7、§8 列出影响面与验收门槛，特别标注过程性资料、持久化、权限、文案、发布配置和干净工作区约束。
+3. 阅读相关代码，梳理影响面：涉及层与文件清单（`file:line`），点名是否触发三类特殊流程——持久化变更（core/schema + PRIVACY.md）、权限变更（wxt.config.ts + PRIVACY.md）、新增文案（双语 locale）。
+4. 产出 Markdown 计划：结论先行 → 问题陈述与 Goals/Non-Goals → 用户故事与验收标准 → 方案对比（取舍 + 粗略人日）→ 风险与开放问题。
+5. 结尾列出需要用户拍板的决策点，等待确认后再进入编码。
 
 复杂需求可委派 requirements-analyst agent 完成第 2-3 步。

@@ -2,7 +2,7 @@
   // 官网独立 TS 配置：不复用扩展的 .wxt/tsconfig.json。
   // 原因：那份配置是 WXT 为扩展生成的（含 chrome 类型、@/ 别名指向扩展 src），
   // 且 include 为仓库全量 —— 官网若被它收编，扩展与官网的类型口径会互相牵制。
-  // 根 tsconfig.json 的 exclude 已把 site/ 排除，两边互不干扰。
+  // 根 tsconfig.json 只 include 根级 tests/**，不收编 apps/site；本配置单独 include 官网源码，两边互不干扰。
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,

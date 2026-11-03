@@ -88,4 +88,41 @@ describe('撤销栈写盘失败的回执', () => {
     expect(useUndoStore.getState().toast?.note).toBeUndefined();
     expect(useUndoStore.getState().toast?.message).not.toContain('磁盘');
   });
+
+  it('复用关闭登记写盘失败时返回 false，面板不得发 ACK', async () => {
+    vi.spyOn(undoRepository, 'write').mockResolvedValue(false);
+    const entries = [
+      {
+        url: 'https://a.com/',
+        index: 0,
+        pinned: false,
+        muted: false,
+        groupId: -1
+      }
+    ];
+
+    await expect(
+      useUndoStore.getState().recordReuseClosed(1, entries, 'reuse-batch-failed')
+    ).resolves.toBe(false);
+    expect(useUndoStore.getState().batches).toHaveLength(1);
+    expect(useUndoStore.getState().toast?.note).toBe(PERSIST_NOTE);
+  });
+
+  it('同一 batchId 重复投递只登记一次', async () => {
+    vi.restoreAllMocks();
+    const entries = Array.from({ length: 51 }, (_, index) => ({
+      url: `https://site-${index}.com/`,
+      index,
+      pinned: false,
+      muted: false,
+      groupId: -1
+    }));
+    const first = useUndoStore.getState().recordReuseClosed(1, entries, 'reuse-batch-51');
+    const second = useUndoStore.getState().recordReuseClosed(1, entries, 'reuse-batch-51');
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    const stored = await undoRepository.readStrict();
+    expect(stored.filter((batch) => batch.id === 'reuse-batch-51')).toHaveLength(1);
+    expect(stored[0]?.entries).toHaveLength(51);
+  });
 });

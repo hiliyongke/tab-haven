@@ -12,7 +12,9 @@ import type { DataContext, DataState } from '@/stores/data/types';
 const mocks = vi.hoisted(() => ({
   pull: vi.fn(),
   // 拉取结果分类：默认「从未同步过」（正常空态），用例可改为 'chunk-limit' 等。
-  pullIssue: vi.fn(() => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable'),
+  pullIssue: vi.fn(
+    () => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable' | 'expired' | 'local'
+  ),
   applyTheme: vi.fn(),
   readSession: vi.fn(async () => ({ itemTabBindings: {} }))
 }));
@@ -277,6 +279,21 @@ describe('首次启动的镜像恢复', () => {
 
     // Then 分类随最终状态一并落地（只进诊断日志时用户完全看不到）
     expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ mirrorIssue: 'chunk-limit' }));
+  });
+
+  it('镜像过期时保留 mirrorRestorePending，不用过期镜像解除恢复闸门', async () => {
+    mocks.pull.mockResolvedValueOnce(null);
+    mocks.pullIssue.mockReturnValueOnce('expired');
+    const h = await harness({
+      seeded: false,
+      settings: { ...DEFAULT_SETTINGS, syncMirrorEnabled: true }
+    });
+
+    await h.initialized();
+
+    expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ mirrorIssue: 'expired' }));
+    expect(h.ctx.setMirrorRestorePending).not.toHaveBeenCalledWith(false);
+    expect(h.seeded.write).not.toHaveBeenCalled();
   });
 
   it('镜像中形状非法的分区被忽略，不影响其余分区恢复，且不置 seeded（留下次重试）', async () => {

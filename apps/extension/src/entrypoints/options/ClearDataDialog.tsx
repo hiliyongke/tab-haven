@@ -1,6 +1,8 @@
 import { useTranslation } from '@/i18n';
 import { Button } from '@/ui/common/Button';
+import { Callout } from '@/ui/common/Callout';
 import { Checkbox } from '@/ui/common/Checkbox';
+import { Icons } from '@/ui/common/Icon';
 import { DialogShell } from '@/ui/dialog/Dialog';
 
 interface ClearDataDialogProps {
@@ -10,6 +12,8 @@ interface ClearDataDialogProps {
   ack: boolean;
   onAckChange: (value: boolean) => void;
   onExportBackup: () => void;
+  busy?: boolean;
+  error?: string | null;
 }
 
 /**
@@ -22,7 +26,9 @@ export function ClearDataDialog({
   onConfirm,
   ack,
   onAckChange,
-  onExportBackup
+  onExportBackup,
+  busy = false,
+  error = null
 }: ClearDataDialogProps) {
   const { t } = useTranslation();
   if (!open) return null;
@@ -30,17 +36,23 @@ export function ClearDataDialog({
     <DialogShell
       title={t('清除所有数据')}
       onClose={onClose}
+      busy={busy}
       /* 操作按钮放在确认类弹窗共用的 footer，使用默认 md 尺寸以保持按钮档位一致。 */
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <Button variant="secondary" onClick={onExportBackup}>
+          <Button variant="secondary" disabled={busy} onClick={onExportBackup}>
             {t('先导出一份备份')}
           </Button>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={onClose}>
+            <Button variant="secondary" disabled={busy} onClick={onClose}>
               {t('取消')}
             </Button>
-            <Button variant="danger" disabled={!ack} onClick={() => void onConfirm()}>
+            <Button
+              variant="danger"
+              disabled={!ack || busy}
+              busy={busy}
+              onClick={() => void onConfirm()}
+            >
               {t('永久清除')}
             </Button>
           </div>
@@ -59,9 +71,14 @@ export function ClearDataDialog({
         <p className="text-3xs font-medium text-warn-700">
           {t('此操作不可恢复。建议先导出一份备份。')}
         </p>
+        {error !== null && (
+          <Callout tone="warn" density="panel" icon={Icons.infoAlert} role="alert">
+            <p className="text-3xs">{error}</p>
+          </Callout>
+        )}
         {/* items-start 让复选框与多行说明的首行顶部对齐。 */}
         <label className="flex cursor-pointer items-start gap-2 text-3xs text-gray-700">
-          <Checkbox checked={ack} className="mt-0.5" onChange={onAckChange} />
+          <Checkbox checked={ack} disabled={busy} className="mt-0.5" onChange={onAckChange} />
           <span>{t('我已了解上述数据将被永久删除，且无法恢复')}</span>
         </label>
       </div>

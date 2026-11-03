@@ -268,8 +268,15 @@ describe('discardInactiveTabs（浏览器级快捷键 / 右键菜单路径）', 
     const [batch] = await autoDiscardRepository.read();
     expect(batch?.tabIds).toEqual([1]);
     expect(fakeBrowser.runtime.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'auto-discarded', tabIds: [1], count: 1 })
+      expect.objectContaining({
+        type: 'auto-discarded',
+        batchId: expect.any(String),
+        count: 1
+      })
     );
+    const message = vi.mocked(fakeBrowser.runtime.sendMessage).mock.calls[0]?.[0] as
+      { batchId?: string } | undefined;
+    expect(batch?.batchId).toBe(message?.batchId);
   });
 
   it('台账写失败时通知不再承诺一键唤醒，也不发送可撤销回执', async () => {

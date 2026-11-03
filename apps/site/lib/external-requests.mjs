@@ -19,13 +19,38 @@ const NAMESPACE_REFERENCES = [
   }
 ];
 
-function getSiteOrigin(siteUrl) {
+export function normalizeSiteUrl(siteUrl) {
   if (!siteUrl) return null;
-  const url = new URL(siteUrl);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+  let url;
+  try {
+    url = new URL(siteUrl);
+  } catch {
+    throw new Error('SITE_URL 必须是合法的无凭据 http(s) 根 URL');
+  }
+  if (url.href !== `${url.origin}/`) {
+    throw new Error('SITE_URL 必须是不带路径、查询参数或片段的 http(s) 根 URL');
+  }
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash ||
+    siteUrl !== url.origin
+  ) {
     throw new Error('SITE_URL 必须是无凭据的 http(s) 根 URL');
   }
-  return url.origin;
+  if (!url.hostname || /[\s<>"'`]/.test(siteUrl)) {
+    throw new Error('SITE_URL 必须是合法的无凭据 http(s) 根 URL');
+  }
+  return `${url.origin}/`;
+}
+
+function getSiteOrigin(siteUrl) {
+  const normalized = normalizeSiteUrl(siteUrl);
+  if (normalized === null) return null;
+  return new URL(normalized).origin;
 }
 
 export function findExternalUrls(text, siteUrl = '') {

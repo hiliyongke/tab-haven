@@ -20,13 +20,17 @@ import type { DataContext, DataState } from '@/stores/data/types';
 const mocks = vi.hoisted(() => ({
   pull: vi.fn(),
   // 拉取结果分类：默认「从未同步过」（正常空态）。
-  pullIssue: vi.fn(() => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable'),
+  pullIssue: vi.fn(
+    () => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable' | 'expired' | 'local'
+  ),
   clearAll: vi.fn(async () => {}),
   schedule: vi.fn(),
   applyTheme: vi.fn()
 }));
 
 vi.mock('@/platform/storage/SyncMirror', () => ({
+  mirrorIssueAllowsMirrorPush: (issue: string | null) =>
+    issue === null || issue === 'none' || issue === 'ok' || issue === 'local',
   syncMirror: {
     pull: mocks.pull,
     readLastPullIssue: mocks.pullIssue,
@@ -72,7 +76,8 @@ async function harness(options: {
   const state: Partial<DataState> = {
     folders: (options.folders ?? []) as DataState['folders'],
     pins: (options.pins ?? []) as DataState['pins'],
-    settings: options.diskSettings ?? DEFAULT_SETTINGS
+    settings: options.diskSettings ?? DEFAULT_SETTINGS,
+    mirrorIssue: 'none'
   };
   const folders = repo(options.folders ?? [], options.foldersWriteOk ?? true);
   const pins = repo(options.pins ?? []);
@@ -181,6 +186,17 @@ describe('开启同步的反向恢复（新设备换机恢复）', () => {
     expect(h.folders.write).not.toHaveBeenCalled();
     expect(h.seeded.write).not.toHaveBeenCalled();
     expect(h.scheduleMirror).toHaveBeenCalledTimes(1);
+  });
+
+  it('拉取结果为 expired：不置 seeded，也不把本地空态推上云端', async () => {
+    mocks.pull.mockResolvedValueOnce(null);
+    mocks.pullIssue.mockReturnValueOnce('expired');
+    const h = await harness({ seeded: false });
+
+    await h.updateSettings({ syncMirrorEnabled: true });
+
+    expect(h.seeded.write).not.toHaveBeenCalled();
+    expect(h.scheduleMirror).not.toHaveBeenCalled();
   });
 
   it('恢复写盘失败：不推首次镜像（空态上云会覆盖旧设备镜像）且不置 seeded', async () => {

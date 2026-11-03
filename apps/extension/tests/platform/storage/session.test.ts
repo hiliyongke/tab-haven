@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { mutateSession, readSession, updateSession } from '@/platform/storage/session';
+import {
+  mutateSession,
+  readSession,
+  resetVolatileSession,
+  updateSession
+} from '@/platform/storage/session';
 
 /**
  * session 写操作串行化：read-modify-write 在模块级队列内执行，
@@ -110,8 +115,26 @@ describe('session 串行化', () => {
       expect((await readSession()).itemTabBindings).toEqual({ first: 1, second: 2 });
     } finally {
       fakeBrowser.storage.session.set = originalSet;
-      // 清理模块级 dirty 基线，避免泄漏到其它用例。
-      await updateSession({ itemTabBindings: {}, manualStandaloneTabIds: [] });
+      resetVolatileSession();
+    }
+  });
+
+  it('resetVolatileSession 清除写失败残留的内存基线', async () => {
+    const originalSet = fakeBrowser.storage.session.set;
+    fakeBrowser.storage.session.set = (() => Promise.reject(new Error('quota'))) as never;
+    try {
+      expect((await mutateSession(() => ({ itemTabBindings: { first: 1 } }))).persisted).toBe(
+        false
+      );
+      resetVolatileSession();
+      fakeBrowser.storage.session.set = originalSet;
+      expect(await readSession()).toEqual({
+        itemTabBindings: {},
+        manualStandaloneTabIds: []
+      });
+    } finally {
+      fakeBrowser.storage.session.set = originalSet;
+      resetVolatileSession();
     }
   });
 });

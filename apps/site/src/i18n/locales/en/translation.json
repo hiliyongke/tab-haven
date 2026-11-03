@@ -230,5 +230,6 @@
   "i18n_1qnrhl8": "It is not listed yet. For now, download the archive, unzip it, open your browser's extensions page (chrome://extensions on Chrome / Brave, edge://extensions on Edge), turn on developer mode, then choose \"Load unpacked\" and pick the folder.",
   "i18n_0embyr9": "Each permission and its purpose is listed publicly.",
   "i18n_0qlivet": "The extension makes no outbound network requests.",
-  "i18n_13shjc6": "The permissions and their purposes are listed below. Website access is requested only when you enable ‘Disable cache for selected sites.’"
+  "i18n_13shjc6": "The permissions and their purposes are listed below. Website access is requested only when you enable ‘Disable cache for selected sites.’",
+  "i18n_0f5v3k2": "This is a local preview; the download package is not included in this build."
 }

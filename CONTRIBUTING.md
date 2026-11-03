@@ -4,22 +4,24 @@
 
 > 使用 AI 辅助开发：本仓库内置完整的 CodeBuddy 工作流规范（规则/智能体/技能/命令），见 [.codebuddy/README.md](./.codebuddy/README.md)；项目速览见 [CODEBUDDY.md](./CODEBUDDY.md)。
 >
-> 所有改动都要过代码审查：分级（P0–P3）、风险通道（L1/L2/L3）与分层检查清单见 [CODE-REVIEW.md](./CODE-REVIEW.md)；提 PR 时按模板自检。
+> AI coding 与 AI review 必须逐条对照 [.codebuddy/rules/code-rules/RULE.mdc](./.codebuddy/rules/code-rules/RULE.mdc) 的 §1–§10；所有改动都要过代码审查：分级（P0–P3）、风险通道（L1/L2/L3）与分层检查清单见 [CODE-REVIEW.md](./CODE-REVIEW.md)；提 PR 时按模板自检。
 
 ## 快速开始
 
 ```bash
 pnpm install
 pnpm dev          # 开发模式，加载 .output/chrome-mv3 到 chrome://extensions
-pnpm check        # 提交前跑这一条即可（等价于 CI 全流程）
+pnpm check        # 扩展主门禁 + 官网安全测试
+pnpm format:check # L1 / 提交前格式检查
+pnpm site:check   # 改动 apps/site 时补跑完整官网门禁
 ```
 
-`pnpm check` = 类型 → 规范 → 文案键 → UI 设计令牌 → 测试（含覆盖率阈值）→ 构建 → 隐私检查。
+`pnpm check` = 类型 → 规范 → 文案键 → UI 设计令牌 → 测试（含覆盖率阈值）→ 构建 → 隐私检查 → 官网安全测试。
+完整 CI 还会跑 `format:check`、依赖审计、扩展打包与 `pnpm site:check`；改动官网时本地也要跑 `pnpm site:check`。
+命令矩阵与 L1/L2/L3 口径见 [CODE-REVIEW.md](./CODE-REVIEW.md)「一页速查」。
 **任何一项失败，CI 都会拒绝合并。**
 
-> 注意：`check` 不含 `format:check`，格式化由 pre-commit 的 lint-staged 与 CI 单独把关。
-
-提交时 pre-commit 钩子会自动对暂存文件跑 lint-staged（ESLint + Prettier）。
+提交时 pre-commit 钩子会自动对暂存文件跑 lint-staged：所有匹配 TS/TSX 文件都跑 Prettier；`packages/**` 与根 `tests/**` 另跑 ESLint，`apps/**` 的 ESLint 由对应 app 的 lint 命令把关。
 若钩子未生效，先执行一次：
 
 ```bash
@@ -35,13 +37,13 @@ npx simple-git-hooks
 ```
 core（纯领域逻辑，零 chrome/DOM/React）
   ↑
-platform（唯一触碰 chrome.* 的层）
+platform（常规代码唯一触碰 chrome.* 的层；entrypoints/background.ts 是平台事件编排例外）
   ↑
 stores / ui / entrypoints
 ```
 
 - `core/**` 不得出现 `chrome.*`、`browser.*`、DOM、React，**也不得 import `platform/**`**；
-- `ui/**` 不得绕过 `platform/**` 直连浏览器 API。
+- `ui/**`、`stores/**` 与一般 `entrypoints/**` 不得绕过 `platform/**` 直连浏览器 API；`entrypoints/background.ts` 是唯一获准的平台事件编排例外，其余入口仍需经 platform。
 
 ### 2. 校验的唯一口径是 schema 层，不是 UI 层
 

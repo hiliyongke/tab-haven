@@ -139,13 +139,32 @@ describe('selectRedoTargets 实际恢复身份', () => {
     expect(targets.map((tab) => tab.id)).toEqual([2]);
   });
 
-  it('身份集为空或目标已消失时不回退 URL 补位', () => {
+  it('身份集为空或目标已消失时按 URL 降级补全旧记录', () => {
     const tabs = [makeTab({ id: 1, url: 'https://a.com/' })];
 
-    expect(selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [] })).toEqual([]);
-    expect(selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [2] })).toEqual(
-      []
-    );
+    expect(
+      selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [] }).map(
+        (tab) => tab.id
+      )
+    ).toEqual([1]);
+    expect(
+      selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [2] }).map(
+        (tab) => tab.id
+      )
+    ).toEqual([1]);
+  });
+
+  it('身份集命中时即使同 URL keeper 排在前面也不误关', () => {
+    const tabs = [
+      makeTab({ id: 1, url: 'https://a.com/' }),
+      makeTab({ id: 2, url: 'https://a.com/' })
+    ];
+
+    expect(
+      selectRedoTargets(tabs, [record('https://a.com/')], { restoredTabIds: [2] }).map(
+        (tab) => tab.id
+      )
+    ).toEqual([2]);
   });
 
   it('身份匹配仍遵守固定标签过滤与显式放行', () => {

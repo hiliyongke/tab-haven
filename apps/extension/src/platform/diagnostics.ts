@@ -61,13 +61,16 @@ function parseStoredDiagnostics(raw: unknown): StoredDiagnostics {
 /** 本上下文产生、尚未落盘的增量。 */
 let pending: DiagnosticEntry[] = [];
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
+let flushRetries = 0;
 
-function schedulePersist(): void {
+const MAX_FLUSH_RETRIES = 5;
+
+function schedulePersist(delay = PERSIST_DEBOUNCE_MS): void {
   if (persistTimer !== undefined) return;
   persistTimer = setTimeout(() => {
     persistTimer = undefined;
     void flushDiagnostics();
-  }, PERSIST_DEBOUNCE_MS);
+  }, delay);
 }
 
 // 订阅日志内核：每条新记录并入待写增量并触发去抖落盘。
@@ -104,11 +107,16 @@ async function flushDiagnostics(): Promise<void> {
         } satisfies StoredDiagnostics
       });
     });
+    flushRetries = 0;
   } catch {
-    // 落盘失败回填待写队列（有界），下一条日志会触发下一轮 flush。
+    // 落盘失败回填待写队列并排有限次重试：此后若不再产生日志，最后一批仍有机会落盘。
     pending.unshift(...batch);
     if (pending.length > DIAGNOSTIC_MAX_ENTRIES) {
       pending.splice(0, pending.length - DIAGNOSTIC_MAX_ENTRIES);
+    }
+    if (flushRetries < MAX_FLUSH_RETRIES) {
+      flushRetries += 1;
+      schedulePersist(PERSIST_DEBOUNCE_MS * 2 ** flushRetries);
     }
   }
 }

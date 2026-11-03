@@ -107,6 +107,12 @@
   padding-bottom: var(--sp-1);
   overflow-x: auto;
 }
+.demo-enhanced-only {
+  display: none;
+}
+.js .demo-enhanced-only {
+  display: flex;
+}
 .demo-tab {
   min-height: 40px;
   padding: 8px 16px;
@@ -459,8 +465,15 @@
   margin-top: var(--sp-3);
 }
 .cta-note {
-  color: var(--c-gray-400);
+  color: var(--c-gray-500);
   font-size: 13px;
+}
+.preview-note {
+  padding-block: var(--sp-3) var(--sp-5);
+  text-align: center;
+}
+.doc-card [hidden] {
+  display: none;
 }
 
 /* ---------- 滚动进场 ---------- */

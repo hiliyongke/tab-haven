@@ -243,7 +243,7 @@ describe('queueAction 挂起队列', () => {
     expect(list).toHaveLength(1);
   });
 
-  it('session 写入失败时仍广播（仅挂起副本丢失，即时通道不受影响）', async () => {
+  it('session 写入失败时不即时广播（面板无挂起副本可去重，避免动作静默丢失）', async () => {
     const send = vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockResolvedValue(undefined as never);
     const session = fakeBrowser.storage.session as unknown as { set: unknown };
     const original = session.set;
@@ -251,7 +251,7 @@ describe('queueAction 挂起队列', () => {
 
     await expect(queueAction({ type: 'focus-search' })).resolves.toBeUndefined();
 
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
     expect(lastDiagnostic()).toContain('挂起动作入队失败');
     session.set = original;
   });
@@ -277,11 +277,13 @@ describe('queueAction 挂起队列', () => {
     );
     const actions: PendingAction[] = [];
     const off = watchPendingActions((action) => actions.push(action));
+    const originalSet = fakeBrowser.storage.session.set.bind(fakeBrowser.storage.session);
     await vi.waitFor(() => {
       expect(actions).toHaveLength(1);
       expect(remove).toHaveBeenCalledTimes(1);
     });
     off();
+    fakeBrowser.storage.session.set = originalSet;
 
     // When: 旧删除尚未完成时，新动作开始入队
     const enqueueing = queueAction({ type: 'locate-active' });

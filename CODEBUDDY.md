@@ -39,7 +39,8 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 
 ## AI 配置地图
 
-- `.codebuddy/rules/` — 编码/架构/隐私/协作规则（4 条 always + 2 条按需）
+- `.codebuddy/rules/` — 编码/架构/隐私/协作规则（5 条 always + 2 条按需）
+- `.codebuddy/rules/code-rules/RULE.mdc` — AI coding 与 AI review 的统一严格判定基准；所有代码与评审任务必须逐条对照 §1–§10
 - `.codebuddy/agents/` — 需求分析、测试、评审、隐私审计 4 个专属 Agent
 - `.codebuddy/skills/` — WXT 工作流、行为规格测试、schema 演进、门禁修复、UI 组件复用、高频变更地图 6 项自研技能 + Chrome 官方 `chrome-extensions` 技能
 - `.codebuddy/commands/` — `/feature` `/spec` `/fix` `/test` `/review` `/check` `/commit` `/privacy-audit` `/release`

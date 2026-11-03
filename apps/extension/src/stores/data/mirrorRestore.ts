@@ -41,10 +41,9 @@ export async function restoreFromMirrorOnEnable(ctx: DataContext): Promise<Mirro
   const pullIssue = syncMirror.readLastPullIssue();
   if (!mirror) {
     ctx.set({ mirrorIssue: pullIssue });
-    // 'none'（确无镜像）→ 本地即首份，允许推；'chunk-limit'（镜像存在但超配额）→ 绝不能推：
-    // 本地此刻是空态，一推就把云端副本覆盖成空，换机恢复永久失效，归为 failed 留下次重试。
-    // 'unreadable' 维持 no-mirror：否则一份无关残留数据就能让同步永久停在「未生效」且无法自愈。
-    return pullIssue === 'chunk-limit' ? 'failed' : 'no-mirror';
+    // 只有 'none' 是确无镜像，本地可成为首份；其余分类都意味着云端镜像可能存在但未能读取，
+    // 空态推镜像会覆盖旧设备数据，必须保持未 seeded 并留给下次启动重试。
+    return pullIssue === 'none' ? 'no-mirror' : 'failed';
   }
 
   // 镜像来自账号通道，属外部可控输入（与备份文件同级），集合须带体积上限，否则异常镜像会撑爆本地库。

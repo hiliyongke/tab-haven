@@ -10,6 +10,7 @@ import {
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { tabSyncService } from '@/platform/sync/TabSyncService';
 import { logDegraded } from '@/platform/diagnostics';
+import { isHttpUrl } from '@/core/url/UrlInspector';
 import type { DataContext, DataSlice } from './types';
 
 /** 磁贴切片：常驻磁贴的增删、排序与打开（精确匹配优先 / 否则新建并豁免复用）。 */
@@ -41,9 +42,10 @@ export function createPinsSlice(
         );
         return false;
       }
-      await ctx.writePins((current) =>
+      const ok = await ctx.writePins((current) =>
         dedupePins([...current.filter((p) => p.identity !== pin.identity), pin])
       );
+      if (!ok) return false;
       // 「确保固定」语义：实时值已固定则不动，避免过期快照把已固定标签反向翻成取消固定。
       await setPinnedPlatform(tab.id, true);
       // 固定后应即时从临时区移入置顶区：主动刷新，不依赖 pinned 事件回灌时序。
@@ -75,6 +77,10 @@ export function createPinsSlice(
     },
 
     openPin: async (pin) => {
+      if (!isHttpUrl(pin.url)) {
+        logDegraded('dataStore', '打开常驻磁贴失败：网址不是 http(s)');
+        return;
+      }
       const tabs = await queryCurrentWindowTabs();
       const windowId = tabs[0]?.windowId;
       const matches = tabs.filter((tab) => tab.url && pinIdentity(tab.url) === pin.identity);

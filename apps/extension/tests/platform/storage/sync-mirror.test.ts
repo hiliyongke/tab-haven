@@ -277,7 +277,7 @@ describe('SyncMirror', () => {
     expect(syncMirror.readLastPullIssue()).toBe('unreadable');
   });
 
-  it('镜像超过 30 天未更新：视为过期并标记 unreadable', async () => {
+  it('镜像超过 30 天未更新：视为过期并标记 expired', async () => {
     await fakeBrowser.storage.sync.set({
       'tabs.sync.v1.meta': JSON.stringify({ count: 1 }),
       'tabs.sync.v1.0': JSON.stringify({
@@ -291,7 +291,7 @@ describe('SyncMirror', () => {
     const mirror = await syncMirror.pull();
 
     expect(mirror).toBeNull();
-    expect(syncMirror.readLastPullIssue()).toBe('unreadable');
+    expect(syncMirror.readLastPullIssue()).toBe('expired');
   });
 
   it('正常拉取后镜像损坏时标记为 unreadable', async () => {

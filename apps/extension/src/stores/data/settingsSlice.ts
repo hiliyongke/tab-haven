@@ -1,4 +1,4 @@
-import { syncMirror } from '@/platform/storage/SyncMirror';
+import { mirrorIssueAllowsMirrorPush, syncMirror } from '@/platform/storage/SyncMirror';
 import { clearAllStoredData } from '@/platform/storage/DataRepository';
 import {
   COLLAPSE_RMW_LOCK,
@@ -107,7 +107,7 @@ export function createSettingsSlice(
             );
             return 'failed' as const;
           });
-          if (outcome !== 'failed') {
+          if (outcome !== 'failed' && mirrorIssueAllowsMirrorPush(ctx.get().mirrorIssue)) {
             ctx.setMirrorRestorePending(false);
             ctx.scheduleMirror(ctx.get());
           }

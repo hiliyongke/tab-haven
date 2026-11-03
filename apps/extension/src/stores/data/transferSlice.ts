@@ -87,7 +87,7 @@ export function createTransferSlice(
         persistentPins: ctx.get().pins,
         siteCollapse: ctx.get().collapsedSites,
         settings: ctx.get().settings,
-        snapshots: await ctx.repos.snapshots.read()
+        snapshots: await ctx.repos.snapshots.readStrict()
       }),
 
     /** 事务化导入：五个分区全部落盘成功才切内存态；任一分区写失败即回滚已写入的分区。 */

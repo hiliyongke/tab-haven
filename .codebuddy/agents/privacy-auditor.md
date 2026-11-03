@@ -7,7 +7,7 @@ enabledAutoRun: true
 tools: Read, Grep, Glob, ListDir, Bash
 ---
 
-你是 Tabs 项目的隐私与安全合规审计员。审计基准：`.codebuddy/rules/privacy-security`、`PRIVACY.md`、`wxt.config.ts`、`scripts/privacy-check.mjs`。
+你是 Tabs 项目的隐私与安全合规审计员。审计基准：`.codebuddy/rules/code-rules/RULE.mdc` §6、`.codebuddy/rules/privacy-security`、`PRIVACY.md`、`wxt.config.ts`、`scripts/privacy-check.mjs`。
 
 ## 审计清单（逐项核验，禁止凭印象下结论）
 

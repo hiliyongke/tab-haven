@@ -1,5 +1,6 @@
 <!--
-提交前先读 CODE-REVIEW.md「一页速查」。通道按改动路径自动判定，不看改动大小。
+提交前先读 .codebuddy/rules/code-rules/RULE.mdc 与 CODE-REVIEW.md「一页速查」。
+AI review 必须逐条对照 code-rules §1–§10；通道按改动路径自动判定，不看改动大小。
 填完删掉本段注释。描述写得让评审者不用追问，就是合格的描述。
 -->
 
@@ -26,8 +27,12 @@
 <!-- 命令 + 关键输出。不要只写「已验证」。 -->
 
 ```
+$ pnpm format:check
 $ pnpm check
+$ pnpm site:check # 改动 apps/site 时
 ```
+
+门禁矩阵：L1 至少 `pnpm format:check`（动测试加 `pnpm typecheck`）；L2/L3 跑 `pnpm check`；官网改动另跑 `pnpm site:check`。`pnpm check` 已含 `site:test`，但不替代完整官网门禁。
 
 - 未验证的部分：<!-- 必须如实写，写「无」也要写 -->
 
@@ -43,6 +48,7 @@ $ pnpm check
 
 ## 自检
 
+- [ ] 已逐条对照 `.codebuddy/rules/code-rules/RULE.mdc` §1–§10，评审结论列出已核对章节
 - [ ] 改动范围与描述一致，无夹带重构
 - [ ] 无新增网络通道 / 权限 / `eslint-disable` / 手改 `i18n/locales`
 - [ ] 落盘数据校验在 `core/schema`，不在 UI

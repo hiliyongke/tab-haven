@@ -42,6 +42,12 @@ const EMPTY_SESSION: SessionData = emptySession();
 /** 写失败后的本上下文 dirty 基线：后续读取与 mutation 不得退回旧磁盘值覆盖内存变更。 */
 let volatileSession: SessionData | undefined;
 
+/** 清空所有数据后复位本上下文的 dirty 基线，避免旧会话绑定在重启前复活。 */
+export function resetVolatileSession(): void {
+  volatileSession = undefined;
+  lastPersisted = true;
+}
+
 function cloneSession(data: SessionData): SessionData {
   return {
     itemTabBindings: { ...data.itemTabBindings },

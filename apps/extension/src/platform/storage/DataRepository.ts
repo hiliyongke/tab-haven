@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { resetVolatileSession } from '@/platform/storage/session';
 import { z, type ZodType } from 'zod';
 import { logDegraded } from '@/platform/diagnostics';
 import {
@@ -283,10 +284,14 @@ export async function clearQuarantine(): Promise<void> {
  * 镜像清理以回调传入，由编排方决定是否清，仓库层不反向依赖 SyncMirror。
  */
 export async function clearAllStoredData(clearMirror: () => Promise<void>): Promise<void> {
-  await clearMirror();
-  await browser.storage.local.clear();
-  await browser.storage.session.clear();
-  clearThemeMirror();
+  try {
+    await clearMirror();
+    await browser.storage.local.clear();
+    await browser.storage.session.clear();
+  } finally {
+    resetVolatileSession();
+    clearThemeMirror();
+  }
 }
 
 /** 扩展页 localStorage 里的主题镜像键（与 ThemeApplier 写入的同源），放在 platform 层以统一清除拓扑。 */

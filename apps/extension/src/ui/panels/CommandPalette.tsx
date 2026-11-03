@@ -224,6 +224,7 @@ export function CommandPalette({
               // listbox 始终可见，无结果时空态也属于展开的 popup。
               'aria-expanded': true,
               'aria-controls': listId,
+              'aria-describedby': `${listId}-description`,
               'aria-autocomplete': 'list',
               'aria-activedescendant': commands[index]
                 ? `palette-item-${commands[index].id}`
@@ -253,6 +254,7 @@ export function CommandPalette({
         */}
         <PaletteList
           listId={listId}
+          describedBy={`${listId}-description`}
           scrollRef={listScrollRef}
           folderItems={folderItems}
           commandItems={commandItems}

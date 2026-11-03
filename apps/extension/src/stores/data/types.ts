@@ -38,7 +38,7 @@ export interface DataContext {
   /** 同 writeFolders 的 updater 双形态。 */
   writePins: (
     pins: PersistentPin[] | ((current: PersistentPin[]) => PersistentPin[])
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   /** 丢弃排队的合并写入并等待在途批次结束；返回后写入器空闲，供清空/导入前防旧值回写。 */
   cancelWrites: () => Promise<void>;
   scheduleMirror: (state: MirrorState) => void;

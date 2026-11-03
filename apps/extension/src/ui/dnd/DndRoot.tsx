@@ -234,19 +234,19 @@ export function buildDragOverlay(data: DragData): ReactNode {
  * 标记「刚放下」：松手时指针仍停在落点行，标记暂时隐藏 :hover 把手，并在指针移动时自动清除。
  */
 /** 挂起的「刚放下」清理器；键盘拖拽不产生 pointermove，因此新标记前先清理旧监听器。 */
-let pendingJustDroppedClear: (() => void) | null = null;
+let pendingJustDroppedController: AbortController | null = null;
 
 /** 导出供测试验证拖拽标记及其监听器清理契约。 */
 export function markJustDropped(): void {
-  pendingJustDroppedClear?.();
+  pendingJustDroppedController?.abort();
   document.body.classList.add('dnd-just-dropped');
+  const controller = new AbortController();
+  pendingJustDroppedController = controller;
   const clear = () => {
     document.body.classList.remove('dnd-just-dropped');
-    window.removeEventListener('pointermove', clear);
-    if (pendingJustDroppedClear === clear) pendingJustDroppedClear = null;
+    if (pendingJustDroppedController === controller) pendingJustDroppedController = null;
   };
-  pendingJustDroppedClear = clear;
-  window.addEventListener('pointermove', clear, { once: true });
+  window.addEventListener('pointermove', clear, { once: true, signal: controller.signal });
 }
 
 /**

@@ -14,6 +14,8 @@ export interface RenderContext {
   version: string;
   /** 页脚版权年份：构建期注入，避免每年过期一次 */
   year: string;
+  /** SITE_SKIP_ZIP=1 时为 null：页面不得渲染可点击的下载地址 */
+  downloadHref?: string | null;
 }
 
 export interface RenderResult {
@@ -29,7 +31,7 @@ export function render(lng: string, ctx: RenderContext): RenderResult {
   return {
     html: renderToStaticMarkup(
       <I18nContext.Provider value={siteI18n}>
-        <App version={ctx.version} year={ctx.year} lng={lng} />
+        <App version={ctx.version} year={ctx.year} lng={lng} downloadHref={ctx.downloadHref} />
       </I18nContext.Provider>
     ),
     ...meta

@@ -71,9 +71,13 @@ export function SettingsPage() {
   const [settingsSearch, setSettingsSearch] = useState('');
   /** 恢复默认设置的确认弹窗。 */
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   /** 清除所有数据的确认弹窗 + 勾选确认（危险操作的防误触双保险）。 */
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearAck, setClearAck] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   /** 坏数据隔离区条数：让用户看得见「有没有数据被判坏过」（PRIVACY.md §3.1-a）。 */
   const [quarantineCount, setQuarantineCount] = useState(0);
 
@@ -226,25 +230,42 @@ export function SettingsPage() {
         datedJsonFilename('tabs-diagnostics'),
         exportDiagnostics(entries, quarantine)
       );
-      await clearDiagnostics();
-      if (quarantine.length > 0) await clearQuarantine();
-      refreshQuarantineCount();
-      setTransferStatus(t('诊断信息已导出'));
+      setTransferStatus(t('诊断信息已导出，若确认已保存，可点击清理证据'));
     } catch (error) {
       logDegraded('options', '诊断信息导出失败', error);
       setTransferStatus(t('导出失败：本地数据读取未完成'));
     }
   };
 
+  /** 用户确认报告已保存后，才清理本地证据；失败保留记录并给可见回执。 */
+  const handleClearDiagnostics = () => {
+    void (async () => {
+      try {
+        await clearDiagnostics();
+        await clearQuarantine();
+        refreshQuarantineCount();
+        setTransferStatus(t('诊断证据已清理'));
+      } catch (error) {
+        logDegraded('options', '诊断证据清理失败', error);
+        setTransferStatus(t('清除失败，请重试'));
+      }
+    })();
+  };
+
   /** 恢复全部设置为默认值（带确认弹窗）。 */
   const handleResetSettings = () => {
+    setResetBusy(true);
+    setResetError(null);
     void resetSettings()
-      .then(() => setTransferStatus(t('已恢复默认设置')))
+      .then(() => {
+        setConfirmingReset(false);
+        setTransferStatus(t('已恢复默认设置'));
+      })
       .catch((error: unknown) => {
         logDegraded('options', '恢复默认设置失败', error);
-        setTransferStatus(t('恢复默认失败，请重试'));
-      });
-    setConfirmingReset(false);
+        setResetError(t('恢复默认失败，请重试'));
+      })
+      .finally(() => setResetBusy(false));
   };
 
   /**
@@ -254,18 +275,24 @@ export function SettingsPage() {
    * 只清自己会让侧边栏继续显示已删除的快照、并允许撤销已被清除的批次。
    */
   const handleClearData = () => {
+    setClearBusy(true);
+    setClearError(null);
     void clearAllData()
       .then(() => {
         void useUndoStore.getState().clearBatches();
         useSnapshotStore.getState().reset();
+        setConfirmingClear(false);
+        setClearAck(false);
         setTransferStatus(t('已清除全部数据'));
       })
       .catch((error: unknown) => {
         logDegraded('options', '清除全部数据失败', error);
+        void useDataStore.getState().refreshSettings();
+        refreshQuarantineCount();
         setTransferStatus(t('清除失败，请重试'));
-      });
-    setConfirmingClear(false);
-    setClearAck(false);
+        setClearError(t('清除失败，请重试'));
+      })
+      .finally(() => setClearBusy(false));
   };
 
   // 分组配置见 settingSections.ts 的 buildSections。此处再 memo 一层：配置约 370 行且含大量
@@ -533,6 +560,14 @@ export function SettingsPage() {
               </Button>
             </Row>
             <Row
+              label={t('清理诊断证据')}
+              hint={t('仅在你确认诊断报告已成功保存后点击，清理后无法找回这些排障记录')}
+            >
+              <Button variant="danger-ghost" onClick={handleClearDiagnostics}>
+                {t('清理证据')}
+              </Button>
+            </Row>
+            <Row
               label={t('清除所有数据')}
               hint={t(
                 '删除文件夹、常驻磁贴、全部快照与归档、撤销栈和跨设备同步镜像，设置恢复默认；操作不可恢复'
@@ -590,24 +625,38 @@ export function SettingsPage() {
         {confirmingReset && (
           <ConfirmDialog
             title={t('恢复默认设置')}
-            message={t('将把全部设置恢复为默认值，是否继续？')}
+            message={
+              resetBusy
+                ? t('正在恢复默认设置…')
+                : (resetError ?? t('将把全部设置恢复为默认值，是否继续？'))
+            }
             confirmLabel={t('恢复默认')}
             danger
-            onCancel={() => setConfirmingReset(false)}
+            busy={resetBusy}
+            cancelDisabled={resetBusy}
+            onCancel={() => {
+              if (resetBusy) return;
+              setResetError(null);
+              setConfirmingReset(false);
+            }}
             onConfirm={handleResetSettings}
           />
         )}
 
         <ClearDataDialog
           open={confirmingClear}
-          onClose={() => {
-            setConfirmingClear(false);
-            setClearAck(false);
-          }}
           onConfirm={handleClearData}
           ack={clearAck}
           onAckChange={setClearAck}
           onExportBackup={() => void handleExport()}
+          busy={clearBusy}
+          error={clearError}
+          onClose={() => {
+            if (clearBusy) return;
+            setConfirmingClear(false);
+            setClearAck(false);
+            setClearError(null);
+          }}
         />
       </div>
     </div>

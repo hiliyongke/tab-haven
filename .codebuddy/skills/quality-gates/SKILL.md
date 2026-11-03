@@ -9,14 +9,14 @@ disable: false
 
 ## 何时使用
 
-`pnpm check` 或其子项失败时。门禁顺序：typecheck → lint → check:i18n → check:ui → test → build → check:privacy。**按顺序修**，前置失败会让后续噪音放大。
+`pnpm check` 或其子项失败时。开始前加载 `.codebuddy/rules/code-rules/RULE.mdc` §7。完整门禁顺序：`format:check` → typecheck → lint → check:i18n → check:ui → test → build → check:privacy → site:check。**按顺序修**，前置失败会让后续噪音放大；不得用宽泛 `||`、配置放宽或删用例掩盖失败。
 
 ## 各门禁定位与修法
 
 ### 1. `pnpm typecheck`（tsc --noEmit）
 
 - 从第一条错误开始修，级联错误常同源。
-- 缺 `chrome` 等 WXT 类型 → 先 `pnpm postinstall` 再生 `.wxt/`。
+- 缺 `chrome` 等 WXT 类型 → 由 `apps/extension` 的 typecheck 先执行 `wxt prepare` 生成 `.wxt/`，干净工作区不得依赖手工缓存。
 - 禁止用 `as any` / `@ts-ignore` 消错；类型对不上先查是不是该从 `z.infer` 同源导出。
 
 ### 2. `pnpm lint`（--max-warnings 0，警告也致命）
@@ -49,7 +49,7 @@ disable: false
 
 ## 铁律
 
-门禁失败只允许两种出路：修代码，或报告用户说明为何需求本身冲突。**不允许**改门禁配置、加 disable 注释、放宽阈值。
+门禁失败只允许两种出路：修代码，或报告用户说明为何需求本身冲突。**不允许**改门禁配置、加 disable 注释、放宽阈值、让守卫恒绿、把真实失败降级为 warning。
 
 ## 输入 / 输出
 

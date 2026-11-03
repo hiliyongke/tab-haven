@@ -119,6 +119,7 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
   const stamped = { ...action, actionId: newId('action'), at: Date.now() };
   // 链尾统一兜底：任何一次漏网 reject 都会让此后每个 queueAction 永不 resolve，
   // 快捷键路径表现为「按了没反应」且无任何报错。
+  let persisted = true;
   await queueActionChain.enqueueSettled(
     () =>
       withCrossPageLock(PENDING_ACTIONS_RMW_LOCK, async () => {
@@ -131,11 +132,12 @@ export async function queueAction(action: PendingActionInput): Promise<void> {
         list.push(stamped);
         await sessionArea.set({ [PENDING_ACTIONS_KEY]: list.slice(-PENDING_ACTIONS_LIMIT) });
       }),
-    (error) =>
-      // 文案须与函数名对应：此处是「挂起动作入队」，不是泛化的共享上下文操作。
-      logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error)
+    (error) => {
+      persisted = false;
+      logDegraded('background', '挂起动作入队失败（session 不可用时仅即时广播）', error);
+    }
   );
-  sendMessage(stamped as Message);
+  if (persisted) sendMessage(stamped as Message);
 }
 
 /**

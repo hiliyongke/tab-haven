@@ -36,32 +36,32 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
  */
 async function filterStalePlans(
   plans: readonly AutoGroupPlan[]
-): Promise<{ plan: AutoGroupPlan; tabIds: number[] }[]> {
-  let live: Map<number, number> | null = null;
+): Promise<{ plan: AutoGroupPlan; tabIds: number[] }[] | null> {
   try {
     const tabs = await browser.tabs.query({});
-    live = new Map(
+    const live = new Map(
       tabs
         .filter((tab): tab is typeof tab & { id: number } => tab.id !== undefined)
         .map((tab) => [tab.id, tab.groupId ?? NO_GROUP])
     );
+    const fresh: { plan: AutoGroupPlan; tabIds: number[] }[] = [];
+    for (const plan of plans) {
+      const tabIds = plan.tabIds.filter((id) => live.get(id) === NO_GROUP);
+      if (tabIds.length === 0) continue;
+      fresh.push({ plan, tabIds });
+    }
+    return fresh;
   } catch (error) {
-    logDegraded('auto-group', '对齐标签真实分组状态失败，按快照计划执行', error);
+    logDegraded('auto-group', '对齐标签真实分组状态失败，本轮跳过自动分组', error);
+    return null;
   }
-
-  const fresh: { plan: AutoGroupPlan; tabIds: number[] }[] = [];
-  for (const plan of plans) {
-    const tabIds = live ? plan.tabIds.filter((id) => live.get(id) === NO_GROUP) : plan.tabIds;
-    // 全部已入组（或已关闭）→ 计划过期，跳过
-    if (tabIds.length === 0) continue;
-    fresh.push({ plan, tabIds });
-  }
-  return fresh;
 }
 
 async function runSyncAutoGroups(plans: readonly AutoGroupPlan[]): Promise<number> {
   const createdIds: number[] = [];
-  for (const { plan, tabIds: freshIds } of await filterStalePlans(plans)) {
+  const freshPlans = await filterStalePlans(plans);
+  if (freshPlans === null) return 0;
+  for (const { plan, tabIds: freshIds } of freshPlans) {
     try {
       const tabIds = [...freshIds] as [number, ...number[]];
       if (plan.absorbIntoGroupId !== undefined) {

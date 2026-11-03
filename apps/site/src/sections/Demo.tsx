@@ -5,11 +5,8 @@ import { useSiteI18n } from '../i18n';
 /**
  * 演示区。
  *
- * 渐进增强的取舍要说清：预渲染时四个面板**全部可见**（无脚本就是四帧纵向排列，
- * 内容照样读得到），client.ts 接管后才收成 tablist 并加上 ←→ / Home / End 键盘操作。
- * 因此无脚本状态下 `aria-selected` 只有一个为 true 却四帧都可见，这是刻意的，
- * 不是 bug —— 收起动作只由 client.ts 的 `panel.hidden` 完成，HTML 里没有任何
- * 预置的隐藏标记。
+ * 渐进增强：SSR 产物是无脚本静态内容，四帧纵向可读且不暴露 tablist / tabpanel 语义；
+ * client.ts 接管后才建立 tablist 关系、收起非首帧并加上 ←→ / Home / End 键盘操作。
  */
 const DEMO_TABS: readonly { id: MockupVariant; labelKey: string; captionKey: string }[] = [
   {
@@ -46,16 +43,21 @@ export function Demo() {
       intro={t('下面是按真实布局还原的侧边栏：分组、搜索、收藏夹与撤销历史。')}
     >
       <div className="demo">
-        <div className="demo-tabs" role="tablist" aria-label={t('界面演示')}>
+        <div
+          className="demo-tabs demo-enhanced-only"
+          data-role="tablist"
+          data-label={t('界面演示')}
+        >
           {DEMO_TABS.map((tab, index) => (
             <button
               key={tab.id}
               type="button"
-              role="tab"
+              data-role="tab"
               id={`demo-tab-${tab.id}`}
-              aria-controls={`demo-panel-${tab.id}`}
-              aria-selected={index === 0}
-              tabIndex={index === 0 ? 0 : -1}
+              data-controls={`demo-panel-${tab.id}`}
+              data-selected={index === 0}
+              aria-hidden="true"
+              tabIndex={-1}
               className="demo-tab"
             >
               {t(tab.labelKey)}
@@ -66,10 +68,9 @@ export function Demo() {
         {DEMO_TABS.map((tab) => (
           <div
             key={tab.id}
-            role="tabpanel"
+            data-role="tabpanel"
             id={`demo-panel-${tab.id}`}
-            aria-labelledby={`demo-tab-${tab.id}`}
-            tabIndex={0}
+            data-labelledby={`demo-tab-${tab.id}`}
             className="demo-panel"
           >
             <figure className="demo-figure">

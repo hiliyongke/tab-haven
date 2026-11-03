@@ -118,6 +118,18 @@ const HOST_API = new Set(['chrome', 'browser']);
 const DOM_API = new Set(['document', 'window', 'localStorage', 'navigator']);
 
 describe('分层依赖方向', () => {
+  it('background 是唯一获准编排浏览器事件的入口例外', () => {
+    const files = walk(join(SRC, 'entrypoints'));
+    expect(files.length).toBeGreaterThan(0);
+    const violations = new Set(
+      files.flatMap((file) => hostApiUses(parse(file), HOST_API).map((hit) => relative(hit.file)))
+    );
+    expect([...violations].sort()).toEqual(['src/entrypoints/background.ts']);
+    expect(readFileSync(join(SRC, 'entrypoints/background.ts'), 'utf8')).toContain(
+      "import { browser } from 'wxt/browser'"
+    );
+  });
+
   it('core 不触碰任何宿主 API（chrome/browser/document/window）', () => {
     // When: 扫描 core 全部源码
     const files = walk(join(SRC, 'core'));

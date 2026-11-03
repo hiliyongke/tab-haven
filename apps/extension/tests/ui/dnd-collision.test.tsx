@@ -377,13 +377,17 @@ describe('markJustDropped', () => {
 
   it('重复调用先清理上一次的监听器（键盘拖拽不产生指针移动，否则会残留）', () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
 
     markJustDropped();
     markJustDropped();
 
-    // 第二次标记前必须移除第一次挂的 pointermove 监听，避免监听器越积越多
-    expect(removeSpy).toHaveBeenCalledWith('pointermove', expect.any(Function));
-    expect(addSpy.mock.calls.filter((call) => call[0] === 'pointermove')).toHaveLength(2);
+    // 第二次标记前中止旧 AbortController：signal 已触发清理，不会留下累积的 pointermove 监听。
+    expect(abortSpy).toHaveBeenCalledTimes(1);
+    const pointerMoveCalls = addSpy.mock.calls.filter((call) => call[0] === 'pointermove');
+    expect(pointerMoveCalls).toHaveLength(2);
+    expect(pointerMoveCalls[1]?.[2]).toEqual(
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
   });
 });

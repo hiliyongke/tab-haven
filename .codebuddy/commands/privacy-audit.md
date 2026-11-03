@@ -8,6 +8,7 @@ allowed-tools: Read, Grep, Glob, ListDir, Bash
 
 逐项核验（禁止凭印象下结论，每项给证据）：
 
+开始前加载 `.codebuddy/rules/code-rules/RULE.mdc` §6；结论必须覆盖发布字段、Action SHA 人工核验与过程性资料污染检查。
 1. **权限冻结**：比对 `wxt.config.ts` 的 permissions/host_permissions 与 `PRIVACY.md` 权限表。
 2. **零网络**：grep `apps/extension/src/` 中 `fetch(`、`XMLHttpRequest`、`WebSocket`、`sendBeacon`、外链资源；执行 `pnpm build && pnpm check:privacy`。
 3. **存储口径**：`core/schema` 持久化类型与 `PRIVACY.md` 第 3 节逐项对齐。

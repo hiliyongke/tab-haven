@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 与 apps/extension/package.json 一致的正式版本号
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 发布产物与上架清单
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      npm_config_engine_strict: 'true'
+      TABS_RELEASE_VERSION: ${{ inputs.version }}
+      TABS_SITE_URL: ${{ vars.TABS_SITE_URL }}
+      TABS_PUBLISHER_NAME: ${{ vars.TABS_PUBLISHER_NAME }}
+      TABS_CONTACT_EMAIL: ${{ vars.TABS_CONTACT_EMAIL }}
+      TABS_SUPPORT_URL: ${{ vars.TABS_SUPPORT_URL }}
+      TABS_PRIVACY_POLICY_URL: ${{ vars.TABS_PRIVACY_POLICY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 核对 tag、版本与发布字段
+        run: node scripts/release-preflight.mjs
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 全量门禁
+        run: pnpm check
+
+      - name: 官网门禁
+        run: pnpm site:check
+
+      - name: 官网发布构建
+        run: SITE_BUILD_TARGET=release pnpm site:build:release
+
+      - name: 发布产物校验
+        run: pnpm check:privacy
+
+      - name: 生成发布说明
+        run: node scripts/release-notes.mjs
+
+      - name: 上传发布附件
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/extension/.output/*.zip
+            apps/site/dist/**/*
+          body_path: release-notes.md
+          fail_on_unmatched_files: true

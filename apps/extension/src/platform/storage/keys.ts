@@ -20,6 +20,9 @@ export const DIAGNOSTICS_KEY = 'tabs.diagnostics.v1';
 /** 待面板执行的动作队列（面板未开时挂起在 session）。 */
 export const PENDING_ACTIONS_KEY = 'tabs.pending-actions';
 
+/** SW 复用关闭的完整撤销快照（按 batchId 分片投递给面板）。 */
+export const REUSE_CLOSED_PENDING_KEY = 'tabs.reuse-closed-pending';
+
 /** 复用豁免额度台账（同网址重复创建的临时放行记账）。 */
 export const ALLOWANCE_KEY = 'tabs.allowance.v1';
 

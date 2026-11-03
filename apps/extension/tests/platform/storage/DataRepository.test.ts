@@ -4,6 +4,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { z } from 'zod';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import { clearAllStoredData, DataRepository } from '@/platform/storage/DataRepository';
+import { mutateSession, readSession, resetVolatileSession } from '@/platform/storage/session';
 
 /**
  * 数据仓库行为规格：校验写入值，隔离不可解析的数据，并为读取与恢复路径提供
@@ -327,6 +328,33 @@ describe('DataRepository', () => {
         expect((await fakeBrowser.storage.local.get(KEY))[KEY]).toBeUndefined();
       } finally {
         vi.unstubAllGlobals();
+      }
+    });
+
+    it('清理完成或失败后都复位 volatileSession，不让旧会话绑定复活', async () => {
+      const originalClear = fakeBrowser.storage.session.clear.bind(fakeBrowser.storage.session);
+      try {
+        const originalSet = fakeBrowser.storage.session.set.bind(fakeBrowser.storage.session);
+        fakeBrowser.storage.session.set = (() => Promise.reject(new Error('quota'))) as never;
+        expect((await mutateSession(() => ({ itemTabBindings: { ghost: 7 } }))).persisted).toBe(
+          false
+        );
+        fakeBrowser.storage.session.set = originalSet;
+        fakeBrowser.storage.session.clear = (() => Promise.reject(new Error('quota'))) as never;
+        await expect(clearAllStoredData(async () => undefined)).rejects.toThrow('quota');
+        expect(await readSession()).toEqual({
+          itemTabBindings: {},
+          manualStandaloneTabIds: []
+        });
+        fakeBrowser.storage.session.clear = originalClear;
+        await clearAllStoredData(async () => undefined);
+        expect(await readSession()).toEqual({
+          itemTabBindings: {},
+          manualStandaloneTabIds: []
+        });
+      } finally {
+        fakeBrowser.storage.session.clear = originalClear;
+        resetVolatileSession();
       }
     });
   });

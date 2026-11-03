@@ -4,8 +4,8 @@
 
 Tabs 是一个 Chrome / Edge 浏览器扩展（Manifest V3）。它默认只管理**当前窗口**的标签页（工具栏角标与地址栏建议会读取所有普通窗口的标签元数据用于本机统计与搜索，仅内存计算、不落盘、不联网；其他窗口可在设置中开启后查看，并可切换或关闭——关闭同样进撤销栈，可反悔），提供侧边栏式的组织、搜索、拖拽整理与关闭操作多层撤销——数据以浏览器本地存储为主，扩展本身不发起任何网络请求；文件夹、常驻磁贴与设置可经你自己的浏览器账号同步通道镜像（见隐私说明）。
 
-- 无后端 · 无账号 · 无遥测 · **零出站网络请求（无任何例外）**：站点图标取自浏览器自己的本地图标库（本扩展的 `chrome-extension://<id>/_favicon/` 通道），不向被浏览站点发起任何请求（详见 PRIVACY.md 第 1 节）
-- 智能分组（同域名自动聚合，可选同步为原生标签组）
+- 无后端 · 无账号 · 无遥测 · **扩展代码不主动发起网络请求；用户开启浏览器账号同步后，浏览器厂商同步通道可能离设备传输数据**：站点图标取自浏览器自己的本地图标库（本扩展的 `chrome-extension://<id>/_favicon/` 通道），不向被浏览站点发起任何请求（详见 PRIVACY.md 第 1 节）
+- 智能分组（默认同域名自动聚合，可切换按根域名聚合、不分组等方式，可选同步为原生标签组）
 - 收藏夹（文件夹 + 常驻磁贴）
 - 模糊搜索 + 键盘流（`Ctrl+Shift+F` / `⌘K`）
 - 拖拽排序（标签 / 常驻磁贴 / 分组头 / 文件夹），关闭操作可多层撤销
@@ -46,7 +46,7 @@ pnpm build            # Chrome/Edge/Brave（含侧边栏）
 pnpm zip
 
 # 5. 质量门禁
-pnpm check            # 一条命令跑全部：typecheck → lint → check:i18n → check:ui → test → build → check:privacy
+pnpm check            # 发布前主门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy → site:test
 ```
 
 各门禁也可单独执行，完整脚本表见 [脚本一览](#脚本一览)。
@@ -79,7 +79,7 @@ Chrome、Edge 与 Brave 均可使用生产构建；需要面向 Edge 调试时�
 
 ## 架构
 
-Tabs 采用分层架构：**领域逻辑（core）零 chrome/DOM 依赖，是唯一需要单测的层**；platform 层是唯一触碰 `chrome.*` 的边界；三种形态（sidepanel / options / about）共享同一套 core 与状态层，每个入口只是不同的 React 根。
+Tabs 采用分层架构：**领域逻辑（core）零 chrome/DOM 依赖，是唯一需要单测的层**；platform 层是常规代码唯一触碰 `chrome.*` 的边界，`entrypoints/background.ts` 是唯一获准的平台事件编排例外；三种形态（sidepanel / options / about）共享同一套 core 与状态层，每个入口只是不同的 React 根。
 
 仓库是标准 pnpm workspace，`apps` 放可部署应用、`packages` 放库，**根 `package.json` 只做编排转发**（不含产品代码与产品依赖）：
 
@@ -144,7 +144,7 @@ apps/extension/src/
 分层约束（改动前请先对照）：
 
 1. `core/**` 不得出现 `chrome.*` / `browser.*` / DOM / React，也不得 import `platform/**`；
-2. `platform/**` 是唯一触碰 `chrome.*` 的层，`ui/**` 不得绕过它直连浏览器 API；
+2. `platform/**` 是常规代码唯一触碰 `chrome.*` 的层，`ui/**`、`stores/**` 与一般 `entrypoints/**` 不得绕过它直连浏览器 API；`entrypoints/background.ts` 是唯一获准的平台事件编排例外；
 3. 所有持久化数据必须经 `core/schema` 的 zod schema 校验，坏数据隔离而非静默丢弃；
 4. 权限清单冻结在 `wxt.config.ts` 与 `PRIVACY.md`，新增权限须先改这两处并通过 `pnpm check:privacy`。
 
@@ -160,24 +160,25 @@ apps/extension/src/
 
 ### 脚本一览
 
-| 命令                                                             | 作用                                                                              |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                                         |
-| `pnpm build`                                                     | 生产构建                                                                          |
-| `pnpm zip`                                                       | 打包为上架用 ZIP                                                                  |
-| `pnpm crx`                                                       | 打包离线分发用 CRX3（签名密钥由 `pack-crx` 默认存放在用户配置目录；上架仍用 ZIP） |
-| `pnpm site:dev`                                                  | 官网开发预览：端口 5174（中文 `/`、英文 `/en/`）                                  |
-| `pnpm site:build`                                                | 官网构建：预渲染中英静态页、复制下载包并做零外链自检；缺少匹配版本 ZIP 时构建失败 |
-| `pnpm site:preview`                                              | 预览官网产物 `apps/site/dist`，端口 5175                                          |
-| `pnpm site:i18n`                                                 | 官网文案一条龙：抽词 → 编译词条 → 跑守卫（独立词典 `apps/site/i18n/`）            |
-| `pnpm site:check`                                                | 官网门禁：typecheck → lint → i18n → build（不并入 `pnpm check`）                  |
-| `pnpm check`                                                     | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
-| `pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm test:watch` | 类型 / 规范 / 测试                                                                |
-| `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案 / 隐私校验                                                        |
-| `pnpm i18n`                                                      | 文案一条龙：扫描源码抽词 → 编译词条 → 跑守卫（写中文后跑它）                      |
-| `pnpm i18n:scan` / `i18n:apply` / `i18n:lint`                    | 分步：抽词 / 编译进运行时 / 检查裸露中文                                          |
-| `pnpm i18n:report`                                               | 文案盘点：只出报告不判失败                                                        |
-| `pnpm format` / `pnpm format:check`                              | Prettier 格式化 / 只校验不写入                                                    |
+| 命令                                                             | 作用                                                                                        |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `pnpm dev` / `pnpm dev:edge`                                     | 开发模式（HMR；后者以 Edge 为目标浏览器）                                                   |
+| `pnpm build`                                                     | 生产构建                                                                                    |
+| `pnpm zip`                                                       | 打包为上架用 ZIP                                                                            |
+| `pnpm crx`                                                       | 打包离线分发用 CRX3（签名密钥由 `pack-crx` 默认存放在用户配置目录；上架仍用 ZIP）           |
+| `pnpm site:dev`                                                  | 官网开发预览：端口 5174（中文 `/`、英文 `/en/`）                                            |
+| `pnpm site:build`                                                | 官网构建：预渲染中英静态页、复制下载包并做零外链自检；缺少匹配版本 ZIP 时构建失败           |
+| `pnpm site:preview`                                              | 预览官网产物 `apps/site/dist`，端口 5175                                                    |
+| `pnpm site:i18n`                                                 | 官网文案一条龙：抽词 → 编译词条 → 跑守卫（独立词典 `apps/site/i18n/`）                      |
+| `pnpm site:check`                                                | 官网门禁：先准备扩展 ZIP，再跑 typecheck → lint → i18n → test → build → 产物校验            |
+| `pnpm site:test`                                                 | 官网安全测试：独立执行，也已并入 `pnpm check` 末尾                                          |
+| `pnpm check`                                                     | 主门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy → site:test |
+| `pnpm typecheck` / `pnpm lint` / `pnpm test` / `pnpm test:watch` | 类型 / 规范 / 测试                                                                          |
+| `pnpm check:ui` / `pnpm check:i18n` / `pnpm check:privacy`       | 设计令牌 / 文案 / 隐私校验                                                                  |
+| `pnpm i18n`                                                      | 文案一条龙：扫描源码抽词 → 编译词条 → 跑守卫（写中文后跑它）                                |
+| `pnpm i18n:scan` / `i18n:apply` / `i18n:lint`                    | 分步：抽词 / 编译进运行时 / 检查裸露中文                                                    |
+| `pnpm i18n:report`                                               | 文案盘点：只出报告不判失败                                                                  |
+| `pnpm format` / `pnpm format:check`                              | Prettier 格式化 / 只校验不写入                                                              |
 
 > 每个命令的用途、产出与注意事项见 `package.json` 的 `scriptDocs` 字段（JSON 不支持注释，说明集中放在那里，此处只列简表）。
 
@@ -222,7 +223,7 @@ pnpm i18n          # = i18n-kit scan && apply && check
 | `apps/extension/i18n/source/zh-CN.json`    | 扫描器     | 母语原文词典（哈希 key → 中文），勿手改 |
 | `apps/extension/i18n/translation/en.json`  | 人 / 流程  | 译文（键与 source 对齐）                |
 | `apps/extension/i18n/untranslated/en.json` | 生成物     | 待翻译清单                              |
-| `apps/extension/i18n/retired/en.json`      | 生成物     | 失效词条的译文归档，可供复用            |
+| `apps/extension/i18n/retired/en.json`      | 生成物     | 失效词条的译文归档，可供复用；不入库    |
 | `apps/extension/src/i18n/locales/*`        | apply 生成 | 运行时资源，**平铺**、**勿手改**        |
 
 全部词条一律是哈希 key（键由原文摘要生成，源码里只写中文原文）。
@@ -249,13 +250,13 @@ pnpm i18n:report
 
 退出码恒为 0，只出报告不判失败。产出 `apps/extension/i18n/report.md`（人读：概览 + 待翻译 / 未登记 / 豁免分区清单）
 与 `apps/extension/i18n/untranslated/en.json`（机读）。报告与待翻译清单是生成物，已在 `.gitignore` 中忽略；
-`apps/extension/i18n/source`、`apps/extension/i18n/translation`、`apps/extension/i18n/retired` 是词典源，**必须入库**。
+`apps/extension/i18n/source`、`apps/extension/i18n/translation` 是词典源，**必须入库**；`apps/extension/i18n/retired` 是扫描器生成物，按 `.gitignore` 不入库。
 
 ---
 
 ## 隐私
 
-Tabs 的底线是**无自有服务器、无自有账号、无遥测、零出站网络请求**：数据以 `chrome.storage.local` 为主存储，文件夹、常驻磁贴与设置可经浏览器账号同步通道镜像。详见 [PRIVACY.md](./PRIVACY.md)。
+Tabs 的底线是**无自有服务器、无自有账号、无遥测；扩展代码不主动发起网络请求；用户开启浏览器账号同步后，浏览器厂商同步通道可能离设备传输数据**：数据以 `chrome.storage.local` 为主存储，文件夹、常驻磁贴与设置可经浏览器账号同步通道镜像。详见 [PRIVACY.md](./PRIVACY.md)。
 
 ---
 
@@ -276,12 +277,12 @@ Tabs 的底线是**无自有服务器、无自有账号、无遥测、零出站�
 
 ## 文档
 
-| 文档                                       | 用途                                                                     |
-| ------------------------------------------ | ------------------------------------------------------------------------ |
-| [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md) | **上架唯一来源**：商店文案、每项权限理由、隐私披露、版本历史、发布前自查 |
-| [`CHANGELOG.md`](./CHANGELOG.md)           | 版本记录                                                                 |
+| 文档                                       | 用途                                                                         |
+| ------------------------------------------ | ---------------------------------------------------------------------------- |
+| [`CHROMEWEBSTORE.md`](./CHROMEWEBSTORE.md) | **上架资料唯一来源**：商店文案、每项权限理由、隐私披露、版本历史、发布前自查 |
+| [`CHANGELOG.md`](./CHANGELOG.md)           | 版本记录                                                                     |
 
-隐私边界以根目录 [PRIVACY.md](./PRIVACY.md) 为唯一对外口径，开发约定见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+隐私边界以根目录 [PRIVACY.md](./PRIVACY.md) 为**对外口径最高优先级**；架构与开发约定以 [CONTRIBUTING.md](./CONTRIBUTING.md) 为准，评审判据见 [CODE-REVIEW.md](./CODE-REVIEW.md)。
 
 ---
 
@@ -291,7 +292,7 @@ Tabs 的底线是**无自有服务器、无自有账号、无遥测、零出站�
 
 - **不在 `packages/` 下** —— `apps/extension/scripts/privacy-check.mjs` 会扫描 `packages/` 下的全部 `.ts/.tsx`（扩展发布门禁），官网不该被它收编；
 - **不在 `apps/extension/public/` 下** —— 否则会被 WXT 打进扩展包，同样会被 `pnpm check:privacy` 扫到；
-- **不进扩展门禁** —— 扩展的类型与 lint 配置随包走（`apps/extension/tsconfig.json`、`apps/extension/eslint.config.js`，只作用于本包），根 ESLint 忽略整个 `apps/**`；`pnpm check` 不受官网影响；
+- **不进扩展类型 / lint 门禁** —— 扩展的类型与 lint 配置随包走（`apps/extension/tsconfig.json`、`apps/extension/eslint.config.js`，只作用于本包），根 ESLint 忽略整个 `apps/**`；官网由 `pnpm site:check` 独立把关，`pnpm check` 末尾只运行轻量的 `site:test`；
 - **词典独立** —— 官网词条在 `apps/site/i18n/`，与扩展的 `apps/extension/i18n/` 互不影响（同一套 `i18n-kit` 工具，不同 `--root`）。
 
 ### 本地预览
@@ -306,14 +307,17 @@ pnpm site:preview  # 预览已构建产物，http://localhost:5175/
 ### 构建与发布
 
 ```bash
-pnpm build && pnpm zip       # 先产出扩展包（下载按钮指向它）
-pnpm site:build:release      # 发布构建；必须先配置正式 SITE_URL
-pnpm site:preview            # 发布前预览 apps/site/dist
+pnpm build && pnpm zip                         # 先产出扩展包（下载按钮指向它）
+TABS_SITE_URL=https://<正式域名> \
+  pnpm site:build:release                     # 发布构建；域名不要带路径或结尾斜杠
+pnpm site:preview                             # 发布前预览 apps/site/dist
 ```
 
 产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入并按版本号精确匹配；缺少对应版本 ZIP 时构建失败。
 
-`pnpm site:build` 用于验证页面和安全检查。正式发布必须使用 `pnpm site:build:release`；该命令要求在 `apps/site/site.config.ts` 配置真实站点根 URL `SITE_URL`，并在未配置时直接失败。发布构建会生成 canonical、hreflang、JSON-LD 与 `sitemap.xml`。
+`pnpm site:build` 用于验证页面和安全检查。正式发布必须使用 `pnpm site:build:release`，并通过 `TABS_SITE_URL` 注入无路径、无结尾斜杠的真实站点根 URL；未配置时直接失败。发布构建会生成 canonical、hreflang、JSON-LD 与 `sitemap.xml`。GitHub Release 工作流由仓库变量注入该值；本地构建不要把域名写进源码。
+
+Tag 或 `workflow_dispatch` 触发 Release 时，`node scripts/release-preflight.mjs` 会先核对扩展版本、tag、`CHANGELOG.md`、商店版本历史、Advisories 入口，以及 `TABS_SITE_URL`、`TABS_PUBLISHER_NAME`、`TABS_CONTACT_EMAIL`、`TABS_SUPPORT_URL`、`TABS_PRIVACY_POLICY_URL` 等发布配置。任一缺失或不合法即停止，避免生成带占位信息的发布产物。
 
 ### 实现要点
 
@@ -328,13 +332,14 @@ pnpm site:preview            # 发布前预览 apps/site/dist
 
 ## 参与贡献
 
-提交前跑通聚合门禁与格式检查：
+提交前按改动范围跑门禁；完整本地矩阵如下：
 
 ```bash
-pnpm check
 pnpm format:check
+pnpm check
+pnpm site:check # 改动 apps/site 时
 ```
 
-其余约定（分层红线、持久化变更、权限冻结、文案流程）见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+AI coding 与 AI review 的统一严格判定基准见 [.codebuddy/rules/code-rules/RULE.mdc](./.codebuddy/rules/code-rules/RULE.mdc)；其余约定（分层红线、持久化变更、权限冻结、文案流程）见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ---

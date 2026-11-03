@@ -1,16 +1,47 @@
 /**
  * 站点级常量：构建脚本（build.mjs / dev.mjs）与渲染代码共用同一份，避免两处漂移。
  */
+import { URL } from 'node:url';
 
 export const BRAND = 'Tabs';
 
 /**
- * 部署后的站点根 URL（**不带**结尾斜杠）。
+ * 部署后的站点根 URL（**不带**结尾斜杠），由发布环境变量 `TABS_SITE_URL` 注入。
  *
  * 留空表示尚未配置域名：build.mjs 会据此**关闭** canonical / hreflang / JSON-LD 的
  * URL 与 sitemap，并打印告警 —— 宁可缺标签，也不能把占位域名发布出去。
+ * 浏览器构建由 vite.config.ts 把 `TABS_SITE_URL` 定义为空，避免把 Node 环境变量打进产物。
  */
-export const SITE_URL = '';
+export const SITE_URL =
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.TABS_SITE_URL ?? '';
+
+export function assertReleaseSiteUrl(siteUrl: string): string {
+  if (!siteUrl) {
+    throw new Error('[site] release 构建必须配置 TABS_SITE_URL');
+  }
+  let url: URL;
+  try {
+    url = new URL(siteUrl);
+  } catch (error) {
+    throw new Error(
+      `[site] ${error instanceof Error ? error.message : String(error)}；SITE_URL 必须是合法的无凭据 http(s) 根 URL`,
+      { cause: error }
+    );
+  }
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.href !== `${url.origin}/` ||
+    siteUrl !== url.origin ||
+    !url.hostname ||
+    /[\s<>"'`]/.test(siteUrl)
+  ) {
+    throw new Error('[site] SITE_URL 必须是不带路径、查询参数或片段的无凭据 http(s) 根 URL');
+  }
+  return `${url.origin}/`;
+}
 
 export interface SiteLanguage {
   /** i18next 语言代码（与 src/i18n/locales 目录名一致） */

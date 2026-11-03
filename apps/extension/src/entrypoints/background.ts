@@ -12,7 +12,19 @@ import { foldersRepository, settingsRepository } from '@/platform/storage/reposi
 import { initHeadlessI18n, t } from '@/i18n/headless';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 import { persistReuseClosedBatch } from '@/platform/reuse/persistClosed';
-import { MessageSchema, REUSE_CLOSED_LIMIT, sendMessage } from '@/platform/messages';
+import {
+  MessageSchema,
+  REUSE_CLOSED_LIMIT,
+  sendMessage,
+  sendMessageWithDelivery
+} from '@/platform/messages';
+import {
+  removeReuseClosedBatch,
+  resolveReuseClosedAck,
+  waitForReuseClosedAck,
+  writeReuseClosedShards
+} from '@/platform/reuse/reuseClosedPending';
+import { newId } from '@/core/util/id';
 import type { Settings } from '@/core/schema/models';
 import {
   cachedSettings,
@@ -105,26 +117,59 @@ export default defineBackground(() => {
           });
           const groupNameById = new Map(groups.map((group) => [group.id, group.title]));
           const records = closed.map((tab) => toUndoTabRecord(tab, groupNameById));
-          // 协议层对单条消息标签数有上限：超限整条被 schema 拒绝会让整批失去撤销出口。截断并留痕。
-          const tabs = records.slice(0, REUSE_CLOSED_LIMIT);
-          if (records.length > tabs.length) {
-            logDegraded(
-              'background',
-              `同网址合并一次关闭 ${records.length} 条，超出单条回执上限，已截断为 ${tabs.length} 条`
-            );
-          }
+          const batchId = newId('reuse');
+          const at = Date.now();
+          const shardCount = Math.max(1, Math.ceil(records.length / REUSE_CLOSED_LIMIT));
+          const shards = Array.from({ length: shardCount }, (_, shardIndex) => ({
+            batchId,
+            windowId,
+            records: records.slice(
+              shardIndex * REUSE_CLOSED_LIMIT,
+              (shardIndex + 1) * REUSE_CLOSED_LIMIT
+            ),
+            shardIndex,
+            shardCount,
+            at
+          }));
           try {
-            await browser.runtime.sendMessage({ type: 'reuse-closed', windowId, tabs });
-          } catch {
-            // 无面板时 runtime 投递被拒绝，SW 直接补写撤销库；投递成功则不写，避免面板重复入栈。
-            try {
-              const persisted = await persistReuseClosedBatch(windowId, tabs);
-              if (!persisted) {
-                logDegraded('background', '无面板补登记复用撤销批次失败');
-              }
-            } catch (error) {
-              logDegraded('background', '无面板补登记复用撤销批次失败', error);
+            await writeReuseClosedShards(shards);
+          } catch (error) {
+            logDegraded('background', '复用关闭撤销台账写入失败，直接补登记撤销库', error);
+            const persisted = await persistReuseClosedBatch(windowId, records).catch(() => false);
+            if (!persisted) logDegraded('background', '复用关闭撤销批次补登记失败');
+            return;
+          }
+          const acknowledged = waitForReuseClosedAck(batchId);
+          let delivered = true;
+          try {
+            for (const shard of shards) {
+              await sendMessageWithDelivery({
+                type: 'reuse-closed',
+                windowId,
+                batchId,
+                tabs: shard.records,
+                shardIndex: shard.shardIndex,
+                shardCount
+              });
             }
+          } catch (error) {
+            delivered = false;
+            logDegraded('background', '复用关闭分片投递失败', error);
+          }
+          const confirmed = delivered && (await acknowledged);
+          if (confirmed) {
+            await removeReuseClosedBatch(batchId, shardCount).catch((error) =>
+              logDegraded('background', '复用关闭撤销台账清理失败', error)
+            );
+            return;
+          }
+          const persisted = await persistReuseClosedBatch(windowId, records, batchId).catch(
+            () => false
+          );
+          if (persisted) {
+            await removeReuseClosedBatch(batchId, shardCount).catch(() => undefined);
+          } else {
+            logDegraded('background', '无面板补登记复用撤销批次失败，台账保留供下次重试');
           }
         })();
       }
@@ -135,9 +180,10 @@ export default defineBackground(() => {
   // 同 URL 唯一化开关联动（fail-closed：读失败维持关闭并留痕）。
   const syncCoordinatorEnabled = async () => {
     try {
-      const settings = await settingsRepository.read();
+      const settings = await settingsRepository.readStrict();
       coordinator.setEnabled(settings.uniqueUrlTabs);
     } catch (error) {
+      coordinator.setEnabled(false);
       logDegraded(
         'background',
         '启动时读取同网址唯一化开关失败，本次启动维持关闭（fail-closed）',
@@ -184,8 +230,12 @@ export default defineBackground(() => {
    * setPanelBehavior 不跨会话持久，每次唤醒/设置变更都要对齐一次；读实时设置避开缓存未就绪窗口。
    */
   async function syncActionClickBehavior(): Promise<void> {
-    const settings = await settingsRepository.read().catch(() => undefined);
-    await setActionClickBehavior(settings?.actionClickMode !== 'regroup');
+    try {
+      const settings = await settingsRepository.readStrict();
+      await setActionClickBehavior(settings.actionClickMode !== 'regroup');
+    } catch (error) {
+      logDegraded('background', '读取工具栏点击行为失败，保持当前行为不变', error);
+    }
   }
   void syncActionClickBehavior();
 
@@ -323,6 +373,10 @@ export default defineBackground(() => {
         void syncCachedSettings();
         sendResponse({ ok: true });
         return;
+      case 'reuse-closed-ack':
+        resolveReuseClosedAck(message.batchId);
+        sendResponse({ ok: true });
+        return;
       case 'skip-auto-save-once':
         // 标记镜像到 session 后才应答（SW 回收不丢标记），故走异步应答通道。
         void markSkipAutoSave(message.windowId).then(() => sendResponse({ ok: true }));
@@ -429,14 +483,18 @@ export default defineBackground(() => {
           void addEntryToFolder(folderId, {
             url: info.linkUrl,
             title: info.selectionText || info.linkUrl
-          }).then((result) => notifyAddToFolderResult(result));
+          })
+            .then((result) => notifyAddToFolderResult(result))
+            .catch((error: unknown) => logDegraded('background', '右键加入文件夹失败', error));
         }
       } else if (tab?.url) {
         void addEntryToFolder(folderId, {
           url: tab.url,
           title: tab.title || tab.url,
           favIconUrl: tab.favIconUrl
-        }).then((result) => notifyAddToFolderResult(result));
+        })
+          .then((result) => notifyAddToFolderResult(result))
+          .catch((error: unknown) => logDegraded('background', '右键加入文件夹失败', error));
       }
       return;
     }

@@ -19,14 +19,16 @@ export function StatusToast() {
    * restoringRef、SpaceStrip switching 同款口径。
    */
   const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const actionRunRef = useRef(false);
   // 换一条新 toast 时复位在途标尺：旧按钮已被顶替，禁用态不能粘到新动作上。
   useEffect(() => {
     actionRunRef.current = false;
     setActionBusy(false);
+    setActionError(null);
   }, [toast]);
 
-  const isError = toast?.tone === 'error';
+  const isError = toast?.tone === 'error' || actionError !== null;
 
   /**
    * 常驻 live region（ARIA 可靠性约束）：播报容器必须**预先存在于 DOM 且为空**，
@@ -45,6 +47,7 @@ export function StatusToast() {
     <>
       <span>{toast.message}</span>
       {toast.note && <span>{toast.note}</span>}
+      {actionError && <span>{actionError}</span>}
     </>
   ) : null;
 
@@ -93,6 +96,11 @@ export function StatusToast() {
                 {toast.note}
               </span>
             )}
+            {actionError && (
+              <span className="truncate text-red-600" title={actionError} role="alert">
+                {actionError}
+              </span>
+            )}
           </div>
           {toast.canUndo && (
             /* soft-outline：撤销是这条提示的核心动作，灰底弱按钮会让人找不到入口 */
@@ -107,16 +115,15 @@ export function StatusToast() {
               disabled={actionBusy}
               busy={actionBusy}
               onClick={() => {
-                // 同 tick 连点用 ref 拦（disabled 反应比重渲染慢一拍）。
                 if (actionRunRef.current) return;
                 actionRunRef.current = true;
                 setActionBusy(true);
-                // 动作内是异步链路（如「全部唤醒」的 reloadTabs）：reject 无人接住时会
-                // 变成一条无归属的 unhandled rejection，用户只看到按钮点了没反应。
-                // run 的返回类型含 void（同步动作），包一层 Promise 才能统一接住 rejection。
-                void Promise.resolve(toast.action?.run())
+                setActionError(null);
+                const run = toast.action?.run;
+                void Promise.resolve(run?.())
                   .catch((error: unknown) => {
                     logDegraded('toast', '提示条动作执行失败', error);
+                    setActionError(t('操作失败，请稍后重试'));
                   })
                   .finally(() => {
                     actionRunRef.current = false;
@@ -124,7 +131,7 @@ export function StatusToast() {
                   });
               }}
             >
-              {toast.action.label}
+              {actionError ? t('重试') : toast.action.label}
             </Button>
           )}
           {/* 复用 IconButton：手写的关闭按钮只有 18px 命中区（p-0.5 + 14px 图标），

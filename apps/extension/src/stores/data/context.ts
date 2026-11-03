@@ -174,7 +174,7 @@ export function buildDataContext(
 
   async function writePins(
     arg: PersistentPin[] | ((current: PersistentPin[]) => PersistentPin[])
-  ): Promise<void> {
+  ): Promise<boolean> {
     // 导入事务进行中：挂起落盘与镜像，内存态由 importData 统一提交。
     if (importing) {
       // 同 writeFolders：同一原因本会话内只留一次（见 importDropLogged）。
@@ -182,7 +182,7 @@ export function buildDataContext(
         importDropLogged.add(PINS_SCOPE);
         logDegraded('dataStore', '导入事务进行中，本次固定图标写入已丢弃（内存态不更新）');
       }
-      return;
+      return false;
     }
     const pins = typeof arg === 'function' ? arg(get().pins) : arg;
     set({ pins });
@@ -193,6 +193,7 @@ export function buildDataContext(
       clearDegraded(PINS_SCOPE);
     }
     if (ok !== false) scheduleMirror(get());
+    return ok;
   }
 
   // 跨页面设置同步：设置页与侧边栏各自持有独立 dataStore 实例，通过 storage.onChanged

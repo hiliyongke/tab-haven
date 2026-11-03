@@ -80,6 +80,8 @@ export function SnapshotsPanel({
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 待删除确认的快照 id（快照是长期资产，删除不可撤销，必须二次确认）。 */
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   /** 列表容器 ref：删除快照后把焦点归还到这里（触发删除的行按钮会随行卸载）。 */
   const listFocusRef = useRef<HTMLDivElement>(null);
   /**
@@ -275,23 +277,25 @@ export function SnapshotsPanel({
   };
 
   const performDelete = async (id: string) => {
-    setConfirmDeleteId(null);
-    // 互斥：确认弹窗按钮快速连点会并发触发两次 deleteSnapshot（同 id 双写竞态）。
-    // 与 handleRestore / handleSave 同一口径（ref 标尺而非渲染期 state）。
     if (deleteInFlight.current) return;
     deleteInFlight.current = true;
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
       // deleteSnapshot 成功正常 resolve、失败抛错（返回 Promise<void>），故回执与
       // 焦点归还放在 await 之后的成功路径。删除是不可逆操作，必须给可见/可听回执；
       // 触发按钮随行卸载后焦点会掉 <body>，显式归还到存活的列表容器。
       await deleteSnapshot(id);
+      setConfirmDeleteId(null);
       notify(t('已删除快照'));
       // 等本轮 DOM 更新（行卸载、列表重排）后再聚焦，避免落到即将移除的节点。
       requestAnimationFrame(() => listFocusRef.current?.focus());
     } catch (error) {
       notifyFailure('snapshots', t('操作失败，请稍后重试'), error);
+      setDeleteError(t('操作失败，请稍后重试'));
     } finally {
       deleteInFlight.current = false;
+      setDeleteBusy(false);
     }
   };
 
@@ -321,6 +325,7 @@ export function SnapshotsPanel({
   const handleDelete = (id: string) => {
     // 快照（尤其归档/手动）是长期资产，单击删除不可恢复且相邻操作多、易误触。
     // 先弹确认，确认后由 performDelete 执行。
+    setDeleteError(null);
     setConfirmDeleteId(id);
   };
 
@@ -429,11 +434,19 @@ export function SnapshotsPanel({
       {confirmDeleteId !== null && (
         <ConfirmDialog
           title={t('确认操作')}
-          message={t('删除这份快照？删除后无法恢复')}
+          message={
+            deleteBusy ? t('正在删除快照…') : (deleteError ?? t('删除这份快照？删除后无法恢复'))
+          }
           danger
           confirmLabel={t('确认删除')}
+          busy={deleteBusy}
+          cancelDisabled={deleteBusy}
           onConfirm={() => void performDelete(confirmDeleteId)}
-          onCancel={() => setConfirmDeleteId(null)}
+          onCancel={() => {
+            if (deleteBusy) return;
+            setConfirmDeleteId(null);
+            setDeleteError(null);
+          }}
         />
       )}
       {confirmRestoreId !== null &&

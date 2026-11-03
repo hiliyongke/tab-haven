@@ -49,8 +49,18 @@ const ReuseClosedMessageSchema = z.object({
   type: z.literal('reuse-closed'),
   /** 关闭发生的窗口（撤销要回到同一个窗口）。 */
   windowId: z.number().int(),
-  /** 本次被关闭的标签快照（含新建的那个副本）。 */
-  tabs: z.array(UndoTabRecordSchema).max(REUSE_CLOSED_LIMIT)
+  /** 同一批关闭记录的唯一 id；完整记录按 session 分片台账读取，消息只带一个分片。 */
+  batchId: z.string().min(1).max(128),
+  /** 当前分片的标签快照；超过 REUSE_CLOSED_LIMIT 的批次由同一 batchId 的多个分片组成。 */
+  tabs: z.array(UndoTabRecordSchema).max(REUSE_CLOSED_LIMIT),
+  shardIndex: z.number().int().nonnegative(),
+  shardCount: z.number().int().positive()
+});
+
+/** UI → SW：复用关闭批次已完整写入撤销栈，允许删除 session 台账。 */
+const ReuseClosedAckMessageSchema = z.object({
+  type: z.literal('reuse-closed-ack'),
+  batchId: z.string().min(1).max(128)
 });
 
 /** SW → UI：请求聚焦搜索（浏览器级快捷键触发）。 */
@@ -82,8 +92,9 @@ export const AUTO_DISCARDED_IDS_LIMIT = 50;
 /** SW → UI：自动休眠执行完成（通知 UI 显示可撤销提示）。 */
 const AutoDiscardedMessageSchema = z.object({
   type: z.literal('auto-discarded'),
-  tabIds: z.array(z.number().int()).max(AUTO_DISCARDED_IDS_LIMIT),
-  /** 此次自动休眠的标签数（可能大于 tabIds 的长度：超限时 tabIds 被截断）。 */
+  /** 休眠台账的批次键；完整 tabIds 从磁盘台账读取，消息不再截断。 */
+  batchId: z.string().min(1).max(128),
+  /** 此次自动休眠的标签数。 */
   count: z.number().int(),
   at: z.number()
 });
@@ -116,6 +127,7 @@ export const MessageSchema = z.discriminatedUnion('type', [
   AllowDuplicateOnceMessageSchema,
   DuplicateReusedMessageSchema,
   ReuseClosedMessageSchema,
+  ReuseClosedAckMessageSchema,
   SearchFocusMessageSchema,
   SearchDomainMessageSchema,
   AutoDiscardedMessageSchema,
@@ -143,7 +155,26 @@ export const PendingActionsSchema = z.array(PendingActionSchema).max(PENDING_ACT
  * 故吞掉 rejection 不进诊断日志 —— 否则每次快捷键都会产生一条假故障。
  */
 export function sendMessage(message: Message): void {
-  void browser.runtime.sendMessage(message).catch(() => {});
+  void browser.runtime.sendMessage(message).catch((error) => {
+    if (message.type === 'duplicate-reused' || message.type === 'settings-synced') return;
+    logDegraded(
+      'messages',
+      `运行时消息投递失败：${message.type}（挂起动作仍可经 session 队列恢复）`,
+      error
+    );
+  });
+}
+
+/** 发送一条需要确认投递成功的消息；sendMessage 的 fire-and-forget 口径不足以驱动 ACK 补写。 */
+export async function sendMessageWithDelivery(message: Message): Promise<void> {
+  await browser.runtime.sendMessage(message);
+}
+
+/** UI 确认复用关闭批次已入撤销栈后，用协议内消息通知 SW 解除补写等待。 */
+export function sendReuseClosedAck(batchId: string): void {
+  void browser.runtime
+    .sendMessage({ type: 'reuse-closed-ack', batchId } satisfies Message)
+    .catch((error) => logDegraded('messages', '复用关闭 ACK 投递失败', error));
 }
 
 /** ack 等待上限：SW 收到消息但不响应时（挂起/卡死）sendMessage 永不 settle，必须超时截断。 */
@@ -197,20 +228,26 @@ export function onRuntimeMessage(handler: (message: Message) => void): () => voi
 export function watchPendingActions(handler: (action: PendingAction) => void): () => void {
   const sessionArea = browser.storage?.session;
   let active = true;
+  /** 消费写入在途：storage 回显不得触发下一轮，否则失败动作会被立即重试。 */
+  let consuming = false;
   // 已消费动作 id 去重集（有界）；没有 id 的协议输入才回退使用安全整数时间戳。
   const consumedIds = new Set<string>();
   const consumedAts = new Set<number>();
+  /** 本 watcher 刚写回的队列签名：storage 回显不得立刻再消费一次失败动作。 */
+  let lastWrittenQueue: string | undefined;
   /**
    * 初始读取与 onChanged 都只负责触发；真正消费时在同一把跨页锁内重读并删除。
    * 后台入队使用同一把锁，因此不会用事件里的旧 list 删掉随后入队的新动作。
    */
   const consume = (): void => {
-    if (!sessionArea) return;
+    if (!sessionArea || consuming) return;
+    consuming = true;
     void withCrossPageLock(PENDING_ACTIONS_RMW_LOCK, async () => {
       if (!active) return;
       const record = await sessionArea.get(PENDING_ACTIONS_KEY);
       const list = record[PENDING_ACTIONS_KEY];
       if (!active || !Array.isArray(list) || list.length === 0) return;
+      const successfulIds = new Set<string>();
       for (const action of list) {
         // 队列里的每一项都可能是任意形状，统一走挂起动作 schema 校验。
         const parsed = PendingActionSchema.safeParse(action);
@@ -219,26 +256,53 @@ export function watchPendingActions(handler: (action: PendingAction) => void): (
         const at = parsed.data.at;
         if (actionId !== undefined) {
           if (consumedIds.has(actionId)) continue;
-          consumedIds.add(actionId);
-          if (consumedIds.size > 64) {
-            const oldest = consumedIds.values().next().value;
-            if (oldest !== undefined) consumedIds.delete(oldest);
-          }
         } else if (at !== undefined) {
           if (consumedAts.has(at)) continue;
-          consumedAts.add(at);
-          if (consumedAts.size > 64) {
-            const oldest = consumedAts.values().next().value;
-            if (oldest !== undefined) consumedAts.delete(oldest);
-          }
         }
         if (!active) return;
-        handler(parsed.data);
+        try {
+          handler(parsed.data);
+          if (actionId !== undefined) {
+            consumedIds.add(actionId);
+            if (consumedIds.size > 64) {
+              const oldest = consumedIds.values().next().value;
+              if (oldest !== undefined) consumedIds.delete(oldest);
+            }
+          } else if (at !== undefined) {
+            consumedAts.add(at);
+            if (consumedAts.size > 64) {
+              const oldest = consumedAts.values().next().value;
+              if (oldest !== undefined) consumedAts.delete(oldest);
+            }
+          }
+          successfulIds.add(
+            actionId ?? (at !== undefined ? `at:${at}` : `index:${list.indexOf(action)}`)
+          );
+        } catch (error) {
+          logDegraded('messages', '挂起动作执行失败，保留该动作等待下次触发', error);
+        }
       }
-      await sessionArea.remove(PENDING_ACTIONS_KEY);
-    }).catch((error) => {
-      logDegraded('messages', '挂起动作消费失败，将保留队列等待下次触发', error);
-    });
+      const remaining = list.filter((action) => {
+        const parsed = PendingActionSchema.safeParse(action);
+        if (!parsed.success) return false;
+        const actionId = parsed.data.actionId;
+        if (actionId !== undefined) return !successfulIds.has(actionId);
+        const at = parsed.data.at;
+        if (at !== undefined) return !successfulIds.has(`at:${at}`);
+        return !successfulIds.has(`index:${list.indexOf(action)}`);
+      });
+      if (successfulIds.size === 0) return;
+      const signature = JSON.stringify(remaining);
+      lastWrittenQueue = signature;
+      if (remaining.length === 0) await sessionArea.remove(PENDING_ACTIONS_KEY);
+      else await sessionArea.set({ [PENDING_ACTIONS_KEY]: remaining });
+    })
+      .catch((error) => {
+        logDegraded('messages', '挂起动作消费失败，队列保留等待下次触发', error);
+      })
+      .finally(() => {
+        consuming = false;
+      });
   };
 
   consume();
@@ -250,7 +314,9 @@ export function watchPendingActions(handler: (action: PendingAction) => void): (
     if (areaName !== 'session' || !changes[PENDING_ACTIONS_KEY]) return;
     const list = changes[PENDING_ACTIONS_KEY]?.newValue;
     // 即时消息与 session 变更通道按 actionId 去重，再消费并清除队列。
-    if (Array.isArray(list) && list.length > 0) consume();
+    if (!Array.isArray(list) || list.length === 0) return;
+    if (JSON.stringify(list) === lastWrittenQueue) return;
+    consume();
   };
   browser.storage?.onChanged?.addListener(onStorageChanged);
   return () => {

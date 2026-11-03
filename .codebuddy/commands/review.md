@@ -1,5 +1,5 @@
 ---
-description: 评审当前改动：对照架构/隐私/风格/测试四个维度输出 file:line 问题清单
+description: 严格评审当前改动：强制逐条对照 code-rules §1–§10 与 CODE-REVIEW P0–P3，输出可复核的 file:line 问题清单
 argument-hint: '[路径或范围，默认评审工作区全部未提交改动]'
 allowed-tools: Read, Grep, Glob, ListDir, Bash
 ---
@@ -10,18 +10,25 @@ $ARGUMENTS
 
 若范围为空，用 `git status` / `git diff`（只读）确定工作区改动清单。
 
-流程与维度（按序）：
+开始前必须加载 `.codebuddy/rules/code-rules/RULE.mdc`，并在结论下写明「已核对章节：§1–§10」。任何 P0/P1 未清零，结论只能是 `Request changes`。
 
-1. **红线**：网络请求 / 新权限 / 绕过 schema 校验 / 单语文案 / lint-disable —— 命中即 Blocker。
-2. **架构**：core 是否混入 chrome/DOM/React；ui 是否绕过 platform；platform 是否沉淀领域决策。
-3. **正确性**：边界、坏数据、异步竞态、撤销/恢复对称性。
-4. **一致性**：命名与范式是否沿用既有；是否夹带无关改动。
-5. **测试**：core 改动有无行为测试；覆盖率是否下降。
+流程与维度（按 `code-rules` §10 顺序，不得跳项）：
+
+1. §1 范围与过程污染：最小改动、无过程性资料、无历史叙述。
+2. §2 分层与单一事实来源：依赖方向、层职责、复用与常量漂移。
+3. §3 类型/schema/持久化/撤销/会话：坏数据、写入失败、并发与恢复契约。
+4. §4 异步/错误/资源生命周期：Promise、竞态、用户可见失败与清理。
+5. §5 UI/i18n/a11y/主题：键盘、IME、焦点、读屏、对比度与浏览器降级。
+6. §6 隐私/权限/安全/发布配置：零网络、权限冻结、输入边界、发布字段。
+7. §7 测试/覆盖率/干净工作区/静态守卫：行为测试、变异验证、门禁证据。
+8. §8 文档/脚本/CI/Release 一致性：命令、端口、URL、版本、顺序与人工核验。
+9. §9 AI 协作/Git/交付证据：只读评审、git 禁区、外部未验证项。
+10. `CODE-REVIEW.md`：P0–P3、L1–L3 通道与场景矩阵。
 
 要求：
 
 - 读完整文件再下结论，不只看 diff 片段；下全称判断（"完全没有…"）前先 grep 验证。
-- 每条问题：`file:line` + 严重度（Blocker/Major/Minor/Nit）+ 依据（引用 .codebuddy/rules 条款）+ 具体改法。
-- 输出格式：结论先行（Approve / Approve with nits / Request changes）→ 问题清单 → 做得对的点。
+- 每条问题：`file:line` + 严重度（P0/P1/P2/P3）+ 规则编号（如 `code-rules §3.5`）+ 可复现现象 + 影响 + 最小修法 + 验收命令/场景。
+- 输出格式：结论与 P0–P3 数量 → 已核对章节 → 门禁证据 → 问题清单 → 做得对的点 → 未覆盖与外部核验。
 
 只评审不修改。大型改动可委派 code-reviewer agent。

@@ -157,6 +157,42 @@ describe('撤销 kind=restore 的批次', () => {
     expect(stored.find((batch) => batch.kind === 'restore-undo')?.entries).toHaveLength(1);
   });
 
+  it('createdTabIds 持久化后按 id 精准关闭，不误关同 URL 的旧标签', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: false });
+    const sameUrl = 'https://a.example/same';
+    const batch: UndoBatch = {
+      id: 'restore-by-id',
+      kind: 'restore',
+      createdAt: 1,
+      windowId: 1,
+      createdTabIds: [902],
+      entries: [{ url: sameUrl, index: 1, pinned: false, muted: false, groupId: -1 }]
+    };
+    queryWindowTabs.mockResolvedValue([
+      { ...records[0]!, id: 901, url: sameUrl },
+      { ...records[1]!, id: 902, url: sameUrl }
+    ]);
+    useUndoStore.setState({ batches: [batch], ready: true });
+
+    await useUndoStore.getState().undo();
+
+    expect(closeTabs).toHaveBeenCalledWith([902]);
+  });
+
+  it('写盘失败时保留撤销入口，不把内存批次提前移除', async () => {
+    await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
+    const batch = restoreBatch('restore-persist-failed');
+    await undoRepository.write([batch]);
+    vi.spyOn(undoRepository, 'write').mockResolvedValue(false);
+    queryWindowTabs.mockResolvedValue(records);
+    useUndoStore.setState({ batches: [batch], ready: true });
+
+    await useUndoStore.getState().undo();
+
+    expect(useUndoStore.getState().batches.some((entry) => entry.id === batch.id)).toBe(true);
+    expect(useUndoStore.getState().toast?.tone).toBe('error');
+  });
+
   it('重做部分关闭成功时未关闭项留在 redo，成功项进入 redo-close 并同步持久化', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS, persistUndo: true });
     const original = { ...restoreBatch('redo-partial'), kind: 'close' };

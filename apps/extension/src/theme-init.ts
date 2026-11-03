@@ -47,7 +47,14 @@ import type { ColorTheme } from '@/core/theme/colorThemes';
     // 页面级存储不可用时跟随系统。
   }
 
-  const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const systemIsDark = (() => {
+    try {
+      const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+      return typeof media?.matches === 'boolean' && media.matches;
+    } catch {
+      return false;
+    }
+  })();
   const resolved = preference === 'system' ? (systemIsDark ? 'dark' : 'light') : preference;
 
   document.documentElement.dataset.themePreference = preference;

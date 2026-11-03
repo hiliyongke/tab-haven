@@ -625,7 +625,6 @@
   "i18n_1mgdb01": "Undoable close history",
   "i18n_0q9nfmo": "Import failed: the backup exceeds 5MB. Split it and import again.",
   "i18n_1dv4u5b": "Import failed: could not read the bookmarks bar. Please try again later.",
-  "i18n_0jrf2d4": "Diagnostics exported",
   "i18n_18xx509": "Export backup",
   "i18n_15or8a4": "Export report",
   "i18n_18xx9ba": "Import backup",
@@ -808,5 +807,15 @@
   "i18n_0pr0ogn": "Loading recently closed tabs…",
   "i18n_0zjo8j3": "Press Space to drop · Esc to cancel",
   "i18n_1t2v2v3": "Snapshot deleted",
-  "i18n_1yngzp7": "Checking other windows…"
+  "i18n_1yngzp7": "Checking other windows…",
+  "i18n_18c3ou9": "Diagnostics exported. If you have confirmed the report was saved, you can clear the evidence.",
+  "i18n_1nlzcf0": "Diagnostic evidence cleared",
+  "i18n_0fo02b2": "Clear diagnostic evidence",
+  "i18n_0t2284j": "Use this only after confirming the diagnostic report was saved. The troubleshooting records cannot be recovered.",
+  "i18n_130l8yx": "Clear evidence",
+  "i18n_0tkobhn": "Restoring default settings…",
+  "i18n_0jvi3yf": "The mirror has expired. Confirm before syncing.",
+  "i18n_12j103e": "Follow browser language",
+  "i18n_1exkdi8": "Deleting snapshot…",
+  "i18n_0fg7vqp": "Tabs Settings"
 }

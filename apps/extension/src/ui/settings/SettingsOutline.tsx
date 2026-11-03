@@ -17,19 +17,19 @@ export interface OutlineItem {
   label: string;
 }
 
-export function SettingsOutline({ items }: { items: OutlineItem[] }) {
-  const { t } = useTranslation();
-  const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
+/** 平台 API 缺失或抛错时只关闭增强能力，锚点跳转仍走原生/手动降级。 */
+function safeMatchMedia(query: string): boolean {
+  try {
+    const media = window.matchMedia?.(query);
+    return typeof media?.matches === 'boolean' && media.matches;
+  } catch {
+    return false;
+  }
+}
 
-  useEffect(() => {
-    if (items.length === 0) return;
-    /**
-     * 高亮规则：以视口上方 30% 为「阅读线」，取线附近最靠上的可见分区。
-     * 用 IntersectionObserver 而非 scroll 事件：后者每帧触发且需手算 rect，
-     * 而这里只关心「哪个分区进入了阅读区」。
-     * rootMargin 下边距收 70% 是为了忽略页面底部尚未读到的分区，
-     * 避免滚动到底时高亮乱跳。
-     */
+function safeObserve(items: OutlineItem[], setActiveId: (id: string) => void): () => void {
+  if (typeof IntersectionObserver === 'undefined') return () => undefined;
+  try {
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -44,20 +44,42 @@ export function SettingsOutline({ items }: { items: OutlineItem[] }) {
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
+  } catch {
+    return () => undefined;
+  }
+}
+
+export function SettingsOutline({ items }: { items: OutlineItem[] }) {
+  const { t } = useTranslation();
+  const [activeId, setActiveId] = useState<string>(items[0]?.id ?? '');
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    // 高亮规则：以视口上方 30% 为阅读线，取线附近最靠上的可见分区。
+    // rootMargin 下边距收 70% 是为了忽略页面底部尚未读到的分区。
+    return safeObserve(items, setActiveId);
   }, [items]);
 
   const jumpTo = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
     const el = document.getElementById(id);
     if (!el) return;
     // 保留 <a href="#id"> 语义（可复制链接 / 可中键新标签打开），仅接管滚动方式
+    const reduced = safeMatchMedia('(prefers-reduced-motion: reduce)');
     event.preventDefault();
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    try {
+      el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    } catch {
+      window.location.hash = id;
+    }
     // preventDefault 取消了原生锚点的焦点转移：键盘/读屏点目录后焦点仍停在链接上，
     // 没真正进入分区。目标可能是 section 或普通 div，统一临时补 tabIndex=-1 再聚焦
     // （-1 不进入 Tab 序列，仅作程序化焦点落点；不覆盖已有 tabindex）。
     if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
-    el.focus({ preventScroll: true });
+    try {
+      el.focus({ preventScroll: true });
+    } catch {
+      el.focus();
+    }
     setActiveId(id);
     // 同步 hash：刷新后仍停在原处，也便于分享具体设置位置
     window.history.replaceState(null, '', `#${id}`);

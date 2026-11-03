@@ -1,4 +1,4 @@
-import type { AutoDiscardBatch } from '@/core/schema/models';
+import { autoDiscardBatchId, type AutoDiscardBatch } from '@/core/schema/models';
 import { AUTO_DISCARD_BATCHES_LIMIT } from '@/platform/registry';
 import { AUTO_DISCARD_RMW_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
 import { autoDiscardRepository } from '@/platform/storage/repositories';
@@ -10,11 +10,6 @@ import { logDegraded } from '@/platform/diagnostics';
  * 锁外并发会 last-writer-wins（刚清除的批次被写回 / 刚写入的批次被覆盖丢失）。
  * 故 RMW 收口在本模块内的同一把锁里，消费方只表达意图，不自己 read-modify-write。
  */
-
-/** 同一批标签（tabIds 内容与顺序一致）：按内容比对而非整表清空，避免抹掉其它轮次。 */
-function sameTabIds(a: readonly number[], b: readonly number[]): boolean {
-  return a.length === b.length && a.every((id, index) => id === b[index]);
-}
 
 /** 读取全部保留批次（无变更用途，如面板补提示）。 */
 export function readAutoDiscardBatches(): Promise<AutoDiscardBatch[]> {
@@ -46,19 +41,31 @@ export async function mutateAutoDiscardLedger(
  * 追加一轮休眠批次（按 at 滚动淘汰最旧的）。
  * 单槽位写入会让第二轮休眠抹掉第一轮，前一轮被冻结的标签就此失去「全部唤醒」出口。
  */
-export function appendAutoDiscardBatch(tabIds: readonly number[], at: number): Promise<boolean> {
+export function appendAutoDiscardBatch(
+  tabIds: readonly number[],
+  at: number,
+  batchId?: string
+): Promise<boolean> {
   if (tabIds.length === 0) return Promise.resolve(true);
   return mutateAutoDiscardLedger((batches) =>
-    [...batches, { tabIds: [...tabIds], at, count: tabIds.length }]
+    [...batches, { batchId, tabIds: [...tabIds], at, count: tabIds.length }]
       .sort((a, b) => b.at - a.at)
       .slice(0, AUTO_DISCARD_BATCHES_LIMIT)
   );
 }
 
+/** 按消息里的 batchId 精确读取完整台账；旧数据回退到派生 id。 */
+export async function readAutoDiscardBatchById(
+  batchId: string
+): Promise<AutoDiscardBatch | undefined> {
+  const batches = await readAutoDiscardBatches();
+  return batches.find((batch) => autoDiscardBatchId(batch) === batchId);
+}
+
 /** 摘掉指定那一轮（「全部唤醒」后）：其余轮次仍处休眠，必须保留其唤醒出口。 */
-export function removeAutoDiscardBatch(tabIds: readonly number[]): Promise<boolean> {
+export function removeAutoDiscardBatch(batchId: string): Promise<boolean> {
   return mutateAutoDiscardLedger((batches) => {
-    const next = batches.filter((batch) => !sameTabIds(batch.tabIds, tabIds));
+    const next = batches.filter((batch) => autoDiscardBatchId(batch) !== batchId);
     return next.length === batches.length ? null : next;
   });
 }

@@ -36,5 +36,13 @@ export default tseslint.config(
       }
     }
   },
+  {
+    files: ['lib/*.mjs'],
+    languageOptions: {
+      globals: {
+        URL: 'readonly'
+      }
+    }
+  },
   prettier
 );

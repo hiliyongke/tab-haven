@@ -1,9 +1,9 @@
 /**
  * 客户端行为脚本（产物约 2KB，不含 React）。
  *
- * 只做两件 HTML/CSS 做不到的事：移动端导航开合、演示区 tablist 的键盘操作。
- * 其余交互（FAQ 与文档的展开、锚点跳转）全部交给原生 `<details>` 与 CSS，
- * 因此**没有脚本时页面依然完整可读** —— 这是渐进增强，不是降级。
+ * 只做 HTML/CSS 做不到的事：移动端导航开合、演示区 tablist 的键盘操作，以及
+ * 默认收起详情在重复点击同一锚点时重新展开。其余交互（FAQ 与文档的展开、
+ * 锚点跳转）全部交给原生 `<details>` 与 CSS，因此**没有脚本时页面依然完整可读**。
  */
 
 /**
@@ -44,21 +44,35 @@ function setupNav(): void {
 
 /** 演示区 tablist：←→ / Home / End 键盘操作，首次接管时收起非首帧。 */
 function setupTabs(): void {
-  const tabs = Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'));
+  const tabs = Array.from(document.querySelectorAll<HTMLElement>('[data-role="tab"]'));
   if (tabs.length === 0) return;
 
+  const tablist = document.querySelector<HTMLElement>('[data-role="tablist"]');
+  if (tablist) {
+    tablist.setAttribute('role', 'tablist');
+    const label = tablist.dataset.label;
+    if (label) tablist.setAttribute('aria-label', label);
+  }
   const panels = tabs.map((tab) => {
-    const id = tab.getAttribute('aria-controls');
+    const id = tab.dataset.controls;
     return id ? document.getElementById(id) : null;
   });
 
   const select = (index: number): void => {
     tabs.forEach((tab, i) => {
       const selected = i === index;
+      tab.setAttribute('role', 'tab');
+      tab.removeAttribute('aria-hidden');
       tab.setAttribute('aria-selected', String(selected));
+      if (tab.dataset.controls) tab.setAttribute('aria-controls', tab.dataset.controls);
       tab.tabIndex = selected ? 0 : -1;
       const panel = panels[i];
-      if (panel) panel.hidden = !selected;
+      if (panel) {
+        panel.setAttribute('role', 'tabpanel');
+        const labelId = panel.getAttribute('data-labelledby');
+        if (labelId) panel.setAttribute('aria-labelledby', labelId);
+        panel.hidden = !selected;
+      }
     });
   };
 
@@ -94,8 +108,16 @@ function setupHashReveal(): void {
     if (!id) return;
     const target = document.getElementById(id);
     if (target instanceof HTMLDetailsElement) target.open = true;
+    if (target?.parentElement instanceof HTMLDetailsElement) target.parentElement.open = true;
   };
   window.addEventListener('hashchange', reveal);
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest<HTMLAnchorElement>('a[href^="#"]');
+    if (!anchor || new URL(anchor.href).hash !== window.location.hash) return;
+    reveal();
+  });
   reveal();
 }
 

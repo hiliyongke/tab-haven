@@ -40,6 +40,7 @@ export function Docs() {
         </details>
 
         <details className="card doc-card" id="shortcuts">
+          <span id="shortcuts-content" hidden />
           <summary>
             <h3>{t('快捷键与命令')}</h3>
           </summary>
@@ -68,6 +69,7 @@ export function Docs() {
 
         {/* 权限表 13 行、用途列长：塞进三分之一列会被挤成「一字一行」，必须整行铺开 */}
         <details className="card doc-card doc-card-wide" id="permissions">
+          <span id="permissions-content" hidden />
           <summary>
             <h3>{t('权限逐条说明')}</h3>
           </summary>

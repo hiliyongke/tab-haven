@@ -6,6 +6,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { translate } from '@/i18n';
 import { SettingsPage } from '@/entrypoints/options/SettingsPage';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
+import * as diagnostics from '@/platform/diagnostics';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { useDataStore } from '@/stores/dataStore';
 import { ImportDataError } from '@/stores/data/transferSlice';
@@ -240,6 +241,76 @@ describe('结果型播报容器常驻', () => {
     for (const region of regions) {
       expect(region.textContent).toBe('');
     }
+  });
+});
+
+describe('SettingsPage 诊断证据与异步确认', () => {
+  it('语言选择「跟随浏览器」写入空覆盖值', async () => {
+    useDataStore.setState({ settings: { ...DEFAULT_SETTINGS, language: 'en' }, ready: true });
+    const updateSettings = vi
+      .spyOn(useDataStore.getState(), 'tryUpdateSettings')
+      .mockResolvedValue(true);
+    render(<SettingsPage />);
+    await waitFor(() => expect(sectionHeading('交互行为')).toBeInTheDocument());
+
+    const language = screen.getByRole('combobox', { name: translate('语言') });
+    fireEvent.change(language, { target: { value: '' } });
+
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ language: undefined }));
+  });
+
+  it('导出诊断后默认保留证据，提供单独清理入口', async () => {
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    const clearDiagnosticsSpy = vi.spyOn(diagnostics, 'clearDiagnostics');
+    const { container } = render(<SettingsPage />);
+    await waitFor(() => expect(sectionHeading('数据备份')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: translate('导出报告') }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: translate('清理证据') })).toBeInTheDocument()
+    );
+    expect(clearDiagnosticsSpy).not.toHaveBeenCalled();
+    expect(container.querySelector('input[type="file"]')).not.toBeNull();
+  });
+
+  it('恢复默认失败时确认框保持打开并显示可重试错误', async () => {
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    const resetSettings = vi
+      .spyOn(useDataStore.getState(), 'resetSettings')
+      .mockRejectedValue(new Error('failed'));
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole('button', { name: translate('恢复默认') }));
+    const dialog = await screen.findByRole('dialog', { name: translate('恢复默认设置') });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: translate('恢复默认') }));
+
+    await waitFor(() =>
+      expect(within(dialog).getByText(translate('恢复默认失败，请重试'))).toBeInTheDocument()
+    );
+    expect(dialog).toBeInTheDocument();
+    expect(resetSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('清除全部数据失败时刷新可见状态并保留确认弹窗', async () => {
+    useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: true });
+    const refreshSettings = vi
+      .spyOn(useDataStore.getState(), 'refreshSettings')
+      .mockResolvedValue(undefined);
+    const clearAllData = vi
+      .spyOn(useDataStore.getState(), 'clearAllData')
+      .mockRejectedValue(new Error('failed'));
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole('button', { name: translate('永久清除') }));
+    const dialog = await screen.findByRole('dialog', { name: translate('清除所有数据') });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: translate('永久清除') }));
+
+    await waitFor(() => expect(refreshSettings).toHaveBeenCalled());
+    expect(clearAllData).toHaveBeenCalledTimes(1);
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(translate('清除失败，请重试'));
   });
 });
 

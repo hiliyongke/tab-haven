@@ -1,5 +1,6 @@
 # ---------- 依赖 ----------
 node_modules/
+.pnpm-store/
 
 # ---------- 构建产物（WXT / 扩展打包） ----------
 .output/
@@ -67,4 +68,22 @@ Thumbs.db
 .codebuddy/teams/
 # manual-agents/ 是本机插件的运行时残留（只剩空目录，无文件），不是团队共享规范。
 .codebuddy/manual-agents/
-.workbuddy
+.workbuddy/
+
+# ---------- 助手过程产物 ----------
+# 评审报告、临时计划、会话记忆与调试日志只对当前任务有意义；随库保留会让后续 AI
+# 把历史判断当成当前代码事实。发布说明由 scripts/release-notes.mjs 在 CI 临时生成。
+REVIEW-*.md
+*-audit.md
+*-analysis.md
+*-report.md
+*-summary.md
+*-handoff.md
+*-plan.md
+*-notes.md
+*-draft.md
+*.scratch.*
+*.tmp.*
+*.temp.*
+*.local.md
+release-notes.md

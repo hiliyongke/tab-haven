@@ -181,8 +181,8 @@ export function createInitSlice(ctx: DataContext): DataSlice<'initialize'> {
               ctx.reportPersistenceFailure('dataStore', '镜像恢复完成标记写入失败（下次启动重试）');
               mirrorIssue = 'unreadable';
             }
-          } else if (!mirror && mirrorIssue !== 'chunk-limit') {
-            // 确无镜像（或按既定策略自愈 unreadable）时，本地可成为首份镜像。
+          } else if (!mirror && (mirrorIssue === 'none' || mirrorIssue === 'local')) {
+            // 仅确认通道里没有镜像、或本地已有权威数据时，才解除恢复闸门。
             ctx.setMirrorRestorePending(false);
           }
         }

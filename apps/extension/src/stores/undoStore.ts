@@ -7,7 +7,7 @@ import {
   selectRedoTargets,
   toUndoTabRecord
 } from '@/core/undo/UndoStack';
-import type { UndoBatch, UndoTabRecord } from '@/core/schema/models';
+import { DEFAULT_UNDO_STACK_LIMIT, type UndoBatch, type UndoTabRecord } from '@/core/schema/models';
 import { structuralSignature } from '@/core/util/signature';
 import { createSerialChain, type SerialChain } from '@/core/util/concurrency';
 import { translate } from '@/i18n';
@@ -113,8 +113,14 @@ interface UndoState {
     kind: string,
     groupNameById?: ReadonlyMap<number, string | undefined>
   ) => Promise<void>;
+  /** 登记快照恢复真实创建的标签，撤销时按 id 精准关闭。 */
+  recordRestoreBatch: (createdTabs: readonly TabRecord[], windowId?: number) => Promise<void>;
   /** 登记 SW 复用引擎关闭的标签；面板拿不到快照，由 SW 回传记录。 */
-  recordReuseClosed: (windowId: number, records: readonly UndoTabRecord[]) => Promise<void>;
+  recordReuseClosed: (
+    windowId: number,
+    records: readonly UndoTabRecord[],
+    batchId?: string
+  ) => Promise<boolean>;
   clearToast: () => void;
   /** 通用状态提示（无可撤销动作），如后台自动合并通知；可携带自定义动作。 */
   notify: (message: string, action?: ToastAction) => void;
@@ -139,6 +145,8 @@ let undoPersistFailed = false;
 let loadInFlight: Promise<void> | null = null;
 /** 本会话内各重做批次实际新建的标签 id；持久化旧记录没有身份集时仍按 URL 回退。 */
 const restoredTabIdsByBatch = new Map<string, readonly number[]>();
+/** 复用关闭批次按 batchId 聚合：分片或重复投递只登记一次，ACK 只在真实持久化后发出。 */
+const reuseClosedInFlight = new Map<string, Promise<boolean>>();
 /** 仓库 watcher 注册守卫（跨页撤销栈同步，只注册一次）。 */
 let undoWatcherStarted = false;
 /** 重做栈独立注册一个 watcher。 */
@@ -162,15 +170,15 @@ function enqueuePersist(
   opts: { alwaysWrite?: boolean } | undefined,
   notPersistedMessage: string,
   exceptionMessage: string
-): Promise<void> {
-  return chain.enqueueSettled(
-    async () => {
+): Promise<boolean> {
+  return chain
+    .enqueue(async () => {
       if (!opts?.alwaysWrite) {
         const settings = await settingsRepository.readStrict();
         // 撤销栈与重做栈同开关：关闭「撤销记录跨重启持久化」时，重做也仅会话内有效。
-        if (!settings.persistUndo) return;
+        if (!settings.persistUndo) return true;
       }
-      await withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
+      return withCrossPageLock(UNDO_PERSIST_LOCK, async () => {
         const disk = await repo.readStrict();
         const ok = await repo.write(apply(disk));
         if (!ok) {
@@ -179,10 +187,14 @@ function enqueuePersist(
           // 入口凭空消失 —— 只进诊断日志等于用户完全不知情（诊断要主动导出才看得到）。
           undoPersistFailed = true;
         }
+        return ok;
       });
-    },
-    (error) => logFailure('undoStore', exceptionMessage, error)
-  );
+    })
+    .catch((error: unknown) => {
+      logFailure('undoStore', exceptionMessage, error);
+      undoPersistFailed = true;
+      return false;
+    });
 }
 
 /* @i18n-ignore-start
@@ -191,7 +203,7 @@ function enqueuePersist(
 function enqueueUndoPersist(
   apply: (disk: UndoBatch[]) => UndoBatch[],
   opts?: { alwaysWrite?: boolean }
-): Promise<void> {
+): Promise<boolean> {
   return enqueuePersist(
     undoPersistChain,
     undoRepository,
@@ -206,7 +218,7 @@ function enqueueUndoPersist(
 function enqueueRedoPersist(
   apply: (disk: UndoBatch[]) => UndoBatch[],
   opts?: { alwaysWrite?: boolean }
-): Promise<void> {
+): Promise<boolean> {
   return enqueuePersist(
     redoPersistChain,
     redoRepository,
@@ -325,7 +337,11 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     }
     // 必须带上固定标签：快照恢复会按快照里的 pinned 状态新建**固定**标签，
     // 它们正是本次要关掉的对象（默认豁免是给 redo 用的，那里关的是用户自己固定的页）。
-    const targets = selectRedoTargets(tabs, batch.entries, { includePinned: true });
+    const createdTabIds = batch.createdTabIds ?? restoredTabIdsByBatch.get(batch.id);
+    const targets = selectRedoTargets(tabs, batch.entries, {
+      includePinned: true,
+      ...(createdTabIds ? { restoredTabIds: createdTabIds } : {})
+    });
 
     if (targets.length === 0) {
       // 两种成因必须分开处置，不能合并成一句「已不在窗口中」：
@@ -376,14 +392,26 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       return;
     }
 
+    const beforeBatches = get().batches;
     const remainingEntries = entriesRemainingAfterClose(batch.entries, closed);
     const retryBatch =
       remainingEntries.length > 0 ? { ...batch, entries: remainingEntries } : undefined;
     onCommitted(get().batches, retryBatch);
-    await enqueueUndoPersist((disk) => {
+    const undoPersisted = await enqueueUndoPersist((disk) => {
       const remaining = disk.filter((entry) => entry.id !== batch.id);
       return retryBatch ? [retryBatch, ...remaining] : remaining;
     });
+    if (!undoPersisted) {
+      set({ batches: beforeBatches });
+      undoPersistFailed = true;
+      showToast({
+        message: translate('操作失败，请稍后重试'),
+        canUndo: true,
+        batchId: batch.id,
+        tone: 'error'
+      });
+      return;
+    }
 
     const closedBatch = createUndoBatch(
       'restore-undo',
@@ -555,10 +583,37 @@ export const useUndoStore = create<UndoState>()((set, get) => {
   };
 
   /** 入栈并持久化（closeWithUndo 与 recordClosedBatch 共用）。 */
-  const appendBatch = async (batch: UndoBatch): Promise<void> => {
+  const appendBatch = async (batch: UndoBatch): Promise<boolean> => {
     // 等待 load 完成后再入栈，避免磁盘状态加载覆盖尚未持久化的内存批次。
     if (!get().ready) await get().load();
-    const settings = await settingsRepository.readStrict();
+    let settings: { undoStackLimit: number };
+    try {
+      settings = await settingsRepository.readStrict();
+    } catch (error) {
+      const { kept, evicted } = pushBatchWithEvicted(
+        get().batches,
+        batch,
+        DEFAULT_UNDO_STACK_LIMIT
+      );
+      set({ batches: kept });
+      if (evicted.length > 0) {
+        get().notifyEviction(
+          'undo-stack',
+          translate('撤销记录已达上限，最早的 {{count}} 次关闭无法恢复（可在设置中调大上限）', {
+            count: evicted.length
+          })
+        );
+      }
+      undoPersistFailed = true;
+      logFailure('undoStore', '撤销栈设置读取失败，已保留会话内撤销入口', error);
+      showToast({
+        message: translate('操作失败，请稍后重试'),
+        canUndo: true,
+        batchId: batch.id,
+        tone: 'error'
+      });
+      return false;
+    }
     const { kept, evicted } = pushBatchWithEvicted(get().batches, batch, settings.undoStackLimit);
     set({ batches: kept });
     // 发生淘汰时通过 toast 告知用户；栈深上限已在撤销历史中说明，此处仅提示实际淘汰结果。
@@ -573,14 +628,38 @@ export const useUndoStore = create<UndoState>()((set, get) => {
     }
     // 新的关闭批次入栈时清空重做栈：重做仅对应最近一次撤销，避免关闭与当前状态无关的标签。
     restoredTabIdsByBatch.clear();
+    const previousRedoBatches = get().redoBatches;
     // 仅栈非空时才写盘：绝大多数关闭路径不产生额外写。
     if (get().redoBatches.length > 0) {
       set({ redoBatches: [] });
-      await enqueueRedoPersist(() => [], { alwaysWrite: true });
+      const redoCleared = await enqueueRedoPersist(() => [], { alwaysWrite: true });
+      if (!redoCleared) {
+        set({ redoBatches: previousRedoBatches });
+        undoPersistFailed = true;
+        showToast({
+          message: translate('操作失败，请稍后重试'),
+          canUndo: true,
+          batchId: batch.id,
+          tone: 'error'
+        });
+        return false;
+      }
     }
     // 入队持久化：链内以磁盘栈为基线追加本批次（磁盘可能已含另一窗口写入的
     // 批次或已发生的撤销出栈）；persistUndo 关闭时不写库（链内检查）。
-    await enqueueUndoPersist((disk) => pushBatch(disk, batch, settings.undoStackLimit));
+    const persisted = await enqueueUndoPersist((disk) =>
+      pushBatch(disk, batch, settings.undoStackLimit)
+    );
+    if (!persisted) {
+      undoPersistFailed = true;
+      showToast({
+        message: translate('操作失败，请稍后重试'),
+        canUndo: true,
+        batchId: batch.id,
+        tone: 'error'
+      });
+    }
+    return persisted;
   };
 
   return {
@@ -921,10 +1000,30 @@ export const useUndoStore = create<UndoState>()((set, get) => {
       await appendBatch(batch);
     },
 
-    recordReuseClosed: async (windowId, records) => {
-      if (records.length === 0) return;
-      const batch = createUndoBatch('reuse', [...records], { windowId });
+    recordRestoreBatch: async (createdTabs, windowId) => {
+      if (createdTabs.length === 0) return;
+      const batch = createUndoBatch(
+        'restore',
+        createdTabs.map((tab) => toUndoTabRecord(tab, new Map())),
+        {
+          windowId: windowId ?? createdTabs[0]?.windowId,
+          createdTabIds: createdTabs.map((tab) => tab.id)
+        }
+      );
       await appendBatch(batch);
+    },
+
+    recordReuseClosed: async (windowId, records, batchId) => {
+      if (records.length === 0) return true;
+      const batch = createUndoBatch('reuse', [...records], { windowId, id: batchId });
+      if (batchId === undefined) return appendBatch(batch);
+      const existing = reuseClosedInFlight.get(batchId);
+      if (existing) return existing;
+      const pending = appendBatch(batch);
+      reuseClosedInFlight.set(batchId, pending);
+      return pending.finally(() => {
+        if (reuseClosedInFlight.get(batchId) === pending) reuseClosedInFlight.delete(batchId);
+      });
     },
 
     clearToast: () => {

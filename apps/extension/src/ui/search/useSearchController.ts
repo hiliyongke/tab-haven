@@ -169,10 +169,10 @@ export function useSearchController(options: SearchControllerOptions): SearchCon
   // 只在开启历史搜索时构造——快照数据不动则引擎引用稳定，不会随标签事件重建。
   const historyEngine = useMemo(
     () =>
-      searchHistory
+      searchHistory && isFiltering
         ? new SearchEngine(buildHistoryTargets(snapshots), { pinyin: pinyinUsable })
         : null,
-    [searchHistory, snapshots, pinyinUsable]
+    [searchHistory, isFiltering, snapshots, pinyinUsable]
   );
 
   const searchHits = useMemo(() => {

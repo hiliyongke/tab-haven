@@ -9,6 +9,7 @@
 ├── README.md                 # 本文件（配置总览，不加载进 AI 上下文）
 ├── rules/                    # 规则：约束 AI 行为的规范
 │   ├── code-style/RULE.mdc        # [always] 代码风格与命名
+│   ├── code-rules/RULE.mdc        # [always] 严格代码规范与 AI 评审合同（统一判定基准）
 │   ├── architecture/RULE.mdc      # [always] 分层架构红线
 │   ├── privacy-security/RULE.mdc  # [always] 隐私与安全红线
 │   ├── ai-collaboration/RULE.mdc  # [always] AI 协作约定（最小改动/git 禁区/核验/汇报）
@@ -37,7 +38,7 @@
 │   ├── commit.md       # /commit [提示]      —— 生成提交信息草稿（不动 git）
 │   ├── privacy-audit.md # /privacy-audit     —— 隐私红线自查
 │   └── release.md      # /release [版本号]   —— 发布前串联（门禁→双变体→审计→打包）
-└── memory/                   # 跨会话项目记忆（CodeBuddy 运行时生成并维护，可能不存在）
+└── memory/                   # 跨会话项目记忆（CodeBuddy 运行时生成并维护，必须保持忽略）
 ```
 
 项目根另有 `CODEBUDDY.md`（项目速览，每会话全文加载，是 AI 的入口文件）。
@@ -53,14 +54,14 @@
 
 约束要点：
 
-- 官方建议 always 类规则控制在 3-5 个（本项目 4 个），其余按需加载，避免上下文膨胀。
+- 官方建议 always 类规则控制在 3-5 个（本项目 5 个），其余按需加载，避免上下文膨胀。
 - 单条规则控制在 500 行内；大文档拆到 Skill 的 `references/` 按需加载。
 - Agent/Skill 的 `tools` / `allowed-tools` 遵循最小权限：只读型（analyst/reviewer/auditor）不授写权限。
 - 规则改动后需**新建会话**生效（规则只在会话开始时加载）。
 
-### 官方文档未明示点（待实测校准）
+### 官方文档未明示点（按实测结果校准）
 
-以下三点来自官方文档空白，当前按最合理方案落地，使用中若行为不符按此校准：
+以下三点来自官方文档空白，当前按最合理方案落地，行为不符时按实测结果校准：
 
 1. **Commands 项目级目录**：`.codebuddy/commands/` 是 CodeBuddy Code（CLI）规范；IDE 官方页仅说明「界面创建的是项目级指令」并兼容用户级 `~/.codebuddy/commands/`，未明示项目级目录路径。若 IDE 不识别本目录的命令，回退方案：把命令正文改写为 `alwaysApply: false` 的规则，用 `@规则名` 手动触发。
 2. **Agent `tools` 工具名**：官方示例仅出现 `WebFetch, WebSearch`；`Read / Grep / Glob / ListDir / Write / Edit / Bash` 按 CLI 惯例填写，需以 IDE 设置页 Agent 编辑器中的实际工具清单校正，否则白名单可能静默失效。
@@ -72,7 +73,7 @@
 功能  /feature ───────────► 开发主线：spec 分析 → 确认 → 编码 → 测试 → 评审 → 门禁 → 提交草稿
                               （各阶段调用下列对应模块；阶段 1 产出计划后须用户确认才落码）
 需求  /spec ──────────────► requirements-analyst（只读分析，产出计划）
-编码  主 Agent 编码 ◄──────── rules: architecture / privacy-security / code-style / ai-collaboration（always 约束）
+编码  主 Agent 编码 ◄──────── rules: code-rules / architecture / privacy-security / code-style / ai-collaboration（always 约束）
                               │ 操作中按需触发
                               ├─ skill: change-recipes（高频任务文件地图，动手前必查）
                               ├─ skill: ui-component（组件复用清单，写 UI 前必查）
@@ -81,7 +82,7 @@
                               ├─ skill: chrome-extensions（MV3 API 惯用法/坑、上架材料）
                               └─ rules: testing（写测试时加载）
 测试  /test ────────────────► test-engineer + skill: behavior-spec-testing
-评审  /review ──────────────► code-reviewer（四维度，file:line 清单）
+评审  /review ──────────────► code-reviewer（强制对照 code-rules §1–§10，file:line 清单）
 门禁  /check ───────────────► skill: quality-gates（失败逐项修）
 合规  /privacy-audit ───────► privacy-auditor（发布前/权限变更后）
 发布  /release ─────────────► 门禁 → 双变体构建 → 隐私审计 → zip/crx 打包（不 tag、不上传商店）
@@ -93,7 +94,7 @@
 ## 优先级
 
 1. **作用域优先级**：项目级（`.codebuddy/`）> 用户级（`~/.codebuddy/`）。官方明确 Commands 项目级覆盖同名用户级；Rules/Agents/Skills 官方未明示同名冲突规则，按就近原则以项目级为准，遇异常以实测为准。
-2. **内容冲突时的效力排序**（本项目自定义）：`privacy-security` > `architecture` > `ai-collaboration` > `code-style` > 其他按需规则 > 技能指南。即：隐私红线不可被任何便利理由覆盖。
+2. **内容冲突时的效力排序**（本项目自定义）：`PRIVACY.md` > `CONTRIBUTING.md` > `privacy-security` > `architecture` > `code-rules` > `ai-collaboration` > `code-style` > 其他按需规则 > 技能指南。即：隐私红线不可被任何便利理由覆盖。
 3. **加载顺序**：`CODEBUDDY.md` 全文 → always 规则全文 → 按需规则（名称+描述常驻，相关时读原文）→ Skill 元数据（触发后加载主体）→ Agent（委派时载入其系统提示词）。
 
 ## 全流程覆盖矩阵
@@ -102,9 +103,9 @@
 | ---------------- | --------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | 功能交付（主线） | `/feature`            | 串联下列全部模块                                                                                      | 计划确认制；五阶段流水线                              |
 | 需求分析         | `/spec`               | requirements-analyst、architecture/privacy-security 规则                                              | 宪法冲突前置拦截；影响面点名 schema/权限/文案三类流程 |
-| 编码             | 自然语言 / 手动 @规则 | 4 条 always 规则、change-recipes、ui-component、schema-evolution、wxt-dev-workflow、chrome-extensions | 分层红线 + 最小改动 + 复用优先                        |
+| 编码             | 自然语言 / 手动 @规则 | 5 条 always 规则、change-recipes、ui-component、schema-evolution、wxt-dev-workflow、chrome-extensions | 严格代码规范 + 分层红线 + 最小改动 + 复用优先         |
 | 测试             | `/test`               | test-engineer、testing 规则、behavior-spec-testing                                                    | 覆盖率 ratchet；fake-browser 偏差声明                 |
-| 评审             | `/review`             | code-reviewer                                                                                         | Blocker 分级；全称判断先核验                          |
+| 评审             | `/review`             | code-reviewer + `rules/code-rules`                                                                    | §1–§10 逐项核对；P0/P1 一律 Request changes           |
 | 门禁             | `/check`              | quality-gates                                                                                         | 禁改配置绕过门禁                                      |
 | 合规             | `/privacy-audit`      | privacy-auditor                                                                                       | 逐项证据化核验                                        |
 | 提交             | `/commit`             | git-commit 规则                                                                                       | 草稿确认制；AI 无 git 写权限                          |
@@ -112,7 +113,7 @@
 
 ## 扩展指南（新增配置怎么做）
 
-- **加规则**：`rules/<名>/RULE.mdc`，先想清激活方式——核心约束才 `alwaysApply: true`（保持 ≤5 个），场景化规范用 `false` 并把 `description` 写清触发场景。
+- **加规则**：`rules/<名>/RULE.mdc`，先想清激活方式——核心约束才 `alwaysApply: true`（保持 ≤5 个），场景化规范用 `false` 并把 `description` 写清触发场景。涉及代码/评审的事实标准优先合并进 `code-rules`，不要制造多份互相冲突的清单。
 - **加 Agent**：`agents/<名>.md`，单一职责；`description` 写清「专长 + 范围 + 触发条件」；`tools` 只授必需项，工具名以 IDE Agent 编辑器实际清单为准（见上文「官方文档未明示点」）。
 - **加 Skill**：`skills/<名>/SKILL.md`，指令性语言写步骤；长文档放 `references/`，脚本放 `scripts/`，模板放 `assets/`。
 - **加 Command**：`commands/<名>.md`（文件名即命令名），正文是提示词模板，参数用 `$ARGUMENTS`/`$1`；同类命令多时用子目录命名空间。
@@ -132,4 +133,4 @@
 
 - 配置随代码评审一起变更：改了工程规范（CONTRIBUTING/门禁/目录结构）→ 同步改本目录对应规则或技能。
 - 发现 AI 行为偏差 → 优先改规则描述或技能步骤，而不是在对话里反复纠正。
-- 本目录不存项目记忆（`memory/` 由 CodeBuddy 自动维护）、不放业务文档（统一放仓库根）。
+- 本目录不存项目记忆（`memory/` 由 CodeBuddy 自动维护且必须忽略）、不放业务文档（统一放仓库根）、不放过程性报告或跨会话交接记录。

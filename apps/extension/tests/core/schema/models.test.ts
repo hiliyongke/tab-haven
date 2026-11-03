@@ -82,10 +82,12 @@ describe('SettingsSchema', () => {
     expect(SettingsSchema.parse({}).density).toBe('cozy');
   });
 
-  it('language 宽松校验：缺省 undefined，合法 BCP-47 通过', () => {
+  it('language 白名单：缺省 undefined，仅支持的界面语言通过', () => {
     expect(SettingsSchema.parse({}).language).toBeUndefined();
     expect(SettingsSchema.parse({ language: 'zh-CN' }).language).toBe('zh-CN');
+    expect(SettingsSchema.parse({ language: 'en' }).language).toBe('en');
     expect(SettingsSchema.safeParse({ language: 'x' }).success).toBe(false);
+    expect(SettingsSchema.parse({ language: 'fr' }).language).toBeUndefined();
   });
 
   it('未声明的设置字段被拒绝', () => {

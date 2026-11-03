@@ -112,4 +112,29 @@ describe('theme-init', () => {
     expect(document.documentElement.dataset.themePreference).toBe('system');
     expect(document.documentElement.dataset.hue).toBe('plain');
   });
+
+  it('matchMedia 缺失：系统偏好降级为 light，不抛错', async () => {
+    installLocalStorage();
+    Reflect.deleteProperty(window, 'matchMedia');
+    await expect(runThemeInit()).resolves.toBeUndefined();
+    expect(document.documentElement.dataset.themePreference).toBe('system');
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('matchMedia 抛错：系统偏好降级为 light，不抛错', async () => {
+    installLocalStorage();
+    window.matchMedia = (() => {
+      throw new Error('matchMedia unavailable');
+    }) as unknown as typeof window.matchMedia;
+    await expect(runThemeInit()).resolves.toBeUndefined();
+    expect(document.documentElement.dataset.themePreference).toBe('system');
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('matchMedia 返回非法对象：系统偏好降级为 light，不抛错', async () => {
+    installLocalStorage();
+    window.matchMedia = (() => ({ matches: 'yes' })) as unknown as typeof window.matchMedia;
+    await expect(runThemeInit()).resolves.toBeUndefined();
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
 });

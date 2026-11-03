@@ -96,6 +96,13 @@ export function useSpaces(): {
           notify(t('当前窗口没有可保存的标签，已保留原工作区内容'));
           return;
         }
+        const activated = await useDataStore
+          .getState()
+          .tryUpdateSettings({ activeSpaceId: target.id });
+        if (!activated) {
+          notifyError(t('操作失败，请稍后重试'));
+          return;
+        }
         const tabs = await queryCurrentWindowTabs();
         const targetWindowId = tabs[0]?.windowId;
         const closable = tabs.filter(isSwitchClosable);
@@ -108,14 +115,6 @@ export function useSpaces(): {
         // 显式同一窗口：缺省会走 getLastFocused，中途焦点移动会关 A 开 B。
         const restored = await useSnapshotStore.getState().restore(target.id, targetWindowId);
         const count = restored.count;
-        const activated = await useDataStore
-          .getState()
-          .tryUpdateSettings({ activeSpaceId: target.id });
-        // 标签已恢复但激活态未落盘时不能宣称完整成功；否则下次切换会把现场写回旧空间。
-        if (!activated) {
-          notifyError(t('操作失败，请稍后重试'));
-          return;
-        }
         notify(
           closable.length === 0
             ? t('已切换到「{{name}}」，恢复 {{count}} 个标签', { name: target.name, count })

@@ -11,7 +11,9 @@ import type { DataContext, DataState } from '@/stores/data/types';
 
 const mocks = vi.hoisted(() => ({
   pull: vi.fn(),
-  pullIssue: vi.fn(() => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable')
+  pullIssue: vi.fn(
+    () => 'none' as 'none' | 'ok' | 'chunk-limit' | 'unreadable' | 'expired' | 'local'
+  )
 }));
 
 vi.mock('@/platform/storage/SyncMirror', () => ({
@@ -135,13 +137,23 @@ describe('restoreFromMirrorOnEnable', () => {
     expect(h.seededWrite).not.toHaveBeenCalled();
   });
 
-  it('镜像损坏 / 过期拿不到：上报 unreadable，与「超出容量上限」区分开', async () => {
+  it('镜像损坏拿不到：上报 unreadable，与「超出容量上限」区分开', async () => {
     mocks.pull.mockResolvedValueOnce(null);
     mocks.pullIssue.mockReturnValueOnce('unreadable');
     const h = await harness();
 
-    await expect(h.run()).resolves.toBe('no-mirror');
+    await expect(h.run()).resolves.toBe('failed');
     expect(h.set).toHaveBeenCalledWith({ mirrorIssue: 'unreadable' });
+  });
+
+  it('镜像过期拿不到：上报 expired，保留重试且不覆盖云端', async () => {
+    mocks.pull.mockResolvedValueOnce(null);
+    mocks.pullIssue.mockReturnValueOnce('expired');
+    const h = await harness();
+
+    await expect(h.run()).resolves.toBe('failed');
+    expect(h.set).toHaveBeenCalledWith({ mirrorIssue: 'expired' });
+    expect(h.seededWrite).not.toHaveBeenCalled();
   });
 
   it('镜像可用：恢复本地并置 seeded，分类为 ok', async () => {

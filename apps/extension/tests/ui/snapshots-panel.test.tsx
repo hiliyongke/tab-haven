@@ -220,6 +220,37 @@ describe('SnapshotsPanel 删除不可逆操作回执（P1-3）', () => {
       expect(useUndoStore.getState().toast?.message).toBe(translate('已删除快照'))
     );
   });
+
+  it('删除失败时确认弹窗保持打开，并在弹窗内给出重试入口', async () => {
+    let rejectDelete: ((error: Error) => void) | undefined;
+    const deleteSnapshot = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectDelete = reject;
+        })
+    );
+    useSnapshotStore.setState({
+      snapshots: [makeSnap({ id: 'm1', name: '待删除', createdAt: 300 })],
+      ready: true,
+      deleteSnapshot
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: translate('删除') }));
+    const dialog = await screen.findByRole('dialog', { name: translate('确认操作') });
+    fireEvent.click(screen.getByRole('button', { name: translate('确认删除') }));
+    expect(screen.getByRole('button', { name: translate('确认删除') })).toHaveAttribute(
+      'aria-busy',
+      'true'
+    );
+
+    rejectDelete?.(new Error('failed'));
+    await waitFor(() => expect(dialog).toHaveTextContent(translate('操作失败，请稍后重试')));
+    expect(deleteSnapshot).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: translate('确认删除') })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: translate('确认删除') }));
+    expect(deleteSnapshot).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('SnapshotsPanel 导入在途互斥（P1-2）', () => {
