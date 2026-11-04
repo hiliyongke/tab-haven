@@ -112,19 +112,24 @@ function tabsOfWorkspace(workspace: WorkonaWorkspace): { tabs: SnapshotTab[]; dr
       dropped += 1;
       return;
     }
+    let href: string | undefined;
     try {
       const parsed = new URL(url);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        out.push({
-          url: parsed.href,
-          title: entry.title?.trim() ?? '',
-          pinned: false,
-          muted: false
-        });
-        return;
+        href = parsed.href;
       }
     } catch {
       // 非 URL：落入下方 dropped
+      href = undefined;
+    }
+    if (href !== undefined) {
+      out.push({
+        url: href,
+        title: entry.title?.trim() ?? '',
+        pinned: false,
+        muted: false
+      });
+      return;
     }
     // 非 http(s) / 解析失败：浏览器不允许以这些 URL 建标签，计入丢弃量。
     dropped += 1;

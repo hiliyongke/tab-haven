@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, type Settings, type Snapshot } from '@/core/schema/models';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
+import { listNormalWindowIds } from '@/platform/windows';
 import { runAutoSnapshot, syncAutoSnapshotAlarm } from '@/platform/background/autoSnapshot';
 
 /**
@@ -20,6 +22,7 @@ function makeSnapshot(partial: Partial<Snapshot>): Snapshot {
     id: 's1',
     name: '自动快照',
     origin: 'auto',
+    windowId: 1,
     createdAt: Date.now(),
     tabCount: 1,
     tabs: [{ url: 'https://a.com/', title: 'A', pinned: false, muted: false }],
@@ -28,7 +31,7 @@ function makeSnapshot(partial: Partial<Snapshot>): Snapshot {
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 
@@ -63,8 +66,9 @@ describe('定时自动快照', () => {
   it('内容与最新自动快照相同则不重复写入（去重防噪音）', async () => {
     await settingsRepository.write({ ...DEFAULT_SETTINGS, autoSaveSnapshots: true });
     await fakeBrowser.tabs.create({ url: 'https://a.com/' });
-    // 预置一份与当前现场完全相同的自动快照
-    await snapshotsRepository.write([makeSnapshot({ id: 'existing' })]);
+    // 预置一份与当前窗口现场完全相同的自动快照（窗口归属必须与本次采集一致）
+    const [windowId] = await listNormalWindowIds();
+    await snapshotsRepository.write([makeSnapshot({ id: 'existing', windowId })]);
     const writeSpy = vi.spyOn(snapshotsRepository, 'write');
 
     await runAutoSnapshot();

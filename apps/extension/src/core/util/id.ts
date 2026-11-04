@@ -22,13 +22,16 @@ function randomPart(): string {
 }
 
 export function newId(prefix: string): string {
+  let uuid: string | undefined;
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
+      uuid = crypto.randomUUID();
     }
   } catch {
     // 非安全上下文 / 引擎不提供：走下方退化路径
+    uuid = undefined;
   }
+  if (uuid !== undefined) return uuid;
   // 批量操作同毫秒连续取 id，仅靠「时间戳 + 随机串」有碰撞窗口，故随机段前加进程内单调序号把同毫秒碰撞变为不可能。
   fallbackSeq = (fallbackSeq + 1) % 36 ** 2;
   return `${prefix}-${Date.now().toString(36)}-${fallbackSeq.toString(36).padStart(2, '0')}${randomPart()}`;

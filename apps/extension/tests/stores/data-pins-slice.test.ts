@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import { useDataStore } from '@/stores/dataStore';
@@ -71,7 +71,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 describe('addPin', () => {

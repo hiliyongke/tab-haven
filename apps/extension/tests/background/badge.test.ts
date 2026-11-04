@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository } from '@/platform/storage/repositories';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
@@ -49,7 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   (fakeBrowser as unknown as { action?: unknown }).action = undefined;
   clearDiagnostics();
   vi.useRealTimers();

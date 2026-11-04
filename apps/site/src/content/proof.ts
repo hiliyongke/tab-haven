@@ -3,7 +3,7 @@
  *
  * 每个数字都必须能在项目代码或公开说明中核验，确保展示内容准确可信。
  */
-export interface ProofStat {
+interface ProofStat {
   /** 数字字面量：不进词典（两种语言下一致） */
   value: string;
   labelKey: string;

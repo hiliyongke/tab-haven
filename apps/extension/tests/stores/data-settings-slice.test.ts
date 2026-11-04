@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { DataContext, DataState } from '@/stores/data/types';
 
@@ -131,7 +131,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 describe('开启同步的反向恢复（新设备换机恢复）', () => {

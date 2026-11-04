@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import type { TabRecord } from '@/core/tab-types';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { translate } from '@/i18n';
@@ -43,7 +43,7 @@ describe('notifyEviction 会话内合并', () => {
   });
 
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     useUndoStore.setState({ batches: [], redoBatches: [], toast: null, ready: false });
     vi.restoreAllMocks();
   });

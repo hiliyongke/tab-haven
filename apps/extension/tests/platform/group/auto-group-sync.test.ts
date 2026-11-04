@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import {
   disbandAutoGroups,
   reconcileAutoGroupDomains,
@@ -91,7 +92,7 @@ function stubTabsQuery(
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

@@ -12,7 +12,7 @@ import { toHashKey } from './hashKey.ts';
  */
 
 /** 源码位置（只取扫描需要的行/列）。 */
-export interface SourceLocation {
+interface SourceLocation {
   start: { line: number; column: number };
   end: { line: number; column: number };
 }
@@ -70,7 +70,7 @@ const resolveSuffixes = (options: CollectOptions): readonly string[] =>
   options.keySuffixes ?? DEFAULT_KEY_SUFFIXES;
 
 /** 解析器配置：扫描器与 lint 必须共用同一份，否则一侧改插件/开关会漏改另一侧，出现「扫描器收进词典、lint 又判为裸露中文」的矛盾。 */
-export const parseOptions: ParserOptions = {
+const parseOptions: ParserOptions = {
   sourceType: 'module',
   // errorRecovery：单个新语法不至于让整个仓库扫描失败；错误节点会被跳过。
   errorRecovery: true,
@@ -83,9 +83,6 @@ export const parseOptions: ParserOptions = {
  * 第三方 parser 的返回类型与本地 `AstNode` 不兼容，调用点本会各自写
  * `as unknown as AstNode`；集中到此处后，「绕开 parser 类型」这件事只有一份实现，
  * 且必然与 `parseOptions` 同源。
- */
-/**
- * 解析源码为 AST —— 全仓唯一的解析器返回类型断言点。
  *
  * `.ts` 不启用 jsx 插件：`const f = <T>(x: T) => x` 在 jsx 语义下是标签起点，
  * Babel 会以「Single type parameter T should have a trailing comma」恢复解析 ——
@@ -233,10 +230,7 @@ function isStableEmptyConditional(expression: AstNode): boolean {
  * 序号按**过滤掉空白文本后**的数组计算（React 的 Children.toArray 同样丢弃它们），
  * 与运行时 `Trans` 的 `nodesToString` 必须同口径，否则算出的 key 不一致。
  */
-export function jsxChildrenToString(
-  children: AstValue,
-  onError?: (message: string) => void
-): string {
+function jsxChildrenToString(children: AstValue, onError?: (message: string) => void): string {
   const nodes = asNodes(children).filter((child) => {
     // 空白 JSXText **必须保留**：运行时 `Children.toArray` 只丢弃 null/undefined/
     // boolean，空白字符串仍然占一个序号。在这里过滤掉会让后续占位符整体错位
@@ -298,7 +292,7 @@ export function jsxChildrenToString(
 }
 
 /** 归一化：换行与多余空白折成一个空格——源码折行不代表文案有换行。 */
-export const normalize = (text: string): string => text.replace(/\s+/g, ' ').trim();
+const normalize = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 /** 一条扫描结果。 */
 export interface ScannedEntry {

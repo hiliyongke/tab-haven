@@ -75,7 +75,7 @@ export function buildWhitelistMatcher(whitelist: readonly string[]): (hostname: 
  * 通知用途。Chrome 对同名 id 的通知是替换而非排队：固定 id 下自动休眠的「已休眠 N 个标签
  * （可一键唤醒）」会被紧随的「保存失败」顶掉。按用途分 id 后两条通知各占一个槽位。
  */
-export type NotifyPurpose = 'auto-discard' | 'action';
+type NotifyPurpose = 'auto-discard' | 'action';
 
 const NOTIFICATION_IDS: Record<NotifyPurpose, string> = {
   'auto-discard': 'tabs-auto-discard',

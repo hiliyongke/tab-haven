@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import { NO_GROUP } from '@/core/tab-types';
 import type { UndoTabRecord } from '@/core/schema/models';
 import { clearDiagnosticBuffer, readDiagnostics } from '@/platform/log';
@@ -46,7 +47,7 @@ function stubGroupApis(): GroupStub {
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   clearDiagnosticBuffer();
   vi.restoreAllMocks();
 });

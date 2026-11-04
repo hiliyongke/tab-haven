@@ -15,7 +15,7 @@ import { QuickStart } from './sections/QuickStart';
 import { Scenarios } from './sections/Scenarios';
 import { useSiteI18n } from './i18n';
 
-export interface AppProps {
+interface AppProps {
   version: string;
   year: string;
   lng: string;

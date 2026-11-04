@@ -22,6 +22,17 @@
     "src/ui/common/**": { "lines": 66, "statements": 65, "branches": 56, "functions": 63 },
     "src/stores/*.ts": { "lines": 63, "statements": 61, "branches": 64, "functions": 64 },
     "src/stores/data/**": { "lines": 73, "statements": 70, "branches": 63, "functions": 70 },
-    "src/platform/**": { "lines": 81, "statements": 79, "branches": 74, "functions": 77 }
+    "src/platform/**": { "lines": 81, "statements": 79, "branches": 74, "functions": 77 },
+    "src/ui/hooks/**": { "lines": 25, "statements": 25, "branches": 20, "functions": 20 },
+    "src/ui/tabs/**": { "lines": 55, "statements": 50, "branches": 40, "functions": 50 },
+    "src/ui/search/**": { "lines": 60, "statements": 60, "branches": 55, "functions": 60 },
+    "src/ui/settings/**": { "lines": 55, "statements": 55, "branches": 45, "functions": 55 },
+    "src/ui/snapshot/**": { "lines": 60, "statements": 60, "branches": 50, "functions": 60 },
+    "src/entrypoints/sidepanel/**": {
+      "lines": 35,
+      "statements": 35,
+      "branches": 25,
+      "functions": 25
+    }
   }
 }

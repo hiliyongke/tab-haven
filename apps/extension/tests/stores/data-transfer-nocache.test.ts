@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, EXPORT_FILE_VERSION } from '@/core/schema/models';
 import type { Repositories } from '@/platform/registry';
 import type { DataContext, DataState } from '@/stores/data/types';
@@ -88,7 +88,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 describe('导入备份时的禁缓存口径', () => {

@@ -3,6 +3,7 @@ import { activateTabAcrossWindows, createTabsWithUrls, queryAllWindowTabs } from
 import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
 import { t } from '@/i18n/headless';
 import { openSidePanel } from '@/platform/sidePanel';
+import { logDegraded } from '@/platform/diagnostics';
 import { hostnameOf, runPanelSearch } from './shared';
 import { isHttpUrl } from '@/core/url/UrlInspector';
 
@@ -103,8 +104,9 @@ async function handleOmniboxEnter(text: string, disposition?: string): Promise<v
           await activateTabAcrossWindows({ id: tab.id, windowId: tab.windowId });
           return;
         }
-      } catch {
+      } catch (error) {
         // 标签已被关闭：落到开面板兜底
+        logDegraded('omnibox', '地址栏直达标签已关闭，改开面板兜底', error);
       }
     }
     await openSidePanel().catch(() => undefined);

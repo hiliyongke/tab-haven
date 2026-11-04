@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import {
   MessageSchema,
   PENDING_ACTIONS_KEY,
@@ -49,7 +50,7 @@ function registerPendingWatcher(handler: (action: PendingAction) => void): {
 
 describe('MessageSchema 协议契约', () => {
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     vi.restoreAllMocks();
   });
 
@@ -130,7 +131,7 @@ describe('MessageSchema 协议契约', () => {
 
 describe('sendMessage / sendMessageWithAck 降级语义', () => {
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -174,7 +175,7 @@ describe('sendMessage / sendMessageWithAck 降级语义', () => {
 
 describe('onRuntimeMessage 来源与校验闸门', () => {
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     vi.restoreAllMocks();
   });
 
@@ -216,7 +217,7 @@ describe('onRuntimeMessage 来源与校验闸门', () => {
 
 describe('watchPendingActions 挂起队列消费', () => {
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     vi.restoreAllMocks();
   });
 

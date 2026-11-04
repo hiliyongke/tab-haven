@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, PINS_LIMIT } from '@/core/schema/models';
 import { createFolder, createFolderItem } from '@/core/fixed/FolderOps';
 import {
@@ -88,7 +89,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   (fakeBrowser as unknown as { contextMenus?: unknown }).contextMenus = undefined;
   (fakeBrowser as unknown as { i18n?: unknown }).i18n = undefined;
   clearDiagnostics();

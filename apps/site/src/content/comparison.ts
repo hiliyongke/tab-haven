@@ -7,7 +7,7 @@
  *   「视产品而定」）；
  * - 不贬低 —— 原生栏位写「不带额外能力」，不写「差」。
  */
-export interface ComparisonRow {
+interface ComparisonRow {
   featureKey: string;
   tabsKey: string;
   nativeKey: string;

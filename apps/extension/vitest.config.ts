@@ -37,6 +37,13 @@ export default defineConfig({
     // core 纯函数测试默认 node 环境；UI/平台层测试在文件顶部以
     // `// @vitest-environment jsdom` 注释按需切换。
     environment: 'node',
+    /**
+     * Node 26 在 globalThis 上装了实验性 localStorage getter，Vitest 的 jsdom 环境会让
+     * `window.localStorage` 命中它而非 jsdom 自己的实现：首次访问既打印
+     * ExperimentalWarning，又返回 undefined 让主题镜像误判为「存储不可用」并刷降级日志。
+     * 测试进程不需要 Node 的持久化 webstorage，关掉该特性后 jsdom 实现即可生效。
+     */
+    execArgv: ['--no-experimental-webstorage'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
@@ -86,7 +93,15 @@ export default defineConfig({
         // （types.ts 是纯类型文件、恒 0%，会把均值压低，阈值按均值给）
         'src/stores/data/**': { lines: 73, statements: 70, branches: 63, functions: 70 },
         // 平台层整体实测 lines 89.4 / stmts 87.6 / branch 82.1 / funcs 84.8
-        'src/platform/**': { lines: 81, statements: 79, branches: 74, functions: 77 }
+        'src/platform/**': { lines: 81, statements: 79, branches: 74, functions: 77 },
+        // 以下目录此前只受 global 均值约束：局部低覆盖会被其它目录的高覆盖掩盖。
+        // 各档独立判据按目录整体实测留足波动余量，只许收紧、不许放松。
+        'src/ui/hooks/**': { lines: 25, statements: 25, branches: 20, functions: 20 },
+        'src/ui/tabs/**': { lines: 55, statements: 50, branches: 40, functions: 50 },
+        'src/ui/search/**': { lines: 60, statements: 60, branches: 55, functions: 60 },
+        'src/ui/settings/**': { lines: 55, statements: 55, branches: 45, functions: 55 },
+        'src/ui/snapshot/**': { lines: 60, statements: 60, branches: 50, functions: 60 },
+        'src/entrypoints/sidepanel/**': { lines: 35, statements: 35, branches: 25, functions: 25 }
       }
     }
   }

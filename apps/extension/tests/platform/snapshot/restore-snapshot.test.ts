@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';
 import {
   collectSnapshotTabs,
@@ -78,7 +79,7 @@ function stubTabsApi(): {
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   clearDiagnosticBuffer();
   vi.restoreAllMocks();
 });

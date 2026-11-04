@@ -13,7 +13,7 @@ import { logDegraded } from '@/platform/diagnostics';
  *
  * @param enabled 设置项 `pinyinSearch`：关闭时既不加载词典，也恒返回不可用/未失败。
  */
-export interface PinyinDictionaryState {
+interface PinyinDictionaryState {
   /** 此刻能否把拼音作为构造参数传给搜索引擎。 */
   usable: boolean;
   /** 词典加载失败：界面必须给出可见降级说明，不能只落诊断日志。 */

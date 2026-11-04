@@ -62,6 +62,7 @@ export async function initHeadlessI18n(): Promise<void> {
     });
   } catch {
     // settings 读取失败：保持 initialLanguage，后续 watch 纠正
+    return;
   }
 }
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import { TabSyncService } from '@/platform/sync/TabSyncService';
 import type { TabGroupRecord, TabRecord } from '@/core/tab-types';
 
@@ -17,7 +18,7 @@ function makeTab(partial: Partial<TabRecord>): TabRecord {
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

@@ -7,7 +7,7 @@ import { CollapseChevron } from '@/ui/common/CollapseChevron';
 import { Icon, Icons } from '@/ui/common/Icon';
 import { RowActionButton } from '@/ui/common/RowActionButton';
 import { GroupEditDialog } from '@/ui/tabs/GroupEditDialog';
-import { SectionRows } from '@/ui/tabs/rowList';
+import { SectionRows } from '@/ui/tabs/RowList';
 import { isSortableDisabled, sectionDragDataFor, useSectionAccent } from '@/ui/tabs/sectionAccent';
 import type { SectionCallbacks, SectionCardProps } from '@/ui/tabs/sectionTypes';
 
@@ -59,7 +59,7 @@ function PlayingIndicator({
 /**
  * 可折叠分组卡（原生组 / 站点组）：折叠、播放提示、原生组编辑弹窗。
  *
- * 从 `sectionCards` 拆出的原因：它是分区卡里唯一带**本地状态**（编辑弹窗开合、
+ * 从 `SectionCards` 拆出的原因：它是分区卡里唯一带**本地状态**（编辑弹窗开合、
  * 播放中筛选）的一种，与「未分组卡」和「行列表」的复用关系为零，同处一个文件
  * 时改折叠态要在三段 JSX 之间跳读。
  */

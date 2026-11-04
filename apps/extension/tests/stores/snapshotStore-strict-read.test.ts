@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import type { Snapshot } from '@/core/schema/models';
 import { snapshotsRepository } from '@/platform/storage/repositories';
 import { useSnapshotStore } from '@/stores/snapshotStore';
@@ -21,7 +22,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

@@ -3,7 +3,7 @@
  *
  * 与「快速开始」区分开：那边讲你怎么装，这里讲它怎么工作。
  */
-export interface WorkStep {
+interface WorkStep {
   titleKey: string;
   descKey: string;
 }

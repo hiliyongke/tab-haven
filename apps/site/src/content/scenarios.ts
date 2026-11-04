@@ -5,7 +5,7 @@ import type { ScenarioArtName } from '../components/art/scenarios';
  *
  * 每条都要对应 README 功能一览里已实现的能力，不写规划中的东西。
  */
-export interface ScenarioItem {
+interface ScenarioItem {
   art: ScenarioArtName;
   titleKey: string;
   descKey: string;

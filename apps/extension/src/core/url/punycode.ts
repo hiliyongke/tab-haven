@@ -75,9 +75,14 @@ function decodeLabel(input: string): string {
   return String.fromCodePoint(...output);
 }
 
+/** 主机名是否含 punycode 标签：与归组口径一致，按 xn-- 子串判定（不校验标签边界）。 */
+export function hasPunycodeLabel(hostname: string): boolean {
+  return hostname.includes('xn--');
+}
+
 /** 域名的 punycode → Unicode（逐标签解码 xn-- 前缀标签）；解码失败只回退出问题的那个标签，避免一个畸形标签把其余正常标签也打回 `xn--` 原文。 */
 export function domainToUnicode(hostname: string): string {
-  if (!hostname.includes('xn--')) return hostname;
+  if (!hasPunycodeLabel(hostname)) return hostname;
   return hostname
     .split('.')
     .map((label) => {

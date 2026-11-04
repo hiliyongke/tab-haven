@@ -5,7 +5,7 @@
  * 用途口径取自 `CHROMEWEBSTORE.md`「Permissions Justification」的中文版
  * （那份与 `PRIVACY.md` 第 2 节同口径，由 `pnpm check:privacy` 保证不漂移）。
  */
-export interface PermissionRow {
+interface PermissionRow {
   /** 权限名：标识符，各语言一致，不进词典 */
   name: string;
   /** 可选权限（默认不授予，按需由浏览器询问） */

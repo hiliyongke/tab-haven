@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, type Settings } from '@/core/schema/models';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import { settingsRepository } from '@/platform/storage/repositories';
@@ -42,7 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   (fakeBrowser as unknown as { declarativeNetRequest?: unknown }).declarativeNetRequest = undefined;
   (fakeBrowser as unknown as { permissions?: unknown }).permissions = undefined;
   clearDiagnostics();

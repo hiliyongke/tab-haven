@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { translate } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
@@ -71,7 +71,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

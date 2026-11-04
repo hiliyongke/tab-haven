@@ -44,6 +44,9 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      - name: 格式一致性
+        run: pnpm format:check
+
       - name: 全量门禁
         run: pnpm check
 
@@ -53,8 +56,10 @@ jobs:
       - name: 官网发布构建
         run: SITE_BUILD_TARGET=release pnpm site:build:release
 
-      - name: 发布产物校验
-        run: pnpm check:privacy
+      # 发布构建会重新生成 dist/，此时 domain 相关的 canonical / sitemap / robots 才齐全；
+      # 上面的 site:check 校验的是验证构建产物，不能替代这一步。
+      - name: 正式官网产物校验
+        run: pnpm --filter site verify
 
       - name: 生成发布说明
         run: node scripts/release-notes.mjs

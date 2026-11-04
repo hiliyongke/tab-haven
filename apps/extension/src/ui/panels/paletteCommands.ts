@@ -115,7 +115,7 @@ export function commandGroupLabel(group: CommandGroup | '', t: (key: string) => 
   return t('打开');
 }
 
-export interface PaletteCommands {
+interface PaletteCommands {
   folderItems: CommandItem[];
   commandItems: CommandItem[];
   recentItems: CommandItem[];

@@ -4,7 +4,7 @@ import { DevtoolsZero } from '../components/art/DevtoolsZero';
 import { MockupPanel } from '../components/MockupPanel';
 import { useSiteI18n } from '../i18n';
 
-export interface HeroProps {
+interface HeroProps {
   version: string;
   downloadHref: string | null;
 }

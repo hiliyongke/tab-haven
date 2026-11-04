@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -72,6 +72,39 @@ describe('对外文档一致性', () => {
     expect(read('README.md')).toContain('TABS_SITE_URL');
     expect(read('README.md')).not.toContain('在 `apps/site/site.config.ts` 配置真实站点根 URL');
     expect(read('CHROMEWEBSTORE.md')).toContain('`TABS_SITE_URL`');
+  });
+
+  it('AI 速览的聚合门禁链条与 package.json 同源，镜像目录真实存在', () => {
+    // Given: 根 check 脚本是命令链条的唯一事实来源
+    const rootPackage = JSON.parse(read('package.json')) as {
+      scripts: { check: string };
+    };
+    const steps = [...rootPackage.scripts.check.matchAll(/pnpm run (\S+)/g)].map(
+      (match) => match[1]!
+    );
+    expect(steps.length).toBeGreaterThan(5);
+
+    // When: 取速览里的 pnpm check 行
+    const guide = read('CODEBUDDY.md');
+    const checkLine = guide.split('\n').find((line) => line.startsWith('| `pnpm check`')) ?? '';
+
+    // Then: 每个步骤都必须在速览里出现，漏一步会让 AI/贡献者少跑官网安全测试
+    expect(checkLine).not.toBe('');
+    for (const step of steps) {
+      expect(checkLine, `CODEBUDDY.md 的 pnpm check 行缺少 ${step}`).toContain(step);
+    }
+
+    // And: 镜像目录清单里的每个名字都必须是真实一级目录
+    const mirror = guide.match(/镜像（`([^`]+)`）/);
+    expect(mirror).not.toBeNull();
+    const declared = mirror?.[1]?.split('|') ?? [];
+    expect(declared.length).toBeGreaterThan(0);
+    const actual = readdirSync(`${root}apps/extension/tests`, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    for (const name of declared) {
+      expect(actual, `CODEBUDDY.md 列了不存在的测试镜像目录 ${name}`).toContain(name);
+    }
   });
 
   it('对外文档不保留过程性占位与变更史叙述', () => {

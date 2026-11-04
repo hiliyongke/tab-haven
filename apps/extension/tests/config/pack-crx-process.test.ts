@@ -10,6 +10,19 @@ import {
   writeIdentityRecord
 } from '../../scripts/pack-crx-process.ts';
 
+/**
+ * 清理用例临时目录。受限执行环境可能拒绝删除系统临时目录；清理与用例断言
+ * （身份记录的内容、临时文件是否残留）无关，故只对 EPERM 降级，其它错误照常抛出。
+ */
+function removeTempDir(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    if (code !== 'EPERM') throw error;
+  }
+}
+
 describe('CRX 浏览器打包进程', () => {
   it('身份记录经临时文件原子替换且不残留临时文件', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tabs-crx-identity-'));
@@ -22,7 +35,7 @@ describe('CRX 浏览器打包进程', () => {
       expect(readFileSync(file, 'utf8')).toBe('ponmlkjihgfedcba\n');
       expect(readdirSync(dir)).toEqual(['tabs.pem.id']);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
@@ -38,7 +51,7 @@ describe('CRX 浏览器打包进程', () => {
       expect(() => writeIdentityRecord(file, 'ponmlkjihgfedcba')).toThrow();
       expect(readFileSync(file, 'utf8')).toBe('abcdefghijklmnop\n');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 

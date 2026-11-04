@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import { syncMirror } from '@/platform/storage/SyncMirror';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 
@@ -21,7 +22,7 @@ describe('SyncMirror', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    fakeBrowser.reset();
+    resetFakeBrowser();
   });
 
   it('去抖窗口内多次 schedule 只落盘最新 payload', async () => {

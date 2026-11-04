@@ -228,16 +228,26 @@ export class ReuseCoordinator {
           try {
             await this.deps.close(candidate.id);
             closed.push(candidate);
-          } catch {
+          } catch (error) {
             // 已不存在：不计入撤销账本。
+            logDegraded(
+              'reuse-coordinator',
+              '复用关闭标签失败：标签已不存在，不计入撤销账本',
+              error
+            );
           }
         }
         if (!disabledDuringClose && this.enabled) {
           try {
             await this.deps.close(tab.id);
             closed.push(tab);
-          } catch {
+          } catch (error) {
             // 同上：新建标签已消失时无需登记。
+            logDegraded(
+              'reuse-coordinator',
+              '复用关闭新标签失败：标签已消失，不计入撤销账本',
+              error
+            );
           }
         }
         if (closed.length > 0) this.deps.reportClosed?.(tab.windowId, closed);

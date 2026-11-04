@@ -2,7 +2,7 @@ import { Download } from 'lucide-react';
 import { BRAND } from '../../site.config';
 import { useSiteI18n } from '../i18n';
 
-export interface CtaBandProps {
+interface CtaBandProps {
   version: string;
   downloadHref: string | null;
 }

@@ -17,7 +17,7 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 
 详见 CONTRIBUTING「硬性约定」与 README「架构」；此处只保留方向图以便速查。
 
-- 测试随包走：`apps/extension/tests/` 按层镜像（`core|platform|stores|ui|background|entrypoints|perf|config`）、`packages/i18n-kit/tests/` 是工具包自带测试；根 `tests/config/` 只放跨包守卫（依赖单副本）。风格统一为行为规格（Given/When/Then）。
+- 测试随包走：`apps/extension/tests/` 按层镜像（`core|platform|stores|ui`）并按形态补充（`background|perf|config`），entrypoints / i18n / styles 相关用例平铺在对应目录；`packages/i18n-kit/tests/` 是工具包自带测试；根 `tests/config/` 只放跨包守卫（依赖单副本）。风格统一为行为规格（Given/When/Then）。
 
 ## 四条硬红线（违反即门禁失败 / 拒绝合并）
 
@@ -28,12 +28,12 @@ core（纯领域逻辑，零 chrome/DOM/React，不 import platform）
 
 ## 常用命令
 
-| 命令                            | 作用                                                                              |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| `pnpm dev`                      | 开发模式（HMR，加载 `.output/chrome-mv3`）                                        |
-| `pnpm check`                    | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy |
-| `pnpm test` / `pnpm test:watch` | Vitest 行为规格测试（含覆盖率 ratchet）                                           |
-| `pnpm format`                   | Prettier 格式化（pre-commit 钩子自动跑 lint-staged）                              |
+| 命令                            | 作用                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| `pnpm dev`                      | 开发模式（HMR，加载 `.output/chrome-mv3`）                                                    |
+| `pnpm check`                    | 聚合门禁：typecheck → lint → check:i18n → check:ui → test → build → check:privacy → site:test |
+| `pnpm test` / `pnpm test:watch` | Vitest 行为规格测试（含覆盖率 ratchet）                                                       |
+| `pnpm format`                   | Prettier 格式化（pre-commit 钩子自动跑 lint-staged）                                          |
 
 提交信息用 Conventional Commits、描述用中文；**AI 默认不执行任何 git 操作**（详见 `.codebuddy/rules/git-commit`）。
 

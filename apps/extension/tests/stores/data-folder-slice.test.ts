@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, FOLDERS_LIMIT } from '@/core/schema/models';
 import { createFolderItem } from '@/core/fixed/FolderOps';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
@@ -89,7 +89,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 async function seedFolder(

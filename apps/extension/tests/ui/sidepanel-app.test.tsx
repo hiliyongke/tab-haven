@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import * as tabsPlatform from '@/platform/tabs';
@@ -58,7 +58,7 @@ function primeStores(tabs: TabRecord[] = []): void {
 
 afterEach(() => {
   cleanup();
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

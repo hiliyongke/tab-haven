@@ -20,7 +20,7 @@ export interface SiteKey {
 }
 
 /** 分组展示标签：裸域为注册域，否则 "子域.注册域"。 */
-export function subLabel(subdomain: string, registrableDomain: string): string {
+function subLabel(subdomain: string, registrableDomain: string): string {
   return subdomain ? `${subdomain}.${registrableDomain}` : registrableDomain;
 }
 
@@ -31,11 +31,11 @@ export function subLabel(subdomain: string, registrableDomain: string): string {
  * `SiteResolver` 对 local/ip 给出的 `registrableDomain` 不含端口，
  * 一律走 `subLabel` 会让 localhost:3000 与 localhost:8080 变同一标签而错误合并。
  */
-export function siteValueOf(site: SiteKey): string {
+function siteValueOf(site: SiteKey): string {
   return site.subdomain === '' ? site.value : subLabel(site.subdomain, site.registrableDomain);
 }
 
-export function siteLabelOf(site: SiteKey): string {
+function siteLabelOf(site: SiteKey): string {
   return domainToUnicode(siteValueOf(site));
 }
 
@@ -43,7 +43,7 @@ export function siteLabelOf(site: SiteKey): string {
  * 站点桶键（分桶 / 同站点比较的唯一口径）：value + 子域。
  * 用 \u0000 分隔：裸域 example.com（子域空）与 m.example.co（value=example.co）拼接键相同，会混进同一分区。
  */
-export function siteBucketId(site: SiteKey): string {
+function siteBucketId(site: SiteKey): string {
   return `${site.value}\u0000${site.subdomain}`;
 }
 

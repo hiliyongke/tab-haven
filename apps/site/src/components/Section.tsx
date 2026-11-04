@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /** 区块外壳：统一的标题层级、锚点 id 与容器宽度。 */
-export interface SectionProps {
+interface SectionProps {
   id: string;
   /** 眉标（小标签）：由调用方传入已翻译的文案 */
   eyebrow: string;

@@ -22,9 +22,9 @@ const QUARANTINE_MAX_ENTRIES = 20;
  * 隔离坏数据并返回默认值；订阅经 onChanged 过滤本 key。存储不可用时降级为内存态。
  */
 
-/** 取 ZodArray 元素 schema：zod 泛型不变，instanceof 收窄后仍取不到 .element，集中此断言。 */
-function zodArrayElement(schema: z.ZodArray): z.ZodTypeAny {
-  return (schema as unknown as { element: z.ZodTypeAny }).element;
+/** 取 ZodArray 元素 schema：element 是 zod 公开属性，默认泛型下为内部 schema 类型，下游经 z.safeParse 校验。 */
+function zodArrayElement(schema: z.ZodArray): z.core.$ZodType {
+  return schema.element;
 }
 
 /** 深拷贝：优先 structuredClone（旧运行时缺失时退化为 JSON 往返），仅用于 JSON 同构值。 */
@@ -74,7 +74,7 @@ export class DataRepository<T> {
    */
   private async recoverElements(
     raw: readonly unknown[],
-    element: z.ZodTypeAny
+    element: z.core.$ZodType
   ): Promise<T | typeof RECOVERY_FAILED> {
     const lock = this.options.rmwLock;
     if (lock === undefined) return this.recoverFrom(raw, element);
@@ -102,12 +102,12 @@ export class DataRepository<T> {
   /** 从给定数组恢复（丢弃坏元素 → 隔离原件 → 回写）。调用方负责锁；`persist: false` 时只恢复不落盘。 */
   private async recoverFrom(
     source: readonly unknown[],
-    element: z.ZodTypeAny,
+    element: z.core.$ZodType,
     options: { persist?: boolean } = {}
   ): Promise<T | typeof RECOVERY_FAILED> {
     const dropped: unknown[] = [];
     const kept = source.flatMap((item) => {
-      const r = element.safeParse(item);
+      const r = z.safeParse(element, item);
       if (r.success) return [r.data];
       dropped.push(item);
       return [];
@@ -306,7 +306,8 @@ function clearThemeMirror(): void {
   if (typeof window === 'undefined') return;
   try {
     for (const key of THEME_MIRROR_KEYS) window.localStorage.removeItem(key);
-  } catch {
+  } catch (error) {
     // 页面级存储不可用时仅影响防闪烁首帧，不阻断「清除所有数据」的主流程。
+    logDegraded('storage', '主题镜像清理失败，仅影响防闪烁首帧', error);
   }
 }

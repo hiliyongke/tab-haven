@@ -45,6 +45,8 @@ import type { ColorTheme } from '@/core/theme/colorThemes';
     }
   } catch {
     // 页面级存储不可用时跟随系统。
+    preference = 'system';
+    hue = 'plain';
   }
 
   const systemIsDark = (() => {

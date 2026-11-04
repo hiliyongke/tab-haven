@@ -1,75 +1,36 @@
-import { browser, type Browser } from 'wxt/browser';
+import { browser } from 'wxt/browser';
 import { NO_GROUP, type TabGroupRecord, type TabRecord } from '@/core/tab-types';
 import { DEFAULT_CONCURRENCY, mapWithConcurrency } from '@/core/util/concurrency';
 import { grantReuseAllowance } from '@/platform/reuse/reuseAllowance';
 import { logDegraded } from '@/platform/diagnostics';
 import { isMissingGroupErrorMessage, tabGroups } from '@/platform/tabGroups';
+import {
+  GROUP_ASSIGN_MAX_ATTEMPTS,
+  GROUP_ASSIGN_POLL_MS,
+  mapTab,
+  mapTabGroup,
+  type ChromeTab
+} from './tabAdapters';
+import {
+  computeGroupMoveIndex,
+  computeNativeGroupMoveIndex,
+  computeReorderIndex
+} from './tabReorder';
+
+// 保持 @/platform/tabs 的既有导出名不变（下游按该路径引用）。
+export {
+  mapTab,
+  mapTabGroup,
+  computeReorderIndex,
+  computeGroupMoveIndex,
+  computeNativeGroupMoveIndex
+};
 
 /**
  * tabs 平台适配层：chrome API 映射与查询。
  * platform 层是唯一允许触碰 browser.* 的层；core/stores 只消费 TabRecord。
  * 事件 → 快照的调度在 platform/sync/TabSyncService，本模块不持有事件逻辑。
  */
-
-// Browser 是 namespace（@wxt-dev/browser 生成类型），需点访问其类型成员。
-type ChromeTab = Browser.tabs.Tab;
-type ChromeTabGroup = Browser.tabGroups.TabGroup;
-
-/** Chrome 在 tabs.Tab 上返回的、wxt 生成类型未收录的字段。断言集中到 extrasOf 这一处。 */
-interface ChromeTabExtras {
-  /** 分屏视图 id（Chrome 140+）；未分屏时为 0，不是 undefined。 */
-  splitViewId?: unknown;
-  attention?: boolean;
-  language?: string;
-}
-
-const extrasOf = (tab: ChromeTab): ChromeTabExtras => tab as unknown as ChromeTabExtras;
-
-/** chrome.tabs.Tab → TabRecord 领域映射。 */
-export function mapTab(tab: ChromeTab): TabRecord {
-  const extras = extrasOf(tab);
-  // 仅正整数表示真实拆分视图，chrome 未分屏时返回 0（非 undefined）。
-  const splitViewId =
-    typeof extras.splitViewId === 'number' && extras.splitViewId > 0
-      ? extras.splitViewId
-      : undefined;
-  return {
-    id: tab.id ?? -1,
-    windowId: tab.windowId ?? -1,
-    index: tab.index,
-    active: tab.active,
-    pinned: tab.pinned,
-    incognito: tab.incognito,
-    url: tab.url,
-    pendingUrl: tab.pendingUrl,
-    title: tab.title,
-    favIconUrl: tab.favIconUrl,
-    status: tab.status,
-    discarded: tab.discarded,
-    muted: tab.mutedInfo?.muted,
-    audible: tab.audible,
-    groupId: tab.groupId ?? NO_GROUP,
-    splitViewId,
-    lastAccessed: tab.lastAccessed,
-    // 与 lastAccessed 同源但命运不同：lastAccessed 会被 mergeSnapshotTabs 冻结成排序键，
-    // lastActivatedAt 保持实时，供滞留预警 / keeper 判定等时间口径消费。
-    lastActivatedAt: tab.lastAccessed,
-    autoDiscardable: tab.autoDiscardable,
-    openerTabId: tab.openerTabId,
-    attention: extras.attention,
-    language: extras.language
-  };
-}
-
-/** chrome.tabGroups.TabGroup → TabGroupRecord 映射。 */
-export function mapTabGroup(group: ChromeTabGroup): TabGroupRecord {
-  return {
-    id: group.id,
-    title: group.title,
-    color: group.color,
-    collapsed: group.collapsed
-  };
-}
 
 /** 查询当前窗口全部标签并按 index 排序。 */
 export async function queryCurrentWindowTabs(): Promise<TabRecord[]> {
@@ -254,88 +215,6 @@ export async function moveTabs(tabIds: readonly number[], index: number): Promis
   }
 }
 
-/** 依据侧边栏展示顺序计算把 source 放到 target 之前/之后时应去的原生索引（窗口内标签索引连续 0..n-1）。 */
-export function computeReorderIndex(params: {
-  tabs: readonly TabRecord[];
-  sourceId: number;
-  targetId: number;
-  placeAfter: boolean;
-}): number {
-  const { tabs, sourceId, targetId, placeAfter } = params;
-  const ordered = [...tabs].filter((tab) => tab.id !== sourceId).sort((a, b) => a.index - b.index);
-  const targetPos = ordered.findIndex((tab) => tab.id === targetId);
-  if (targetPos === -1) return -1;
-  const source = tabs.find((tab) => tab.id === sourceId);
-  if (!source) return -1;
-  ordered.splice(placeAfter ? targetPos + 1 : targetPos, 0, source);
-  return ordered.findIndex((tab) => tab.id === sourceId);
-}
-
-/**
- * 计算把 source 整组搬到 target 组之前/之后时，组内首个标签应去的原生索引。
- * 站点组 / 语言组这类「虚拟分区」没有原生 groupId，无法用 tabGroups.move；但它们的展示顺序
- * 由组内标签的 index 决定，因此把整组标签连续地落到目标组的前/后即可改变分区顺序并持久化。
- * 返回 -1 表示目标组已不存在（拖拽期间被关闭/解散），调用方应静默放弃。
- */
-export function computeGroupMoveIndex(params: {
-  tabs: readonly TabRecord[];
-  sourceTabIds: readonly number[];
-  targetTabIds: readonly number[];
-  placeAfter: boolean;
-}): number {
-  const { tabs, sourceTabIds, targetTabIds, placeAfter } = params;
-  const sourceIds = new Set(sourceTabIds);
-  if (sourceIds.size === 0) return -1;
-  const targetIds = new Set(targetTabIds);
-  if (targetIds.size === 0) return -1;
-
-  const ordered = [...tabs]
-    .filter((tab) => !sourceIds.has(tab.id))
-    .sort((a, b) => a.index - b.index);
-  let first: number | undefined;
-  let last: number | undefined;
-  for (let i = 0; i < ordered.length; i += 1) {
-    if (targetIds.has(ordered[i]!.id)) {
-      if (first === undefined) first = i;
-      last = i;
-    }
-  }
-  if (first === undefined || last === undefined) return -1;
-  return placeAfter ? last + 1 : first;
-}
-
-/**
- * 把「标签序号」换算成 `chrome.tabGroups.move` 需要的**组序号**。
- *
- * 两者不是一回事：分组接口的 index 是窗口内标签组的排列位置（0..组数-1），
- * 而分区拖拽算出的是标签序号。窗口里只要存在未分组标签或其它组，数值就会错位，
- * 表现为「拖到 A 组后面，组却落到别处」。这里按「组的首个标签位置」还原组顺序，
- * 再以目标组为锚点插入。
- *
- * 返回 `undefined` 表示目标组已不存在（拖拽期间被解散），调用方应静默放弃；
- * 返回 `-1` 是接口约定的「放到窗口最后」，不是失败。
- */
-export function computeNativeGroupMoveIndex(params: {
-  tabs: readonly TabRecord[];
-  sourceGroupId: number;
-  targetGroupId: number;
-  placeAfter: boolean;
-}): number | undefined {
-  const { tabs, sourceGroupId, targetGroupId, placeAfter } = params;
-  const order: number[] = [];
-  for (const tab of [...tabs].sort((a, b) => a.index - b.index)) {
-    if (tab.groupId === NO_GROUP || order.includes(tab.groupId)) continue;
-    order.push(tab.groupId);
-  }
-  // 先摘掉自身再定位：否则「拖到目标之后」会被自身占位顶偏一位。
-  const withoutSource = order.filter((id) => id !== sourceGroupId);
-  const targetAt = withoutSource.indexOf(targetGroupId);
-  if (targetAt === -1) return undefined;
-  const next = placeAfter ? targetAt + 1 : targetAt;
-  // 落到末尾时用 -1（接口约定的「放到窗口最后」）：index 等于组数不保证被接受。
-  return next >= withoutSource.length ? -1 : next;
-}
-
 /** 冻结（卸载）标签并返回是否成功。休眠后的标签点击会重新加载。 */
 export async function discardTab(tabId: number): Promise<boolean> {
   try {
@@ -386,10 +265,6 @@ export async function groupTabs(
  * 主动等到状态可见再刷新 UI，把「切一下 tab 才显示」的延迟变为确定性的收敛。
  * best-effort：超时未收敛不抛错，由事件驱动最终兜底。
  */
-/** 收敛轮询次数与间隔（合计约 1.2s）。 */
-const GROUP_ASSIGN_MAX_ATTEMPTS = 6;
-const GROUP_ASSIGN_POLL_MS = 200;
-
 export async function waitForTabGroupAssignment(
   tabIds: readonly number[],
   groupId: number,
@@ -581,8 +456,9 @@ export function onAllTabsChanged(handler: () => void): () => void {
   try {
     browser.tabs.onAttached?.addListener(listener);
     browser.tabs.onDetached?.addListener(listener);
-  } catch {
+  } catch (error) {
     // 环境不支持跨窗口移动事件
+    logDegraded('tabs', '跨窗口移动事件订阅失败，已跳过可选增强', error);
   }
   return () => {
     browser.tabs.onCreated.removeListener(listener);
@@ -591,8 +467,9 @@ export function onAllTabsChanged(handler: () => void): () => void {
     try {
       browser.tabs.onAttached?.removeListener(listener);
       browser.tabs.onDetached?.removeListener(listener);
-    } catch {
+    } catch (error) {
       // 同上
+      logDegraded('tabs', '跨窗口移动事件注销失败，已跳过可选增强', error);
     }
   };
 }

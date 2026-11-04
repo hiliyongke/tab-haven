@@ -24,29 +24,20 @@ function urlSetFingerprint(tabs: readonly SnapshotTab[]): string {
   return tabs.map((tab) => tab.url).join('|');
 }
 
-interface AutoSignatures {
-  byWindow: Map<number, string>;
-  /** 旧版本未记录 windowId 的快照只作迁移期回退。 */
-  legacy: string | null;
-}
-
 /** 每个窗口最新一份自动快照的指纹（不存在则该窗口无记录）。 */
-async function latestAutoSignatures(): Promise<AutoSignatures> {
+async function latestAutoSignatures(): Promise<Map<number, string>> {
   const all = await snapshotsRepository.read();
   const byWindow = new Map<number, string>();
-  let legacy: string | null = null;
   const sorted = all
     .filter((snap) => snap.origin === 'auto')
     .sort((a, b) => b.createdAt - a.createdAt);
   for (const snapshot of sorted) {
-    // 已按时间倒序，首次出现即该窗口最新一份。
-    if (snapshot.windowId === undefined) {
-      legacy ??= urlSetFingerprint(snapshot.tabs);
-    } else if (!byWindow.has(snapshot.windowId)) {
+    // 已按时间倒序，首次出现即该窗口最新一份；无 windowId 的记录不参与按窗口去重。
+    if (snapshot.windowId !== undefined && !byWindow.has(snapshot.windowId)) {
       byWindow.set(snapshot.windowId, urlSetFingerprint(snapshot.tabs));
     }
   }
-  return { byWindow, legacy };
+  return byWindow;
 }
 
 /** 采集某窗口可恢复的标签（口径见 collectSnapshotTabs，全仓唯一实现）。 */
@@ -93,7 +84,7 @@ export async function runAutoSnapshot(): Promise<void> {
       });
       if (tabs.length === 0) continue;
       // 每个窗口只与自己的最新自动快照比较：多窗口不能拿首窗口或全局最新一份互相去重。
-      const previousSignature = previous.byWindow.get(windowId) ?? previous.legacy;
+      const previousSignature = previous.get(windowId);
       if (urlSetFingerprint(tabs) === previousSignature) continue;
       const snapshot = buildSnapshot({
         name: '',

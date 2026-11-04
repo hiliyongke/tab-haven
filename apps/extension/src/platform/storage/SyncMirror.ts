@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod';
 import { createSerialChain } from '@/core/util/concurrency';
+import { DAY_MS } from '@/core/util/time';
 import { logDegraded } from '@/platform/diagnostics';
 import { t } from '@/i18n/headless';
 import { SYNC_MIRROR_LOCK, withCrossPageLock } from '@/platform/storage/crossPageLock';
@@ -31,7 +32,7 @@ const MAX_CHUNKS = Math.floor(QUOTA_BYTES / CHUNK_BYTES);
  * 容量超限是确定性的，重试只会白耗分钟级写配额（120 次/分）。
  */
 const QUOTA_MARGIN_BYTES = 512;
-const MIRROR_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 镜像 30 天无更新视为过期
+const MIRROR_TTL_MS = 30 * DAY_MS; // 镜像 30 天无更新视为过期
 /** 镜像写失败的重试基数：sync 写配额是分钟级的，立即重试只会撞墙，故第 1 次等 30s，其后 ×2 递增。 */
 const RETRY_BASE_DELAY_MS = 30_000;
 /** 镜像去抖窗口：合并高频落盘为一次 sync 写（sync 有分钟级写配额）。 */
@@ -67,10 +68,6 @@ function generationChunkKey(generation: string, index: number): string {
   return `${CHUNK_PREFIX}${generation}.${index}`;
 }
 
-function isLegacyChunkKey(key: string): boolean {
-  return key.startsWith(CHUNK_PREFIX) && /^\d+$/.test(key.slice(CHUNK_PREFIX.length));
-}
-
 interface MirrorData {
   folders: unknown[];
   pins: unknown[];
@@ -90,7 +87,7 @@ export function mirrorIssueAllowsMirrorPush(issue: MirrorSyncIssue | null): bool
 }
 
 /** 镜像写失败成因：quota 是确定性（数据超配额，重试无意义），write 是暂时性（退避重试有机会成功）。 */
-export type MirrorWriteFailureReason = 'quota' | 'write';
+type MirrorWriteFailureReason = 'quota' | 'write';
 
 class SyncMirror {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -268,14 +265,13 @@ class SyncMirror {
         [CHUNK_META_KEY]: JSON.stringify({ count: chunks.length, generation } satisfies MirrorMeta)
       });
       uncommittedChunkKeys = [];
-      // 只清理切换前的旧 generation 与历史固定块。其它 generation 可能正被另一上下文
+      // 只清理切换前的旧 generation。其它 generation 可能正被另一上下文
       // 写入但尚未切 meta，不能把它们误判为残留删掉；失败写入的孤儿块由 clearAll 全清。
       const previousPrefix = previousMeta?.generation
         ? `${CHUNK_PREFIX}${previousMeta.generation}.`
         : undefined;
       const staleKeys = Object.keys(all).filter(
-        (key) =>
-          isLegacyChunkKey(key) || (previousPrefix !== undefined && key.startsWith(previousPrefix))
+        (key) => previousPrefix !== undefined && key.startsWith(previousPrefix)
       );
       if (staleKeys.length > 0) {
         // remove 失败单独留痕：它是清理动作，不能把一次成功的镜像写报成失败。

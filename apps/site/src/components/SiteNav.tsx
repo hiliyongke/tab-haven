@@ -12,7 +12,7 @@ const NAV_ITEMS: readonly { id: string; labelKey: string }[] = [
   { id: 'faq', labelKey: '常见问题' }
 ];
 
-export interface SiteNavProps {
+interface SiteNavProps {
   lng: string;
   downloadHref: string | null;
 }

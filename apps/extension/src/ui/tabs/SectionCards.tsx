@@ -2,7 +2,7 @@ import { memo } from 'react';
 import type { TemporarySection } from '@/core/site/Sections';
 import { GroupCard } from '@/ui/common/GroupCard';
 import { CollapsibleSectionCard } from '@/ui/tabs/CollapsibleSectionCard';
-import { SectionRows } from '@/ui/tabs/rowList';
+import { SectionRows } from '@/ui/tabs/RowList';
 import { isSortableDisabled, sectionDragDataFor, useSectionAccent } from '@/ui/tabs/sectionAccent';
 import type { SectionCardProps } from '@/ui/tabs/sectionTypes';
 
@@ -38,7 +38,7 @@ const UngroupedSectionCard = memo(function UngroupedSectionCard({
 /**
  * 单个分组卡片：按类型分发到未分组 / 可折叠（原生组 + 站点组）子组件。
  *
- * 本文件只留**分发**：行列表在 `rowList`、可折叠卡在 `CollapsibleSectionCard`、
+ * 本文件只留**分发**：行列表在 `RowList`、可折叠卡在 `CollapsibleSectionCard`、
  * 强调色与拖拽数据在 `sectionAccent`。三者互不复用，拆开后各自的改动面收敛到
  * 一个文件（原 539 行里改一次折叠逻辑要跨三段 JSX）。
  *

@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { translate } from '@/i18n';
 import { SearchBar } from '@/ui/search/SearchBar';
 
@@ -13,7 +13,7 @@ import { SearchBar } from '@/ui/search/SearchBar';
 
 afterEach(() => {
   cleanup();
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

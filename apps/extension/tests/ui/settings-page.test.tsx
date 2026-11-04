@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { translate } from '@/i18n';
 import { SettingsPage } from '@/entrypoints/options/SettingsPage';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
@@ -17,7 +18,7 @@ import { ImportDataError } from '@/stores/data/transferSlice';
 
 afterEach(() => {
   cleanup();
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
   // 重置 zustand store，避免用例间数据残留
   useDataStore.setState({ settings: DEFAULT_SETTINGS, ready: false });

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import { z } from 'zod';
 import { clearDiagnostics, readDiagnostics } from '@/platform/diagnostics';
 import { clearAllStoredData, DataRepository } from '@/platform/storage/DataRepository';
@@ -35,7 +36,7 @@ function repoWithLock() {
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   clearDiagnostics();
   vi.restoreAllMocks();
 });

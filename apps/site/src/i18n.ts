@@ -23,7 +23,7 @@ const resources: Record<string, { translation: Record<string, string> }> = {
   en: { translation: enResources }
 };
 
-export interface SiteI18n {
+interface SiteI18n {
   lng: string;
   t: Translate;
 }

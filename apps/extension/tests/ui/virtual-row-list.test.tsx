@@ -92,7 +92,7 @@ describe('VirtualRowList（虚拟化结构规格）', () => {
 
   it('虚拟化列表项声明全集大小与绝对位置（滚动后仍按原序号播报）', async () => {
     // 行由调用方渲染，TabRow 根元素是 <li>；虚拟化分支外层没有 <ul>（非虚拟分支
-    // 由 sectionCards 提供）——缺 list 语义时读屏会丢失「列表 N 项」与位置播报。
+    // 由 SectionCards 提供）——缺 list 语义时读屏会丢失「列表 N 项」与位置播报。
     const view = render(
       <VirtualRowList
         tabs={tabsOf(300)}

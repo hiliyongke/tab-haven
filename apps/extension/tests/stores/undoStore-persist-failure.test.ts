@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { translate } from '@/i18n';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import type { TabRecord } from '@/core/tab-types';
@@ -52,7 +53,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   useUndoStore.getState().clearToast();
   vi.restoreAllMocks();
 });

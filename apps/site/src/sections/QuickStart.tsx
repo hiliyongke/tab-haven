@@ -37,7 +37,7 @@ const STEPS: readonly { titleKey: string; bodyKey: string; codes?: readonly Step
   }
 ];
 
-export interface QuickStartProps {
+interface QuickStartProps {
   downloadHref: string | null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inspectUrl, isHttpUrl } from '@/core/url/UrlInspector';
+import { inspectUrl, isHttpUrl, isWebProtocol } from '@/core/url/UrlInspector';
 
 /**
  * URL 检视分类与比较键语义的行为规格。
@@ -45,5 +45,15 @@ describe('inspectUrl', () => {
 
   it('已提交为空 + 无 pending：归 blank-start（标签刚创建等待导航）', () => {
     expect(inspectUrl(undefined, undefined).category).toBe('blank-start');
+  });
+});
+
+describe('isWebProtocol', () => {
+  it('给定 http/https 协议时判定为 web 协议，其余协议与空串不判定为 web 协议', () => {
+    expect(isWebProtocol('http:')).toBe(true);
+    expect(isWebProtocol('https:')).toBe(true);
+    for (const protocol of ['ftp:', 'file:', 'chrome:', 'about:', 'ws:', '']) {
+      expect(isWebProtocol(protocol)).toBe(false);
+    }
   });
 });

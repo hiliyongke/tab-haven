@@ -21,8 +21,6 @@ export const COMMANDS = [
   { id: 'discard-inactive', suggestedKey: 'Ctrl+Shift+U', labelKey: '休眠当前窗口的后台标签' }
 ] as const;
 
-export type CommandSpec = (typeof COMMANDS)[number];
-
 /** 把 `Ctrl+Shift+F` 拆成分段写法；平台由调用方传入（本层不碰 navigator），可测。 */
 export function commandKeyParts(suggestedKey: string, isMac: boolean): string[] {
   const parts = suggestedKey.split('+');

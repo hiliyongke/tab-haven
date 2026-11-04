@@ -60,7 +60,7 @@ function duplicateCountOf(tab: TabRecord, counts: ReadonlyMap<string, number>): 
 /**
  * 分区内的行列表：虚拟化分支与全量分支的唯一入口。
  *
- * 从 `sectionCards` 拆出的原因：这段是「渲染策略」（阈值判定 + 虚拟化参数），
+ * 从 `SectionCards` 拆出的原因：这段是「渲染策略」（阈值判定 + 虚拟化参数），
  * 与分区卡片的折叠/编辑/强调色逻辑互不复用，却占原文件三分之一。
  */
 function RowList({

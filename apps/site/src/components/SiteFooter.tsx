@@ -29,7 +29,7 @@ const FOOTER_GROUPS: readonly {
   }
 ];
 
-export interface SiteFooterProps {
+interface SiteFooterProps {
   version: string;
   /** 版权年份：构建期注入，避免写死后每年过期 */
   year: string;

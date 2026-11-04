@@ -5,8 +5,8 @@ import prettier from 'eslint-config-prettier';
 /**
  * 工作区根 ESLint：只管 `packages/**` 与根级文件。
  *
- * apps/*（扩展、官网）各自带 eslint.config.js —— 它们有自己的插件（react-hooks、
- * react-refresh）与门禁，根不该重复收编，故在此整体忽略。
+ * apps/*（扩展、官网）各自带 eslint.config.js —— 扩展有自己的 react-hooks 插件
+ * 与门禁，根不该重复收编，故在此整体忽略。
  */
 export default tseslint.config(
   {

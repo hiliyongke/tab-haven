@@ -19,7 +19,7 @@ export function Slot({ content }: { content: ReactNode }): ReactNode {
  * 与扫描器 `collect.ts` 的 `jsxChildrenToString` 必须同口径（序号按过滤掉空白文本后的数组计算），
  * 否则扫出的 key 与运行时算出的不同，表现为「英文模式下这一句始终是中文」且极难定位。
  */
-export function nodesToString(children: ReactNode): string {
+function nodesToString(children: ReactNode): string {
   let out = '';
   Children.toArray(children).forEach((child, index) => {
     if (typeof child === 'string') {
@@ -36,7 +36,7 @@ export function nodesToString(children: ReactNode): string {
   return out;
 }
 
-export type TransComponentProps = Omit<TransProps<'translation'>, 'i18nKey' | 'defaults'> & {
+type TransComponentProps = Omit<TransProps<'translation'>, 'i18nKey' | 'defaults'> & {
   /** 上下文：参与 key 计算，必须是字符串常量 */
   context?: string;
 };

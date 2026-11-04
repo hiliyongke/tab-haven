@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { NO_GROUP } from '@/core/tab-types';
 import { clearDiagnostics } from '@/platform/diagnostics';
 import {
@@ -72,7 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   clearDiagnostics();
   vi.restoreAllMocks();
 });

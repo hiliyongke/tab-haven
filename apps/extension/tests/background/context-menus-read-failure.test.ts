@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { clearDiagnostics } from '@/platform/diagnostics';
 import { foldersRepository, pinsRepository } from '@/platform/storage/repositories';
 import { addEntryToFolder, addPinFromTab } from '@/platform/background/contextMenus';
 
 describe('右键菜单 readStrict 失败边界', () => {
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     clearDiagnostics();
     vi.restoreAllMocks();
   });

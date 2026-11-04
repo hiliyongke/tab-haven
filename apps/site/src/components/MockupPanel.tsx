@@ -152,7 +152,7 @@ function UndoPanel({ undoLabel, tabLabel }: { undoLabel: string; tabLabel: strin
   );
 }
 
-export interface MockupPanelProps {
+interface MockupPanelProps {
   variant: MockupVariant;
 }
 

@@ -6,7 +6,7 @@ import {
   PALETTE_TAB_LIMIT,
   type CommandItem
 } from '@/ui/panels/paletteCommands';
-import { PaletteOption } from '@/ui/panels/paletteOption';
+import { PaletteOption } from '@/ui/panels/PaletteOption';
 
 /**
  * 命令面板的**结果列表**：四组分区渲染 + 空态 + 截断提示。

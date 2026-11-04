@@ -8,7 +8,7 @@ import type { TemporarySection } from '@/core/site/Sections';
  */
 
 /** 漫游序列的入参（与侧边栏的显示态一一对应）。 */
-export interface RoamOrderInput {
+interface RoamOrderInput {
   /** 是否渲染常驻磁贴区（浏览器原生固定标签，置顶在搜索栏下方）。 */
   showPinnedStrip: boolean;
   /** 固定标签分区（未渲染时为 undefined）。 */

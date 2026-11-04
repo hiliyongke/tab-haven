@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import type { Snapshot } from '@/core/schema/models';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 import { settingsRepository, snapshotsRepository } from '@/platform/storage/repositories';
@@ -34,7 +34,7 @@ describe('快照淘汰告知（S-3）', () => {
   });
 
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
     vi.restoreAllMocks();
   });
 

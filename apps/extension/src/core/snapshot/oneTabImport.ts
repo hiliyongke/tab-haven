@@ -14,7 +14,7 @@ export function isOneTabTooLarge(text: string): boolean {
 }
 
 /** 解析结果：把「超限拒收」与「超出条数被截断」都显式交回调用方。 */
-export interface OneTabParseResult {
+interface OneTabParseResult {
   tabs: SnapshotTab[];
   /** 输入超过 1MB：整段未解析。 */
   tooLarge: boolean;
@@ -62,6 +62,7 @@ export function parseOneTab(text: string): OneTabParseResult {
       }
     } catch {
       // 跳过非 URL 行
+      continue;
     }
   }
   return { tabs: out, tooLarge: false, truncated };

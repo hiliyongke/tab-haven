@@ -4,7 +4,7 @@
  * 全部对应 `README.md`「功能一览（v1.0）」里已实现的能力，不写规划中的东西。
  *
  * 字段后缀 Key 不是命名癖好：`i18n-kit` 的常量表通道只认「属性名以 Key 结尾」
- * 的对象字面量（`packages/i18n-kit/src/collect.ts:352`），写成 `title: '中文'`
+ * 的对象字面量（`packages/i18n-kit` 的常量表通道），写成 `title: '中文'`
  * 扫不进词典，英文站就会露中文。
  */
 export type FeatureIcon =
@@ -19,7 +19,7 @@ export type FeatureIcon =
   | 'zap'
   | 'shield';
 
-export interface FeatureItem {
+interface FeatureItem {
   icon: FeatureIcon;
   titleKey: string;
   descKey: string;

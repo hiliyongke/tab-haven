@@ -1,7 +1,7 @@
 import { useRef, type CSSProperties, type KeyboardEvent } from 'react';
 
 /** 色板单选项：色值取自 `core/theme/colorThemes`（单一来源），文案由调用方补。 */
-export interface ColorSwatchOption {
+interface ColorSwatchOption {
   value: string;
   /** 色号名，同时作为可访问名与鼠标提示。 */
   label: string;

@@ -14,6 +14,7 @@
  * SettingsSchema 在写入前统一完成，本模块只消费已归一的 pattern。
  */
 
+import { isWebProtocol } from '@/core/url/UrlInspector';
 import { normalizeHostname } from '@/core/url/hostname';
 
 /** DNR 规则的最小结构描述（避免耦合具体类型包，由 background 侧适配）。 */
@@ -117,7 +118,7 @@ export function matchesNoCachePattern(url: string, pattern: string): boolean {
   } catch {
     return false;
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+  if (!isWebProtocol(parsed.protocol)) return false;
 
   // 形态 1：完整前缀。
   if (pattern.includes('://')) return url.startsWith(pattern);

@@ -25,7 +25,7 @@ export type { PaletteActions };
  * 把 ⌘K 的搜索能力升级为完整 Spotlight 式入口。纯交互增益、零隐私成本。
  *
  * 本文件只保留**外壳与键盘状态机**：结果派生在 `paletteCommands`、
- * 列表渲染在 `PaletteList`、单个选项在 `paletteOption`，三者都从原 761 行里
+ * 列表渲染在 `PaletteList`、单个选项在 `PaletteOption`，三者都从原 761 行里
  * 拆出 —— 拆分的判据是「渲染 / 派生 / 状态机」三者互不复用、却互相挤占定位。
  */
 export function CommandPalette({

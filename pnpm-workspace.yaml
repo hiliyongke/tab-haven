@@ -11,11 +11,15 @@ packages:
     # 一起停装，直接起不来。要收敛版本用下面的 overrides。
     # （已在 .npmrc 里显式固化这条，此处保留说明以免有人改配置时不知缘由）
 
-# 依赖版本的单一事实来源：跨包重复声明的工具链版本集中在这里，包里写 `catalog:`。
+# 依赖版本的单一事实来源：跨包重复声明的版本集中在这里，包里写 `catalog:`。
 #
 # 与 overrides 的分工：overrides 管「所有 importer 必须解析到同一份」（防分叉），
 # catalog 管「版本写在哪」（防漂移）。两者互补，catalog 不是 overrides 的替代品——
 # 把 react 之类进了 overrides 的包再写进 catalog 属于重复约束，故此处不收。
+#
+# 版本组合经过实机验证：Vitest 5 与 TypeScript 7 装上后会触发全量 Invalid hook call
+# 或 peer 依赖冲突；React 19.3 由 overrides 钉住。升级工具链前先在干净工作区跑
+# `pnpm check` 与 `pnpm site:check`，两类门禁都过才算可升级。
 catalog:
   '@types/node': ^26.6.5
   '@types/react': ^19.3.0
@@ -25,6 +29,7 @@ catalog:
   eslint: ^10.12.0
   eslint-config-prettier: ^10.1.8
   eslint-plugin-react-hooks: ^7.1.1
+  lucide-react: ^1.56.0
   typescript: ^5.9.3
   typescript-eslint: ^8.71.2
   vitest: ^4.1.11

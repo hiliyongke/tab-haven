@@ -174,7 +174,7 @@ log(`• 浏览器：${browser}`);
 log(`• 签名密钥：${hasKey ? `复用 ${KEY_PATH}` : `首次生成（完成后固化为 ${KEY_PATH}）`}`);
 
 removeStaleCrx(RAW_CRX);
-// 首次打包不得让上一轮遗留的 PEM 冒充本轮新私钥。
+// 首次打包不得让上次构建遗留的 PEM 冒充本次新生成的私钥。
 if (!hasKey) removeStaleCrx(RAW_KEY);
 try {
   assertBrowserSpawnSucceeded(spawnSync(browser, args, { stdio: 'inherit' }));

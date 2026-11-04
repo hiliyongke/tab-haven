@@ -3,7 +3,7 @@
  *
  * 答案口径来自 `PRIVACY.md`、`SECURITY.md` 与 `README.md`，只陈述已实现的行为。
  */
-export interface FaqItem {
+interface FaqItem {
   qKey: string;
   aKey: string;
 }

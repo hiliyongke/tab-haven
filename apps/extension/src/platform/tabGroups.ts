@@ -3,8 +3,8 @@ import { browser, type Browser } from 'wxt/browser';
 /**
  * chrome.tabGroups 类型桥接（全仓唯一事实来源）。
  *
- * wxt 生成的类型对 tabGroups.create 及 update 的 title/color 覆盖不全，断言无法完全避免；
- * 故收敛到本模块单一定义，改签名由编译器兜住。
+ * wxt 生成的类型对 tabGroups.create 及 update 的 title/color 覆盖不全；改签名收敛到本模块
+ * 单一定义，由编译器兜住。运行时对象保持原样（能力缺失环境中可能为 undefined）。
  *
  * 注：chrome.tabGroups 没有 remove API（公开方法仅 get/query/update/move），
  * 解散组的标准做法是 tabs.ungroup 成员，见 platform/tabs.ts 的 removeGroup。
@@ -30,12 +30,17 @@ export function isMissingGroupErrorMessage(error: unknown): boolean {
   );
 }
 
-export const tabGroups = browser.tabGroups as unknown as {
+/**
+ * 消费侧依赖的 tabGroups 形状：以原生类型为底，只覆盖签名不全的三个方法。
+ * query 必须显式写成单签名——原生类型还带 callback 重载，`ReturnType` 会取到
+ * `void`，让 `Awaited<ReturnType<typeof tabGroups.query>>` 退化成 void。
+ * 交集使下方单次向下收窄成立，避免绕过类型检查的双重断言。
+ */
+type TabGroupsBridge = Omit<typeof browser.tabGroups, 'query' | 'update'> & {
+  query: (queryInfo: object) => Promise<Browser.tabGroups.TabGroup[]>;
   create: (options: object) => Promise<{ id: number }>;
   update: (groupId: number, updateProperties: TabGroupMutableProps) => Promise<unknown>;
-  /** 判定组是否仍存在（区分「已解散」与「解散失败」），见 removeGroup。原生返回类型已足够。 */
-  get: (groupId: number) => Promise<Browser.tabGroups.TabGroup>;
-  move: (groupId: number, options: { index: number }) => Promise<unknown>;
-  /** query 原生类型已足够（含 title/color/collapsed），无需另立形状。 */
-  query: (queryInfo: { windowId?: number }) => Promise<Browser.tabGroups.TabGroup[]>;
 };
+
+/** 全仓唯一事实来源：运行时对象保持原样，仅在类型层补齐消费侧形状。 */
+export const tabGroups = browser.tabGroups as TabGroupsBridge;

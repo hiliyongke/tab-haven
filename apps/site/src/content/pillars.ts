@@ -6,7 +6,7 @@
  */
 export type PillarArt = 'organize' | 'recover' | 'tidy' | 'trust';
 
-export interface PillarPoint {
+interface PillarPoint {
   /**
    * 要点文案。
    *
@@ -17,7 +17,7 @@ export interface PillarPoint {
   pointKey: string;
 }
 
-export interface PillarItem {
+interface PillarItem {
   art: PillarArt;
   eyebrowKey: string;
   titleKey: string;

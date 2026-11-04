@@ -25,7 +25,7 @@ import { FOOTER_BUTTON_IDS, FOOTER_BUTTON_KEYS } from '@/core/layout/footerOrder
  * platform 模块（各自绑定存储键与读写口径，迁入反而割裂）。
  */
 
-export const FOLDER_ITEMS_LIMIT = 500;
+const FOLDER_ITEMS_LIMIT = 500;
 export const FOLDERS_LIMIT = 200;
 export const PINS_LIMIT = 200;
 
@@ -34,7 +34,7 @@ export const PINS_LIMIT = 200;
  * site 一子域一组 / rootDomain 同注册域折叠 / opener 来源树 / language 语言 / none 平铺不分组。
  */
 export const GROUP_MODES = ['site', 'rootDomain', 'opener', 'language', 'none'] as const;
-export const GroupModeSchema = z.enum(GROUP_MODES);
+const GroupModeSchema = z.enum(GROUP_MODES);
 export type GroupMode = z.infer<typeof GroupModeSchema>;
 export const SITE_COLLAPSE_LIMIT = 2_000;
 const DISCARD_WHITELIST_LIMIT = 500;
@@ -43,7 +43,7 @@ export const HOST_MAX_LENGTH = 253;
 /** 仅作用于导入侧：运行时 favIconUrl 可能是大体积 data:image/，读盘封顶会误伤已写入的合法数据。 */
 const FAVICON_URL_MAX_LENGTH = 2_048;
 /** 单个撤销批次的标签条目上限。 */
-export const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
+const UNDO_BATCH_ENTRIES_LIMIT = 1_000;
 /** 撤销栈默认深度（schema 与 core 共用同一来源，避免上限双定义）。 */
 export const DEFAULT_UNDO_STACK_LIMIT = 10;
 /** 单个快照的标签数上限。 */
@@ -52,7 +52,7 @@ export const SNAPSHOT_TABS_LIMIT = 1_000;
 export const SNAPSHOTS_LIMIT = 200;
 
 /** 超出部分截断而非判坏：标题非身份字段，超长不该让整份文件夹数组被判坏、把在意条目丢进隔离区。 */
-export const FOLDER_ITEM_TITLE_MAX = 512;
+const FOLDER_ITEM_TITLE_MAX = 512;
 
 export const FixedFolderItemSchema = z.object({
   id: z.string(),
@@ -426,7 +426,7 @@ export type ExportFile = z.infer<typeof ExportFileSchema>;
 const IMPORT_FAVICON_SCHEME = /^(?:data:image\/|chrome:\/\/|chrome-extension:\/\/)/i;
 
 /** 导入侧图标字段：长度封顶 + scheme 白名单归一化。超长/非白名单一律归一为 `undefined` 而非判坏——图标是装饰数据，不能让一个畸形图标升级为整份备份被拒。 */
-export const ImportFaviconUrlSchema = z
+const ImportFaviconUrlSchema = z
   .string()
   .transform((value) =>
     value.length <= FAVICON_URL_MAX_LENGTH && IMPORT_FAVICON_SCHEME.test(value) ? value : undefined
@@ -440,7 +440,7 @@ export const ImportFaviconUrlSchema = z
  */
 /** 网址被判为不安全时的占位值：不可执行脚本、不指向内部页。 */
 const UNSAFE_URL_PLACEHOLDER = 'about:blank';
-export const ImportUrlSchema = z
+const ImportUrlSchema = z
   .string()
   .transform((value) => (isHttpUrl(value) ? value : UNSAFE_URL_PLACEHOLDER));
 

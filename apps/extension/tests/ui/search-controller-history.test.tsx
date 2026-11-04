@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { act } from 'react';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { translate } from '@/i18n';
 import { HistoryHitsSection } from '@/ui/search/HistoryHitsSection';
 import type { Snapshot, SnapshotTab } from '@/core/schema/models';

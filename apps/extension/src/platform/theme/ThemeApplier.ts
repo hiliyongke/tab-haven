@@ -68,8 +68,9 @@ export function applyTheme(preference: ThemePreference, colorTheme: ColorTheme =
     if (window.localStorage.getItem(HUE_MIRROR_KEY) !== colorTheme) {
       window.localStorage.setItem(HUE_MIRROR_KEY, colorTheme);
     }
-  } catch {
+  } catch (error) {
     // 页面级存储不可用时仅影响防闪烁首帧
+    logDegraded('theme', '主题镜像写入失败，已跳过防闪烁首帧同步', error);
   }
   const resolved = resolveTheme(preference);
   const root = document.documentElement;

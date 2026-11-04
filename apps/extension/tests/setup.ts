@@ -1,3 +1,5 @@
+import { beforeEach } from 'vitest';
+
 /**
  * 全局测试准备（vitest setupFiles）。
  *
@@ -80,3 +82,50 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
     }
   } as unknown as typeof IntersectionObserver;
 }
+
+/**
+ * 开发期诊断输出在测试里只收集、不打印。
+ *
+ * `logDegraded` / `logFailure` 在 DEV 下写 console.warn / debug / error，而行为规格用例
+ * 大量刻意模拟降级路径；逐条输出会把真实故障与其它工具告警淹没在重复文本里。诊断记录
+ * 仍由 `platform/log.ts` 的 push() 写进环形缓冲，用例断言的是缓冲、toast 与状态，与终端
+ * 输出无关，所以这里只收敛「打印」这一个出口，不改产品代码、断言与覆盖的行为路径。
+ *
+ * 收敛范围严格限定为 `[Tabs][` 前缀（本产品 console 输出的唯一格式）：React、Vitest、
+ * 第三方依赖与性能基准的 console 输出原样放行；用例失败时回放本用例收集到的日志，
+ * 保证失败现场仍可判定。
+ */
+const DIAGNOSTIC_LOG_PREFIX = '[Tabs][';
+const capturedDiagnostics: string[] = [];
+const passthroughConsole = {
+  warn: console.warn.bind(console),
+  debug: console.debug.bind(console),
+  error: console.error.bind(console)
+};
+
+type ConsoleMethod = keyof typeof passthroughConsole;
+
+function handleConsole(method: ConsoleMethod, args: unknown[]): void {
+  const [first] = args;
+  if (typeof first === 'string' && first.startsWith(DIAGNOSTIC_LOG_PREFIX)) {
+    capturedDiagnostics.push(
+      args.map((arg) => (typeof arg === 'string' ? arg : String(arg))).join(' ')
+    );
+    return;
+  }
+  passthroughConsole[method](...args);
+}
+
+console.warn = (...args: unknown[]) => handleConsole('warn', args);
+console.debug = (...args: unknown[]) => handleConsole('debug', args);
+console.error = (...args: unknown[]) => handleConsole('error', args);
+
+beforeEach((ctx) => {
+  capturedDiagnostics.length = 0;
+  // 失败回调挂在用例上下文上才能在 setup 文件里注册：通过的用例保持输出干净，
+  // 失败的用例仍能看到本用例触发过的降级记录。
+  ctx.onTestFailed(() => {
+    if (capturedDiagnostics.length === 0) return;
+    passthroughConsole.error(`[测试诊断输出]\n${capturedDiagnostics.join('\n')}`);
+  });
+});

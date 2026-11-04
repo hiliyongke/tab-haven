@@ -66,6 +66,7 @@ function pageKeyOf(tab: TabRecord): { key: string; host: string } | null {
       return { key: `${authority}${parsed.pathname}${parsed.search}${parsed.hash}`, host };
     } catch {
       // 不可解析（内部页 / 空串）：尝试下一候选
+      continue;
     }
   }
   return null;

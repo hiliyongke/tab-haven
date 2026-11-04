@@ -6,9 +6,9 @@
  */
 
 /** 临时区真实标签行（TabRow）携带的标签 id。 */
-export const TAB_ROW_ID_ATTR = 'data-tabs-tab-id';
+const TAB_ROW_ID_ATTR = 'data-tabs-tab-id';
 /** 固定区条目行（FolderItemRow）携带的绑定标签 id。 */
-export const FOLDER_ITEM_ROW_ID_ATTR = 'data-folder-tab-id';
+const FOLDER_ITEM_ROW_ID_ATTR = 'data-folder-tab-id';
 /** 可由键盘「回车激活」的行的标记（无值属性，存在即可激活）。 */
 export const ROW_ACTIVATABLE_ATTR = 'data-row-activate';
 

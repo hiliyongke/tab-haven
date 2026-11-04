@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, type UndoBatch } from '@/core/schema/models';
 import { redoRepository, settingsRepository } from '@/platform/storage/repositories';
 import { useUndoStore } from '@/stores/undoStore';
@@ -11,7 +12,7 @@ import { useUndoStore } from '@/stores/undoStore';
  */
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   useUndoStore.setState({ batches: [], redoBatches: [], toast: null, ready: false });
   vi.restoreAllMocks();
 });

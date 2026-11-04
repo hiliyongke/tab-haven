@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, PINS_LIMIT, type Settings } from '@/core/schema/models';
 import { createFolder, createFolderItem } from '@/core/fixed/FolderOps';
 import { PENDING_ACTIONS_KEY } from '@/platform/messages';
@@ -172,7 +173,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   clearDiagnostics();
   vi.useRealTimers();
   vi.restoreAllMocks();

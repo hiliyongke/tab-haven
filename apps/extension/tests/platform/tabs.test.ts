@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { NO_GROUP, type TabRecord } from '@/core/tab-types';
 import {
   closeTabs,
@@ -35,7 +36,7 @@ function tab(partial: Partial<TabRecord> = {}): TabRecord {
 }
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

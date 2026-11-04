@@ -7,7 +7,7 @@
  * 注意这是 logo 的**第三份拷贝**（另两份是 `public/icon/logo.svg`、`logo-light.svg`
  * 与 `site/public/icon.svg` favicon）：改配色要三处同步，别只改一处。
  */
-export interface BrandMarkProps {
+interface BrandMarkProps {
   size?: number;
   /** 同页多处渲染时传入，保证渐变 id 唯一 */
   idSuffix?: string;

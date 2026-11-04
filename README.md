@@ -310,10 +310,11 @@ pnpm site:preview  # 预览已构建产物，http://localhost:5175/
 pnpm build && pnpm zip                         # 先产出扩展包（下载按钮指向它）
 TABS_SITE_URL=https://<正式域名> \
   pnpm site:build:release                     # 发布构建；域名不要带路径或结尾斜杠
+pnpm --filter site verify                     # 校验正式产物的 canonical / sitemap / robots
 pnpm site:preview                             # 发布前预览 apps/site/dist
 ```
 
-产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入并按版本号精确匹配；缺少对应版本 ZIP 时构建失败。
+产物：`index.html`（中文）、`en/index.html`（英文）、`robots.txt`、`sitemap.xml`（配置了 `TABS_SITE_URL` 才生成）、`download/tabs-<version>.zip`。下载包由 `apps/site/build.mjs` 从 `apps/extension/.output/*.zip` 拷入并按版本号精确匹配；缺少对应版本 ZIP 时构建失败。`pnpm --filter site verify` 校验产物完整性，配置域名时还会核对 canonical、sitemap 与 robots 的站点地址。
 
 `pnpm site:build` 用于验证页面和安全检查。正式发布必须使用 `pnpm site:build:release`，并通过 `TABS_SITE_URL` 注入无路径、无结尾斜杠的真实站点根 URL；未配置时直接失败。发布构建会生成 canonical、hreflang、JSON-LD 与 `sitemap.xml`。GitHub Release 工作流由仓库变量注入该值；本地构建不要把域名写进源码。
 

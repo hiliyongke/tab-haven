@@ -6,7 +6,7 @@
 import { BRAND, LANGUAGES, SITE_URL } from '../site.config.ts';
 
 /** HTML 文本转义：标题与描述由人来写，但转义是默认动作，不是可选优化。 */
-export function escapeHtml(value) {
+function escapeHtml(value) {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

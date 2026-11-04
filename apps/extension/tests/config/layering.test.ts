@@ -4,8 +4,8 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
- * 分层依赖行为规格：core 不访问宿主 API，也不依赖 React 或 platform；
- * ui、stores 与 entrypoints 不直接访问浏览器 API。
+ * 分层依赖行为规格：core 不访问宿主 API、不依赖 React 或 platform、不引入计时器副作用；
+ * ui、stores 与 entrypoints 不直接访问浏览器 API；platform 不回引领域决策层。
  */
 
 const SRC = join(process.cwd(), 'src');
@@ -93,20 +93,58 @@ function hostApiUses(source: ts.SourceFile, roots: ReadonlySet<string>): Violati
   return hits;
 }
 
-/** 收集静态 import 的模块说明符（不含动态 import 与 require，本项目不用）。 */
+/**
+ * 收集模块说明符：静态 import、动态 `import()` 与 `require()` 必须走同一套判据，
+ * 否则 `await import('@/platform/x')` 能绕过分层检查。
+ */
 function importSpecifiers(source: ts.SourceFile): Array<{ line: number; specifier: string }> {
   const out: Array<{ line: number; specifier: string }> = [];
-  ts.forEachChild(source, (node) => {
+  const push = (node: ts.Node, specifier: string): void => {
+    const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+    out.push({ line: line + 1, specifier });
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      push(node, node.moduleSpecifier.text);
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteral(node.arguments[0]!)
+    ) {
+      push(node, node.arguments[0]!.text);
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require' &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteral(node.arguments[0]!)
+    ) {
+      push(node, node.arguments[0]!.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return out;
+}
+
+/** 收集异步调度调用：core 是纯领域层，定时任务只能在 platform / entrypoints。 */
+function timerCalls(source: ts.SourceFile): Array<{ line: number; detail: string }> {
+  const names = new Set(['setTimeout', 'setInterval', 'queueMicrotask', 'requestAnimationFrame']);
+  const hits: Array<{ line: number; detail: string }> = [];
+  const visit = (node: ts.Node): void => {
     if (
-      ts.isImportDeclaration(node) &&
-      node.moduleSpecifier !== undefined &&
-      ts.isStringLiteral(node.moduleSpecifier)
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      names.has(node.expression.text)
     ) {
       const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-      out.push({ line: line + 1, specifier: node.moduleSpecifier.text });
+      hits.push({ line: line + 1, detail: `${node.expression.text}()` });
     }
-  });
-  return out;
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return hits;
 }
 
 function relative(file: string): string {
@@ -144,8 +182,8 @@ describe('分层依赖方向', () => {
     expect(violations.map((v) => `${relative(v.file)}:${v.line} ${v.detail}`)).toEqual([]);
   });
 
-  it('core 不 import react 或 platform', () => {
-    // When: 扫描 core 的静态导入
+  it('core 不 import react 或 platform（静态 / 动态 / require 同口径）', () => {
+    // When: 扫描 core 的三种模块引用形式
     const files = walk(join(SRC, 'core'));
     expect(files.length).toBeGreaterThan(0);
     const violations = files.flatMap((file) => {
@@ -161,6 +199,28 @@ describe('分层依赖方向', () => {
     });
 
     // Then: core 只能依赖 core 自身与纯工具
+    expect(violations).toEqual([]);
+  });
+
+  it('core 不引入计时器副作用', () => {
+    // Given/When/Then: 纯领域层不得自行调度定时任务，异步编排属于 platform 或入口
+    const files = walk(join(SRC, 'core'));
+    expect(files.length).toBeGreaterThan(0);
+    const violations = files.flatMap((file) =>
+      timerCalls(parse(file)).map(({ line, detail }) => `${relative(file)}:${line} ${detail}`)
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('platform 不回引 core/commands 领域决策层', () => {
+    // Given/When/Then: 决策上收 core，适配层不得自行引入命令决策入口
+    const files = walk(join(SRC, 'platform'));
+    expect(files.length).toBeGreaterThan(0);
+    const violations = files.flatMap((file) =>
+      importSpecifiers(parse(file))
+        .filter(({ specifier }) => /^@\/core\/commands(\/|$)/.test(specifier))
+        .map(({ line, specifier }) => `${relative(file)}:${line} import '${specifier}'`)
+    );
     expect(violations).toEqual([]);
   });
 

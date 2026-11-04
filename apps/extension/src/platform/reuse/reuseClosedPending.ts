@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { browser } from 'wxt/browser';
-import { REUSE_CLOSED_LIMIT } from '@/platform/messages';
+import { ACK_TIMEOUT_MS, REUSE_CLOSED_LIMIT } from '@/platform/messages';
 import { UndoTabRecordSchema } from '@/core/schema/models';
 import { REUSE_CLOSED_PENDING_KEY } from '@/platform/storage/keys';
 
@@ -13,7 +13,7 @@ const ReuseClosedShardSchema = z.object({
   at: z.number().int().nonnegative()
 });
 
-export type ReuseClosedShard = z.infer<typeof ReuseClosedShardSchema>;
+type ReuseClosedShard = z.infer<typeof ReuseClosedShardSchema>;
 const ReuseClosedShardListSchema = z.array(ReuseClosedShardSchema);
 
 function key(batchId: string, shardIndex: number): string {
@@ -65,7 +65,10 @@ interface AckWaiter {
 const ackWaiters = new Map<string, AckWaiter>();
 
 /** 注册一次 batchId 的 UI ACK 等待；超时按「未确认」让 SW 直接补写撤销库。 */
-export function waitForReuseClosedAck(batchId: string, timeoutMs = 5000): Promise<boolean> {
+export function waitForReuseClosedAck(
+  batchId: string,
+  timeoutMs = ACK_TIMEOUT_MS
+): Promise<boolean> {
   const existing = ackWaiters.get(batchId);
   if (existing) return existing.promise;
   let resolve!: (acknowledged: boolean) => void;

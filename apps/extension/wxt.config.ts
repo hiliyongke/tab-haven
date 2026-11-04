@@ -32,8 +32,7 @@ const DEV_WS_ORIGIN = `ws://localhost:${DEV_SERVER_PORT}`;
  * - `img-src 'self' data: chrome-extension:`：站点图标走浏览器自己的 favicon 通道
  *   `chrome-extension://<id>/_favicon/`（见 `platform/favicon.ts`），必须放行
  *   chrome-extension: 否则图标全灭（会静默回退成首字母方块，不易察觉）；
- *   data: 留给内联占位图（当前代码未使用，去掉不影响现状，保留以免将来内联
- *   SVG / 占位图被静默拦截）。
+ *   data: 供 `ui/tabs/accent.ts` 用内联 SVG 取主题色时加载，去掉会让取色静默失败。
  * - `font-src 'self'`：项目无 @font-face、全用系统字体，这里只是把默认敞开收掉。
  * - `connect-src 'none'`：产品宪法是零出站 —— fetch / XHR / WebSocket / sendBeacon
  *   一律封死。**dev 必须放行 dev server**：Vite HMR 与 WXT 的页面重载都走

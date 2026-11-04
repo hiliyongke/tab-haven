@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { domainToUnicode } from '@/core/url/punycode';
+import { domainToUnicode, hasPunycodeLabel } from '@/core/url/punycode';
 
 /**
  * IDN 展示标签解码（RFC 3492）：
@@ -28,5 +28,15 @@ describe('domainToUnicode', () => {
   it('非法 punycode 安全回退为原始输入（展示层绝不抛异常）', () => {
     expect(domainToUnicode('xn--!!!')).toBe('xn--!!!');
     expect(domainToUnicode('xn--abc😀.com')).toBe('xn--abc😀.com');
+  });
+});
+
+describe('hasPunycodeLabel', () => {
+  it('给定含 xn-- 的主机名时判定为含 punycode 标签，纯 ASCII 主机名与空串不命中', () => {
+    expect(hasPunycodeLabel('xn--fiq228c.cn')).toBe(true);
+    expect(hasPunycodeLabel('mail.xn--fiq228c.cn')).toBe(true);
+    expect(hasPunycodeLabel('example.com')).toBe(false);
+    expect(hasPunycodeLabel('localhost:8080')).toBe(false);
+    expect(hasPunycodeLabel('')).toBe(false);
   });
 });

@@ -23,7 +23,7 @@ const MESSAGE_URL_MAX = 8192;
 const MESSAGE_QUERY_MAX = 512;
 
 /* 以下逐类型的 schema 只在**本文件内**被 MessageSchema / PendingActionSchema 聚合使用，故不对外导出：
- * 协议的公开入口只有 MessageSchema、PendingActionSchema 与 Message / PendingAction 两个类型。 */
+ * 对外只暴露消费方实际使用的聚合 schema、派生类型与队列读写入口。 */
 /** UI → SW：为下一次同 URL 创建申请复用豁免（显式复制/撤销恢复场景）。 */
 const AllowDuplicateOnceMessageSchema = z.object({
   type: z.literal('allow-duplicate-once'),
@@ -82,13 +82,6 @@ const SearchDomainMessageSchema = z.object({
   at: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()
 });
 
-/**
- * 自动休眠回执携带的标签 id 数上限（与 REUSE_CLOSED_LIMIT 同量级）。
- * runtime 通道是无界传输面，整批 id 超限会让消息被 schema 拒绝并静默丢弃 —— 那一轮的「一键唤醒」
- * 入口就此消失，而标签确实已被休眠。发送侧按此上限截断并留痕。
- */
-export const AUTO_DISCARDED_IDS_LIMIT = 50;
-
 /** SW → UI：自动休眠执行完成（通知 UI 显示可撤销提示）。 */
 const AutoDiscardedMessageSchema = z.object({
   type: z.literal('auto-discarded'),
@@ -138,7 +131,7 @@ export const MessageSchema = z.discriminatedUnion('type', [
 export type Message = z.infer<typeof MessageSchema>;
 
 /** 挂起动作（面板未开时存于 storage.session，面板挂载后补消费）：与 MessageSchema 共享同一批 schema，另抄一份会与协议失去关联。 */
-export const PendingActionSchema = z.discriminatedUnion('type', [
+const PendingActionSchema = z.discriminatedUnion('type', [
   SearchFocusMessageSchema,
   SearchDomainMessageSchema,
   LocateActiveMessageSchema
@@ -177,8 +170,8 @@ export function sendReuseClosedAck(batchId: string): void {
     .catch((error) => logDegraded('messages', '复用关闭 ACK 投递失败', error));
 }
 
-/** ack 等待上限：SW 收到消息但不响应时（挂起/卡死）sendMessage 永不 settle，必须超时截断。 */
-const ACK_TIMEOUT_MS = 5000;
+/** ACK 等待上限：消息链路统一口径，SW 不应答时截断永不 settle 的 sendMessage，UI 回执超时按「未确认」降级。 */
+export const ACK_TIMEOUT_MS = 5000;
 
 /**
  * 发送一条需要 SW 应答的消息，返回是否被确认处理。

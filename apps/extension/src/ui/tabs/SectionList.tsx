@@ -6,7 +6,7 @@ import type { TabRecord } from '@/core/tab-types';
 import type { TemporarySection } from '@/core/site/Sections';
 import { CategoryModule } from '@/ui/common/CategoryModule';
 import { EmptyTabs } from '@/ui/common/ListStates';
-import { SectionCard } from '@/ui/tabs/sectionCards';
+import { SectionCard } from '@/ui/tabs/SectionCards';
 import type { SectionCallbacks } from '@/ui/tabs/sectionTypes';
 
 /** 用户主动定位当前标签时，请求临时区展开其所属分组。 */
@@ -18,7 +18,7 @@ export const LOCATE_SECTION_EVENT = 'tabs:locate-section';
  * 每个 section 渲染为独立卡片（.section-card），标题/计数清晰，分组辨识度更高。
  * 折叠状态由调用方（本地态）持有并通过 props 回传。
  *
- * 卡片与行渲染的实现见 `sectionCards.tsx`，共享契约类型见 `sectionTypes.ts`。
+ * 卡片与行渲染的实现见 `SectionCards.tsx`，共享契约类型见 `sectionTypes.ts`。
  */
 
 export const SectionList = memo(SectionListImpl);

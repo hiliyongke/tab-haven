@@ -20,7 +20,7 @@ import { useSnapshotRestore } from '@/ui/snapshot/useSnapshotRestore';
 /**
  * 快照面板：命名快照、归档中心与 OneTab / Workona 导入；恢复走 platform/restoreSnapshot，
  * 提示走 undoStore。本文件只保留编排：状态、写路径 handler 与三个确认闸门；三个视图
- * 在 SnapshotListView / SnapshotImportView / SnapshotReportView，共用按钮在 snapshotButtons。
+ * 在 SnapshotListView / SnapshotImportView / SnapshotReportView，共用按钮在 SnapshotButtons。
  */
 interface SnapshotsPanelProps {
   onClose: () => void;

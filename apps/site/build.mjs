@@ -64,7 +64,7 @@ function stageDownloadZip(version) {
     fail(
       `未找到 .output/，下载按钮将指向不存在的地址：请先跑 \`pnpm build && pnpm zip\`；仅构建页面时设 SITE_SKIP_ZIP=1`
     );
-    // 跳过打包时必须清掉上一轮的包：页面 href 按当前版本号拼接，旧包留在 dist 里
+    // 跳过打包时必须清掉上次构建的包：页面 href 按当前版本号拼接，旧包留在 dist 里
     // 会被一起发布出去，用户下到的是别的版本。
     rmSync(targetDir, { recursive: true, force: true });
     return LOCAL_PREVIEW;
@@ -83,7 +83,7 @@ function stageDownloadZip(version) {
     rmSync(targetDir, { recursive: true, force: true });
     return LOCAL_PREVIEW;
   }
-  // 清空再拷：public/download 不在 dist 的清空范围内，上一轮构建留在这里的包会被一直发布出去。
+  // 清空再拷：public/download 不在 dist 的清空范围内，上次构建留在这里的包会被一直发布出去。
   rmSync(targetDir, { recursive: true, force: true });
   mkdirSync(targetDir, { recursive: true });
   copyFileSync(join(outputDir, chosen), target);

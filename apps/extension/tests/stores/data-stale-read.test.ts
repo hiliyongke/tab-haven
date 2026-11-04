@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS, type FixedFolder, type Settings } from '@/core/schema/models';
 import type { Repositories } from '@/platform/registry';
 import type { DataState } from '@/stores/data/types';
@@ -53,7 +53,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 describe('初始化旧读守卫', () => {

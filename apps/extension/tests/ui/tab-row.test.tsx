@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SortableContext } from '@dnd-kit/sortable';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../helpers/resetFakeBrowser';
 import { translate } from '@/i18n';
 import type { TabRecord } from '@/core/tab-types';
 import { TabRow } from '@/ui/tabs/TabRow';
@@ -67,7 +67,7 @@ function renderTabRow(tab: TabRecord, callbacks?: Partial<Parameters<typeof TabR
 
 afterEach(() => {
   cleanup();
-  fakeBrowser.reset();
+  resetFakeBrowser();
   vi.restoreAllMocks();
 });
 

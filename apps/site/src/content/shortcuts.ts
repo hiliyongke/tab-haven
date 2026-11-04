@@ -4,7 +4,7 @@
  * 来源：`wxt.config.ts` 的 commands（四组 suggested_key）与 omnibox keyword `t`；
  * 命令面板的 ⌘/Ctrl+P 见 README 功能一览「快捷入口」。
  */
-export interface ShortcutRow {
+interface ShortcutRow {
   /**
    * 按键字面量：组合键在两种语言下写法一致，**不进词典**（进了就变成「译文与原文
    * 相同」，会被 i18n-kit 判为伪翻译）。

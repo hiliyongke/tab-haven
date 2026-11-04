@@ -85,13 +85,12 @@ import {
   NoSearchResults
 } from '@/ui/common/ListStates';
 import { useTabDragHandlers } from '@/ui/hooks/useTabDragHandlers';
-
-/** 初始化失败后的自动重试延迟：给仓库读取一次喘息，避免在同一故障上立刻重试。 */
-const INIT_RETRY_DELAY_MS = 1000;
-/** 自动重试次数上限（含首次）。用尽即转错误态，交回用户手动重试。 */
-const INIT_MAX_ATTEMPTS = 2;
-/** 首启引导延迟：数据就绪后先让用户看到真实列表，避免遮罩盖住被介绍对象。 */
-const TOUR_AUTO_OPEN_DELAY_MS = 900;
+import {
+  INIT_RETRY_DELAY_MS,
+  INIT_MAX_ATTEMPTS,
+  TOUR_AUTO_OPEN_DELAY_MS,
+  countInsights
+} from './appData';
 
 export default function App() {
   const { t } = useTranslation();
@@ -645,10 +644,7 @@ export default function App() {
    * planDuplicateCleanup 是同一条不变量。
    */
   const insights = useMemo(() => computeInsights(tabs, new Set(boundTabIds)), [tabs, boundTabIds]);
-  const insightCount =
-    insights.duplicateHotspots.length +
-    (insights.discardableCount > 0 ? 1 : 0) +
-    insights.staleTabs.length;
+  const insightCount = countInsights(insights);
 
   // 与浏览器多选高亮同步（tabs.onHighlighted）。
   useEffect(() => onTabHighlighted(setHighlighted), [setHighlighted]);

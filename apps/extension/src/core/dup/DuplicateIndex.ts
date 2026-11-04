@@ -3,7 +3,7 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
 import { rankForKeep } from './DedupeByUrl';
 
 /** 重复组：共享同一 URL 比较键的标签。 */
-export interface DuplicateGroup {
+interface DuplicateGroup {
   key: string;
   tabs: TabRecord[];
 }

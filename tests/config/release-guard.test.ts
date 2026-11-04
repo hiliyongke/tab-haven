@@ -22,6 +22,16 @@ describe('发布链路守卫', () => {
     );
   });
 
+  it('正式官网产物在发布构建之后再做校验，且发布链不漏格式检查', () => {
+    // Given/When/Then: 发布构建会覆盖 dist/，产物校验必须排在它后面才校验得到正式产物
+    const workflow = read('.github/workflows/release.yml');
+    expect(workflow).toContain('run: pnpm --filter site verify');
+    expect(workflow.indexOf('run: pnpm --filter site verify')).toBeGreaterThan(
+      workflow.indexOf('SITE_BUILD_TARGET=release pnpm site:build:release')
+    );
+    expect(workflow).toContain('run: pnpm format:check');
+  });
+
   it('发布前置检查强制要求版本、tag、域名与商店联系字段', () => {
     const preflight = read('scripts/release-preflight.mjs');
     for (const required of [
@@ -38,13 +48,25 @@ describe('发布链路守卫', () => {
     }
   });
 
-  it('CI 固定动作版本有可审计的显式说明，且官网安全测试不漏跑', () => {
+  it('CI 与发布工作流固定动作版本、锁文件与缓存口径一致', () => {
     const ci = read('.github/workflows/ci.yml');
+    const release = read('.github/workflows/release.yml');
+    for (const workflow of [ci, release]) {
+      expect(workflow).toContain('actions/checkout@v4');
+      expect(workflow).toContain('pnpm/action-setup@v4');
+      expect(workflow).toContain('actions/setup-node@v4');
+      expect(workflow).toContain('pnpm install --frozen-lockfile');
+      expect(workflow).toContain('cache: pnpm');
+    }
+    expect(release).toContain('softprops/action-gh-release@v2');
     expect(ci).toContain('pnpm site:test');
     expect(ci).toContain('pnpm site:check');
-    expect(ci).toContain('actions/checkout@v4');
-    expect(ci).toContain('pnpm/action-setup@v4');
-    expect(ci).toContain('actions/setup-node@v4');
+  });
+
+  it('依赖自动更新配置存在且覆盖 npm 与 GitHub Actions', () => {
+    const dependabot = read('.github/dependabot.yml');
+    expect(dependabot).toContain("package-ecosystem: 'npm'");
+    expect(dependabot).toContain("package-ecosystem: 'github-actions'");
   });
 
   it('文档明示未核实的浏览器兼容与 Action SHA 发布前核验项', () => {
@@ -66,7 +88,8 @@ describe('发布链路守卫', () => {
     };
     expect(rootPackage.scripts['site:check']).toContain('pnpm zip');
     expect(extensionPackage.scripts.typecheck).toContain('wxt prepare');
-    expect(sitePackage.scripts.check).toContain('verify-dist.mjs');
+    expect(sitePackage.scripts.check).toContain('pnpm run verify');
+    expect(sitePackage.scripts.verify).toContain('verify-dist.mjs');
     expect(existsSync(`${root}apps/site/verify-dist.mjs`)).toBe(true);
   });
 });

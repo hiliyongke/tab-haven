@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger';
 
 /**
@@ -11,7 +12,7 @@ import { createPersistedAllowanceLedger } from '@/platform/reuse/persistedLedger
 const STORAGE_KEY = 'tabs.allowance.v1';
 
 afterEach(() => {
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 describe('createPersistedAllowanceLedger', () => {

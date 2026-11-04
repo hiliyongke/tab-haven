@@ -37,8 +37,9 @@ export async function openSidePanel(windowId?: number): Promise<void> {
   try {
     await sidePanel.open({ windowId: windowId ?? browser.windows.WINDOW_ID_CURRENT });
     return;
-  } catch {
+  } catch (error) {
     // WINDOW_ID_CURRENT 不被接受（罕见）：按真实窗口 id 再试。
+    logDegraded('side-panel', 'WINDOW_ID_CURRENT 打开侧边栏失败，将按真实窗口 id 重试', error);
   }
   const win =
     (await browser.windows.getCurrent().catch(() => undefined)) ??

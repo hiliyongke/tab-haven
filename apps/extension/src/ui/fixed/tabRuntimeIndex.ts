@@ -8,7 +8,7 @@ import { webComparisonKey } from '@/core/url/UrlInspector';
  * 与 `@/ui/tabs/pinRuntime` 的 `buildPinRuntimeIndex` 是**两套**索引，不要合并：
  * 那个按 pin 身份（去参 URL）索引到磁贴运行时，本索引按完整比较键 / 原始 URL / tabId 索引到标签记录。
  */
-export interface TabRuntimeIndex {
+interface TabRuntimeIndex {
   byKey: Map<string, TabRecord>;
   byRawUrl: Map<string, TabRecord>;
   byId: Map<number, TabRecord>;

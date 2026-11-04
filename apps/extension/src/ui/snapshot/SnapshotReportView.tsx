@@ -2,7 +2,7 @@ import { useTranslation } from '@/i18n';
 import type { computeInsights } from '@/core/insights/tabInsights';
 import { Button } from '@/ui/common/Button';
 import { Callout } from '@/ui/common/Callout';
-import { InsightActionButton } from '@/ui/snapshot/snapshotButtons';
+import { InsightActionButton } from '@/ui/snapshot/SnapshotButtons';
 
 /** 习惯洞察区块的锚点 id：底栏洞察入口直达后滚动定位到这里。 */
 export const INSIGHTS_ANCHOR_ID = 'snapshots-insights';

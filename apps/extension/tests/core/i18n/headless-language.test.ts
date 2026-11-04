@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import { DEFAULT_SETTINGS } from '@/core/schema/models';
 
 /**
@@ -13,13 +13,13 @@ let settingsRepository: SettingsRepository;
 
 beforeEach(async () => {
   vi.resetModules();
-  fakeBrowser.reset();
+  resetFakeBrowser();
   ({ settingsRepository } = await import('@/platform/storage/repositories'));
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  fakeBrowser.reset();
+  resetFakeBrowser();
 });
 
 describe('headless i18n 语言回退', () => {

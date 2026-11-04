@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { resetFakeBrowser } from '../../helpers/resetFakeBrowser';
 import {
   mutateSession,
   readSession,
@@ -14,7 +15,7 @@ import {
  */
 describe('session 串行化', () => {
   afterEach(() => {
-    fakeBrowser.reset();
+    resetFakeBrowser();
   });
 
   it('updateSession 增量合并保留其他字段', async () => {

@@ -41,7 +41,7 @@ const StoredEntriesSchema = z.array(
   })
 );
 
-/** 同一诊断键内保存共享清空代际与墓碑；旧版本数组仍可读取并在下次落盘时迁移。 */
+/** 同一诊断键内保存共享清空代际与墓碑。 */
 const StoredDiagnosticsSchema = z.object({
   clearEpoch: z.number().int().nonnegative(),
   clearedAt: z.number().int().nonnegative(),
@@ -51,11 +51,7 @@ type StoredDiagnostics = z.infer<typeof StoredDiagnosticsSchema>;
 
 function parseStoredDiagnostics(raw: unknown): StoredDiagnostics {
   const envelope = StoredDiagnosticsSchema.safeParse(raw);
-  if (envelope.success) return envelope.data;
-  const legacy = StoredEntriesSchema.safeParse(raw);
-  return legacy.success
-    ? { clearEpoch: 0, clearedAt: 0, entries: legacy.data }
-    : { clearEpoch: 0, clearedAt: 0, entries: [] };
+  return envelope.success ? envelope.data : { clearEpoch: 0, clearedAt: 0, entries: [] };
 }
 
 /** 本上下文产生、尚未落盘的增量。 */
@@ -127,6 +123,18 @@ interface ErrorEventTarget {
   removeEventListener(type: string, listener: (event: Event) => void): void;
 }
 
+/** 判定全局对象是否具备事件订阅/注销能力，避免把 self 直接断言成上述形状。 */
+function isErrorEventTarget(value: unknown): value is ErrorEventTarget {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'addEventListener' in value &&
+    'removeEventListener' in value &&
+    typeof value.addEventListener === 'function' &&
+    typeof value.removeEventListener === 'function'
+  );
+}
+
 /**
  * 安装全局异常兜底，返回卸载函数。
  * ErrorBoundary 只覆盖 React 渲染期异常，事件处理器与异步回调里漏网的 rejection 不会进诊断环形缓冲 ——
@@ -153,9 +161,9 @@ export function installGlobalErrorHandlers(): () => void {
   }
 
   // SW / Worker 上下文：事件对象不是 ErrorEvent / PromiseRejectionEvent 的页面实现，只取 reason 与 error 字段。
-  const target = (typeof self === 'undefined' ? undefined : self) as unknown as
-    ErrorEventTarget | undefined;
-  if (!target) return () => undefined;
+  const candidate: unknown = typeof self === 'undefined' ? undefined : self;
+  if (!isErrorEventTarget(candidate)) return () => undefined;
+  const target: ErrorEventTarget = candidate;
   const onSwRejection = (event: Event): void => {
     const reason = (event as { reason?: unknown }).reason;
     logFailure('global', '未处理的 Promise rejection（background SW）', reason ?? event);

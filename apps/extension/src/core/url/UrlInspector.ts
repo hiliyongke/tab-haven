@@ -32,6 +32,11 @@ export function isHttpUrl(url: string | undefined): url is string {
 
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
+/** 判断协议是否为 http(s)：供已持有 URL 解析结果的调用方复用，避免各处重写协议白名单。 */
+export function isWebProtocol(protocol: string): boolean {
+  return WEB_PROTOCOLS.has(protocol);
+}
+
 /** 空白起始页（规范形：无尾斜杠、无 hash 片段）。 */
 const BLANK_START_URLS = new Set(['about:blank', 'chrome://newtab', 'chrome://new-tab-page']);
 
