@@ -58,17 +58,17 @@
     "i18next": "^26.4.4",
     "lucide-react": "catalog:",
     "pinyin-pro": "^3.29.5",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-i18next": "^17.0.16",
-    "tldts": "^7.4.18",
+    "tldts": "^7.4.19",
     "zod": "^4.6.7",
-    "zustand": "^5.0.15"
+    "zustand": "^5.1.0"
   },
   "//devDependencies": "跨包共用的版本走 pnpm-workspace.yaml 的 catalog（`catalog:`）；只在本包用的（wxt / tailwind / jsdom / testing-library …）就地写版本。",
   "devDependencies": {
     "@eslint/js": "catalog:",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "catalog:",
@@ -80,10 +80,10 @@
     "eslint-config-prettier": "catalog:",
     "eslint-plugin-react-hooks": "catalog:",
     "jsdom": "^30.1.2",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "^4.3.5",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:",
-    "wxt": "^0.21.4"
+    "wxt": "^0.21.5"
   }
 }

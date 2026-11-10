@@ -34,8 +34,8 @@
     "i18n-kit": "workspace:*",
     "i18next": "^26.4.4",
     "lucide-react": "catalog:",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "//devDependencies": "跨包共用的版本走 pnpm-workspace.yaml 的 catalog（`catalog:`）；只在官网用的（vite）就地写版本。",
   "devDependencies": {
@@ -49,7 +49,7 @@
     "eslint-plugin-react-hooks": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
-    "vite": "^8.2.2"
+    "vite": "^8.3.6"
   },
   "engines": {
     "node": ">=26"
